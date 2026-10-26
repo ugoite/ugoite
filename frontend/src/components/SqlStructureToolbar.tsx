@@ -78,8 +78,6 @@ interface SqlStructureToolbarProps {
   onArgumentDefaultsChange?: (
     defaults: Record<string, SqlVariableDefaultDraft>,
   ) => void;
-  /** Names owned by the host, including declarations not referenced in SQL yet. */
-  reservedVariableNames?: () => readonly string[];
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
   disabled?: () => boolean;
   /** Argument discovery can be pending independently of document editing. */

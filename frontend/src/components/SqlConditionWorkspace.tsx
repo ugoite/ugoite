@@ -1,0 +1,1467 @@
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+  untrack,
+} from "solid-js";
+import type { SqlStructureAdapterContext } from "~/lib/sql";
+import {
+  applySqlDocumentEditTransaction,
+  applySqlDocumentSemanticEditTransaction,
+  parseSqlDocument,
+  type SqlDocumentConditionNode,
+  type SqlDocumentConditionScope,
+  type SqlDocumentEditTransaction,
+  type SqlDocumentFilterCondition,
+  type SqlDocumentFilterOperator,
+  type SqlDocumentIdentifier,
+  type SqlDocumentNodeKind,
+  type SqlDocumentSemanticEdit,
+  type SqlDocumentSemanticLiteral,
+} from "~/lib/ugoite-client";
+import type { SqlVariable } from "~/lib/types";
+import { parseSqlVariableDefault } from "~/lib/sql";
+import { t } from "~/lib/i18n";
+import { IconButton } from "~/components/IconButton";
+
+type Binding = { name: string; variableId: string };
+type Props = {
+  sql: () => string;
+  scope?: () => string;
+  disabled?: () => boolean;
+  contexts: () => readonly SqlStructureAdapterContext[];
+  onSqlChange: (sql: string) => void;
+  onAdvanced: () => void;
+  argumentDefinitions?: () => readonly SqlVariable[];
+  onArgumentAdded?: (variable: SqlVariable) => boolean | void;
+  scalarVariables?: readonly { id: string; name: string; type: string }[];
+  argumentBindings?: () => readonly Binding[];
+  reservedVariableNames?: () => readonly string[];
+  onFilterEdit?: (change: {
+    expectedSql: string;
+    expectedScope: string | undefined;
+    resultSql: string;
+    createdArgument?: SqlVariable;
+    binding?: Binding;
+    expectedBindings?: readonly Binding[];
+    resultBindings?: readonly Binding[];
+    expectedArguments?: readonly SqlVariable[];
+    resultArguments?: readonly SqlVariable[];
+  }) => boolean | void;
+};
+type History = {
+  undo: SqlDocumentEditTransaction;
+  beforeBindings: readonly Binding[];
+  afterBindings: readonly Binding[];
+  beforeArguments: readonly SqlVariable[];
+  afterArguments: readonly SqlVariable[];
+};
+type LeafDraft = {
+  column: string;
+  operator: SqlDocumentFilterOperator;
+  source: "literal" | "argument";
+  value: string;
+  valueKind: "string" | "number" | "boolean";
+  argument: string;
+};
+type GroupTarget = { parentNodeId: number | null; queryNodeId: number };
+
+function queryAncestor(
+  nodes: readonly { id: number; parent: number | null; kind: string }[],
+  nodeId: number,
+) {
+  let current = nodes.find((node) => node.id === nodeId);
+  while (current) {
+    if (current.kind === "query") return current.id;
+    current = nodes.find((node) => node.id === current?.parent);
+  }
+  return undefined;
+}
+
+const supportedOperators: readonly SqlDocumentFilterOperator[] = [
+  "eq",
+  "not_eq",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+  "like",
+  "not_like",
+  "is_null",
+  "is_not_null",
+];
+const operatorName = (operator: SqlDocumentFilterOperator) => {
+  const keys: Record<SqlDocumentFilterOperator, string> = {
+    eq: "eq",
+    not_eq: "not_eq",
+    lt: "lt",
+    lte: "lt_eq",
+    gt: "gt",
+    gte: "gt_eq",
+    like: "like",
+    not_like: "not_like",
+    is_null: "is_null",
+    is_not_null: "is_not_null",
+  };
+  return t(`sqlPage.structure.operator.${keys[operator]}`);
+};
+const valueInputOperators = new Set<SqlDocumentFilterOperator>([
+  "eq",
+  "not_eq",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+  "like",
+  "not_like",
+]);
+const isGroup = (
+  node: SqlDocumentConditionNode,
+): node is Extract<SqlDocumentConditionNode, { kind: "group" }> =>
+  node.kind === "group";
+const isComparison = (
+  node: SqlDocumentConditionNode,
+): node is Extract<SqlDocumentConditionNode, { kind: "comparison" }> =>
+  node.kind === "comparison";
+
+/** Beginner-facing editor for the parser-derived WHERE condition tree. */
+export function SqlConditionWorkspace(props: Props) {
+  const [conditions, setConditions] = createSignal<
+    readonly SqlDocumentConditionScope[]
+  >([]);
+  const [selectIdsByQuery, setSelectIdsByQuery] = createSignal<
+    Record<number, number>
+  >({});
+  const [nodeKindsById, setNodeKindsById] = createSignal<
+    Record<number, SqlDocumentNodeKind>
+  >({});
+  const [qualifierByQuery, setQualifierByQuery] = createSignal<
+    Record<number, SqlDocumentIdentifier | null>
+  >({});
+  const [drafts, setDrafts] = createSignal<Record<number, LeafDraft>>({});
+  const [groupDrafts, setGroupDrafts] = createSignal<
+    Record<number, "and" | "or">
+  >({});
+  const [newColumn, setNewColumn] = createSignal("");
+  const [newOperator, setNewOperator] = createSignal<SqlDocumentFilterOperator>(
+    "eq",
+  );
+  const [newValue, setNewValue] = createSignal("");
+  const [newValueKind, setNewValueKind] = createSignal<
+    "string" | "number" | "boolean"
+  >("string");
+  const [newValueSource, setNewValueSource] = createSignal<
+    "literal" | "argument"
+  >("literal");
+  const [newArgument, setNewArgument] = createSignal("");
+  const [newArgumentName, setNewArgumentName] = createSignal("");
+  const [newArgumentDefault, setNewArgumentDefault] = createSignal("");
+  const [newBinding, setNewBinding] = createSignal("");
+  const [groupTarget, setGroupTarget] = createSignal<GroupTarget | null>(null);
+  const [groupConnector, setGroupConnector] = createSignal<"and" | "or">("and");
+  const [groupSecondColumn, setGroupSecondColumn] = createSignal("");
+  const [groupSecondOperator, setGroupSecondOperator] = createSignal<
+    SqlDocumentFilterOperator
+  >("eq");
+  const [groupSecondValue, setGroupSecondValue] = createSignal("");
+  const [groupSecondSource, setGroupSecondSource] = createSignal<
+    "literal" | "argument"
+  >("literal");
+  const [groupSecondValueKind, setGroupSecondValueKind] = createSignal<
+    "string" | "number" | "boolean"
+  >("string");
+  const [groupSecondArgument, setGroupSecondArgument] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string>();
+  const [history, setHistory] = createSignal<History[]>([]);
+  const [redo, setRedo] = createSignal<History[]>([]);
+  let generation = 0;
+  onCleanup(() => {
+    generation++;
+  });
+  let priorScope = props.scope?.();
+  const locked = () => props.disabled?.() === true;
+  const current = (
+    request: number,
+    source: string,
+    scope: string | undefined,
+  ) =>
+    request === generation && props.sql() === source &&
+    props.scope?.() === scope && !locked();
+
+  createEffect(() => {
+    const source = props.sql();
+    const scope = props.scope?.();
+    if (scope !== priorScope) {
+      priorScope = scope;
+      setHistory([]);
+      setRedo([]);
+    } else if (
+      untrack(history).at(-1)?.undo.expected_source !== source &&
+      untrack(redo).at(-1)?.undo.expected_source !== source
+    ) {
+      setHistory([]);
+      setRedo([]);
+    }
+    let active = true;
+    onCleanup(() => {
+      active = false;
+    });
+    void parseSqlDocument(source).then((document) => {
+      if (!active || props.sql() !== source || props.scope?.() !== scope) {
+        return;
+      }
+      const view = document.conditions;
+      setConditions(view);
+      setNodeKindsById(
+        Object.fromEntries(document.nodes.map((node) => [node.id, node.kind])),
+      );
+      const selectIds: Record<number, number> = {};
+      for (const node of document.nodes) {
+        if (node.kind === "select") {
+          const queryId = queryAncestor(document.nodes, node.id);
+          if (queryId !== undefined) selectIds[queryId] = node.id;
+        }
+      }
+      setSelectIdsByQuery(selectIds);
+      const qualifiers: Record<number, SqlDocumentIdentifier | null> = {};
+      for (const node of document.nodes) {
+        if (
+          node.kind === "table_factor" && node.semantic?.kind === "table_factor"
+        ) {
+          const queryId = queryAncestor(document.nodes, node.id);
+          if (queryId !== undefined) qualifiers[queryId] = node.semantic.alias;
+        }
+      }
+      setQualifierByQuery(qualifiers);
+      const ids = new Set<number>();
+      const visit = (node: SqlDocumentConditionNode | null) => {
+        if (!node) return;
+        ids.add(node.node_id);
+        if (isGroup(node)) node.children.forEach(visit);
+      };
+      view.forEach((item) => visit(item.expression));
+      setDrafts((old) =>
+        Object.fromEntries(
+          Object.entries(old).filter(([id]) => ids.has(Number(id))),
+        )
+      );
+      setGroupDrafts((old) =>
+        Object.fromEntries(
+          Object.entries(old).filter(([id]) => ids.has(Number(id))),
+        )
+      );
+    }).catch((cause) => {
+      if (active && props.sql() === source && props.scope?.() === scope) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t("sqlPage.structure.documentParseFailed"),
+        );
+      }
+    });
+  });
+  const eligible = createMemo(() => {
+    const documentScope = conditions()[0];
+    const source = props.sql();
+    return documentScope
+      ? props.contexts().filter((context) =>
+        source.includes(`\"${context.parser.relation}\"`) ||
+        source.includes(context.parser.relation)
+      )
+      : [];
+  });
+  const context = () => eligible()[0] ?? props.contexts()[0];
+  const columns = () => context()?.parser.columns ?? [];
+  const filterColumns = () =>
+    columns().filter((item) =>
+      context()?.columnCapabilities[item.name]?.filterable === true
+    );
+  const operatorOptions = (name: string) => {
+    const supported = new Set(
+      context()?.columnCapabilities[name]?.supportedOperators ?? [],
+    );
+    const mapping: Record<SqlDocumentFilterOperator, string> = {
+      eq: "eq",
+      not_eq: "not_eq",
+      lt: "lt",
+      lte: "lt_eq",
+      gt: "gt",
+      gte: "gt_eq",
+      like: "like",
+      not_like: "not_like",
+      is_null: "is_null",
+      is_not_null: "is_not_null",
+    };
+    return supportedOperators.filter((item) => supported.has(mapping[item]));
+  };
+  const typeFor = (name: string) => {
+    const raw = columns().find((column) => column.name === name)?.type
+      ?.toLowerCase();
+    if (["string", "text", "varchar", "char"].includes(raw ?? "")) {
+      return "string";
+    }
+    if (["int", "integer", "bigint", "smallint"].includes(raw ?? "")) {
+      return "integer";
+    }
+    if (["float", "double", "real"].includes(raw ?? "")) return "float";
+    if (["bool", "boolean"].includes(raw ?? "")) return "boolean";
+    return undefined;
+  };
+  const argumentsFor = (column: string) =>
+    (props.argumentDefinitions?.() ?? []).filter((item) =>
+      item.type === typeFor(column)
+    );
+  const scalarsFor = (column: string) =>
+    (props.scalarVariables ?? []).filter((item) =>
+      item.type === typeFor(column)
+    );
+  const draftFor = (
+    node: Extract<SqlDocumentConditionNode, { kind: "comparison" }>,
+  ): LeafDraft => {
+    const saved = drafts()[node.node_id];
+    if (saved) return saved;
+    const col = node.column.column.value;
+    const rawValue = node.value;
+    const source = rawValue?.kind === "named_parameter"
+      ? "argument"
+      : "literal";
+    const valueKind = rawValue?.kind === "number"
+      ? "number"
+      : rawValue?.kind === "boolean"
+      ? "boolean"
+      : "string";
+    return {
+      column: col,
+      operator: node.operator,
+      source,
+      value: rawValue?.kind === "named_parameter"
+        ? ""
+        : rawValue?.kind === "string" || rawValue?.kind === "number"
+        ? rawValue.value
+        : rawValue?.kind === "boolean"
+        ? String(rawValue.value)
+        : "",
+      valueKind,
+      argument: rawValue?.kind === "named_parameter" ? rawValue.name : "",
+    };
+  };
+  const makeCondition = (
+    draft: LeafDraft,
+    addArgument: boolean,
+    qualifier: SqlDocumentIdentifier | null = null,
+  ): {
+    condition: SqlDocumentFilterCondition;
+    created?: SqlVariable;
+    binding?: Binding;
+    nextArgs: readonly SqlVariable[];
+    nextBindings: readonly Binding[];
+  } => {
+    const selectedColumn = filterColumns().find((item) =>
+      item.name === draft.column
+    );
+    if (!selectedColumn) {
+      throw new Error(t("sqlPage.structure.documentChooseColumn"));
+    }
+    if (!operatorOptions(draft.column).includes(draft.operator)) {
+      throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
+    }
+    const priorArgs = props.argumentDefinitions?.() ?? [];
+    const priorBindings = props.argumentBindings?.() ?? [];
+    let literal: SqlDocumentSemanticLiteral | null = null;
+    let created: SqlVariable | undefined;
+    let binding: Binding | undefined;
+    if (valueInputOperators.has(draft.operator)) {
+      if (draft.source === "argument") {
+        const existing = argumentsFor(draft.column).find((item) =>
+          item.name === draft.argument
+        );
+        if (existing) {
+          literal = { kind: "named_parameter", name: existing.name };
+        } else if (addArgument) {
+          const name = newArgumentName().trim();
+          if (
+            !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) ||
+            priorArgs.some((item) => item.name === name) ||
+            (props.reservedVariableNames?.() ?? []).includes(name)
+          ) throw new Error(t("sqlPage.structure.argumentNameInvalid"));
+          const type = scalarsFor(draft.column).find((item) =>
+            item.id === newBinding()
+          )?.type ?? typeFor(draft.column);
+          if (!type) {
+            throw new Error(
+              t("sqlPage.structure.filterArgumentTypeUnsupported"),
+            );
+          }
+          const parsedDefault = newArgumentDefault()
+            ? parseSqlVariableDefault(type, newArgumentDefault())
+            : undefined;
+          if (newArgumentDefault() && !parsedDefault?.valid) {
+            throw new Error(
+              t("sqlPage.structure.filterArgumentDefaultInvalid"),
+            );
+          }
+          created = {
+            name,
+            type,
+            description: "",
+            ...(parsedDefault?.valid ? { default: parsedDefault.value } : {}),
+          };
+          literal = { kind: "named_parameter", name };
+          if (newBinding()) binding = { name, variableId: newBinding() };
+        } else throw new Error(t("sqlPage.structure.documentChooseColumn"));
+      } else if (draft.valueKind === "number") {
+        if (!draft.value.trim()) {
+          throw new Error(t("sqlPage.structure.documentEnterValue"));
+        }
+        literal = { kind: "number", value: draft.value };
+      } else if (draft.valueKind === "boolean") {
+        if (draft.value !== "true" && draft.value !== "false") {
+          throw new Error(t("sqlPage.structure.documentEnterValue"));
+        }
+        literal = { kind: "boolean", value: draft.value === "true" };
+      } else literal = { kind: "string", value: draft.value };
+    }
+    const columnRef = {
+      ...(qualifier ? { qualifier } : {}),
+      column: {
+        value: selectedColumn.name,
+        quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(selectedColumn.name)
+          ? null
+          : '"',
+      },
+    };
+    const condition: SqlDocumentFilterCondition = {
+      kind: "comparison",
+      column: columnRef,
+      operator: draft.operator,
+      value: literal,
+    };
+    return {
+      condition,
+      created,
+      binding,
+      nextArgs: created ? [...priorArgs, created] : priorArgs,
+      nextBindings: binding ? [...priorBindings, binding] : priorBindings,
+    };
+  };
+
+  const commit = async (
+    edits: SqlDocumentSemanticEdit[],
+    created?: SqlVariable,
+    binding?: Binding,
+    nextArgs?: readonly SqlVariable[],
+    nextBindings?: readonly Binding[],
+  ) => {
+    if (busy() || locked()) return;
+    const source = props.sql();
+    const scope = props.scope?.();
+    const request = generation;
+    if (props.sql() !== source || locked()) return;
+    setBusy(true);
+    setError(undefined);
+    const beforeArgs = props.argumentDefinitions?.() ?? [];
+    const beforeBindings = props.argumentBindings?.() ?? [];
+    const focusKey = typeof document !== "undefined" &&
+        document.activeElement instanceof HTMLElement
+      ? document.activeElement.dataset.conditionFocus
+      : undefined;
+    try {
+      const document = await parseSqlDocument(source);
+      if (!current(request, source, scope)) return;
+      const result = await applySqlDocumentSemanticEditTransaction(source, {
+        contract_version: document.contract_version,
+        expected_source: source,
+        edits,
+      });
+      if (!current(request, source, scope)) return;
+      if (created && !props.onFilterEdit && !props.onArgumentAdded) {
+        throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
+      }
+      if (props.onFilterEdit) {
+        const accepted = props.onFilterEdit({
+          expectedSql: source,
+          expectedScope: scope,
+          resultSql: result.document.source,
+          createdArgument: created,
+          binding,
+          expectedBindings: beforeBindings,
+          resultBindings: nextBindings ?? beforeBindings,
+          expectedArguments: beforeArgs,
+          resultArguments: nextArgs ?? beforeArgs,
+        });
+        if (accepted === false) {
+          throw new Error(t("sqlPage.structure.editFailed"));
+        }
+      } else {
+        if (created && props.onArgumentAdded?.(created) === false) {
+          throw new Error(t("sqlPage.structure.editFailed"));
+        }
+        props.onSqlChange(result.document.source);
+      }
+      setHistory(
+        [...history(), {
+          undo: result.undo,
+          beforeBindings,
+          afterBindings: nextBindings ?? beforeBindings,
+          beforeArguments: beforeArgs,
+          afterArguments: nextArgs ?? beforeArgs,
+        }].slice(-32),
+      );
+      setRedo([]);
+      if (focusKey) {
+        setTimeout(() => {
+          document.querySelector<HTMLElement>(
+            `[data-condition-focus="${CSS.escape(focusKey)}"]`,
+          )?.focus();
+        });
+      }
+    } catch (cause) {
+      if (current(request, source, scope)) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t("sqlPage.structure.editFailed"),
+        );
+      }
+    } finally {
+      if (request === generation) setBusy(false);
+    }
+  };
+
+  const applyDrafts = async () => {
+    const edits: SqlDocumentSemanticEdit[] = [];
+    for (const scope of conditions()) {
+      const visit = (node: SqlDocumentConditionNode | null): void => {
+        if (!node) return;
+        if (isGroup(node)) {
+          const operator = groupDrafts()[node.node_id];
+          if (operator && operator !== node.operator) {
+            edits.push({
+              kind: "set_filter_group_operator",
+              node_id: node.node_id,
+              expected_kind: nodeKindsById()[node.node_id] ??
+                "binary_expression",
+              operator,
+            });
+          }
+          node.children.forEach(visit);
+        } else if (isComparison(node) && drafts()[node.node_id]) {
+          const built = makeCondition(
+            draftFor(node),
+            false,
+            node.column.qualifier ?? null,
+          );
+          edits.push({
+            kind: "update_filter_condition",
+            node_id: node.node_id,
+            expected_kind: nodeKindsById()[node.node_id] ?? "binary_expression",
+            condition: built.condition,
+          });
+        }
+      };
+      visit(scope.expression);
+    }
+    if (edits.length) {
+      await commit(edits);
+      setDrafts({});
+      setGroupDrafts({});
+    }
+  };
+
+  const addCondition = async (
+    parentNodeId: number | null,
+    scope: SqlDocumentConditionScope,
+  ) => {
+    try {
+      const draft: LeafDraft = {
+        column: newColumn(),
+        operator: newOperator(),
+        source: newValueSource(),
+        value: newValue(),
+        valueKind: newValueKind(),
+        argument: newArgument(),
+      };
+      const built = makeCondition(
+        draft,
+        newValueSource() === "argument" && !newArgument(),
+        qualifierByQuery()[scope.query_node_id] ?? null,
+      );
+      const targetKind: SqlDocumentNodeKind = parentNodeId === null
+        ? "select"
+        : nodeKindsById()[parentNodeId] ?? "binary_expression";
+      const edit: SqlDocumentSemanticEdit = {
+        kind: "insert_filter_condition",
+        node_id: parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
+        expected_kind: targetKind,
+        condition: built.condition,
+      };
+      await commit(
+        [edit],
+        built.created,
+        built.binding,
+        built.nextArgs,
+        built.nextBindings,
+      );
+      setNewValue("");
+      setNewArgument("");
+      setNewArgumentName("");
+      setNewArgumentDefault("");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : t("sqlPage.structure.editFailed"),
+      );
+    }
+  };
+  const removeNode = (nodeId: number) =>
+    void commit([{
+      kind: "remove_filter_condition",
+      node_id: nodeId,
+      expected_kind: nodeKindsById()[nodeId] ?? "binary_expression",
+    }]);
+  const openGroupComposer = (
+    scope: SqlDocumentConditionScope,
+    parentNodeId: number | null = null,
+  ) => {
+    setGroupTarget({ parentNodeId, queryNodeId: scope.query_node_id });
+    setGroupConnector("and");
+    setGroupSecondColumn("");
+    setGroupSecondValue("");
+    setGroupSecondArgument("");
+    setGroupSecondSource("literal");
+  };
+  const createGroup = async () => {
+    const target = groupTarget();
+    if (!target) return;
+    try {
+      const scope = conditions().find((item) =>
+        item.query_node_id === target.queryNodeId
+      );
+      if (!scope) throw new Error(t("sqlPage.structure.editFailed"));
+      const draft: LeafDraft = {
+        column: newColumn(),
+        operator: newOperator(),
+        source: newValueSource(),
+        value: newValue(),
+        valueKind: newValueKind(),
+        argument: newArgument(),
+      };
+      const first = makeCondition(
+        draft,
+        newValueSource() === "argument" && !newArgument(),
+        qualifierByQuery()[scope.query_node_id] ?? null,
+      );
+      const second = makeCondition(
+        {
+          column: groupSecondColumn(),
+          operator: groupSecondOperator(),
+          source: groupSecondSource(),
+          value: groupSecondValue(),
+          valueKind: groupSecondValueKind(),
+          argument: groupSecondArgument(),
+        },
+        false,
+        qualifierByQuery()[scope.query_node_id] ?? null,
+      );
+      const edit: SqlDocumentSemanticEdit = {
+        kind: "insert_filter_condition",
+        node_id: target.parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
+        expected_kind: target.parentNodeId === null
+          ? "select"
+          : nodeKindsById()[target.parentNodeId] ?? "binary_expression",
+        condition: {
+          kind: "group",
+          operator: groupConnector(),
+          children: [first.condition, second.condition],
+        },
+      };
+      await commit(
+        [edit],
+        first.created,
+        first.binding,
+        first.nextArgs,
+        first.nextBindings,
+      );
+      setGroupTarget(null);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : t("sqlPage.structure.editFailed"),
+      );
+    }
+  };
+  const applyHistory = async (direction: "undo" | "redo") => {
+    if (busy() || locked()) return;
+    const source = props.sql();
+    const scope = props.scope?.();
+    const request = generation;
+    const entry = (direction === "undo" ? history() : redo()).at(-1);
+    if (!entry || entry.undo.expected_source !== source) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await applySqlDocumentEditTransaction(source, entry.undo);
+      if (!current(request, source, scope)) return;
+      const expectedBindings = direction === "undo"
+        ? entry.afterBindings
+        : entry.beforeBindings;
+      const resultBindings = direction === "undo"
+        ? entry.beforeBindings
+        : entry.afterBindings;
+      const expectedArguments = direction === "undo"
+        ? entry.afterArguments
+        : entry.beforeArguments;
+      const resultArguments = direction === "undo"
+        ? entry.beforeArguments
+        : entry.afterArguments;
+      if (props.onFilterEdit) {
+        if (
+          JSON.stringify(props.argumentBindings?.() ?? []) !==
+            JSON.stringify(expectedBindings) ||
+          JSON.stringify(props.argumentDefinitions?.() ?? []) !==
+            JSON.stringify(expectedArguments)
+        ) throw new Error(t("sqlPage.structure.editFailed"));
+        if (
+          props.onFilterEdit({
+            expectedSql: source,
+            expectedScope: scope,
+            resultSql: result.document.source,
+            expectedBindings,
+            resultBindings,
+            expectedArguments,
+            resultArguments,
+          }) === false
+        ) throw new Error(t("sqlPage.structure.editFailed"));
+      } else props.onSqlChange(result.document.source);
+      const nextEntry = { ...entry, undo: result.undo };
+      if (direction === "undo") {
+        setHistory(history().slice(0, -1));
+        setRedo([...redo(), nextEntry].slice(-32));
+      } else {
+        setRedo(redo().slice(0, -1));
+        setHistory([...history(), nextEntry].slice(-32));
+      }
+    } catch (cause) {
+      if (current(request, source, scope)) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t("sqlPage.structure.editFailed"),
+        );
+      }
+    } finally {
+      if (request === generation) setBusy(false);
+    }
+  };
+
+  const renderCondition = (node: SqlDocumentConditionNode, depth = 0) => {
+    if (isGroup(node)) {
+      return (
+        <div
+          class="sql-condition-group"
+          style={{ "--condition-depth": depth }}
+          role="group"
+          aria-label={t("sqlPage.structure.filterGroup")}
+        >
+          <div class="sql-condition-group__heading">
+            <label class="ui-field">
+              <span>{t("sqlPage.structure.filterGroup")}</span>
+              <select
+                class="ui-input"
+                data-condition-focus={`${node.node_id}:group-operator`}
+                aria-label={t("sqlPage.structure.filterGroupOperator")}
+                value={groupDrafts()[node.node_id] ?? node.operator}
+                disabled={busy() || locked()}
+                onChange={(event) =>
+                  setGroupDrafts({
+                    ...groupDrafts(),
+                    [node.node_id]: event.currentTarget.value as "and" | "or",
+                  })}
+              >
+                <option value="and">{t("sqlPage.structure.filterAll")}</option>
+                <option value="or">{t("sqlPage.structure.filterAny")}</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              disabled={busy() || locked()}
+              onClick={() => openGroupComposer(conditions()[0], node.node_id)}
+            >
+              {t("sqlPage.structure.addFilterGroup")}
+            </button>
+            <IconButton
+              icon="close"
+              label={t("sqlPage.structure.removeFilterGroup")}
+              disabled={busy() || locked()}
+              onClick={() => removeNode(node.node_id)}
+            />
+          </div>
+          <For each={node.children}>
+            {(child) => renderCondition(child, depth + 1)}
+          </For>
+          <AddRow parentNodeId={node.node_id} scope={conditions()[0]} />
+        </div>
+      );
+    }
+    if (isComparison(node)) {
+      const draft = () => draftFor(node);
+      const setDraft = (patch: Partial<LeafDraft>) =>
+        setDrafts({ ...drafts(), [node.node_id]: { ...draft(), ...patch } });
+      const label = context()?.columnLabels[node.column.column.value] ??
+        node.column.column.value;
+      return (
+        <div class="sql-condition-row" role="group" aria-label={label}>
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.column")}</span>
+            <select
+              class="ui-input"
+              data-condition-focus={`${node.node_id}:column`}
+              aria-label={t("sqlPage.structure.column")}
+              value={draft().column}
+              disabled={busy() || locked()}
+              onChange={(event) =>
+                setDraft({
+                  column: event.currentTarget.value,
+                  operator: operatorOptions(event.currentTarget.value)[0] ??
+                    "eq",
+                  argument: "",
+                })}
+            >
+              <For each={filterColumns()}>
+                {(column) => (
+                  <option value={column.name}>
+                    {context()?.columnLabels[column.name] ?? column.name}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.operator")}</span>
+            <select
+              class="ui-input"
+              data-condition-focus={`${node.node_id}:operator`}
+              aria-label={t("sqlPage.structure.operator")}
+              value={draft().operator}
+              disabled={busy() || locked()}
+              onChange={(event) =>
+                setDraft({
+                  operator: event.currentTarget
+                    .value as SqlDocumentFilterOperator,
+                })}
+            >
+              <For each={operatorOptions(draft().column)}>
+                {(operator) => (
+                  <option value={operator}>{operatorName(operator)}</option>
+                )}
+              </For>
+            </select>
+          </label>
+          <Show when={valueInputOperators.has(draft().operator)}>
+            <Show when={props.argumentDefinitions}>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.filterValueSource")}</span>
+                <select
+                  class="ui-input"
+                  value={draft().source}
+                  aria-label={t("sqlPage.structure.filterValueSource")}
+                  disabled={busy() || locked()}
+                  onChange={(event) =>
+                    setDraft({
+                      source: event.currentTarget.value as
+                        | "literal"
+                        | "argument",
+                    })}
+                >
+                  <option value="literal">
+                    {t("sqlPage.structure.filterValueFixed")}
+                  </option>
+                  <option value="argument">
+                    {t("sqlPage.structure.filterValueArgument")}
+                  </option>
+                </select>
+              </label>
+            </Show>
+            <Show
+              when={draft().source === "argument"}
+              fallback={
+                <label class="ui-field">
+                  <span>{t("sqlPage.structure.value")}</span>
+                  <input
+                    class="ui-input"
+                    aria-label={t("sqlPage.structure.value")}
+                    value={draft().value}
+                    disabled={busy() || locked()}
+                    onInput={(event) =>
+                      setDraft({ value: event.currentTarget.value })}
+                  />
+                </label>
+              }
+            >
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.filterDeclaredArgument")}</span>
+                <select
+                  class="ui-input"
+                  value={draft().argument}
+                  aria-label={t("sqlPage.structure.filterDeclaredArgument")}
+                  disabled={busy() || locked()}
+                  onChange={(event) =>
+                    setDraft({ argument: event.currentTarget.value })}
+                >
+                  <option value="">
+                    {t("sqlPage.structure.filterChooseArgument")}
+                  </option>
+                  <For each={argumentsFor(draft().column)}>
+                    {(argument) => (
+                      <option value={argument.name}>
+                        {argument.name} ({argument.type})
+                      </option>
+                    )}
+                  </For>
+                </select>
+              </label>
+            </Show>
+          </Show>
+          <IconButton
+            icon="close"
+            label={t("sqlPage.structure.removeFilter")}
+            disabled={busy() || locked()}
+            onClick={() => removeNode(node.node_id)}
+          />
+        </div>
+      );
+    }
+    return (
+      <div
+        class="sql-condition-advanced"
+        role="group"
+        aria-label={t("sqlPage.structure.advancedCondition")}
+      >
+        <span>{t("sqlPage.structure.advancedCondition")}</span>
+        <code>{node.sql}</code>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={busy() || locked()}
+          onClick={props.onAdvanced}
+        >
+          {t("sqlPage.structure.advancedStructure")}
+        </button>
+      </div>
+    );
+  };
+  const AddRow = (
+    p: { parentNodeId: number | null; scope: SqlDocumentConditionScope },
+  ) => (
+    <div class="sql-condition-row sql-condition-row--add">
+      <label class="ui-field">
+        <span>{t("sqlPage.structure.column")}</span>
+        <select
+          class="ui-input"
+          aria-label={t("sqlPage.structure.addFilterColumn")}
+          value={newColumn()}
+          disabled={busy() || locked()}
+          onChange={(event) => {
+            const name = event.currentTarget.value;
+            setNewColumn(name);
+            setNewOperator(operatorOptions(name)[0] ?? "eq");
+            setNewValueKind(
+              typeFor(name) === "boolean"
+                ? "boolean"
+                : typeFor(name) === "integer" || typeFor(name) === "float"
+                ? "number"
+                : "string",
+            );
+          }}
+        >
+          <option value="">
+            {t("sqlPage.structure.documentChooseColumn")}
+          </option>
+          <For each={filterColumns()}>
+            {(column) => (
+              <option value={column.name}>
+                {context()?.columnLabels[column.name] ?? column.name}
+              </option>
+            )}
+          </For>
+        </select>
+      </label>
+      <label class="ui-field">
+        <span>{t("sqlPage.structure.operator")}</span>
+        <select
+          class="ui-input"
+          aria-label={t("sqlPage.structure.addFilterOperator")}
+          value={newOperator()}
+          disabled={busy() || locked()}
+          onChange={(event) =>
+            setNewOperator(
+              event.currentTarget.value as SqlDocumentFilterOperator,
+            )}
+        >
+          <For each={operatorOptions(newColumn())}>
+            {(operator) => (
+              <option value={operator}>{operatorName(operator)}</option>
+            )}
+          </For>
+        </select>
+      </label>
+      <Show when={valueInputOperators.has(newOperator())}>
+        <Show when={props.argumentDefinitions}>
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.filterValueSource")}</span>
+            <select
+              class="ui-input"
+              aria-label={t("sqlPage.structure.filterValueSource")}
+              value={newValueSource()}
+              onChange={(event) =>
+                setNewValueSource(
+                  event.currentTarget.value as "literal" | "argument",
+                )}
+            >
+              <option value="literal">
+                {t("sqlPage.structure.filterValueFixed")}
+              </option>
+              <option value="argument">
+                {t("sqlPage.structure.filterValueArgument")}
+              </option>
+            </select>
+          </label>
+        </Show>
+        <Show
+          when={newValueSource() === "argument"}
+          fallback={
+            <>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.documentValueKind")}</span>
+                <select
+                  class="ui-input"
+                  aria-label={t("sqlPage.structure.documentValueKind")}
+                  value={newValueKind()}
+                  disabled={busy() || locked()}
+                  onChange={(event) =>
+                    setNewValueKind(
+                      event.currentTarget.value as
+                        | "string"
+                        | "number"
+                        | "boolean",
+                    )}
+                >
+                  <option value="string">
+                    {t("sqlPage.structure.documentString")}
+                  </option>
+                  <option value="number">
+                    {t("sqlPage.structure.documentNumber")}
+                  </option>
+                  <option value="boolean">
+                    {t("sqlPage.structure.literal.boolean")}
+                  </option>
+                </select>
+              </label>
+              <Show
+                when={newValueKind() === "boolean"}
+                fallback={
+                  <label class="ui-field">
+                    <span>{t("sqlPage.structure.value")}</span>
+                    <input
+                      class="ui-input"
+                      aria-label={t("sqlPage.structure.addFilterValue")}
+                      value={newValue()}
+                      disabled={busy() || locked()}
+                      onInput={(event) =>
+                        setNewValue(event.currentTarget.value)}
+                    />
+                  </label>
+                }
+              >
+                <label class="ui-field">
+                  <span>{t("sqlPage.structure.value")}</span>
+                  <select
+                    class="ui-input"
+                    aria-label={t("sqlPage.structure.addFilterValue")}
+                    value={newValue()}
+                    disabled={busy() || locked()}
+                    onChange={(event) => setNewValue(event.currentTarget.value)}
+                  >
+                    <option value="">
+                      {t("sqlPage.structure.documentChooseValue")}
+                    </option>
+                    <option value="true">TRUE</option>
+                    <option value="false">FALSE</option>
+                  </select>
+                </label>
+              </Show>
+            </>
+          }
+        >
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.filterDeclaredArgument")}</span>
+            <select
+              class="ui-input"
+              aria-label={t("sqlPage.structure.filterDeclaredArgument")}
+              value={newArgument()}
+              disabled={busy() || locked()}
+              onChange={(event) => setNewArgument(event.currentTarget.value)}
+            >
+              <option value="">
+                {t("sqlPage.structure.filterNewArgumentName")}
+              </option>
+              <For each={argumentsFor(newColumn())}>
+                {(item) => (
+                  <option value={item.name}>{item.name} ({item.type})</option>
+                )}
+              </For>
+            </select>
+          </label>
+          <Show when={!newArgument()}>
+            <label class="ui-field">
+              <span>{t("sqlPage.structure.filterNewArgumentName")}</span>
+              <input
+                class="ui-input"
+                aria-label={t("sqlPage.structure.filterNewArgumentName")}
+                value={newArgumentName()}
+                disabled={busy() || locked()}
+                onInput={(event) =>
+                  setNewArgumentName(event.currentTarget.value)}
+              />
+            </label>
+            <Show when={props.scalarVariables}>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.filterBindToVariable")}</span>
+                <select
+                  class="ui-input"
+                  aria-label={t("sqlPage.structure.filterBindToVariable")}
+                  value={newBinding()}
+                  disabled={busy() || locked()}
+                  onChange={(event) => setNewBinding(event.currentTarget.value)}
+                >
+                  <option value="">
+                    {t("sqlPage.structure.filterNoBinding")}
+                  </option>
+                  <For each={scalarsFor(newColumn())}>
+                    {(item) => (
+                      <option value={item.id}>{item.name} ({item.type})</option>
+                    )}
+                  </For>
+                </select>
+              </label>
+            </Show>
+            <Show when={!props.scalarVariables}>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.filterDefaultOptional")}</span>
+                <input
+                  class="ui-input"
+                  aria-label={t("sqlPage.structure.filterDefaultOptional")}
+                  value={newArgumentDefault()}
+                  onInput={(event) =>
+                    setNewArgumentDefault(event.currentTarget.value)}
+                />
+              </label>
+            </Show>
+          </Show>
+        </Show>
+      </Show>
+      <button
+        type="button"
+        class="ui-button ui-button-primary"
+        disabled={busy() || locked() || !newColumn()}
+        onClick={() => void addCondition(p.parentNodeId, p.scope)}
+      >
+        {t("sqlPage.structure.addFilter")}
+      </button>
+      <button
+        type="button"
+        class="ui-button ui-button-secondary"
+        disabled={busy() || locked()}
+        onClick={() => openGroupComposer(p.scope, p.parentNodeId)}
+      >
+        {t("sqlPage.structure.addFilterGroup")}
+      </button>
+      <Show
+        when={groupTarget()?.parentNodeId === p.parentNodeId &&
+          groupTarget()?.queryNodeId === p.scope.query_node_id}
+      >
+        <GroupComposer />
+      </Show>
+    </div>
+  );
+
+  const GroupComposer = () => (
+    <div
+      class="sql-condition-group-composer"
+      role="group"
+      aria-label={t("sqlPage.structure.newFilterGroup")}
+    >
+      <label class="ui-field">
+        <span>{t("sqlPage.structure.filterGroupOperator")}</span>
+        <select
+          class="ui-input"
+          aria-label={t("sqlPage.structure.filterGroupOperator")}
+          value={groupConnector()}
+          disabled={busy() || locked()}
+          onChange={(event) =>
+            setGroupConnector(event.currentTarget.value as "and" | "or")}
+        >
+          <option value="and">{t("sqlPage.structure.filterAll")}</option>
+          <option value="or">{t("sqlPage.structure.filterAny")}</option>
+        </select>
+      </label>
+      <p>{t("sqlPage.structure.newGroupFirstCondition")}</p>
+      <p>{t("sqlPage.structure.newGroupSecondCondition")}</p>
+      <label class="ui-field">
+        <span>{t("sqlPage.structure.column")}</span>
+        <select
+          class="ui-input"
+          aria-label={t("sqlPage.structure.secondGroupColumn")}
+          value={groupSecondColumn()}
+          disabled={busy() || locked()}
+          onChange={(event) => {
+            const name = event.currentTarget.value;
+            setGroupSecondColumn(name);
+            setGroupSecondOperator(operatorOptions(name)[0] ?? "eq");
+            setGroupSecondValueKind(
+              typeFor(name) === "boolean"
+                ? "boolean"
+                : typeFor(name) === "integer" || typeFor(name) === "float"
+                ? "number"
+                : "string",
+            );
+            setGroupSecondArgument("");
+          }}
+        >
+          <option value="">
+            {t("sqlPage.structure.documentChooseColumn")}
+          </option>
+          <For each={filterColumns()}>
+            {(column) => (
+              <option value={column.name}>
+                {context()?.columnLabels[column.name] ?? column.name}
+              </option>
+            )}
+          </For>
+        </select>
+      </label>
+      <label class="ui-field">
+        <span>{t("sqlPage.structure.operator")}</span>
+        <select
+          class="ui-input"
+          aria-label={t("sqlPage.structure.secondGroupOperator")}
+          value={groupSecondOperator()}
+          disabled={busy() || locked()}
+          onChange={(event) =>
+            setGroupSecondOperator(
+              event.currentTarget.value as SqlDocumentFilterOperator,
+            )}
+        >
+          <For each={operatorOptions(groupSecondColumn())}>
+            {(operator) => (
+              <option value={operator}>{operatorName(operator)}</option>
+            )}
+          </For>
+        </select>
+      </label>
+      <Show when={valueInputOperators.has(groupSecondOperator())}>
+        <Show when={props.argumentDefinitions}>
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.filterValueSource")}</span>
+            <select
+              class="ui-input"
+              aria-label={t("sqlPage.structure.secondGroupValueSource")}
+              value={groupSecondSource()}
+              disabled={busy() || locked()}
+              onChange={(event) =>
+                setGroupSecondSource(
+                  event.currentTarget.value as "literal" | "argument",
+                )}
+            >
+              <option value="literal">
+                {t("sqlPage.structure.filterValueFixed")}
+              </option>
+              <option value="argument">
+                {t("sqlPage.structure.filterValueArgument")}
+              </option>
+            </select>
+          </label>
+        </Show>
+        <Show
+          when={groupSecondSource() === "argument"}
+          fallback={
+            <>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.documentValueKind")}</span>
+                <select
+                  class="ui-input"
+                  aria-label={t("sqlPage.structure.secondGroupValueKind")}
+                  value={groupSecondValueKind()}
+                  disabled={busy() || locked()}
+                  onChange={(event) =>
+                    setGroupSecondValueKind(
+                      event.currentTarget.value as
+                        | "string"
+                        | "number"
+                        | "boolean",
+                    )}
+                >
+                  <option value="string">
+                    {t("sqlPage.structure.documentString")}
+                  </option>
+                  <option value="number">
+                    {t("sqlPage.structure.documentNumber")}
+                  </option>
+                  <option value="boolean">
+                    {t("sqlPage.structure.literal.boolean")}
+                  </option>
+                </select>
+              </label>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.value")}</span>
+                <Show
+                  when={groupSecondValueKind() === "boolean"}
+                  fallback={
+                    <input
+                      class="ui-input"
+                      aria-label={t("sqlPage.structure.secondGroupValue")}
+                      value={groupSecondValue()}
+                      disabled={busy() || locked()}
+                      onInput={(event) =>
+                        setGroupSecondValue(event.currentTarget.value)}
+                    />
+                  }
+                >
+                  <select
+                    class="ui-input"
+                    aria-label={t("sqlPage.structure.secondGroupValue")}
+                    value={groupSecondValue()}
+                    disabled={busy() || locked()}
+                    onChange={(event) =>
+                      setGroupSecondValue(event.currentTarget.value)}
+                  >
+                    <option value="">
+                      {t("sqlPage.structure.documentChooseValue")}
+                    </option>
+                    <option value="true">TRUE</option>
+                    <option value="false">FALSE</option>
+                  </select>
+                </Show>
+              </label>
+            </>
+          }
+        >
+          <label class="ui-field">
+            <span>{t("sqlPage.structure.filterDeclaredArgument")}</span>
+            <select
+              class="ui-input"
+              aria-label={t("sqlPage.structure.secondGroupArgument")}
+              value={groupSecondArgument()}
+              disabled={busy() || locked()}
+              onChange={(event) =>
+                setGroupSecondArgument(event.currentTarget.value)}
+            >
+              <option value="">
+                {t("sqlPage.structure.filterChooseArgument")}
+              </option>
+              <For each={argumentsFor(groupSecondColumn())}>
+                {(argument) => (
+                  <option value={argument.name}>
+                    {argument.name} ({argument.type})
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+        </Show>
+      </Show>
+      <button
+        type="button"
+        class="ui-button ui-button-primary"
+        disabled={busy() || locked() || !newColumn() || !groupSecondColumn()}
+        onClick={() => void createGroup()}
+      >
+        {t("sqlPage.structure.createFilterGroup")}
+      </button>
+      <button
+        type="button"
+        class="ui-button ui-button-secondary"
+        disabled={busy() || locked()}
+        onClick={() => setGroupTarget(null)}
+      >
+        {t("sqlPage.structure.cancelFilterGroup")}
+      </button>
+    </div>
+  );
+
+  return (
+    <div
+      class="sql-filter-sort-editor sql-condition-workspace"
+      aria-busy={busy() || undefined}
+    >
+      <For each={conditions()}>
+        {(scope) => (
+          <section
+            class="sql-condition-scope"
+            aria-label={t("sqlPage.structure.filters")}
+          >
+            <Show
+              when={scope.expression}
+              fallback={<p>{t("sqlPage.structure.noFilters")}</p>}
+            >
+              {(expression) => renderCondition(expression())}
+            </Show>
+            <Show when={!scope.expression}>
+              <AddRow parentNodeId={null} scope={scope} />
+            </Show>
+          </section>
+        )}
+      </For>
+      <Show
+        when={Object.keys(drafts()).length || Object.keys(groupDrafts()).length}
+      >
+        <button
+          type="button"
+          class="ui-button ui-button-primary"
+          disabled={busy() || locked()}
+          onClick={() => void applyDrafts()}
+        >
+          {t("sqlPage.structure.applyFilterChanges")}
+        </button>
+      </Show>
+      <Show when={error()}>
+        <p role="alert" class="ui-text-danger">{error()}</p>
+      </Show>
+      <div class="sql-filter-sort-editor__history">
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={busy() || locked() ||
+            history().at(-1)?.undo.expected_source !== props.sql()}
+          onClick={() => void applyHistory("undo")}
+        >
+          {t("sqlPage.columns.undo")}
+        </button>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={busy() || locked() ||
+            redo().at(-1)?.undo.expected_source !== props.sql()}
+          onClick={() => void applyHistory("redo")}
+        >
+          {t("sqlPage.columns.redo")}
+        </button>
+      </div>
+      <button
+        type="button"
+        class="ui-button ui-button-secondary"
+        disabled={busy() || locked()}
+        onClick={props.onAdvanced}
+      >
+        {t("sqlPage.structure.advancedStructure")}
+      </button>
+    </div>
+  );
+}

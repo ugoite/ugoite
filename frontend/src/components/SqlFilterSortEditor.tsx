@@ -22,6 +22,7 @@ import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
 import type { SqlVariable } from "~/lib/types";
 import { parseSqlVariableDefault } from "~/lib/sql";
+import { SqlConditionWorkspace } from "~/components/SqlConditionWorkspace";
 
 interface Props {
   action: "filter" | "sort";
@@ -130,7 +131,7 @@ type FilterHistoryEntry = {
 };
 
 /** Task-oriented controls construct only typed operations; Rust owns SQL text. */
-export function SqlFilterSortEditor(props: Props) {
+function SqlFilterSortEditorCore(props: Props) {
   const [contextIndex, setContextIndex] = createSignal(0);
   const [column, setColumn] = createSignal("");
   const [operator, setOperator] = createSignal<SqlDocumentFilterOperator>("eq");
@@ -1102,4 +1103,26 @@ export function SqlFilterSortEditor(props: Props) {
       </button>
     </div>
   );
+}
+
+export function SqlFilterSortEditor(props: Props) {
+  if (props.action === "filter") {
+    return (
+      <SqlConditionWorkspace
+        sql={props.sql}
+        scope={props.scope}
+        disabled={props.disabled}
+        contexts={props.contexts}
+        onSqlChange={props.onSqlChange}
+        onAdvanced={props.onAdvanced}
+        argumentDefinitions={props.argumentDefinitions}
+        onArgumentAdded={props.onArgumentAdded}
+        scalarVariables={props.scalarVariables}
+        argumentBindings={props.argumentBindings}
+        reservedVariableNames={props.reservedVariableNames}
+        onFilterEdit={props.onFilterEdit}
+      />
+    );
+  }
+  return <SqlFilterSortEditorCore {...props} />;
 }
