@@ -48,9 +48,8 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
 
   await page.getByRole("button", { name: "Columns", exact: true }).click();
   const columns = page.getByRole("dialog", { name: "Columns", exact: true });
-  await columns.getByRole("combobox", { name: "Add a field", exact: true })
-    .selectOption({ label: "Amount" });
-  await columns.getByRole("button", { name: "Add", exact: true }).click();
+  await columns.getByRole("button", { name: "Choose fields", exact: true })
+    .click();
   const fields = columns.getByRole("list", { name: "Result fields" });
   await expect(fields.getByText("Amount", { exact: true })).toBeVisible();
   const fieldNames = await fields.locator(".sql-columns-editor__name")
