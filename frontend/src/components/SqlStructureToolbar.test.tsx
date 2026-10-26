@@ -145,6 +145,7 @@ const makeSqlDocument = (source: string): SqlDocument => {
     status: "parsed",
     diagnostics: [],
     tokens: [],
+    conditions: [],
     nodes,
   };
 };

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { createSignal } from "solid-js";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SqlDocument } from "~/lib/ugoite-client";
+import type { SqlDocument, SqlDocumentNode } from "~/lib/ugoite-client";
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 const { applySemanticEditMock, parseDocumentMock } = vi.hoisted(() => ({
@@ -1332,6 +1332,7 @@ const makeOrderByItemsDocument = (source: string): SqlDocument => {
     status: "parsed",
     diagnostics: [],
     tokens: [],
+    conditions: [],
     nodes,
   };
 };
@@ -1379,6 +1380,7 @@ const makeQueryClauseDocument = (source: string): SqlDocument => {
     status: "parsed",
     diagnostics: [],
     tokens: [],
+    conditions: [],
     nodes,
   };
 };
