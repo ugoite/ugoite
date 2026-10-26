@@ -191,7 +191,7 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
 
   await page.getByRole("button", { name: "Run Query", exact: true }).click();
   const results = page.getByRole("table", {
-    name: "rows results",
+    name: "SQL results",
     exact: true,
   });
   await expect(results).toContainText("15", { timeout: 30_000 });
