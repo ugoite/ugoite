@@ -124,6 +124,8 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   await expect(filterGroups).toHaveCount(1);
 
   const rootGroup = filterGroups.first();
+  await filters.getByRole("button", { name: "Add condition", exact: true })
+    .click();
   await filters.getByRole("combobox", { name: "Column for new filter" })
     .selectOption({ label: "Status" });
   await filters.getByRole("combobox", { name: "Operator for new filter" })
@@ -187,9 +189,15 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   const nested = editGroups.nth(1);
   const statusRows = nested.getByRole("group", { name: "Status", exact: true });
   await expect(statusRows).toHaveCount(2);
+  await statusRows.nth(1).getByRole("button", {
+    name: "Edit condition",
+    exact: true,
+  }).click();
   await statusRows.nth(1).getByRole("textbox", { name: "Value" }).fill(
     "closed",
   );
+  await statusRows.nth(1).getByRole("button", { name: "Done", exact: true })
+    .click();
   await editFilter.getByRole("button", { name: "Apply changes", exact: true })
     .click();
   await editFilter.locator("footer").getByRole("button", { name: "Close" })
