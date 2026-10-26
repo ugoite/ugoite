@@ -123,18 +123,15 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
     .click();
   await expect(page.locator(".cm-content")).toContainText("> $minimum");
 
+  await filter.getByRole("combobox", { name: "Column for new filter" })
+    .selectOption({ label: "Amount" });
+  await filter.getByRole("textbox", { name: "Value for new filter" }).fill(
+    "15",
+  );
   await filter.getByRole("button", { name: "Add group", exact: true }).click();
   const groupComposer = filter.getByRole("group", { name: "New filter group" });
   await groupComposer.getByRole("combobox", { name: "Filter group operator" })
     .selectOption("or");
-  const firstColumn = groupComposer.getByRole("combobox", {
-    name: "Column for first condition",
-  });
-  await firstColumn.selectOption({ label: "Amount" });
-  await groupComposer.getByRole("textbox", {
-    name: "Value for first condition",
-  })
-    .fill("15");
   await groupComposer.getByRole("combobox", {
     name: "Column for second condition",
   }).selectOption({ label: "Amount" });
