@@ -1013,10 +1013,10 @@ test.describe("Composition Studio Journey", () => {
           "";
 
       expect(savedYaml).toContain(
-        `SELECT * FROM "${form?.sql_relation}"`,
+        `SELECT * FROM "${seed.formName}"`,
       );
       expect(savedYaml).toContain(
-        `SUM("${amountColumn}") AS value FROM "${form?.sql_relation}"`,
+        `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
       );
       expect(components).toContain(`variable: ${formSlug}_rows`);
       expect(components).toContain(
@@ -1144,7 +1144,10 @@ test.describe("Composition Studio Journey", () => {
       expect(revisionResponse.ok()).toBe(true);
       const revision = await revisionResponse.json() as StudioRawRevision;
       expect(String(revision.fields["spec"])).toContain(
-        `SELECT * FROM ${sqlIdentifier(form!.sql_relation!)}`,
+        `SELECT * FROM ${sqlIdentifier(formName)}`,
+      );
+      expect(String(revision.fields["spec"])).toContain(
+        `relation: ${JSON.stringify(formName)}`,
       );
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByRole("table", {

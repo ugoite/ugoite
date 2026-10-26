@@ -1475,23 +1475,29 @@ fn preview_inline_form_bindings(
     }
     let mut bindings = Vec::with_capacity(relations.len());
     for relation in relations {
+        let requested = submitted_bindings
+            .iter()
+            .find(|binding| binding.relation == relation);
         if let Some(binding) = previous_bindings
             .iter()
             .find(|binding| binding.relation == relation)
         {
-            let requested = submitted_bindings
-                .iter()
-                .find(|item| item.relation == relation);
             if requested.is_none_or(|requested| requested.form_id == binding.form_id) {
                 if !readable_forms.iter().any(|form| form.id == binding.form_id) {
                     return Ok(None);
                 }
                 bindings.push(binding.clone());
             } else {
-                let Some(form) = readable_forms.iter().find(|form| form.name == relation) else {
+                let Some(requested) = requested else {
                     return Ok(None);
                 };
-                if requested.is_some_and(|requested| requested.form_id != form.id) {
+                let Some(form) = readable_forms
+                    .iter()
+                    .find(|form| form.id == requested.form_id)
+                else {
+                    return Ok(None);
+                };
+                if form.name != relation && sql_relation_name(form.id) != relation {
                     return Ok(None);
                 }
                 bindings.push(VariableGraphFormBinding {
@@ -1501,19 +1507,27 @@ fn preview_inline_form_bindings(
             }
             continue;
         }
-        let Some(form) = readable_forms
-            .iter()
-            .find(|form| form.name == relation || sql_relation_name(form.id) == relation)
-        else {
-            return Ok(None);
+        let form = if let Some(requested) = requested {
+            let Some(form) = readable_forms
+                .iter()
+                .find(|form| form.id == requested.form_id)
+            else {
+                return Ok(None);
+            };
+            if form.name != relation && sql_relation_name(form.id) != relation {
+                return Ok(None);
+            }
+            form
+        } else {
+            let matches = readable_forms
+                .iter()
+                .filter(|form| form.name == relation || sql_relation_name(form.id) == relation)
+                .collect::<Vec<_>>();
+            let Some(form) = (matches.len() == 1).then(|| matches[0]) else {
+                return Ok(None);
+            };
+            form
         };
-        if submitted_bindings
-            .iter()
-            .find(|binding| binding.relation == relation)
-            .is_some_and(|binding| binding.form_id != form.id)
-        {
-            return Ok(None);
-        }
         bindings.push(VariableGraphFormBinding {
             relation,
             form_id: form.id,
@@ -1889,6 +1903,57 @@ mod graph_metadata_tests {
                 relation: "Original".into(),
                 form_id: replacement_id
             }]),
+        );
+    }
+
+    #[test]
+    fn explicit_form_binding_selects_duplicate_display_name_by_identity() {
+        let first_id = FormId::from_uuid(Uuid::from_u128(20));
+        let selected_id = FormId::from_uuid(Uuid::from_u128(21));
+        let first = form(first_id, "Shared");
+        let selected = form(selected_id, "Shared");
+        let readable = [first, selected];
+        let sql = "SELECT * FROM \"Shared\"";
+        let selected_binding = VariableGraphFormBinding {
+            relation: "Shared".to_owned(),
+            form_id: selected_id,
+        };
+
+        assert_eq!(
+            preview_inline_form_bindings(
+                "rows",
+                sql,
+                std::slice::from_ref(&selected_binding),
+                None,
+                &readable,
+            )
+            .expect("explicit identity resolves duplicate display names"),
+            Some(vec![selected_binding.clone()]),
+        );
+        assert_eq!(
+            preview_inline_form_bindings("rows", sql, &[], None, &readable)
+                .expect("ambiguous unbound SQL is rejected"),
+            None,
+        );
+
+        let previous = exact_base_with_form_binding(first_id);
+        let previous_sql = "SELECT * FROM \"Original\"";
+        let explicitly_reselected = VariableGraphFormBinding {
+            relation: "Original".to_owned(),
+            form_id: selected_id,
+        };
+        let renamed_selected = form(selected_id, "Original");
+        let renamed_first = form(first_id, "Original");
+        assert_eq!(
+            preview_inline_form_bindings(
+                "rows",
+                previous_sql,
+                std::slice::from_ref(&explicitly_reselected),
+                Some(&previous),
+                &[renamed_first, renamed_selected],
+            )
+            .expect("explicit reselection resolves by identity"),
+            Some(vec![explicitly_reselected]),
         );
     }
 
