@@ -201,14 +201,18 @@ describe("Composition shared SQL argument editing", () => {
     const dialog = screen.getByRole("dialog", { name: "Filter", exact: true });
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("combobox", { name: "Column" }).querySelector(
-          'option[value="amount"]',
-        ),
+        within(dialog).getByRole("combobox", { name: "Column for new filter" })
+          .querySelector(
+            'option[value="amount"]',
+          ),
       ).not.toBeNull()
     );
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "Column" }), {
-      target: { value: "amount" },
-    });
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Column for new filter" }),
+      {
+        target: { value: "amount" },
+      },
+    );
     fireEvent.change(
       within(dialog).getByRole("combobox", { name: "Value source" }),
       {

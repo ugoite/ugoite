@@ -76,9 +76,10 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   const filter = page.getByRole("dialog", { name: "Filter", exact: true });
-  await filter.getByRole("combobox", { name: "Column" }).selectOption({
-    label: "Amount",
-  });
+  await filter.getByRole("combobox", { name: "Column for new filter" })
+    .selectOption({
+      label: "Amount",
+    });
   await filter.getByRole("combobox", { name: "Operator" }).selectOption(
     "gte",
   );
