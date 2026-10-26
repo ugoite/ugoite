@@ -36,6 +36,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-003#criterion.bounded-task-editing
+          - id: condition-tree-transactions
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: apply_sql_document_semantic_edit_transaction }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+          - id: condition-tree-projection
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: derive_sql_document_conditions }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
       - id: frontend-editor
         role: implementation
         facet: frontend
@@ -50,6 +64,18 @@ features:
                 criterion: REQ-SQL-003#criterion.bounded-task-editing
               - kind: satisfies
                 criterion: REQ-SQL-003#criterion.typed-filter-argument-transactions
+      - id: condition-workspace
+        role: implementation
+        facet: frontend
+        responsibility: Present parsed supported conditions as editable nested groups and submit condition drafts through the guarded Rust transaction while preserving unsupported predicate source for advanced editing.
+        targets:
+          - id: condition-tree-editor
+            adapter: typescript
+            path: frontend/src/components/SqlConditionWorkspace.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
       - id: wasm-protocol
         role: implementation
         facet: wasm
@@ -62,6 +88,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-003#criterion.bounded-task-editing
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
       - id: task-edit-verification
         role: verification
         facet: verification
@@ -126,6 +154,105 @@ features:
                   arguments:
                     package: ugoite-wasm
                     test: sql_document_task_filter_sort_constructors_match_native
+      - id: condition-edit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify condition projection and atomic edits in native Rust, portable WASM, browser component, and the SQL Form-to-save browser journey.
+        targets:
+          - id: condition-view-and-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::condition_view_and_typed_mutations_preserve_sql_authority_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers:
+                  - FEAT-SQL-004#binding.rust-edit-core/target.condition-tree-transactions
+                  - FEAT-SQL-004#binding.rust-edit-core/target.condition-tree-projection
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::condition_view_and_typed_mutations_preserve_sql_authority_and_undo
+          - id: condition-stale-and-comment-guards
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::condition_mutations_reject_stale_sources_and_comment_loss }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.rust-edit-core/target.condition-tree-transactions]
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::condition_mutations_reject_stale_sources_and_comment_loss
+          - id: condition-wasm-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: sql_document_filter_condition_protocol_matches_native_view_edit_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.wasm-protocol/target.semantic-edit-action]
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: sql_document_filter_condition_protocol_matches_native_view_edit_and_undo
+          - id: condition-browser-workspace
+            adapter: typescript
+            path: frontend/src/components/SqlConditionWorkspace.test.tsx
+            selector: { kind: test, name: shows editable existing conditions and preserves every argument on a leaf edit }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.condition-workspace/target.condition-tree-editor]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlConditionWorkspace.test.tsx
+                    test: shows editable existing conditions and preserves every argument on a leaf edit
+          - id: condition-group-composer
+            adapter: typescript
+            path: frontend/src/components/SqlConditionWorkspace.test.tsx
+            selector: { kind: test, name: creates an Any group only after both inline conditions are valid }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.condition-workspace/target.condition-tree-editor]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlConditionWorkspace.test.tsx
+                    test: creates an Any group only after both inline conditions are valid
+          - id: condition-browser-journey
+            adapter: typescript
+            path: e2e/sql-condition-workspace.test.ts
+            selector: { kind: test, name: "REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the saved query" }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.condition-workspace/target.condition-tree-editor]
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/sql-condition-workspace.test.ts
+                    test: "REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the saved query"
+          - id: condition-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: symbol, name: typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.rust-edit-core/target.condition-tree-transactions]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-iceberg
+                    harness: authorized_query
+                    test: typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries
     contracts:
       - id: typed-task-filter-sort-protocol
         kind: custom
@@ -138,3 +265,14 @@ features:
           - target: FEAT-SQL-004#binding.rust-edit-core/target.add-order-by-column
             role: native-domain
         guarantees: [REQ-SQL-003#criterion.bounded-task-editing]
+      - id: typed-condition-group-protocol
+        kind: custom
+        source: FEAT-SQL-004#binding.typed-edit-contract/target.edit-request
+        participants:
+          - target: FEAT-SQL-004#binding.condition-workspace/target.condition-tree-editor
+            role: frontend-condition-editor
+          - target: FEAT-SQL-004#binding.wasm-protocol/target.semantic-edit-action
+            role: wasm-protocol
+          - target: FEAT-SQL-004#binding.rust-edit-core/target.condition-tree-transactions
+            role: native-domain
+        guarantees: [REQ-SQL-003#criterion.condition-group-editing]

@@ -199,6 +199,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+        - e2e/sql-condition-workspace.test.ts
         - frontend/src/components/SqlResultTable.tsx
         - frontend/src/components/SqlResultTable.test.tsx
         - e2e/qry02-visible-rows.test.ts
