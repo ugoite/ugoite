@@ -16,7 +16,7 @@ import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
-import { parse as parseYaml } from "jsr:@std/yaml@1";
+import { parse as parseYaml } from "yaml";
 
 type StudioSeedState = {
   spaceId: string;
