@@ -128,6 +128,8 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     .selectOption({ label: "Status" });
   await filters.getByRole("combobox", { name: "Operator for new filter" })
     .selectOption("eq");
+  await filters.getByRole("combobox", { name: "Value source" }).last()
+    .selectOption("literal");
   await filters.getByRole("textbox", { name: "Value for new filter" })
     .fill("open");
   await rootGroup.getByRole("button", { name: "Add group", exact: true })
