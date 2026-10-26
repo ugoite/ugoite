@@ -399,6 +399,24 @@ describe("SQL Filter and Sort task editors", () => {
       { name: "unused", type: "string", description: "keep this declaration" },
     ]);
     expect(edit.mock.calls[0][0].resultArguments).toEqual(argumentsList());
+    const currentRows = screen.getAllByRole("group", { name: "Amount" });
+    expect(currentRows[0].textContent).toContain("minimum argument");
+    fireEvent.click(
+      within(currentRows[0]).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    await waitFor(() => {
+      const refreshedRows = screen.getAllByRole("group", { name: "Amount" });
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", { name: "Column" }),
+      ).toHaveValue("field_amount");
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", {
+          name: "Declared argument",
+        }),
+      ).toHaveValue("minimum");
+    });
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add condition" }).at(-1)!,
     );
@@ -418,11 +436,24 @@ describe("SQL Filter and Sort task editors", () => {
         screen.getByRole("combobox", { name: "Column for new filter" }),
       ).toHaveValue("");
     });
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        document.querySelector('[data-condition-focus="7:operator"]'),
-      )
+  });
+
+  it("summarizes null operators without an empty literal value", async () => {
+    const [sql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount IS NOT NULL',
     );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    expect(row.textContent).toContain("Has a value");
+    expect(row.textContent).not.toContain("“”");
   });
 
   it("discards an existing-condition draft when SQL changes externally", async () => {
@@ -457,7 +488,88 @@ describe("SQL Filter and Sort task editors", () => {
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("7")
     );
-    expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull()
+    );
+  });
+
+  it("discards pending leaf drafts when removing a condition changes parser IDs", async () => {
+    const source =
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4 AND field_amount <= 8';
+    const [sql, setSql] = createSignal(source);
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const rows = await screen.findAllByRole("group", { name: "Amount" });
+    fireEvent.click(
+      within(rows[1]).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "88" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(
+      within(rows[0]).getByRole("button", {
+        name: "Remove filter",
+      }),
+    );
+    await waitFor(() => expect(sql()).toContain("field_amount <= 8"));
+    expect(sql()).not.toContain("88");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull()
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-condition-focus="add-filter:2:root"]'),
+      )
+    );
+  });
+
+  it("keeps pending edits when applying a rejected condition transaction", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    const rejectEdit = vi.fn(() => false);
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onFilterEdit={rejectEdit}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "9" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(rejectEdit).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Apply changes" }))
+        .toBeEnabled()
+    );
+    expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("9");
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+    expect(sql()).toBe('SELECT * FROM "form_expenses" WHERE field_amount >= 4');
   });
 
   it("moves focus into and back out of a compact condition editor", async () => {

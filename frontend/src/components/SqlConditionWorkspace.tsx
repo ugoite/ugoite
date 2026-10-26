@@ -202,7 +202,9 @@ export function SqlConditionWorkspace(props: Props) {
   const setRedo = props.historyState?.setRedo ?? setLocalRedo;
   let generation = 0;
   let lastConditionFocusKey: string | undefined;
-  let pendingConditionFocusKey: string | undefined;
+  const [pendingConditionFocusKey, setPendingConditionFocusKey] = createSignal<
+    string | undefined
+  >();
   onCleanup(() => {
     generation++;
   });
@@ -351,15 +353,6 @@ export function SqlConditionWorkspace(props: Props) {
           Object.entries(old).filter(([id]) => ids.has(Number(id))),
         )
       );
-      const focusKey = pendingConditionFocusKey;
-      pendingConditionFocusKey = undefined;
-      if (focusKey) {
-        setTimeout(() => {
-          globalThis.document?.querySelector<HTMLElement>(
-            `[data-condition-focus="${focusKey}"]`,
-          )?.focus();
-        });
-      }
     }).catch((cause) => {
       if (active && props.sql() === source && props.scope?.() === scope) {
         setError(
@@ -369,6 +362,17 @@ export function SqlConditionWorkspace(props: Props) {
         );
       }
     });
+  });
+  createEffect(() => {
+    const focusKey = pendingConditionFocusKey();
+    if (!focusKey || busy() || locked()) return;
+    conditions();
+    const target = globalThis.document?.querySelector<HTMLElement>(
+      `[data-condition-focus="${focusKey}"]`,
+    );
+    if (!target || target.matches(":disabled")) return;
+    setPendingConditionFocusKey(undefined);
+    target.focus();
   });
   const contextFor = (scope: SqlDocumentConditionScope) => {
     if (scope.query_node_id !== supportedSelectId()) return undefined;
@@ -643,13 +647,14 @@ export function SqlConditionWorkspace(props: Props) {
     nextBindings?: readonly Binding[],
     restoreFocusKey?: string,
   ) => {
-    if (busy() || locked()) return;
+    if (busy() || locked()) return false;
     const source = props.sql();
     const scope = props.scope?.();
     const request = generation;
-    if (props.sql() !== source || locked()) return;
+    if (props.sql() !== source || locked()) return false;
     setBusy(true);
     setError(undefined);
+    let succeeded = false;
     const beforeArgs = props.argumentDefinitions?.() ?? [];
     const beforeBindings = props.argumentBindings?.() ?? [];
     const focusKey = typeof document !== "undefined" &&
@@ -658,13 +663,13 @@ export function SqlConditionWorkspace(props: Props) {
       : undefined;
     try {
       const parsedDocument = await parseSqlDocument(source);
-      if (!current(request, source, scope)) return;
+      if (!current(request, source, scope)) return false;
       const result = await applySqlDocumentSemanticEditTransaction(source, {
         contract_version: parsedDocument.contract_version,
         expected_source: source,
         edits,
       });
-      if (!current(request, source, scope)) return;
+      if (!current(request, source, scope)) return false;
       if (created && !props.onFilterEdit && !props.onArgumentAdded) {
         throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
       }
@@ -702,11 +707,28 @@ export function SqlConditionWorkspace(props: Props) {
         }].slice(-32),
       );
       setRedo([]);
+      const changesTopology = edits.some((edit) =>
+        edit.kind === "add_filter_comparison" ||
+        edit.kind === "insert_filter_condition" ||
+        edit.kind === "update_filter_condition" ||
+        edit.kind === "remove_filter_condition"
+      );
+      if (changesTopology) {
+        // Parser node IDs can shift after a structural edit. Drafts are keyed
+        // by those IDs, so carrying them forward could apply a value to a
+        // different predicate after reparse.
+        setDrafts({});
+        setGroupDrafts({});
+        setEditingNodeId(null);
+        setGroupTarget(null);
+        setAddTarget(null);
+      }
       const targetFocusKey = focusKey ?? lastConditionFocusKey ??
         restoreFocusKey;
       // Applying drafts clears their local controls after this async call. Let
       // that caller restore focus after the controls have been reconciled.
-      pendingConditionFocusKey = restoreFocusKey ? undefined : targetFocusKey;
+      setPendingConditionFocusKey(restoreFocusKey ?? targetFocusKey);
+      succeeded = true;
     } catch (cause) {
       if (current(request, source, scope)) {
         setError(
@@ -718,6 +740,7 @@ export function SqlConditionWorkspace(props: Props) {
     } finally {
       if (request === generation) setBusy(false);
     }
+    return succeeded;
   };
 
   const applyDrafts = async () => {
@@ -729,8 +752,7 @@ export function SqlConditionWorkspace(props: Props) {
         if (isGroup(node)) {
           const operator = groupDrafts()[node.node_id];
           if (operator && operator !== node.operator) {
-            restoreFocusKey ??= lastConditionFocusKey ??
-              `${node.node_id}:group-operator`;
+            restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
             edits.push({
               kind: "set_filter_group_operator",
               node_id: node.node_id,
@@ -741,7 +763,7 @@ export function SqlConditionWorkspace(props: Props) {
           }
           node.children.forEach(visit);
         } else if (isComparison(node) && drafts()[node.node_id]) {
-          restoreFocusKey ??= lastConditionFocusKey ?? `${node.node_id}:column`;
+          restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
           const built = makeCondition(
             draftFor(node),
             false,
@@ -759,7 +781,7 @@ export function SqlConditionWorkspace(props: Props) {
       visit(scope.expression);
     }
     if (edits.length) {
-      await commit(
+      const committed = await commit(
         edits,
         undefined,
         undefined,
@@ -767,14 +789,9 @@ export function SqlConditionWorkspace(props: Props) {
         undefined,
         restoreFocusKey,
       );
-      setDrafts({});
-      setGroupDrafts({});
-      if (restoreFocusKey) {
-        setTimeout(() => {
-          globalThis.document?.querySelector<HTMLElement>(
-            `[data-condition-focus="${restoreFocusKey}"]`,
-          )?.focus();
-        });
+      if (committed) {
+        setDrafts({});
+        setGroupDrafts({});
       }
     }
   };
@@ -817,13 +834,14 @@ export function SqlConditionWorkspace(props: Props) {
             expected_kind: targetKind,
             condition: built.condition,
           };
-      await commit(
+      const committed = await commit(
         [edit],
         built.created,
         built.binding,
         built.nextArgs,
         built.nextBindings,
       );
+      if (!committed) return;
       setAddTarget(null);
       setNewValue("");
       setNewArgument("");
@@ -837,12 +855,29 @@ export function SqlConditionWorkspace(props: Props) {
       );
     }
   };
-  const removeNode = (nodeId: number) =>
-    void commit([{
-      kind: "remove_filter_condition",
-      node_id: nodeId,
-      expected_kind: nodeKindsById()[nodeId] ?? "binary_expression",
-    }]);
+  const removeNode = async (nodeId: number) => {
+    const containsNode = (node: SqlDocumentConditionNode | null): boolean => {
+      if (!node) return false;
+      return node.node_id === nodeId ||
+        (isGroup(node) && node.children.some(containsNode));
+    };
+    const scope = conditions().find((item) => containsNode(item.expression));
+    const restoreFocusKey = scope
+      ? `add-filter:${scope.query_node_id}:root`
+      : undefined;
+    await commit(
+      [{
+        kind: "remove_filter_condition",
+        node_id: nodeId,
+        expected_kind: nodeKindsById()[nodeId] ?? "binary_expression",
+      }],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      restoreFocusKey,
+    );
+  };
   const openGroupComposer = (
     scope: SqlDocumentConditionScope,
     parentNodeId: number | null = null,
@@ -903,13 +938,14 @@ export function SqlConditionWorkspace(props: Props) {
           children: [first.condition, second.condition],
         },
       };
-      await commit(
+      const committed = await commit(
         [edit],
         first.created,
         first.binding,
         first.nextArgs,
         first.nextBindings,
       );
+      if (!committed) return;
       setGroupTarget(null);
       setAddTarget(null);
       const focusKey = `add-filter:${scope.query_node_id}:${
@@ -1091,21 +1127,26 @@ export function SqlConditionWorkspace(props: Props) {
             fallback={
               <div class="sql-condition-row__summary">
                 <span>
-                  {t("sqlPage.structure.conditionSummary", {
-                    column: label,
-                    operator: operatorName(draft().operator),
-                    value: draft().source === "argument"
-                      ? t("sqlPage.structure.conditionArgumentValue", {
-                        name: draft().argument,
-                      })
-                      : draft().valueKind === "string"
-                      ? `“${draft().value}”`
-                      : draft().valueKind === "boolean"
-                      ? draft().value.toUpperCase()
-                      : draft().valueKind === "null"
-                      ? "NULL"
-                      : draft().value,
-                  })}
+                  {valueInputOperators.has(draft().operator)
+                    ? t("sqlPage.structure.conditionSummary", {
+                      column: label,
+                      operator: operatorName(draft().operator),
+                      value: draft().source === "argument"
+                        ? t("sqlPage.structure.conditionArgumentValue", {
+                          name: draft().argument,
+                        })
+                        : draft().valueKind === "string"
+                        ? `“${draft().value}”`
+                        : draft().valueKind === "boolean"
+                        ? draft().value.toUpperCase()
+                        : draft().valueKind === "null"
+                        ? "NULL"
+                        : draft().value,
+                    })
+                    : t("sqlPage.structure.conditionSummaryWithoutValue", {
+                      column: label,
+                      operator: operatorName(draft().operator),
+                    })}
                 </span>
                 <button
                   type="button"
