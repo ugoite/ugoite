@@ -43,6 +43,29 @@ function deferred<T>() {
 }
 
 describe("SQL Filter and Sort task editors", () => {
+  it("switches reactively between filter and sort editors", async () => {
+    const [action, setAction] = createSignal<"filter" | "sort">("sort");
+    render(() => (
+      <SqlFilterSortEditor
+        action={action()}
+        sql={() => 'SELECT * FROM "form_expenses"'}
+        scope={() => "composition-query:query-a"}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    expect(document.querySelector(".sql-condition-workspace")).toBeNull();
+    setAction("filter");
+    await waitFor(() =>
+      expect(document.querySelector(".sql-condition-workspace")).not.toBeNull()
+    );
+    setAction("sort");
+    await waitFor(() =>
+      expect(document.querySelector(".sql-condition-workspace")).toBeNull()
+    );
+  });
+
   it("constructs a named filter argument and explicit binding in the host commit", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     const [bindings, setBindings] = createSignal<

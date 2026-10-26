@@ -214,9 +214,10 @@ export function SqlConditionWorkspace(props: Props) {
       if (!active || props.sql() !== source || props.scope?.() !== scope) {
         return;
       }
-      // Keep the editor usable while an older generated WASM bundle is loaded;
-      // the typed protocol always supplies this field.
-      const view = document.conditions ?? [];
+      if (!document.conditions) {
+        throw new Error(t("sqlPage.structure.documentParseFailed"));
+      }
+      const view = document.conditions;
       setConditions(view);
       setNodeKindsById(
         Object.fromEntries(document.nodes.map((node) => [node.id, node.kind])),

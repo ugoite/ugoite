@@ -1106,8 +1106,11 @@ function SqlFilterSortEditorCore(props: Props) {
 }
 
 export function SqlFilterSortEditor(props: Props) {
-  if (props.action === "filter") {
-    return (
+  return (
+    <Show
+      when={props.action === "filter"}
+      fallback={<SqlFilterSortEditorCore {...props} />}
+    >
       <SqlConditionWorkspace
         sql={props.sql}
         scope={props.scope}
@@ -1122,7 +1125,6 @@ export function SqlFilterSortEditor(props: Props) {
         reservedVariableNames={props.reservedVariableNames}
         onFilterEdit={props.onFilterEdit}
       />
-    );
-  }
-  return <SqlFilterSortEditorCore {...props} />;
+    </Show>
+  );
 }
