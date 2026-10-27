@@ -4753,8 +4753,8 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 #[tokio::test]
 async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
-        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-        SqlDocumentValueAccess, apply_sql_document_semantic_edit_transaction, parse_sql_document,
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
     };
 
     let workspace = IcebergWorkspace::memory_for_tests(

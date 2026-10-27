@@ -2904,10 +2904,10 @@ mod tests {
     #[test]
     fn sql_document_relational_constructors_protocol_match_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentJoin,
-            SqlDocumentJoinConstraint, SqlDocumentJoinOperator, SqlDocumentNodeKind,
-            SqlDocumentQueryLimit, SqlDocumentRelationFactor, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction,
+            SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,
+            SqlDocumentJoinOperator, SqlDocumentNodeKind, SqlDocumentQueryLimit,
+            SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
         fn assert_protocol(source: &str, transaction: SqlDocumentSemanticEditTransaction) {
@@ -4077,9 +4077,9 @@ mod tests {
     #[test]
     fn sql_document_common_toolbar_semantic_operations_have_wasm_parity() {
         use ugoite_domain::sql_document::{
-            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentAggregateFunction, SqlDocumentNodeData,
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SqlDocumentValueAccess,
+            SqlDocumentAggregateFunction, SqlDocumentNodeData, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
+            SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
         let assert_parity = |source: &str, edit: SqlDocumentSemanticEdit| {
@@ -4359,9 +4359,9 @@ mod tests {
     #[test]
     fn sql_document_array_index_edit_matches_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
             apply_sql_document_semantic_edit_transaction, parse_sql_document,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
+            SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
         let source = "SELECT ARRAY[4, 9] /* keep */";
