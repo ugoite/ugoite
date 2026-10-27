@@ -166,9 +166,11 @@ const loadExports = async (): Promise<UgoiteWasmExports> => {
   return await exportsPromise;
 };
 
+type ProtocolCommand = Record<string, unknown>;
+
 const invokeProtocolWithExports = <T, TCode extends string = string>(
   exports: UgoiteWasmExports,
-  command: unknown,
+  command: ProtocolCommand,
 ): T => {
   const encodedCommand = encodeTypedIntegerCommand(command);
   const input = textEncoder.encode(JSON.stringify(encodedCommand));
@@ -216,11 +218,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 /** Keep exact integers confined to explicitly typed Composition protocol paths. */
-const encodeTypedIntegerCommand = (command: unknown): unknown => {
-  if (!isRecord(command)) return command;
+const encodeTypedIntegerCommand = (command: ProtocolCommand): ProtocolCommand => {
   if (command.action === "domain.canonicalize_composition_document") {
-    const value = command.value;
-    if (!isRecord(value) || !Object.hasOwn(value, "document")) return command;
+    // This command shape is constructed only by
+    // canonicalizeCompositionDocument below; malformed documents remain the
+    // user's payload and are still sent to Rust for validation.
+    const value = command.value as Record<string, unknown>;
     return {
       ...command,
       value: {
@@ -245,11 +248,10 @@ const encodeTypedIntegerCommand = (command: unknown): unknown => {
 };
 
 const decodeTypedIntegerResponse = (
-  command: unknown,
+  command: ProtocolCommand,
   value: unknown,
   source: (parent: object, key: string) => string | undefined,
 ): void => {
-  if (!isRecord(command)) return;
   if (command.action === "domain.canonicalize_composition_document") {
     if (isRecord(value)) {
       decodeCompositionDocumentIntegers(value.document, source);
@@ -257,7 +259,9 @@ const decodeTypedIntegerResponse = (
     return;
   }
   if (command.action === "domain.parse_variable_graph_input") {
-    const request = isRecord(command.value) ? command.value : undefined;
+    // The private command wrapper always supplies this request record. Keep
+    // validation of its user-provided value_type and the Rust response below.
+    const request = command.value as { value_type?: unknown };
     if (
       request?.value_type && isRecord(request.value_type) &&
       request.value_type.scalar_type === "integer" && isRecord(value) &&
@@ -280,7 +284,7 @@ const decodeTypedIntegerResponse = (
 };
 
 const invokeProtocol = async <T, TCode extends string = string>(
-  command: unknown,
+  command: ProtocolCommand,
 ): Promise<T> =>
   invokeProtocolWithExports<T, TCode>(await loadExports(), command);
 
