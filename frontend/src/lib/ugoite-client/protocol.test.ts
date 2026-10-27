@@ -1662,6 +1662,59 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     );
   });
 
+  it("decodes typed i64 defaults from Composition preview and leaves JSON defaults opaque", async () => {
+    const responseBody =
+      '{"ok":false,"draft_fingerprint":"draft","variable_definitions":[{"id":"max","value_type":{"scalar_type":"integer","nullable":false},"required":false,"default":{"kind":"integer","value":9223372036854775807}},{"id":"json_payload","value_type":{"scalar_type":"json","nullable":false},"required":false,"default":{"kind":"json","value":{"kind":"integer","value":9223372036854775807}}}],"plan":null,"diagnostics":[]}';
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions/preview"),
+        () =>
+          new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const preview = await protocolFetch<{
+      variable_definitions: Array<{
+        id: string;
+        default?: { kind: string; value: unknown };
+      }>;
+    }>("composition.preview", { space_id: "demo" }, {
+      yaml: "format: ugoite.composition",
+      variables: {},
+    });
+
+    expect(preview.variable_definitions[0].default?.value).toBe(
+      "9223372036854775807",
+    );
+    expect(preview.variable_definitions[1].default?.value).toEqual({
+      kind: "integer",
+      value: 9223372036854776000,
+    });
+  });
+
+  it("rejects out-of-range integer tokens in Composition preview defaults", async () => {
+    const responseBody =
+      '{"ok":false,"draft_fingerprint":"draft","variable_definitions":[{"id":"too_large","value_type":{"scalar_type":"integer","nullable":false},"required":false,"default":{"kind":"integer","value":9223372036854775808}}],"plan":null,"diagnostics":[]}';
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions/preview"),
+        () =>
+          new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    await expect(
+      protocolFetch("composition.preview", { space_id: "demo" }, {
+        yaml: "format: ugoite.composition",
+        variables: {},
+      }),
+    ).rejects.toThrow("Protocol integer is outside the supported i64 range");
+  });
+
   it("rejects unsafe JavaScript numbers instead of encoding their rounded value", () => {
     expect(() => exactIntegerJsonValue(9_007_199_254_740_993)).toThrow(
       "Unsafe integer number cannot be encoded exactly",

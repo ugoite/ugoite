@@ -1280,10 +1280,17 @@ describe("CompositionStudio graph surface", () => {
     });
     fireEvent.click(block);
     expect(
-      screen.getByRole("textbox", { name: "Display label for amount" }),
+      screen.getByRole("textbox", { name: "Display label for Amount paid" }),
     ).toHaveValue("Amount paid");
-    expect(screen.getByRole("checkbox", { name: "payload" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "custom" })).toBeChecked();
+    expect(
+      screen.getByRole("textbox", { name: "Display label for payload" }),
+    ).toHaveValue("payload");
+    expect(
+      screen.getByRole("textbox", { name: "Display label for custom" }),
+    ).toHaveValue("custom");
+    expect(
+      screen.queryByRole("checkbox", { name: "Add result column _ugoite_id" }),
+    ).not.toBeVisible();
     expect(authored.spec.layout.rows[0].items).toEqual([{
       kind: "component",
       component: authored.spec.components[0].id,
@@ -1325,7 +1332,7 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(block);
     expect(
       screen.getByRole("textbox", {
-        name: "Display label for _ugoite_id",
+        name: "Display label for Entry ID",
       }),
     ).toHaveValue("Entry ID");
   });
@@ -1377,9 +1384,14 @@ describe("CompositionStudio graph surface", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Design" }));
     fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "total" }));
+    fireEvent.click(screen.getByText("Add result columns"));
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove amount from the Table" }),
+      screen.getByRole("checkbox", { name: "Add result column total" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove Amount paid from the Table",
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
