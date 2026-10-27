@@ -253,9 +253,9 @@ const decodeTypedIntegerResponse = (
   source: (parent: object, key: string) => string | undefined,
 ): void => {
   if (command.action === "domain.canonicalize_composition_document") {
-    if (isRecord(value)) {
-      decodeCompositionDocumentIntegers(value.document, source);
-    }
+    const document = (value as { document?: unknown } | null | undefined)
+      ?.document;
+    decodeCompositionDocumentIntegers(document, source);
     return;
   }
   if (command.action === "domain.parse_variable_graph_input") {
