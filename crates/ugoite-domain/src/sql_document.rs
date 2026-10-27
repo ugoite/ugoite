@@ -3560,14 +3560,13 @@ fn typed_literal_source_range(
     let prefix = document
         .tokens
         .iter()
-        .filter(|token| token.range.end <= literal_range.start)
-        .filter(|token| {
-            !matches!(
-                token.kind,
-                SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
-            )
+        .rfind(|token| {
+            token.range.end <= literal_range.start
+                && !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
         })
-        .next_back()
         .filter(|token| {
             token_text(&document.source, token)
                 .is_some_and(|text| text.eq_ignore_ascii_case(data_type))
