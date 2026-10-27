@@ -95,6 +95,15 @@ function CompositionTableInspector(props: {
       }));
   const selectedLabel = (key: string) =>
     selectedColumns().find((item) => item.column === key)?.label ?? key;
+  const selectedAccessibleLabel = (key: string, position: number) => {
+    const label = selectedLabel(key);
+    const sameLabelCount =
+      selectedColumns().filter((item) => selectedLabel(item.column) === label)
+        .length;
+    return sameLabelCount > 1
+      ? t("composition.studioColumnPosition", { label, position })
+      : label;
+  };
   const selectColumn = (column: string, selected: boolean) => {
     const current = selectedColumns();
     if (selected) {
@@ -174,14 +183,14 @@ function CompositionTableInspector(props: {
             <label>
               <span class="ui-sr-only">
                 {t("composition.studioTableColumnLabel", {
-                  column: selectedLabel(column.column),
+                  column: selectedAccessibleLabel(column.column, index() + 1),
                 })}
               </span>
               <input
                 class="ui-input"
                 value={column.label}
                 aria-label={t("composition.studioTableColumnLabel", {
-                  column: selectedLabel(column.column),
+                  column: selectedAccessibleLabel(column.column, index() + 1),
                 })}
                 onInput={(event) =>
                   updateLabel(column.column, event.currentTarget.value)}
@@ -202,7 +211,7 @@ function CompositionTableInspector(props: {
             <IconButton
               icon="close"
               label={t("composition.studioRemoveTableColumn", {
-                column: selectedLabel(column.column),
+                column: selectedAccessibleLabel(column.column, index() + 1),
               })}
               disabled={selectedColumns().length <= 1 &&
                 props.columns().some((item) => item.name === column.column)}

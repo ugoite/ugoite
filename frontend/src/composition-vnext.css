@@ -379,6 +379,9 @@
 }
 .compositionGraphTableOptionalColumns summary {
   width: fit-content;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   cursor: pointer;
   color: var(--ui-muted-foreground);
   font-size: var(--ui-font-size-sm);
@@ -389,6 +392,9 @@
   align-items: center;
   gap: var(--ui-spacing-xs);
   min-width: 0;
+}
+.compositionGraphTableColumnChoice {
+  min-height: 44px;
 }
 .compositionGraphTableColumnSettings > label {
   flex: 1;

@@ -501,6 +501,41 @@ describe("CompositionGraphDesignCanvas", () => {
     );
   });
 
+  it("distinguishes repeated headings in Table Inspector action names", () => {
+    renderCanvas(
+      vi.fn(),
+      tableDraft(
+        ["first", "second"],
+        [
+          { column: "first", label: "Value" },
+          { column: "second", label: "Value" },
+        ],
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+
+    expect(
+      screen.getByRole("textbox", {
+        name: "Display label for Value, column 1",
+      }),
+    ).toHaveValue("Value");
+    expect(
+      screen.getByRole("textbox", {
+        name: "Display label for Value, column 2",
+      }),
+    ).toHaveValue("Value");
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Value, column 1 from the Table",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Value, column 2 from the Table",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("removes a stale Table key and adds current columns without changing valid headings", () => {
     const onDraftChange = vi.fn();
     renderCanvas(
