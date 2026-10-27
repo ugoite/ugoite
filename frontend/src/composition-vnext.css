@@ -354,6 +354,24 @@
   display: grid;
   gap: var(--ui-spacing-sm);
 }
+.compositionGraphTableInspector {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+  margin-top: var(--ui-spacing-md);
+}
+.compositionGraphTableInspector h3 {
+  margin: 0;
+  font-size: var(--ui-font-size-sm);
+}
+.compositionGraphTableColumnChoice,
+.compositionGraphTableColumnSettings {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+}
+.compositionGraphTableColumnSettings > label {
+  flex: 1;
+}
 .compositionGraphInspectorActions {
   display: flex;
   justify-content: flex-end;

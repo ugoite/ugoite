@@ -1218,8 +1218,39 @@ describe("CompositionStudio graph surface", () => {
       id: "form-id",
       name: "Receipts",
       sql_relation: "form_receipts",
-      fields: { amount: { type: "float", sql_column: "amount" } },
+      fields: {
+        amount: {
+          type: "float",
+          sql_column: "amount",
+          label: "Amount paid",
+        },
+        payload: { type: "json", sql_column: "payload" },
+        custom: { type: "custom_type", sql_column: "custom" },
+      },
     }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [
+          {
+            name: "amount",
+            value_type: { scalar_type: "float", nullable: false },
+          },
+          {
+            name: "payload",
+            value_type: { scalar_type: "json", nullable: true },
+          },
+          {
+            name: "custom",
+            value_type: { scalar_type: "string", nullable: true },
+          },
+          {
+            name: "_ugoite_id",
+            value_type: { scalar_type: "string", nullable: false },
+          },
+        ],
+      })
+    );
     renderStudio(createCompositionGraphDraft("Report"));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
@@ -1247,10 +1278,114 @@ describe("CompositionStudio graph surface", () => {
       kind: "table",
       variable: authored.spec.variables[0].id,
     });
+    fireEvent.click(block);
+    expect(
+      screen.getByRole("textbox", { name: "Display label for amount" }),
+    ).toHaveValue("Amount paid");
+    expect(screen.getByRole("checkbox", { name: "payload" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "custom" })).toBeChecked();
     expect(authored.spec.layout.rows[0].items).toEqual([{
       kind: "component",
       component: authored.spec.components[0].id,
     }]);
+  });
+
+  it("gives a fieldless Form table an Entry ID view preset", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "System records",
+      sql_relation: "form_system_records",
+      fields: {},
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "_ugoite_id",
+          value_type: { scalar_type: "string", nullable: false },
+        }],
+      })
+    );
+    renderStudio(createCompositionGraphDraft("Report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    fireEvent.click(
+      await within(picker).findByRole("button", {
+        name: "System records",
+        exact: true,
+      }),
+    );
+
+    const block = await screen.findByRole("button", {
+      name: "table, system_records_rows",
+    });
+    fireEvent.click(block);
+    expect(
+      screen.getByRole("textbox", {
+        name: "Display label for _ugoite_id",
+      }),
+    ).toHaveValue("Entry ID");
+  });
+
+  it("updates a changed query schema before letting the Table view be repaired and saved", async () => {
+    const initial = renderedDraftWithTable();
+    initial.variables[0] = {
+      ...initial.variables[0],
+      returns: {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: false },
+        }],
+      },
+      query: {
+        kind: "inline_sql",
+        sql: 'SELECT amount FROM "Receipts"',
+        arguments: [],
+        schema_fingerprint: "old-schema",
+      },
+    };
+    initial.components[0] = {
+      id: "table_1",
+      kind: "table",
+      variable: "rows",
+      presentation: {
+        columns: [{ column: "amount", label: "Amount paid" }],
+      },
+    };
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "total",
+          value_type: { scalar_type: "float", nullable: false },
+        }],
+      })
+    );
+    renderStudio(initial);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(previewGraphMock).toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The query result columns changed.",
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(saveMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "total" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove amount from the Table" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
   });
 
   it("keeps a failed Form preview actionable and retries the same selection", async () => {
@@ -1294,7 +1429,7 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(form);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This Form changed while you were binding it.",
+      "The source changed while you were binding it.",
     );
     expect(form).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("dialog", { name: "Table", exact: true }))

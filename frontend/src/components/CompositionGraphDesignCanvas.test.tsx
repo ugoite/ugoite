@@ -302,6 +302,120 @@ describe("CompositionGraphDesignCanvas", () => {
     expect(screen.queryByText("Source")).not.toBeInTheDocument();
   });
 
+  it("edits the ordered Table view and explicitly adds a metadata result column", async () => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables.push({
+      id: "rows",
+      kind: "query",
+      returns: {
+        kind: "table",
+        columns: [
+          {
+            name: "name",
+            value_type: { scalar_type: "string", nullable: false },
+          },
+          {
+            name: "_ugoite_id",
+            value_type: { scalar_type: "string", nullable: false },
+          },
+        ],
+      },
+      query: {
+        kind: "inline_sql",
+        sql: 'SELECT * FROM "People"',
+        arguments: [],
+        schema_fingerprint: "schema",
+      },
+    });
+    draft.components.push({
+      id: "table_1",
+      kind: "table",
+      variable: "rows",
+      presentation: { columns: [{ column: "name", label: "Person" }] },
+    });
+    draft.layout.rows[0].items.push({
+      kind: "component",
+      component: "table_1",
+    });
+    evaluateMock.mockResolvedValue({
+      evaluation_id: "evaluation",
+      ok: true,
+      computed_query_ids: ["rows"],
+      variable_values: {},
+      queries: [],
+      component_bindings: [],
+      dependencies: {},
+      query_results: {
+        rows: {
+          value: {
+            kind: "table",
+            columns: [
+              {
+                name: "name",
+                value_type: { scalar_type: "string", nullable: false },
+              },
+              {
+                name: "_ugoite_id",
+                value_type: { scalar_type: "string", nullable: false },
+              },
+            ],
+            rows: [],
+          },
+          has_more: false,
+        },
+      },
+    });
+    const [current, setCurrent] = createSignal(draft);
+    render(() => (
+      <CompositionGraphDesignCanvas
+        draft={current()}
+        forms={[]}
+        savedSql={[]}
+        provider={provider}
+        session={{
+          session_id: "session",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "principal",
+        }}
+        getPrincipalGeneration={async () => "principal"}
+        isSessionCurrent={() => true}
+        onDraftChange={setCurrent}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "_ugoite_id" }));
+    await waitFor(() =>
+      expect(current().components[0]).toMatchObject({
+        presentation: {
+          columns: [
+            { column: "name", label: "Person" },
+            { column: "_ugoite_id", label: "_ugoite_id" },
+          ],
+        },
+      })
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Display label for _ugoite_id" }),
+      { target: { value: "Record ID" } },
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Move column earlier" })[1],
+    );
+
+    await waitFor(() =>
+      expect(current().components[0]).toMatchObject({
+        presentation: {
+          columns: [
+            { column: "_ugoite_id", label: "Record ID" },
+            { column: "name", label: "Person" },
+          ],
+        },
+      })
+    );
+  });
+
   it("closes the binding picker on Escape and restores focus", async () => {
     const draft = createCompositionGraphDraft("Report");
     draft.variables.push({

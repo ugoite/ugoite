@@ -95,8 +95,11 @@ pub(super) fn normalize_composition_document(
         .spec
         .components
         .iter()
-        .any(|component| !component.metric_shape_is_well_formed())
+        .any(|component| {
+            !component.metric_shape_is_well_formed() || !component.table_shape_is_well_formed()
+        })
         || !metric_bindings_are_well_formed(document)
+        || !table_bindings_are_well_formed(document)
     {
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
@@ -110,6 +113,50 @@ pub(super) fn normalize_composition_document(
         }
     }
     Ok(normalized)
+}
+
+fn table_bindings_are_well_formed(document: &CompositionDocument) -> bool {
+    document.spec.components.iter().all(|component| {
+        let super::CompositionComponent::Table {
+            variable,
+            presentation: Some(presentation),
+            ..
+        } = component
+        else {
+            return true;
+        };
+
+        let Some(node) = document
+            .spec
+            .variables
+            .iter()
+            .find(|candidate| candidate.id == *variable)
+        else {
+            return false;
+        };
+        let super::VariableGraphNodeKind::Query {
+            returns: super::VariableGraphResultType::Table { columns },
+            query,
+        } = &node.kind
+        else {
+            return false;
+        };
+
+        // An empty fingerprint marks an authoring draft whose SQL output may
+        // have changed. The source schema is resolved before publication and
+        // this presentation is checked against that current descriptor then.
+        if query.schema_fingerprint.is_empty() {
+            return true;
+        }
+
+        presentation.columns.iter().all(|selected| {
+            columns
+                .iter()
+                .filter(|column| column.name == selected.column)
+                .count()
+                == 1
+        })
+    })
 }
 
 fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
@@ -187,7 +234,8 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
 mod tests {
     use super::{canonicalize_composition, canonicalize_composition_yaml};
     use crate::composition::{
-        CompositionDiagnosticCode, VariableGraphFormBinding, VariableGraphNodeKind,
+        CompositionComponent, CompositionDiagnosticCode, CompositionTablePresentation,
+        CompositionTablePresentationColumn, VariableGraphFormBinding, VariableGraphNodeKind,
     };
 
     const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
@@ -228,6 +276,104 @@ mod tests {
             canonicalize_composition(&invalid_metric),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+    }
+
+    #[test]
+    fn table_presentation_is_ordered_display_metadata_bound_to_exact_result_columns() {
+        let mut document = canonicalize_composition_yaml(GRAPH).unwrap().document;
+        let table = document
+            .spec
+            .components
+            .iter_mut()
+            .find_map(|component| match component {
+                CompositionComponent::Table { presentation, .. } => Some(presentation),
+                _ => None,
+            })
+            .expect("fixture includes a Table");
+        *table = Some(CompositionTablePresentation {
+            columns: vec![
+                CompositionTablePresentationColumn {
+                    column: "amount".to_owned(),
+                    label: "Amount paid".to_owned(),
+                },
+                CompositionTablePresentationColumn {
+                    column: "Date".to_owned(),
+                    label: "Purchase date".to_owned(),
+                },
+            ],
+        });
+        let canonical = canonicalize_composition(&document).unwrap();
+        let canonical_table = canonical
+            .document
+            .spec
+            .components
+            .iter()
+            .find_map(|component| match component {
+                CompositionComponent::Table { presentation, .. } => presentation.as_ref(),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(canonical_table.columns[0].column, "amount");
+        assert!(canonical.yaml.find("column: amount").unwrap()
+            < canonical.yaml.find("column: Date").unwrap());
+
+        let mut duplicate = canonical.document.clone();
+        let table = duplicate
+            .spec
+            .components
+            .iter_mut()
+            .find_map(|component| match component {
+                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
+                _ => None,
+            })
+            .unwrap();
+        table.columns[1].column = "amount".to_owned();
+        assert_eq!(
+            canonicalize_composition(&duplicate),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut unknown = canonical.document.clone();
+        let table = unknown
+            .spec
+            .components
+            .iter_mut()
+            .find_map(|component| match component {
+                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
+                _ => None,
+            })
+            .unwrap();
+        table.columns[0].column = "_ugoite_id".to_owned();
+        assert_eq!(
+            canonicalize_composition(&unknown),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut unresolved = canonical.document.clone();
+        let table_variable = unresolved.spec.components.iter().find_map(|component| {
+            match component {
+                CompositionComponent::Table { variable, .. } => Some(variable.clone()),
+                _ => None,
+            }
+        }).unwrap();
+        let node = unresolved.spec.variables.iter_mut().find(|node| {
+            node.id == table_variable
+        }).unwrap();
+        let VariableGraphNodeKind::Query { query, .. } = &mut node.kind else {
+            panic!("Table view must reference a query");
+        };
+        query.schema_fingerprint.clear();
+        let table = unresolved
+            .spec
+            .components
+            .iter_mut()
+            .find_map(|component| match component {
+                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
+                _ => None,
+            })
+            .unwrap();
+        table.columns[0].column = "future_result_column".to_owned();
+        assert!(canonicalize_composition(&unresolved).is_ok());
     }
 
     #[test]

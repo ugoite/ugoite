@@ -37,6 +37,7 @@ import {
   type CompositionSavedSqlChoice,
   type CompositionSavedSqlRevisionRef,
   type CompositionScalarDescriptor,
+  compositionTablePresentationDiagnostics,
   type CompositionVariableNode,
   createCompositionGraphDraft,
   sameResolvedQueryMeaning,
@@ -158,15 +159,11 @@ const formChoice = (form: Form): CompositionFormChoice | undefined => {
     id: form.id,
     name: form.name,
     relation: form.sql_relation,
-    fields: Object.entries(form.fields ?? {}).flatMap(([name, field]) => {
-      const type = field.type ? formScalarType(field.type) : undefined;
-      if (!type) return [];
-      return [{
-        name,
-        column: field.sql_column?.trim() || name,
-        type,
-      }];
-    }),
+    fields: Object.entries(form.fields ?? {}).map(([name, field]) => ({
+      name: field.label?.trim() || name,
+      column: field.sql_column?.trim() || name,
+      type: field.type ? formScalarType(field.type) ?? field.type : "other",
+    })),
   };
 };
 
@@ -247,7 +244,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
   );
-  const editorValid = () => invalidEditorVariables().size === 0;
+  const editorValid = () =>
+    invalidEditorVariables().size === 0 &&
+    compositionTablePresentationDiagnostics(draft()).length === 0;
   const [saveGeneration, setSaveGeneration] = createSignal(0);
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
@@ -856,6 +855,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
         ...candidate,
         id: uniqueId(id),
       }, component === "table" ? "table" : "scalar");
+      if (component === "table") {
+        resolved.tablePresentation = {
+          columns: form.fields.length > 0
+            ? form.fields.map((field) => ({
+              column: field.column,
+              label: field.name,
+            }))
+            : [{
+              column: "_ugoite_id",
+              label: t("composition.studioEntryIdColumn"),
+            }],
+        };
+      }
       return resolved;
     },
     prepareSavedSql: async (
@@ -1084,6 +1096,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
           };
         }),
       };
+      if (compositionTablePresentationDiagnostics(verified).length > 0) {
+        setDraft(verified);
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        pendingSave = undefined;
+        setSaveRetryAvailable(false);
+        setSaveError(t("composition.studioTableViewChanged"));
+        return;
+      }
       const canonical = await compositionApi.canonicalizeDocument(
         compositionGraphDocumentDraft(verified),
       );
@@ -1281,6 +1301,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
                     query: {
                       ...node.query,
                       sql,
+                      schema_fingerprint: "",
                       ...(formBindings ? { form_bindings: formBindings } : {}),
                     },
                   }

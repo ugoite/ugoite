@@ -44,8 +44,8 @@ const aggregateFieldTypes = new Set([
 ]);
 
 const bindingErrorKeys = {
-  FORM_NOT_FOUND: "composition.bindingFormUnavailable",
-  FORBIDDEN: "composition.bindingFormUnavailable",
+  FORM_NOT_FOUND: "composition.bindingSourceUnavailable",
+  FORBIDDEN: "composition.bindingSourceUnavailable",
   FORM_DEFINITION_READ_FAILED: "composition.bindingRetry",
   CHECKPOINT_UNAVAILABLE: "composition.bindingRetry",
   STORAGE_CONNECTION_FAILED: "composition.bindingRetry",
@@ -56,8 +56,8 @@ const bindingFailureMessage = (cause: unknown) => {
   if (cause instanceof CompositionBindingDiagnosticError) {
     return t(
       cause.code === "query_schema_changed"
-        ? "composition.bindingSchemaChanged"
-        : "composition.bindingFormUnavailable",
+        ? "composition.bindingSourceChanged"
+        : "composition.bindingSourceUnavailable",
     );
   }
   if (cause instanceof UgoiteApiError) {

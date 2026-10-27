@@ -146,7 +146,7 @@ describe("CompositionVariableBindingPicker", () => {
     fireEvent.click(form);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This Form changed while you were binding it.",
+      "The source changed while you were binding it.",
     );
     expect(form).toHaveAttribute("aria-pressed", "true");
     expect(onCommit).not.toHaveBeenCalled();
@@ -183,7 +183,7 @@ describe("CompositionVariableBindingPicker", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Customers" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("This Form is unavailable");
+    expect(alert).toHaveTextContent("This source is unavailable");
     expect(alert.textContent).not.toContain("form_sensitive-id");
     expect(alert.textContent).not.toContain("SELECT");
     expect(dialog).toBeInTheDocument();

@@ -183,7 +183,7 @@ impl CompositionSpec {
                         variable: variable.clone(),
                     }
                 }
-                CompositionComponent::Table { id, variable } => {
+                CompositionComponent::Table { id, variable, .. } => {
                     VariableGraphComponentBinding::Table {
                         id: id.clone(),
                         variable: variable.clone(),
@@ -433,6 +433,37 @@ pub enum CompositionMetricPresentation {
     },
 }
 
+/// An ordered, display-only projection of columns from a Table query result.
+/// Column keys remain exact SQL result names; labels never become data keys.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionTablePresentation {
+    pub columns: Vec<CompositionTablePresentationColumn>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionTablePresentationColumn {
+    pub column: String,
+    pub label: String,
+}
+
+impl CompositionTablePresentation {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        !self.columns.is_empty()
+            && self.columns.iter().all(|column| {
+                !column.column.trim().is_empty() && !column.label.trim().is_empty()
+            })
+            && self
+                .columns
+                .iter()
+                .map(|column| column.column.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                == self.columns.len()
+    }
+}
+
 impl CompositionMetricPresentation {
     pub(crate) fn is_well_formed(&self) -> bool {
         match self {
@@ -467,6 +498,9 @@ pub enum CompositionComponent {
         id: String,
         /// Table value supplied by a query variable.
         variable: String,
+        /// Optional display-only column view; None shows every query column.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        presentation: Option<CompositionTablePresentation>,
     },
 }
 
@@ -513,6 +547,17 @@ impl CompositionComponent {
         presentation
             .as_ref()
             .is_none_or(CompositionMetricPresentation::is_well_formed)
+    }
+
+    pub(crate) fn table_shape_is_well_formed(&self) -> bool {
+        let Self::Table {
+            presentation: Some(presentation),
+            ..
+        } = self
+        else {
+            return true;
+        };
+        presentation.is_well_formed()
     }
 }
 

@@ -583,6 +583,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
                 variable: "source".to_string(),
+                presentation: None,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
