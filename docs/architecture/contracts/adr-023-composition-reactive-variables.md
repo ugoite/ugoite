@@ -64,6 +64,10 @@ stable references, not primary UI labels.
 
 #### 2.1 Typed Input values are bounded and locale-independent
 
+For the current ADR-025 variable graph, ADR-026 supersedes only the integer
+token length and value bounds in this historical decision and its A25 row.
+The remaining constraints and historical evidence remain unchanged.
+
 Use these lexical and value constraints consistently in Domain, Core, Native,
 WASM, CLI, and Browser. A variable's optional display-format hint never
 changes its accepted type or lexical grammar. A value outside its constraint
