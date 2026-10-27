@@ -140,4 +140,76 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
     expect(restoredUnary.document.source).toBe(initial);
   });
+
+  it("authors typed DATE literals from the inspector and restores them with WASM undo", async () => {
+    const initial = "SELECT amount";
+    const document = await parseSqlDocument(initial);
+    const expression = document.nodes.find((node) =>
+      node.kind === "identifier_expression"
+    )!;
+    const result = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_literal",
+        node_id: expression.id,
+        expected_kind: expression.kind,
+        literal: {
+          kind: "typed_string",
+          data_type: "date",
+          value: "2026-02-03",
+        },
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    fireEvent.click(
+      await screen.findByRole("treeitem", { name: /Identifier: amount/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "literal" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "date" },
+    });
+    fireEvent.input(screen.getByLabelText("DATE value"), {
+      target: { value: "2026-02-03" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(result.document.source));
+    expect(sql()).toBe("SELECT DATE '2026-02-03'");
+    const restored = await applySqlDocumentEditTransaction(sql(), result.undo);
+    expect(restored.document.source).toBe(initial);
+  });
+
+  it("constructs a NULL-safe predicate from the inspector and restores it with WASM undo", async () => {
+    const initial = "SELECT amount";
+    const document = await parseSqlDocument(initial);
+    const expression = document.nodes.find((node) =>
+      node.kind === "identifier_expression"
+    )!;
+    const result = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "wrap_expression_in_predicate",
+        node_id: expression.id,
+        expected_kind: expression.kind,
+        template: "is_not_distinct_from",
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    fireEvent.click(
+      await screen.findByRole("treeitem", { name: /Identifier: amount/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Predicate"), {
+      target: { value: "is_not_distinct_from" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(result.document.source));
+    expect(sql()).toBe("SELECT (amount) IS NOT DISTINCT FROM NULL");
+    const restored = await applySqlDocumentEditTransaction(sql(), result.undo);
+    expect(restored.document.source).toBe(initial);
+  });
 });

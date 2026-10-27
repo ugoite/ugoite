@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 20,
+        "version": 21,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -792,6 +792,35 @@
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
               "async fn typed_sql_document_edits_execute_through_authorized_query_context"
+            ]
+          ]
+        },
+        {
+          "id": "predicate-and-typed-literal-constructors",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_postfix_and_pattern_predicate_templates_are_constructible_and_undoable"
+            ],
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_typed_temporal_and_hex_literals_are_editable_and_undoable"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_postfix_predicate_and_typed_literal_protocol_match_native"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.test.tsx",
+              "offers NULL-safe comparison predicates through a typed operation"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn predicate_and_typed_literal_constructors_execute_in_authorized_queries"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "constructs a NULL-safe predicate from the inspector and restores it with WASM undo"
             ]
           ]
         }

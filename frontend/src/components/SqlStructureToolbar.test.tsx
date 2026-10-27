@@ -140,7 +140,7 @@ const makeSqlDocument = (source: string): SqlDocument => {
     });
   }
   return {
-    contract_version: 20,
+    contract_version: 21,
     source,
     status: "parsed",
     diagnostics: [],
@@ -238,7 +238,7 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
     const { actions, currentSql } = setup(initialSql, [formContext]);
     applySemanticEditMock.mockResolvedValue({
       document: makeSqlDocument(changedSql),
-      undo: { contract_version: 20, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 21, expected_source: changedSql, edits: [] },
     });
 
     await waitFor(() => expect(actions()).toHaveLength(12));
@@ -247,7 +247,7 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
 
     await waitFor(() =>
       expect(applySemanticEditMock).toHaveBeenCalledWith(initialSql, {
-        contract_version: 20,
+        contract_version: 21,
         expected_source: initialSql,
         edits: [{
           kind: "add_from_relation",

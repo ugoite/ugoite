@@ -438,7 +438,16 @@ export type SqlDocumentFilterOperator =
   | "like"
   | "not_like"
   | "is_null"
-  | "is_not_null";
+  | "is_not_null"
+  | "is_true"
+  | "is_false"
+  | "is_unknown"
+  | "is_distinct_from"
+  | "is_not_distinct_from"
+  | "ilike"
+  | "not_ilike"
+  | "similar_to"
+  | "not_similar_to";
 
 export type SqlDocumentLiteralKind =
   | "number"
@@ -601,7 +610,9 @@ export type SqlDocumentSemanticLiteral =
   | { kind: "string"; value: string }
   | { kind: "boolean"; value: boolean }
   | { kind: "null" }
-  | { kind: "named_parameter"; name: string };
+  | { kind: "named_parameter"; name: string }
+  | { kind: "typed_string"; data_type: "date" | "timestamp" | "interval"; value: string }
+  | { kind: "hex_string"; value: string };
 
 export type SqlDocumentFilterCondition =
   | { kind: "group"; operator: SqlDocumentConditionGroupOperator; children: SqlDocumentFilterCondition[] }
@@ -647,7 +658,16 @@ export type SqlDocumentPredicateTemplate =
   | "like"
   | "not_like"
   | "is_null"
-  | "is_not_null";
+  | "is_not_null"
+  | "is_true"
+  | "is_false"
+  | "is_unknown"
+  | "is_distinct_from"
+  | "is_not_distinct_from"
+  | "ilike"
+  | "not_ilike"
+  | "similar_to"
+  | "not_similar_to";
 export type SqlDocumentCastType =
   | "varchar"
   | "integer"

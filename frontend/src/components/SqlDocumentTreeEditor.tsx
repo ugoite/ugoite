@@ -56,7 +56,16 @@ interface SqlDocumentTreeEditorProps {
   initialNodeKinds?: () => readonly SqlDocumentNode["kind"][];
 }
 
-type LiteralKind = "number" | "string" | "boolean" | "null" | "named_parameter";
+type LiteralKind =
+  | "number"
+  | "string"
+  | "boolean"
+  | "null"
+  | "named_parameter"
+  | "date"
+  | "timestamp"
+  | "interval"
+  | "hex_string";
 
 type LiteralDraft = {
   kind: LiteralKind | "";
@@ -122,6 +131,15 @@ const predicateTemplates: {
   { kind: "not_like", label: "NOT LIKE" },
   { kind: "is_null", label: "IS NULL" },
   { kind: "is_not_null", label: "IS NOT NULL" },
+  { kind: "is_true", label: "IS TRUE" },
+  { kind: "is_false", label: "IS FALSE" },
+  { kind: "is_unknown", label: "IS UNKNOWN" },
+  { kind: "is_distinct_from", label: "IS DISTINCT FROM" },
+  { kind: "is_not_distinct_from", label: "IS NOT DISTINCT FROM" },
+  { kind: "ilike", label: "ILIKE" },
+  { kind: "not_ilike", label: "NOT ILIKE" },
+  { kind: "similar_to", label: "SIMILAR TO" },
+  { kind: "not_similar_to", label: "NOT SIMILAR TO" },
 ];
 
 const expressionNodeKinds = new Set<SqlDocumentNode["kind"]>([
@@ -264,12 +282,30 @@ const decodeSimpleString = (raw: string | null): string | undefined => {
 };
 
 const initialLiteralDraft = (node: SqlDocumentNode): LiteralDraft => {
+  if (node.semantic?.kind === "typed_literal") {
+    const type = node.semantic.data_type.toLowerCase();
+    const raw = node.semantic.raw;
+    const typedMatch = raw?.match(
+      /^\s*(?:DATE|TIMESTAMP|INTERVAL)\s+'((?:''|[^'])*)'/i,
+    );
+    const content = typedMatch?.[1]?.replaceAll("''", "'") ??
+      decodeSimpleString(raw ?? null);
+    if (
+      (type === "date" || type === "timestamp" || type === "interval") &&
+      content !== undefined
+    ) {
+      return { kind: type, value: content };
+    }
+    return { kind: "", value: "" };
+  }
   if (node.semantic?.kind !== "literal") return { kind: "", value: "" };
   const raw = node.semantic.raw;
   switch (node.semantic.literal_kind) {
     case "number":
       return { kind: "number", value: raw ?? "" };
     case "string": {
+      const hex = raw?.match(/^x'([0-9a-f]*)'$/i);
+      if (hex) return { kind: "hex_string", value: hex[1] };
       const value = decodeSimpleString(raw);
       return value === undefined
         ? { kind: "", value: "" }
@@ -494,6 +530,14 @@ function semanticEdit(
       case "named_parameter":
         value = { kind: "named_parameter", name: literal.value };
         break;
+      case "date":
+      case "timestamp":
+      case "interval":
+        value = { kind: "typed_string", data_type: literal.kind, value: literal.value };
+        break;
+      case "hex_string":
+        value = { kind: "hex_string", value: literal.value };
+        break;
     }
     if (value) {
       return {
@@ -587,6 +631,14 @@ function semanticEdit(
         break;
       case "named_parameter":
         value = { kind: "named_parameter", name: literal.value };
+        break;
+      case "date":
+      case "timestamp":
+      case "interval":
+        value = { kind: "typed_string", data_type: literal.kind, value: literal.value };
+        break;
+      case "hex_string":
+        value = { kind: "hex_string", value: literal.value };
         break;
     }
     if (value) {
@@ -2116,7 +2168,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       node.kind === "identifier_expression" ||
         node.kind === "compound_identifier_expression"
         ? "identifier"
-        : node.semantic?.kind === "literal"
+        : node.semantic?.kind === "literal" || node.semantic?.kind === "typed_literal"
         ? "literal"
         : "",
     );
@@ -3030,6 +3082,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
 
                     <Show
                       when={node().semantic?.kind === "literal" ||
+                        node().semantic?.kind === "typed_literal" ||
                         expressionLeafAction() === "literal"}
                       fallback={null}
                     >
@@ -3056,6 +3109,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             <option value="string">
                               {t("sqlPage.structure.literal.string")}
                             </option>
+                            <option value="date">DATE</option>
+                            <option value="timestamp">TIMESTAMP</option>
+                            <option value="interval">INTERVAL</option>
+                            <option value="hex_string">HEX</option>
                             <option value="boolean">
                               {t("sqlPage.structure.literal.boolean")}
                             </option>
@@ -3088,13 +3145,25 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                         <Show
                           when={literal().kind === "number" ||
                             literal().kind === "string" ||
-                            literal().kind === "named_parameter"}
+                            literal().kind === "named_parameter" ||
+                            literal().kind === "date" ||
+                            literal().kind === "timestamp" ||
+                            literal().kind === "interval" ||
+                            literal().kind === "hex_string"}
                         >
                           <label class="ui-label">
                             {literal().kind === "number"
                               ? t("sqlPage.structure.documentNumber")
                               : literal().kind === "named_parameter"
                               ? t("sqlPage.structure.documentParameterName")
+                              : literal().kind === "date"
+                              ? "DATE value"
+                              : literal().kind === "timestamp"
+                              ? "TIMESTAMP value"
+                              : literal().kind === "interval"
+                              ? "INTERVAL value"
+                              : literal().kind === "hex_string"
+                              ? "Hex bytes"
                               : t("sqlPage.structure.documentString")}
                             <input
                               class="ui-input"
