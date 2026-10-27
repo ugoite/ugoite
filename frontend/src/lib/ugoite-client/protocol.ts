@@ -244,17 +244,6 @@ const encodeTypedIntegerCommand = (command: unknown): unknown => {
   return command;
 };
 
-const decodeLiteralInteger = (
-  literal: unknown,
-  source: (parent: object, key: string) => string | undefined,
-): void => {
-  if (
-    !isRecord(literal) || literal.kind !== "integer" ||
-    typeof literal.value !== "number"
-  ) return;
-  literal.value = exactIntegerSourceValue(literal, "value", source);
-};
-
 const decodeTypedIntegerResponse = (
   command: unknown,
   value: unknown,
