@@ -1715,6 +1715,23 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     ).rejects.toThrow("Protocol integer is outside the supported i64 range");
   });
 
+  it("does not treat a non-document lint value as a Composition document", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/compositions/lint"),
+        () =>
+          HttpResponse.json({
+            value: null,
+            canonical_yaml: "format: ugoite.composition",
+          }),
+      ),
+    );
+
+    await expect(
+      protocolFetch("composition.lint", {}, { yaml: "invalid" }),
+    ).resolves.toMatchObject({ value: null });
+  });
+
   it("rejects unsafe JavaScript numbers instead of encoding their rounded value", () => {
     expect(() => exactIntegerJsonValue(9_007_199_254_740_993)).toThrow(
       "Unsafe integer number cannot be encoded exactly",
