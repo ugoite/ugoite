@@ -2374,6 +2374,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     const source = props.sql();
     props.scope?.();
     const currentGeneration = ++generation;
+    setValueAccessKind("");
+    setValueAccessValue("");
     setLoading(true);
     setBusy(false);
     setError(undefined);
@@ -2391,6 +2393,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   });
 
   const selectNode = (node: SqlDocumentNode) => {
+    if (selectedNodeId() !== node.id) {
+      setValueAccessKind("");
+      setValueAccessValue("");
+    }
     setSelectedNodeId(node.id);
     setParts(identifierParts(node));
     setLiteral(initialLiteralDraft(node));
@@ -2723,6 +2729,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         return;
       }
       props.onSqlChange(result.document.source);
+      setValueAccessKind("");
+      setValueAccessValue("");
       setDocument(result.document);
       setSelectedNodeId(undefined);
       setProjectionItemAction("");

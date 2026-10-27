@@ -257,45 +257,125 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("authors one-based array access through actual WASM", async () => {
-    for (
-      const item of [
-        {
-          source: "SELECT ARRAY[4, 9] /* preserve */",
-          expression: "ARRAY[4, 9]",
-          choice: "array_index",
-          inputLabel: "One-based index",
-          input: "2",
-          expected: "SELECT (ARRAY[4, 9])[2] /* preserve */",
-        },
-      ] as const
-    ) {
-      const document = await parseSqlDocument(item.source);
-      const expression = document.nodes.find((node) =>
-        node.range &&
-        item.source.slice(node.range.start, node.range.end) === item.expression
-      );
-      expect(expression).toBeDefined();
-      const [sql, setSql] = createSignal(item.source);
-      const view = render(() => (
-        <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />
-      ));
-      const expressionItem = (await screen.findAllByRole("treeitem")).find(
-        (node) => node.dataset.sqlDocumentNode === String(expression!.id),
-      );
-      expect(expressionItem).toBeDefined();
-      fireEvent.click(expressionItem!);
-      fireEvent.change(screen.getByLabelText("Add array element index"), {
-        target: { value: item.choice },
-      });
-      fireEvent.input(screen.getByLabelText(item.inputLabel), {
-        target: { value: item.input },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-      await waitFor(() => expect(sql()).toBe(item.expected));
-      const updated = await parseSqlDocument(sql());
-      expect(updated.status).toBe("parsed");
-      view.unmount();
-    }
+    const source = "SELECT ARRAY[4, 9], amount /* preserve */";
+    const document = await parseSqlDocument(source);
+    const array = document.nodes.find((node) =>
+      node.range && source.slice(node.range.start, node.range.end) ===
+        "ARRAY[4, 9]"
+    );
+    const amount = document.nodes.find((node) =>
+      node.kind === "identifier_expression" && node.range &&
+      source.slice(node.range.start, node.range.end) === "amount"
+    );
+    expect(array).toBeDefined();
+    expect(amount).toBeDefined();
+    const [sql, setSql] = createSignal(source);
+    const view = render(() => (
+      <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />
+    ));
+    const items = await screen.findAllByRole("treeitem");
+    const treeItem = (id: number) =>
+      items.find((node) => node.dataset.sqlDocumentNode === String(id));
+    expect(treeItem(array!.id)).toBeDefined();
+    expect(treeItem(amount!.id)).toBeDefined();
+
+    fireEvent.click(treeItem(array!.id)!);
+    fireEvent.change(screen.getByLabelText("Add array element index"), {
+      target: { value: "array_index" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based index"), {
+      target: { value: "2" },
+    });
+    expect((screen.getByLabelText("One-based index") as HTMLInputElement).value)
+      .toBe("2");
+
+    fireEvent.click(treeItem(amount!.id)!);
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText("Add array element index") as HTMLSelectElement)
+          .value,
+      ).toBe("");
+      expect(screen.queryByLabelText("One-based index")).toBeNull();
+    });
+
+    fireEvent.click(treeItem(array!.id)!);
+    fireEvent.change(screen.getByLabelText("Add array element index"), {
+      target: { value: "array_index" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based index"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT (ARRAY[4, 9])[2], amount /* preserve */")
+    );
+    const updated = await parseSqlDocument(sql());
+    expect(updated.status).toBe("parsed");
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Add array element index")).toBeNull();
+      expect(screen.queryByLabelText("One-based index")).toBeNull();
+    });
+    const updatedAmount = updated.nodes.find((node) =>
+      node.kind === "identifier_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "amount"
+    );
+    expect(updatedAmount).toBeDefined();
+    const updatedTreeItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(updatedAmount!.id),
+    );
+    expect(updatedTreeItem).toBeDefined();
+    fireEvent.click(updatedTreeItem!);
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText("Add array element index") as HTMLSelectElement)
+          .value,
+      ).toBe("");
+      expect(screen.queryByLabelText("One-based index")).toBeNull();
+    });
+    view.unmount();
+  });
+
+  it("indexes an aliased projection child without changing its alias", async () => {
+    const source = "SELECT field_101 AS values_out";
+    const document = await parseSqlDocument(source);
+    const item = document.nodes.find((node) =>
+      node.kind === "select_item" && node.semantic?.kind === "projection_alias"
+    );
+    const expression = document.nodes.find((node) =>
+      node.kind === "identifier_expression" && node.range &&
+      source.slice(node.range.start, node.range.end) === "field_101"
+    );
+    expect(item).toBeDefined();
+    expect(expression).toBeDefined();
+
+    const [sql, setSql] = createSignal(source);
+    const view = render(() => (
+      <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />
+    ));
+    const items = await screen.findAllByRole("treeitem");
+    const itemControl = items.find((node) =>
+      node.dataset.sqlDocumentNode === String(item!.id)
+    );
+    const expressionControl = items.find((node) =>
+      node.dataset.sqlDocumentNode === String(expression!.id)
+    );
+    expect(itemControl).toBeDefined();
+    expect(expressionControl).toBeDefined();
+    fireEvent.click(itemControl!);
+    expect(screen.queryByLabelText("Add array element index")).toBeNull();
+
+    fireEvent.click(expressionControl!);
+    fireEvent.change(screen.getByLabelText("Add array element index"), {
+      target: { value: "array_index" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based index"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT (field_101)[1] AS values_out")
+    );
+    view.unmount();
   });
 
   it("switches CASE to a selected operand and back through the CASE mode control", async () => {
