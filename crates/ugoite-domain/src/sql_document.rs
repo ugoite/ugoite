@@ -13773,11 +13773,9 @@ mod tests {
         assert!(token_texts.contains(&"\"MiX\""));
         assert!(token_texts.contains(&"'$day'"));
         assert!(token_texts.contains(&"$day"));
-        assert!(
-            token_texts
-                .iter()
-                .any(|text| text.starts_with("/* tail */"))
-        );
+        assert!(token_texts
+            .iter()
+            .any(|text| text.starts_with("/* tail */")));
         assert_eq!(
             document
                 .tokens
@@ -13842,12 +13840,10 @@ mod tests {
         assert!(changed.document.to_sql().contains("/* left */"));
         assert!(changed.document.to_sql().ends_with("/* tail */"));
         assert!(changed.document.to_sql().contains("FROM \"G\""));
-        assert!(
-            changed
-                .document
-                .to_sql()
-                .contains("ORDER BY \"Total\" DESC")
-        );
+        assert!(changed
+            .document
+            .to_sql()
+            .contains("ORDER BY \"Total\" DESC"));
 
         let undone = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
             .expect("the typed edit returns a guarded inverse transaction");
@@ -14866,12 +14862,10 @@ mod tests {
         assert!(kinds.contains(&SqlDocumentNodeKind::CaseExpression));
         assert!(kinds.contains(&SqlDocumentNodeKind::CastExpression));
         assert!(kinds.contains(&SqlDocumentNodeKind::SubqueryExpression));
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.parent.is_some_and(|parent| parent < node.id))
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.parent.is_some_and(|parent| parent < node.id)));
     }
 
     #[test]
@@ -14891,9 +14885,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing {kind:?} node containing {needle:?}"))
         };
         assert!(slice(SqlDocumentNodeKind::WithClause, "WITH c AS").starts_with("WITH c AS"));
-        assert!(
-            slice(SqlDocumentNodeKind::CommonTableExpression, "c AS (").contains("WHERE a > 0")
-        );
+        assert!(slice(SqlDocumentNodeKind::CommonTableExpression, "c AS (").contains("WHERE a > 0"));
         assert!(slice(SqlDocumentNodeKind::SetOperation, "UNION").contains("UNION"));
         assert!(slice(SqlDocumentNodeKind::SelectList, "SELECT c.a").starts_with("SELECT c.a"));
         assert!(slice(SqlDocumentNodeKind::FromClause, "FROM c JOIN").starts_with("FROM c JOIN"));
@@ -14934,12 +14926,10 @@ mod tests {
                     && node.parent == Some(with.id)
             })
             .expect("CTE belongs to WITH");
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::Query && node.parent == Some(cte.id))
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::Query && node.parent == Some(cte.id)));
 
         let set_operation = document
             .nodes
@@ -14993,12 +14983,10 @@ mod tests {
         assert_eq!(document.status, SqlDocumentStatus::Parsed);
         assert_eq!(document.to_sql(), source);
         assert_eq!(document.contract_version, SQL_DOCUMENT_CONTRACT_VERSION);
-        assert!(
-            document
-                .tokens
-                .iter()
-                .all(|token| document.source_slice(token.range).is_some())
-        );
+        assert!(document
+            .tokens
+            .iter()
+            .all(|token| document.source_slice(token.range).is_some()));
 
         let has_semantic = |node_kind, expected: &dyn Fn(&SqlDocumentNodeData) -> bool| {
             document
@@ -17013,13 +17001,11 @@ mod tests {
             edited.document.source,
             "SELECT 1 /* keep */, (SELECT 1) AS __ugoite_scalar_subquery FROM \"G\" ORDER BY 1"
         );
-        assert!(
-            edited
-                .document
-                .nodes
-                .iter()
-                .any(|node| { node.kind == SqlDocumentNodeKind::SubqueryExpression })
-        );
+        assert!(edited
+            .document
+            .nodes
+            .iter()
+            .any(|node| { node.kind == SqlDocumentNodeKind::SubqueryExpression }));
         assert!(edited.document.nodes.iter().any(|node| {
             node.kind == SqlDocumentNodeKind::Select
                 && node.parent.is_some_and(|parent| {
@@ -17941,12 +17927,10 @@ mod tests {
             ),
         )
         .expect("GROUP BY keys can be reordered as source-backed nodes");
-        assert!(
-            moved_group
-                .document
-                .source
-                .contains("GROUP BY amount + 1, amount")
-        );
+        assert!(moved_group
+            .document
+            .source
+            .contains("GROUP BY amount + 1, amount"));
         let restored =
             apply_sql_document_edit_transaction(&moved_group.document.source, &moved_group.undo)
                 .expect("group-key reordering has an exact inverse");
@@ -17963,12 +17947,10 @@ mod tests {
             ),
         )
         .expect("a GROUP BY key can be removed");
-        assert!(
-            removed_group
-                .document
-                .source
-                .contains("GROUP BY amount HAVING")
-        );
+        assert!(removed_group
+            .document
+            .source
+            .contains("GROUP BY amount HAVING"));
         let restored = apply_sql_document_edit_transaction(
             &removed_group.document.source,
             &removed_group.undo,
@@ -18055,12 +18037,10 @@ mod tests {
             ),
         )
         .expect("a simple aggregate wrapper can be removed");
-        assert!(
-            removed_aggregate
-                .document
-                .source
-                .contains("HAVING amount > 0")
-        );
+        assert!(removed_aggregate
+            .document
+            .source
+            .contains("HAVING amount > 0"));
         let restored = apply_sql_document_edit_transaction(
             &removed_aggregate.document.source,
             &removed_aggregate.undo,
@@ -19485,12 +19465,10 @@ mod tests {
             ),
         )
         .unwrap();
-        assert!(
-            edited
-                .document
-                .source
-                .ends_with("GROUP BY 1, 2 ORDER BY 2 DESC")
-        );
+        assert!(edited
+            .document
+            .source
+            .ends_with("GROUP BY 1, 2 ORDER BY 2 DESC"));
         assert_eq!(
             apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
                 .unwrap()
@@ -19865,12 +19843,9 @@ mod tests {
             ancestors.push(node);
             ancestor = node.parent;
         }
-        assert!(
-            ancestors
-                .iter()
-                .any(|node| node.id == nested_item.id
-                    && node.kind == SqlDocumentNodeKind::SelectItem)
-        );
+        assert!(ancestors
+            .iter()
+            .any(|node| node.id == nested_item.id && node.kind == SqlDocumentNodeKind::SelectItem));
 
         for comment in ["/* before */", "/* wildcard tail */", "/* alias tail */"] {
             assert!(document.tokens.iter().any(|token| {
@@ -19954,18 +19929,14 @@ mod tests {
         let source = "-- 日\nSELECT '東京' AS \"日付\"";
         let document = parse_sql_document(source);
         assert_eq!(document.status, SqlDocumentStatus::Parsed);
-        assert!(
-            document
-                .tokens
-                .iter()
-                .any(|token| { document.source_slice(token.range) == Some("'東京'") })
-        );
-        assert!(
-            document
-                .tokens
-                .iter()
-                .any(|token| { document.source_slice(token.range) == Some("\"日付\"") })
-        );
+        assert!(document
+            .tokens
+            .iter()
+            .any(|token| { document.source_slice(token.range) == Some("'東京'") }));
+        assert!(document
+            .tokens
+            .iter()
+            .any(|token| { document.source_slice(token.range) == Some("\"日付\"") }));
     }
 
     #[test]
@@ -20041,18 +20012,14 @@ mod tests {
                     && source.is_char_boundary(range.end)
             })
         }));
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
-        );
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::CastExpression)
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::CaseExpression));
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::CastExpression));
         // `Parsed` is syntax state only. No plan or executor admission is run
         // by this document parser.
     }
@@ -20249,13 +20216,11 @@ mod tests {
         .expect("syntax diagnostics do not reject a source edit");
 
         assert_eq!(result.document.status, SqlDocumentStatus::InvalidSql);
-        assert!(
-            result
-                .document
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.code == SqlDocumentDiagnosticCode::ParseFailed })
-        );
+        assert!(result
+            .document
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == SqlDocumentDiagnosticCode::ParseFailed }));
         assert_eq!(result.document.to_sql(), "SELECT ( FROM \"G\"");
     }
 
@@ -21060,12 +21025,10 @@ mod tests {
             "SELECT * FROM G WHERE (status = 'open' AND status = 'blocked') AND status = 'pending'";
         let explicit_group_changed =
             change_root_connector(explicit_group_source, SqlDocumentConditionGroupOperator::Or);
-        assert!(
-            explicit_group_changed
-                .document
-                .source
-                .contains("status = 'open' AND status = 'blocked'")
-        );
+        assert!(explicit_group_changed
+            .document
+            .source
+            .contains("status = 'open' AND status = 'blocked'"));
         let explicit_view = parse_sql_document(&explicit_group_changed.document.source);
         let SqlDocumentConditionNode::Group { children, .. } =
             explicit_view.conditions[0].expression.as_ref().unwrap()
@@ -21197,13 +21160,11 @@ mod tests {
             "root predicate removal should remove WHERE: {removed_root:?}"
         );
         let removed_root = removed_root.unwrap();
-        assert!(
-            !removed_root
-                .document
-                .source
-                .to_ascii_uppercase()
-                .contains("WHERE")
-        );
+        assert!(!removed_root
+            .document
+            .source
+            .to_ascii_uppercase()
+            .contains("WHERE"));
 
         let nested_source = "SELECT * FROM G WHERE (a = 1 AND (b = 2 OR c = 3)) AND d = 4";
         let nested_doc = parse_sql_document(nested_source);
@@ -21419,12 +21380,10 @@ mod tests {
             .iter()
             .find(|node| node.kind == SqlDocumentNodeKind::WhereClause)
             .unwrap();
-        assert!(
-            document
-                .source_slice(where_clause.range.unwrap())
-                .unwrap()
-                .ends_with("field_101 IS NOT NULL")
-        );
+        assert!(document
+            .source_slice(where_clause.range.unwrap())
+            .unwrap()
+            .ends_with("field_101 IS NOT NULL"));
         let SqlDocumentConditionNode::Group {
             node_id, children, ..
         } = document.conditions[0].expression.as_ref().unwrap()
@@ -21471,11 +21430,10 @@ mod tests {
         )
         .expect("append to the existing logical group");
         assert!(result.document.source.contains("field_101 IS NOT NULL"));
-        assert!(
-            result.document.source.contains(
-                "field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"
-            )
-        );
+        assert!(result
+            .document
+            .source
+            .contains("field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"));
         let restored =
             apply_sql_document_edit_transaction(&result.document.source, &result.undo).unwrap();
         assert_eq!(restored.document.source, source);
@@ -21530,11 +21488,8 @@ mod tests {
             appended < comment,
             "appended predicate must precede comment: {source}"
         );
-        assert!(
-            source.contains(
-                "field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"
-            )
-        );
+        assert!(source
+            .contains("field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"));
         let restored = apply_sql_document_edit_transaction(source, &result.undo).unwrap();
         assert_eq!(restored.document.source, document.source);
     }
@@ -21597,12 +21552,10 @@ mod tests {
         .expect("signed arbitrary-precision numeric literal is safe and renderable");
         assert!(inserted.document.source.contains(huge));
         let roundtrip = parse_sql_document(&inserted.document.source);
-        assert!(
-            roundtrip.conditions[0]
-                .expression
-                .as_ref()
-                .is_some_and(|expr| condition_tree_contains_number(expr, huge))
-        );
+        assert!(roundtrip.conditions[0]
+            .expression
+            .as_ref()
+            .is_some_and(|expr| condition_tree_contains_number(expr, huge)));
         let undone =
             apply_sql_document_edit_transaction(&inserted.document.source, &inserted.undo).unwrap();
         assert_eq!(undone.document.source, base);
