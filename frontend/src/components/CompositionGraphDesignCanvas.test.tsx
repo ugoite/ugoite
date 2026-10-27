@@ -462,6 +462,46 @@ describe("CompositionGraphDesignCanvas", () => {
     );
   });
 
+  it("uses selected headings and tucks optional result keys into a disclosure", () => {
+    const onDraftChange = vi.fn();
+    renderCanvas(
+      onDraftChange,
+      tableDraft(
+        ["field_100", "_ugoite_id"],
+        [{ column: "field_100", label: "Date" }],
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+
+    expect(screen.getByRole("checkbox", { name: "Date" })).toBeChecked();
+    expect(
+      screen.getByRole("textbox", { name: "Display label for Date" }),
+    ).toHaveValue("Date");
+    expect(
+      screen.queryByRole("checkbox", { name: "Add result column _ugoite_id" }),
+    ).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("Add result columns"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Add result column _ugoite_id" }),
+    );
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        components: [{
+          id: "table_1",
+          kind: "table",
+          variable: "rows",
+          presentation: {
+            columns: [
+              { column: "field_100", label: "Date" },
+              { column: "_ugoite_id", label: "_ugoite_id" },
+            ],
+          },
+        }],
+      }),
+    );
+  });
+
   it("removes a stale Table key and adds current columns without changing valid headings", () => {
     const onDraftChange = vi.fn();
     renderCanvas(

@@ -363,14 +363,31 @@
   margin: 0;
   font-size: var(--ui-font-size-sm);
 }
+.compositionGraphTableOptionalColumns {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+}
+.compositionGraphTableOptionalColumns summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ui-muted-foreground);
+  font-size: var(--ui-font-size-sm);
+}
 .compositionGraphTableColumnChoice,
 .compositionGraphTableColumnSettings {
   display: flex;
   align-items: center;
   gap: var(--ui-spacing-xs);
+  min-width: 0;
 }
 .compositionGraphTableColumnSettings > label {
   flex: 1;
+  min-width: 0;
+}
+.compositionGraphTableColumnSettings .ui-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 .compositionGraphInspectorActions {
   display: flex;

@@ -93,6 +93,8 @@ function CompositionTableInspector(props: {
         column: name,
         label: name,
       }));
+  const selectedLabel = (key: string) =>
+    selectedColumns().find((item) => item.column === key)?.label ?? key;
   const selectColumn = (column: string, selected: boolean) => {
     const current = selectedColumns();
     if (selected) {
@@ -166,24 +168,56 @@ function CompositionTableInspector(props: {
   return (
     <section class="compositionGraphTableInspector">
       <h3>{t("composition.studioTableColumns")}</h3>
-      <For each={props.columns()}>
-        {(column) => (
-          <label class="compositionGraphTableColumnChoice">
-            <input
-              type="checkbox"
-              checked={selectedColumns().some((item) =>
-                item.column === column.name
-              )}
-              disabled={selectedColumns().length <= 1 &&
-                selectedColumns()[0]?.column === column.name}
-              aria-label={column.name}
-              onChange={(event) =>
-                selectColumn(column.name, event.currentTarget.checked)}
-            />
-            <span>{column.name}</span>
-          </label>
+      <For
+        each={props.columns().filter((column) =>
+          selectedColumns().some((item) => item.column === column.name)
         )}
+      >
+        {(column) => {
+          const label = () => selectedLabel(column.name);
+          return (
+            <label class="compositionGraphTableColumnChoice">
+              <input
+                type="checkbox"
+                checked
+                disabled={selectedColumns().length <= 1}
+                aria-label={label()}
+                onChange={(event) =>
+                  selectColumn(column.name, event.currentTarget.checked)}
+              />
+              <span>{label()}</span>
+            </label>
+          );
+        }}
       </For>
+      <Show
+        when={props.columns().some((column) =>
+          !selectedColumns().some((item) => item.column === column.name)
+        )}
+      >
+        <details class="compositionGraphTableOptionalColumns">
+          <summary>{t("composition.studioAddResultColumns")}</summary>
+          <For
+            each={props.columns().filter((column) =>
+              !selectedColumns().some((item) => item.column === column.name)
+            )}
+          >
+            {(column) => (
+              <label class="compositionGraphTableColumnChoice">
+                <input
+                  type="checkbox"
+                  aria-label={t("composition.studioAddResultColumn", {
+                    column: column.name,
+                  })}
+                  onChange={(event) =>
+                    selectColumn(column.name, event.currentTarget.checked)}
+                />
+                <span>{column.name}</span>
+              </label>
+            )}
+          </For>
+        </details>
+      </Show>
       <For each={selectedColumns()}>
         {(column, index) => (
           <div class="compositionGraphTableColumnSettings">
@@ -197,7 +231,7 @@ function CompositionTableInspector(props: {
                 class="ui-input"
                 value={column.label}
                 aria-label={t("composition.studioTableColumnLabel", {
-                  column: column.column,
+                  column: selectedLabel(column.column),
                 })}
                 onInput={(event) =>
                   updateLabel(column.column, event.currentTarget.value)}
@@ -218,7 +252,7 @@ function CompositionTableInspector(props: {
             <IconButton
               icon="close"
               label={t("composition.studioRemoveTableColumn", {
-                column: column.column,
+                column: selectedLabel(column.column),
               })}
               disabled={selectedColumns().length <= 1 &&
                 props.columns().some((item) => item.name === column.column)}
