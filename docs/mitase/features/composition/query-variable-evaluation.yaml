@@ -552,6 +552,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.table-result-column-presentation
+          - id: composition-table-inspector
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphDesignCanvas.tsx
+            selector: { kind: symbol, name: CompositionTableInspector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
       - id: table-presentation-verification
         role: verification
         facet: verification
@@ -604,6 +611,15 @@ features:
                 criterion: REQ-COMP-009#criterion.table-result-column-presentation
                 covers: [FEAT-COMP-013#binding.table-presentation-browser/target.sql-result-table-projection]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: projects ordered display columns without changing row keys or indexes } }
+          - id: mobile-table-inspector-test
+            adapter: typescript
+            path: e2e/composition-table-inspector-mobile.test.ts
+            selector: { kind: test, name: Composition Table inspector keeps selected fields legible on mobile }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.composition-table-inspector]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-inspector-mobile.test.ts, test: Composition Table inspector keeps selected fields legible on mobile } }
           - id: invalid-table-projection-fails-closed-test
             adapter: typescript
             path: frontend/src/components/SqlResultTable.test.tsx
