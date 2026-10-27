@@ -20,6 +20,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.lossless-document-draft
+          - id: parameter-rename
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: rename_sql_document_parameter }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
       - id: typed-expression-attributes-contract
         role: contract-source
         facet: domain
@@ -34,7 +41,6 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
       - id: typed-expression-attributes
         role: implementation
         facet: core
@@ -49,7 +55,8 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
@@ -64,11 +71,12 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: sql-document-verification
         role: verification
         facet: verification
-        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, relational constructors, array-index selection/source resets and alias preservation, and the parser-versus-executor boundary with focused tests.
+        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, token-scoped parameter renaming, relational constructors, and the parser-versus-executor boundary with focused tests.
         targets:
           - id: lossless-document-source-and-ranges
             adapter: rust
@@ -118,6 +126,22 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: parses bounded SQL drafts through the typed Rust/WASM document contract
+          - id: typed-parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: renames SQL Document parameters through the typed Rust/WASM client
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: renames SQL Document parameters through the typed Rust/WASM client
           - id: invalid-draft-diagnostics
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
@@ -134,15 +158,89 @@ features:
                   arguments:
                     package: ugoite-domain
                     test: sql_document::tests::invalid_and_unsupported_drafts_keep_the_original_source
+          - id: parameter-rename-references-and-lookalikes
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+          - id: parameter-rename-no-match
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+          - id: parameter-rename-invalid-names
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_rejects_invalid_names
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_rejects_invalid_names
+          - id: parameter-rename-draft-diagnostics
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
       - id: sql-document-wasm-protocol
         role: implementation
         facet: wasm
-        responsibility: Expose the bounded Rust SQL Document parser through the portable WASM domain protocol without planning or executing the SQL.
+        responsibility: Expose the bounded Rust SQL Document parser and source-aware parameter rename through the portable WASM domain protocol without planning or executing the SQL.
         targets:
           - id: parser-action
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: symbol, name: invoke_sql_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+          - id: parameter-rename-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: {
+              kind: symbol,
+              name: invoke_sql_document_parameter_rename,
+            }
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.portable-protocol
@@ -155,6 +253,13 @@ features:
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
             selector: { kind: symbol, name: parseSqlDocument }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-001#criterion.portable-protocol
+          - id: parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: renameSqlDocumentParameter }
             claims:
               - kind: evidences
                 anchor: REQ-SQL-001#criterion.portable-protocol
@@ -224,6 +329,102 @@ features:
                   arguments:
                     package: ugoite-wasm
                     test: tests::sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia
+          - id: parameter-rename-matches-native-source-ranges
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges
+          - id: parameter-rename-no-match
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_preserves_no_match_documents
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_preserves_no_match_documents
+          - id: parameter-rename-invalid-names
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_matches_native_invalid_name_errors
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_matches_native_invalid_name_errors
+          - id: parameter-rename-bounds-amplified-output
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_bounds_amplified_output
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_bounds_amplified_output
+          - id: parameter-rename-accepts-maximum-escaped-source
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_accepts_maximum_escaped_source
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_accepts_maximum_escaped_source
+          - id: parameter-rename-rejects-over-limit-request
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_rejects_request_over_limit
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_rejects_request_over_limit
       - id: sql-document-edit-protocol-contract
         role: contract-source
         facet: protocol
@@ -748,31 +949,6 @@ features:
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
             selector: { kind: test, name: renames a CTE output column and its binding through the actual WASM tree editor }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: renames a CTE output column and its binding through the actual WASM tree editor } } }]
-          - id: array-index-native-edit-and-undo
-            adapter: rust
-            path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: test, name: tests::semantic_value_access_constructs_one_based_array_access_losslessly }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_value_access_constructs_one_based_array_access_losslessly } } }]
-          - id: array-index-wasm-protocol-parity
-            adapter: rust
-            path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: test, name: tests::sql_document_array_index_edit_matches_native_and_undo }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_array_index_edit_matches_native_and_undo } } }]
-          - id: array-index-authorized-execution
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/authorized_query.rs
-            selector: { kind: test, name: typed_sql_document_array_index_executes_authorized_queries }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_array_index_executes_authorized_queries } } }]
-          - id: array-index-browser-interaction
-            adapter: typescript
-            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
-            selector: { kind: test, name: authors one-based array access through actual WASM }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors one-based array access through actual WASM } } }]
-          - id: array-index-aliased-projection-child
-            adapter: typescript
-            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
-            selector: { kind: test, name: indexes an aliased projection child without changing its alias }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: indexes an aliased projection child without changing its alias } } }]
     contracts:
       - id: typed-expression-attributes-portable-contract
         kind: custom
@@ -784,12 +960,14 @@ features:
             role: rust-wasm
           - target: FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls
             role: browser-editor
-        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes, REQ-SQL-001#criterion.array-element-indexing]
+        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes]
       - id: guarded-edit-portable-protocol
         kind: custom
         source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
         participants:
           - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
             role: rust-wasm
           - target: FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
             role: rust-wasm
