@@ -21,6 +21,7 @@ import {
   type CompositionGraphPreviewResponse,
 } from "~/lib/composition-api";
 import {
+  CompositionBindingDiagnosticError,
   compositionBindingDiagnostics,
   type CompositionBindingProvider,
   type CompositionBindingSession,
@@ -753,7 +754,20 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const planned = response.plan?.queries.find((query) =>
       query.variable_id === candidateNode.id
     );
-    if (!response.ok || !planned) throw new Error("query preview rejected");
+    if (!response.ok || !planned) {
+      const diagnostic = response.diagnostics?.find((candidate) =>
+        candidate.variable_id === candidateNode.id &&
+        (candidate.code === "query_unavailable" ||
+          candidate.code === "query_schema_changed")
+      );
+      if (
+        diagnostic?.code === "query_unavailable" ||
+        diagnostic?.code === "query_schema_changed"
+      ) {
+        throw new CompositionBindingDiagnosticError(diagnostic.code);
+      }
+      throw new Error("query preview rejected");
+    }
     if (expectedKind && planned.returns.kind !== expectedKind) {
       throw new Error("query result shape does not fit component");
     }

@@ -213,6 +213,18 @@ export const compositionGraphDraftFromDocument = (
 
 export type BindingComponentKind = "table" | "metric";
 
+export type CompositionBindingDiagnosticCode =
+  | "query_unavailable"
+  | "query_schema_changed";
+
+/** Safe structured failure propagated from an unsuccessful graph preview. */
+export class CompositionBindingDiagnosticError extends Error {
+  constructor(readonly code: CompositionBindingDiagnosticCode) {
+    super(code);
+    this.name = "CompositionBindingDiagnosticError";
+  }
+}
+
 export interface CompositionFormChoice {
   id: string;
   name: string;

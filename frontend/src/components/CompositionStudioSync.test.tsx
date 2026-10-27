@@ -1253,6 +1253,66 @@ describe("CompositionStudio graph surface", () => {
     }]);
   });
 
+  it("keeps a failed Form preview actionable and retries the same selection", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Receipts",
+      sql_relation: "form_receipts",
+      fields: { amount: { type: "float", sql_column: "amount" } },
+    }]);
+    let previews = 0;
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
+      previews += 1;
+      if (previews === 1) {
+        const query = JSON.parse(yaml).spec.variables[0];
+        return {
+          ok: false,
+          diagnostics: [{
+            code: "query_schema_changed",
+            variable_id: query.id,
+          }],
+        };
+      }
+      return plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: false },
+        }],
+      });
+    });
+    renderStudio(createCompositionGraphDraft("Report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    const form = await within(picker).findByRole("button", {
+      name: "Receipts",
+      exact: true,
+    });
+    fireEvent.click(form);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This Form changed while you were binding it.",
+    );
+    expect(form).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("dialog", { name: "Table", exact: true }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /table, receipts_rows/ }))
+      .toBeNull();
+
+    fireEvent.click(form);
+    expect(
+      await screen.findByRole("button", {
+        name: "table, receipts_rows",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(previewGraphMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("inserts existing Form data before the Composition is named without enabling Save", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",

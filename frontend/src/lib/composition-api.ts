@@ -121,7 +121,11 @@ export interface CompositionGraphPreviewResponse {
     queries: CompositionGraphPreviewQuery[];
     dependencies?: CompositionDependencyIndex;
   };
-  diagnostics?: Array<{ code?: string; message?: string }>;
+  diagnostics?: Array<{
+    code?: string;
+    variable_id?: string;
+    message?: string;
+  }>;
 }
 
 export type CompositionEvaluationTarget =

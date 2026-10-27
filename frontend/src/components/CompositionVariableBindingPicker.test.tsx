@@ -10,12 +10,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionVariableBindingPicker } from "./CompositionVariableBindingPicker";
 import {
+  CompositionBindingDiagnosticError,
   type CompositionBindingProvider,
   type CompositionGraphDraft,
   type CompositionVariableNode,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { setLocale } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 const session = {
   session_id: "picker-session",
@@ -121,6 +123,70 @@ describe("CompositionVariableBindingPicker", () => {
     expect(provider.resolveForm).toHaveBeenCalledWith(
       expect.objectContaining({ form_id: "form-id", component: "table" }),
     );
+  });
+
+  it("keeps a failed Form selection retryable without committing partial state", async () => {
+    const onCommit = vi.fn();
+    let attempts = 0;
+    const provider: CompositionBindingProvider = {
+      resolveForm: vi.fn(async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new CompositionBindingDiagnosticError("query_schema_changed");
+        }
+        return { variable: formQuery };
+      }),
+      prepareSavedSql: vi.fn(),
+    };
+    const draft = createCompositionGraphDraft("Report");
+    renderPicker({ kind: "table", provider, onCommit, draft });
+    const dialog = screen.getByRole("dialog", { name: "Table" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Forms" }));
+    const form = within(dialog).getByRole("button", { name: "Customers" });
+    fireEvent.click(form);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This Form changed while you were binding it.",
+    );
+    expect(form).toHaveAttribute("aria-pressed", "true");
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(draft.components).toEqual([]);
+    expect(screen.getByRole("dialog", { name: "Table" })).toBeInTheDocument();
+
+    fireEvent.click(form);
+    await waitFor(() => expect(onCommit).toHaveBeenCalledOnce());
+    expect(provider.resolveForm).toHaveBeenCalledTimes(2);
+    expect(onCommit.mock.calls[0][0].components).toEqual([{
+      id: "component_1",
+      kind: "table",
+      variable: "customer_rows",
+    }]);
+  });
+
+  it("shows a safe actionable message for a typed missing Form error", async () => {
+    const provider: CompositionBindingProvider = {
+      resolveForm: vi.fn(async () => {
+        throw new UgoiteApiError({
+          kind: "not_found",
+          code: "FORM_NOT_FOUND",
+          operation: "composition.preview",
+          status: 404,
+          message: 'Could not resolve SELECT * FROM "form_sensitive-id"',
+          detail: { message: 'SELECT * FROM "form_sensitive-id"' },
+        });
+      }),
+      prepareSavedSql: vi.fn(),
+    };
+    renderPicker({ kind: "table", provider, onCommit: vi.fn() });
+    const dialog = screen.getByRole("dialog", { name: "Table" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Forms" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Customers" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("This Form is unavailable");
+    expect(alert.textContent).not.toContain("form_sensitive-id");
+    expect(alert.textContent).not.toContain("SELECT");
+    expect(dialog).toBeInTheDocument();
   });
 
   it("prepares only the selected exact Saved SQL revision without inspecting earlier rows", async () => {
