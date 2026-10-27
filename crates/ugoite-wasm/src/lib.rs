@@ -2904,10 +2904,10 @@ mod tests {
     #[test]
     fn sql_document_relational_constructors_protocol_match_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,
-            SqlDocumentJoinOperator, SqlDocumentNodeKind, SqlDocumentQueryLimit,
-            SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentJoin,
+            SqlDocumentJoinConstraint, SqlDocumentJoinOperator, SqlDocumentNodeKind,
+            SqlDocumentQueryLimit, SqlDocumentRelationFactor, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         fn assert_protocol(source: &str, transaction: SqlDocumentSemanticEditTransaction) {
@@ -4077,9 +4077,9 @@ mod tests {
     #[test]
     fn sql_document_common_toolbar_semantic_operations_have_wasm_parity() {
         use ugoite_domain::sql_document::{
-            SqlDocumentAggregateFunction, SqlDocumentNodeData, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentAggregateFunction, SqlDocumentNodeData,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentValueAccess,
         };
 
         let assert_parity = |source: &str, edit: SqlDocumentSemanticEdit| {
@@ -4328,6 +4328,85 @@ mod tests {
             Some(SqlDocumentNodeData::Wildcard { ref qualifier, qualifier_is_expression: false, has_options: false })
                 if qualifier.is_empty()
         )));
+
+        for (source, access, expected) in [(
+            "SELECT ARRAY[4, 9] /* keep */",
+            SqlDocumentValueAccess::ArrayIndex {
+                one_based_index: "2".to_owned(),
+            },
+            "SELECT (ARRAY[4, 9])[2] /* keep */",
+        )] {
+            let document = ugoite_domain::sql_document::parse_sql_document(source);
+            let value = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.range.and_then(|range| document.source_slice(range)) == Some("ARRAY[4, 9]")
+                })
+                .expect("the selected array expression has a node");
+            let edited = assert_parity(
+                source,
+                SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                    node_id: value.id,
+                    expected_kind: value.kind,
+                    access,
+                },
+            );
+            assert_eq!(edited.document.source, expected);
+        }
+    }
+
+    #[test]
+    fn sql_document_array_index_edit_matches_native_and_undo() {
+        use ugoite_domain::sql_document::{
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
+            apply_sql_document_semantic_edit_transaction, parse_sql_document,
+        };
+
+        let source = "SELECT ARRAY[4, 9] /* keep */";
+        let document = parse_sql_document(source);
+        let array = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.range.and_then(|range| document.source_slice(range)) == Some("ARRAY[4, 9]")
+            })
+            .expect("array has a source-backed projection expression");
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: array.id,
+                expected_kind: array.kind,
+                access: SqlDocumentValueAccess::ArrayIndex {
+                    one_based_index: "2".to_owned(),
+                },
+            }],
+        };
+        let native = apply_sql_document_semantic_edit_transaction(source, &transaction)
+            .expect("native array-index edit succeeds");
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": &transaction },
+        });
+        let response: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
+            .expect("WASM returns JSON");
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(native.document.source, "SELECT (ARRAY[4, 9])[2] /* keep */");
+
+        let undo = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native.document.source,
+                "transaction": &native.undo,
+            },
+        });
+        let undone: Value = serde_json::from_str(&super::invoke_json(&undo.to_string()))
+            .expect("WASM returns guarded undo JSON");
+        assert_eq!(undone["ok"], true, "{undone}");
+        assert_eq!(undone["value"]["document"]["source"], source);
     }
 
     #[test]

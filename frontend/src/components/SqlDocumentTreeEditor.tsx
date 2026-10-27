@@ -22,10 +22,10 @@ import { IconButton } from "~/components/IconButton";
 import type {
   SqlDocument,
   SqlDocumentAggregateFunction,
-  SqlDocumentGroupByMode,
-  SqlDocumentCastType,
   SqlDocumentCastTarget,
+  SqlDocumentCastType,
   SqlDocumentColumnReference,
+  SqlDocumentGroupByMode,
   SqlDocumentJoinConstraint,
   SqlDocumentJoinOperator,
   SqlDocumentNode,
@@ -76,6 +76,7 @@ type LiteralDraft = {
 
 type CaseBranchAction = "add" | "remove" | "wrap" | "";
 type InListAction = "append" | "remove_last" | "";
+type ValueAccessKind = "array_index" | "";
 type CommonTableExpressionAction = "add" | "remove" | "replace" | "move" | "";
 type SetOperationAddAction = "add" | "";
 type SetOperationKeepAction = SqlDocumentSetOperand | "swap" | "";
@@ -276,8 +277,13 @@ const negatablePredicates = new Set([
   "is_distinct_from",
 ]);
 const unarySignKind = (operator: string): SqlDocumentUnarySign | "" =>
-  operator === "+" ? "positive" : operator === "-" ? "negative" :
-  operator.toUpperCase() === "NOT" ? "not" : "";
+  operator === "+"
+    ? "positive"
+    : operator === "-"
+    ? "negative"
+    : operator.toUpperCase() === "NOT"
+    ? "not"
+    : "";
 
 const decodeSimpleString = (raw: string | null): string | undefined => {
   if (!raw || raw.length < 2) return undefined;
@@ -565,7 +571,11 @@ function semanticEdit(
       case "date":
       case "timestamp":
       case "interval":
-        value = { kind: "typed_string", data_type: literal.kind, value: literal.value };
+        value = {
+          kind: "typed_string",
+          data_type: literal.kind,
+          value: literal.value,
+        };
         break;
       case "hex_string":
         value = { kind: "hex_string", value: literal.value };
@@ -667,7 +677,11 @@ function semanticEdit(
       case "date":
       case "timestamp":
       case "interval":
-        value = { kind: "typed_string", data_type: literal.kind, value: literal.value };
+        value = {
+          kind: "typed_string",
+          data_type: literal.kind,
+          value: literal.value,
+        };
         break;
       case "hex_string":
         value = { kind: "hex_string", value: literal.value };
@@ -693,7 +707,8 @@ function semanticEdit(
   if (
     node.kind === "unary_expression" &&
     node.semantic?.kind === "unary_operator" &&
-    ["+", "-", "NOT"].includes(node.semantic.operator.toUpperCase()) && unarySign
+    ["+", "-", "NOT"].includes(node.semantic.operator.toUpperCase()) &&
+    unarySign
   ) {
     return {
       kind: "replace_unary_sign",
@@ -738,7 +753,10 @@ function semanticEdit(
     };
   }
   if (isEditableCastNode(node) && castTarget) {
-    if (castTarget.length === null && castTarget.precision === null && castTarget.scale === null) {
+    if (
+      castTarget.length === null && castTarget.precision === null &&
+      castTarget.scale === null
+    ) {
       return {
         kind: "replace_cast_target_type",
         node_id: node.id,
@@ -968,6 +986,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const [wrapCastTargetType, setWrapCastTargetType] = createSignal<
     SqlDocumentCastType | ""
   >("");
+  const [valueAccessKind, setValueAccessKind] = createSignal<ValueAccessKind>(
+    "",
+  );
+  const [valueAccessValue, setValueAccessValue] = createSignal("");
   const [wrapAggregateFunction, setWrapAggregateFunction] = createSignal<
     SqlDocumentAggregateFunction | ""
   >("");
@@ -993,7 +1015,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     "",
   );
   const [caseHasElse, setCaseHasElse] = createSignal(false);
-  const [caseOperandAction, setCaseOperandAction] = createSignal<"set" | "clear" | "">("");
+  const [caseOperandAction, setCaseOperandAction] = createSignal<
+    "set" | "clear" | ""
+  >("");
   const [caseOperandNodeId, setCaseOperandNodeId] = createSignal<number>();
   const [addWhereClause, setAddWhereClause] = createSignal(false);
   const [addScalarSubquery, setAddScalarSubquery] = createSignal(false);
@@ -1009,12 +1033,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const [groupByExpressionAction, setGroupByExpressionAction] = createSignal<
     GroupByExpressionAction
   >("");
-  const [groupByStructureAction, setGroupByStructureAction] = createSignal(false);
+  const [groupByStructureAction, setGroupByStructureAction] = createSignal(
+    false,
+  );
   const [groupByMode, setGroupByMode] = createSignal<SqlDocumentGroupByMode>(
     "expressions",
   );
   const [groupByGroups, setGroupByGroups] = createSignal<number[][]>([[]]);
-  const [groupByStructureEditable, setGroupByStructureEditable] = createSignal(true);
+  const [groupByStructureEditable, setGroupByStructureEditable] = createSignal(
+    true,
+  );
   const [orderByExpressionAction, setOrderByExpressionAction] = createSignal<
     OrderByExpressionAction
   >("");
@@ -1101,7 +1129,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   >("");
   const [limitValue, setLimitValue] = createSignal("");
   const [limitParameterName, setLimitParameterName] = createSignal("page_size");
-  const [limitExpressionNodeId, setLimitExpressionNodeId] = createSignal<number>();
+  const [limitExpressionNodeId, setLimitExpressionNodeId] = createSignal<
+    number
+  >();
   const [offsetValue, setOffsetValue] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
@@ -1288,7 +1318,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (
       !currentDocument ||
       !projectionItem ||
-      (!["select_item", "select_list", "select", "query", "limit_clause", "order_by_item"]
+      (![
+        "select_item",
+        "select_list",
+        "select",
+        "query",
+        "limit_clause",
+        "order_by_item",
+      ]
         .includes(
           projectionItem.kind,
         ) &&
@@ -1609,6 +1646,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   };
   const isExpressionKind = (kind: SqlDocumentNode["kind"]) =>
     expressionNodeKinds.has(kind);
+  const isValueAccessTarget = (node: SqlDocumentNode) =>
+    (isExpressionKind(node.kind) && node.kind !== "subquery_expression") ||
+    (node.kind === "select_item" && node.semantic === null &&
+      !(childrenByParent().get(node.id) ?? []).some((child) =>
+        child.kind === "subquery_expression"
+      ));
   const isInsideProjectionItem = (node: SqlDocumentNode) => {
     let current: SqlDocumentNode | undefined = node;
     const nodes = nodeById();
@@ -1649,6 +1692,18 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const editorCanApply = () => {
     const node = selectedNode();
     if (!node || props.disabled?.() || busy()) return false;
+    if (valueAccessKind()) {
+      if (!isValueAccessTarget(node) || node.range === null) return false;
+      if (valueAccessKind() === "array_index") {
+        try {
+          const index = BigInt(valueAccessValue());
+          return index > 0n && index <= 9223372036854775807n;
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    }
     if (columnAliasesAction()) {
       const eligible = node.semantic?.kind === "common_table_expression" ||
         (node.semantic?.kind === "table_factor" &&
@@ -1672,7 +1727,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       if (groupByMode() === "all") return node.range !== null;
       const groups = groupByGroups();
       if (groupByMode() === "grouping_sets") {
-        return node.range !== null && groups.length > 0 && groups.length <= 32 &&
+        return node.range !== null && groups.length > 0 &&
+          groups.length <= 32 &&
           groups.every((group) => group.length <= 64);
       }
       return node.range !== null && groups.length === 1 &&
@@ -1748,8 +1804,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       if (queryClauseAction() === "set_limit") {
         return unsignedDraft(limitValue()) !== undefined;
       }
-      if (queryClauseAction() === "set_limit_parameter" ||
-        queryClauseAction() === "set_limit_expression") {
+      if (
+        queryClauseAction() === "set_limit_parameter" ||
+        queryClauseAction() === "set_limit_expression"
+      ) {
         return Boolean(limitExpressionRequest()) &&
           (queryClauseAction() !== "set_limit_expression" ||
             queryScopeId(selectedLimitExpression()!) === query.id);
@@ -1890,7 +1948,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           (orderByExpressionAction() === "add" &&
             Boolean(selectedProjectionExpression())));
     }
-    if (node.kind === "table_factor" && node.semantic?.kind === "table_factor") {
+    if (
+      node.kind === "table_factor" && node.semantic?.kind === "table_factor"
+    ) {
       if (columnAliasesAction()) {
         return node.range !== null && node.semantic.factor_kind === "derived" &&
           !node.semantic.has_column_alias_types &&
@@ -1972,6 +2032,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const currentSemanticEdit = (): SqlDocumentSemanticEdit | undefined => {
     const node = selectedNode();
     if (!node) return undefined;
+    if (valueAccessKind() && isValueAccessTarget(node)) {
+      return {
+        kind: "wrap_expression_in_value_access",
+        node_id: node.id,
+        expected_kind: node.kind,
+        access: { kind: "array_index", one_based_index: valueAccessValue() },
+      };
+    }
     if (node.kind === "select_item" && expandWildcard()) {
       if (wildcardQualifier(node)) {
         return {
@@ -2151,8 +2219,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           };
         }
       }
-      if (queryClauseAction() === "set_limit_parameter" ||
-        queryClauseAction() === "set_limit_expression") {
+      if (
+        queryClauseAction() === "set_limit_parameter" ||
+        queryClauseAction() === "set_limit_expression"
+      ) {
         const value = limitExpressionRequest();
         if (value) {
           return {
@@ -2227,7 +2297,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         return {
           kind: "set_relation_column_aliases",
           node_id: node.id,
-          expected_kind: node.kind as "common_table_expression" | "table_factor",
+          expected_kind: node.kind as
+            | "common_table_expression"
+            | "table_factor",
           aliases,
         };
       }
@@ -2326,7 +2398,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       node.kind === "identifier_expression" ||
         node.kind === "compound_identifier_expression"
         ? "identifier"
-        : node.semantic?.kind === "literal" || node.semantic?.kind === "typed_literal"
+        : node.semantic?.kind === "literal" ||
+            node.semantic?.kind === "typed_literal"
         ? "literal"
         : "",
     );
@@ -2366,7 +2439,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setWrapAggregateDistinct(false);
     setCteName(commonTableExpressionName(node));
     setCteAction("");
-    setColumnAliasesDraft(columnAliasesForNode(node).map((column) => column.value).join(", "));
+    setColumnAliasesDraft(
+      columnAliasesForNode(node).map((column) => column.value).join(", "),
+    );
     setColumnAliasesAction(false);
     setCteQueryNodeId(undefined);
     setCteMoveToIndex(undefined);
@@ -2394,8 +2469,15 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setCaseHasElse(
       node.semantic?.kind === "case" ? node.semantic.has_else : false,
     );
-    if (node.kind === "case_expression" && node.semantic?.kind === "case" && node.semantic.has_operand) {
-      setCaseOperandNodeId((childrenByParent().get(node.id) ?? []).find((child) => isExpressionKind(child.kind))?.id);
+    if (
+      node.kind === "case_expression" && node.semantic?.kind === "case" &&
+      node.semantic.has_operand
+    ) {
+      setCaseOperandNodeId(
+        (childrenByParent().get(node.id) ?? []).find((child) =>
+          isExpressionKind(child.kind)
+        )?.id,
+      );
     }
     setProjectionExpressionNodeId(undefined);
     setGroupByExpressionAction("");
@@ -2411,29 +2493,32 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         ? group.semantic
         : undefined;
       setGroupByStructureEditable(parsedGroup?.editable ?? true);
-      const mode: SqlDocumentGroupByMode = parsedGroup?.mode ?? (/\bGROUP\s+BY\s+ALL\b/i.test(
-          groupSource,
-        )
-        ? "all"
-        : /\bGROUP\s+BY\s+ROLLUP\b/i.test(groupSource)
-        ? "rollup"
-        : /\bGROUP\s+BY\s+CUBE\b/i.test(groupSource)
-        ? "cube"
-        : /\bGROUP\s+BY\s+GROUPING\s+SETS\b/i.test(groupSource)
-        ? "grouping_sets"
-        : "expressions");
+      const mode: SqlDocumentGroupByMode = parsedGroup?.mode ??
+        (/\bGROUP\s+BY\s+ALL\b/i.test(
+            groupSource,
+          )
+          ? "all"
+          : /\bGROUP\s+BY\s+ROLLUP\b/i.test(groupSource)
+          ? "rollup"
+          : /\bGROUP\s+BY\s+CUBE\b/i.test(groupSource)
+          ? "cube"
+          : /\bGROUP\s+BY\s+GROUPING\s+SETS\b/i.test(groupSource)
+          ? "grouping_sets"
+          : "expressions");
       const items = group
         ? (childrenByParent().get(group.id) ?? [])
           .filter((item) => item.kind === "group_by_item")
         : [];
       const members = items.flatMap((item) => {
-        const expression = (childrenByParent().get(item.id) ?? []).find((child) =>
-          isExpressionKind(child.kind)
-        );
+        const expression = (childrenByParent().get(item.id) ?? []).find((
+          child,
+        ) => isExpressionKind(child.kind));
         return expression ? [expression.id] : [];
       });
       setGroupByMode(mode);
-      setGroupByGroups(parsedGroup?.groups.map((members) => [...members]) ?? [members]);
+      setGroupByGroups(
+        parsedGroup?.groups.map((members) => [...members]) ?? [members],
+      );
     } else {
       setGroupByGroups([[]]);
       setGroupByMode("expressions");
@@ -3422,7 +3507,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     <Show
                       when={node().kind === "unary_expression" &&
                         node().semantic?.kind === "unary_operator" &&
-                        ["+", "-", "NOT"].includes(node().semantic.operator.toUpperCase())}
+                        ["+", "-", "NOT"].includes(
+                          node().semantic.operator.toUpperCase(),
+                        )}
                     >
                       <label class="ui-label">
                         {t("sqlPage.structure.documentUnarySign")}
@@ -3614,28 +3701,76 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       <Show when={castTargetType() === "varchar"}>
                         <label class="ui-label">
                           {t("sqlPage.structure.documentCastLength")}
-                          <input class="ui-input" type="text" inputmode="numeric" pattern="[0-9]*"
+                          <input
+                            class="ui-input"
+                            type="text"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
                             value={castTargetDraft()?.length ?? ""}
-                            disabled={busy() || props.disabled?.() || node().range === null}
-                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, length: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                            disabled={busy() || props.disabled?.() ||
+                              node().range === null}
+                            onInput={(event) =>
+                              setCastTargetDraft((target) =>
+                                target &&
+                                ({
+                                  ...target,
+                                  length: event.currentTarget.value === ""
+                                    ? null
+                                    : event.currentTarget.value,
+                                })
+                              )}
+                          />
                         </label>
                       </Show>
-                      <Show when={castTargetType() === "decimal" || castTargetType() === "timestamp"}>
+                      <Show
+                        when={castTargetType() === "decimal" ||
+                          castTargetType() === "timestamp"}
+                      >
                         <label class="ui-label">
                           {t("sqlPage.structure.documentCastPrecision")}
-                          <input class="ui-input" type="text" inputmode="numeric" pattern="[0-9]*"
+                          <input
+                            class="ui-input"
+                            type="text"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
                             value={castTargetDraft()?.precision ?? ""}
-                            disabled={busy() || props.disabled?.() || node().range === null}
-                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, precision: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                            disabled={busy() || props.disabled?.() ||
+                              node().range === null}
+                            onInput={(event) =>
+                              setCastTargetDraft((target) =>
+                                target &&
+                                ({
+                                  ...target,
+                                  precision: event.currentTarget.value === ""
+                                    ? null
+                                    : event.currentTarget.value,
+                                })
+                              )}
+                          />
                         </label>
                       </Show>
                       <Show when={castTargetType() === "decimal"}>
                         <label class="ui-label">
                           {t("sqlPage.structure.documentCastScale")}
-                          <input class="ui-input" type="text" inputmode="numeric" pattern="-?[0-9]*"
+                          <input
+                            class="ui-input"
+                            type="text"
+                            inputmode="numeric"
+                            pattern="-?[0-9]*"
                             value={castTargetDraft()?.scale ?? ""}
-                            disabled={busy() || props.disabled?.() || node().range === null}
-                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, scale: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                            disabled={busy() || props.disabled?.() ||
+                              node().range === null}
+                            onInput={(event) =>
+                              setCastTargetDraft((target) =>
+                                target &&
+                                ({
+                                  ...target,
+                                  scale: event.currentTarget.value === ""
+                                    ? null
+                                    : event.currentTarget.value,
+                                })
+                              )}
+                          />
                         </label>
                       </Show>
                     </Show>
@@ -3670,6 +3805,49 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           </For>
                         </select>
                       </label>
+                    </Show>
+
+                    <Show when={isValueAccessTarget(node())}>
+                      <div class="sql-document-tree__fields">
+                        <label class="ui-label">
+                          {t("sqlPage.structure.documentValueAccess")}
+                          <select
+                            class="ui-input"
+                            value={valueAccessKind()}
+                            disabled={busy() || props.disabled?.() ||
+                              node().range === null}
+                            onChange={(event) => {
+                              setValueAccessKind(
+                                event.currentTarget.value as ValueAccessKind,
+                              );
+                              setValueAccessValue("");
+                            }}
+                          >
+                            <option value=""></option>
+                            <option value="array_index">
+                              {t("sqlPage.structure.documentArrayIndex")}
+                            </option>
+                          </select>
+                        </label>
+                        <Show when={valueAccessKind()}>
+                          <label class="ui-label">
+                            {t("sqlPage.structure.documentArrayIndexValue")}
+                            <input
+                              class="ui-input"
+                              type="text"
+                              inputmode="numeric"
+                              pattern="[0-9]*"
+                              value={valueAccessValue()}
+                              disabled={busy() || props.disabled?.() ||
+                                node().range === null}
+                              onInput={(event) =>
+                                setValueAccessValue(
+                                  event.currentTarget.value,
+                                )}
+                            />
+                          </label>
+                        </Show>
+                      </div>
                     </Show>
 
                     <Show
@@ -3794,9 +3972,11 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       </button>
                     </Show>
 
-                    <Show when={node().semantic?.kind === "common_table_expression" ||
-                      (node().semantic?.kind === "table_factor" &&
-                        node().semantic.factor_kind === "derived")}
+                    <Show
+                      when={node().semantic?.kind ===
+                          "common_table_expression" ||
+                        (node().semantic?.kind === "table_factor" &&
+                          node().semantic.factor_kind === "derived")}
                     >
                       <div class="sql-document-tree__fields">
                         <label class="ui-label">
@@ -3999,24 +4179,49 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           {t("sqlPage.structure.documentCaseMode")}
                           <select
                             class="ui-input"
-                            value={node().semantic?.kind === "case" && node().semantic.has_operand ? caseOperandNodeId() ?? "" : ""}
-                            disabled={busy() || props.disabled?.() || node().range === null}
+                            value={node().semantic?.kind === "case" &&
+                                node().semantic.has_operand
+                              ? caseOperandNodeId() ?? ""
+                              : ""}
+                            disabled={busy() || props.disabled?.() ||
+                              node().range === null}
                             onChange={(event) => {
                               const value = event.currentTarget.value;
                               if (!value) {
-                                setCaseOperandAction(node().semantic?.kind === "case" && node().semantic.has_operand ? "clear" : "");
+                                setCaseOperandAction(
+                                  node().semantic?.kind === "case" &&
+                                    node().semantic.has_operand
+                                    ? "clear"
+                                    : "",
+                                );
                                 return;
                               }
                               setCaseOperandNodeId(Number(value));
                               setCaseOperandAction("set");
                             }}
                           >
-                            <option value="">{t("sqlPage.structure.documentSearchedCase")}</option>
+                            <option value="">
+                              {t("sqlPage.structure.documentSearchedCase")}
+                            </option>
                             <Show when={selectedCaseOperandNode()}>
-                              {(operand) => <option value={operand().id}>{sourceSlice(document()?.source ?? "", operand())}</option>}
+                              {(operand) => (
+                                <option value={operand().id}>
+                                  {sourceSlice(
+                                    document()?.source ?? "",
+                                    operand(),
+                                  )}
+                                </option>
+                              )}
                             </Show>
                             <For each={queryExpressionCandidates()}>
-                              {(candidate) => <option value={candidate.id}>{sourceSlice(document()?.source ?? "", candidate)}</option>}
+                              {(candidate) => (
+                                <option value={candidate.id}>
+                                  {sourceSlice(
+                                    document()?.source ?? "",
+                                    candidate,
+                                  )}
+                                </option>
+                              )}
                             </For>
                           </select>
                         </label>
@@ -4205,12 +4410,15 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             onChange={(event) => {
                               setGroupByStructureEditable(true);
                               setGroupByMode(
-                                event.currentTarget.value as SqlDocumentGroupByMode,
+                                event.currentTarget
+                                  .value as SqlDocumentGroupByMode,
                               );
                               setGroupByExpressionAction("");
                               setGroupByStructureAction(false);
-                              if (event.currentTarget.value === "grouping_sets" &&
-                                groupByGroups().length === 0) {
+                              if (
+                                event.currentTarget.value === "grouping_sets" &&
+                                groupByGroups().length === 0
+                              ) {
                                 setGroupByGroups([[]]);
                               }
                             }}
@@ -4281,7 +4489,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                                       );
                                       setGroupByGroups((current) =>
                                         current.map((group, index) =>
-                                          index === groupIndex() ? values : group
+                                          index === groupIndex()
+                                            ? values
+                                            : group
                                         )
                                       );
                                     }}
@@ -4493,7 +4703,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           icon="edit"
                           label="Set LIMIT parameter"
                           disabled={busy() || props.disabled?.() ||
-                            !/^[A-Za-z_][A-Za-z0-9_]*$/.test(limitParameterName())}
+                            !/^[A-Za-z_][A-Za-z0-9_]*$/.test(
+                              limitParameterName(),
+                            )}
                           onClick={() =>
                             setQueryClauseAction("set_limit_parameter")}
                         />
@@ -4513,11 +4725,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                               setQueryClauseAction("set_limit_expression");
                             }}
                           >
-                            <option value="">Choose an expression from this query</option>
+                            <option value="">
+                              Choose an expression from this query
+                            </option>
                             <For each={queryExpressionCandidates()}>
                               {(candidate) => (
                                 <option value={candidate.id}>
-                                  {sourceSlice(document()?.source ?? "", candidate)}
+                                  {sourceSlice(
+                                    document()?.source ?? "",
+                                    candidate,
+                                  )}
                                 </option>
                               )}
                             </For>
@@ -4643,10 +4860,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             class="ui-input"
                             value={orderDirection()}
                             disabled={busy() || props.disabled?.()}
-                            onChange={(event) =>
-                              setOrderDirection(
-                                event.currentTarget.value as OrderDirection,
-                              )}
+                            onChange={(event) => setOrderDirection(
+                              event.currentTarget.value as OrderDirection,
+                            )}
                           >
                             <option value="asc">ASC</option>
                             <option value="desc">DESC</option>

@@ -4749,3 +4749,111 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
     assert_eq!(values.value(0), 10);
     Ok(())
 }
+
+#[tokio::test]
+async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+        SqlDocumentValueAccess, apply_sql_document_semantic_edit_transaction, parse_sql_document,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(925)),
+        "memory://authorized-value-access",
+    )
+    .await?;
+    let mut tasks = form(926, "Tasks");
+    tasks.fields.push(FormField {
+        id: FieldId::new(101).unwrap(),
+        name: "attributes".into(),
+        field_type: FieldType::ObjectList,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        list_item: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    });
+    create_form(&workspace, &tasks).await?;
+    let mut revision = revision(&tasks, 927, 928, "one row");
+    revision.values.insert(
+        FieldId::new(101).unwrap(),
+        FieldValue::List(vec![FieldValue::Object(BTreeMap::from([
+            ("type".into(), FieldValue::String("person".into())),
+            ("name".into(), FieldValue::String("Ada".into())),
+            (
+                "description".into(),
+                FieldValue::String("researcher".into()),
+            ),
+        ]))]),
+    );
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.value-access-entry",
+            &revision,
+        )?)?
+        .append_revisions(tasks.id, vec![revision])
+        .await?;
+    let mut authorized = policy(&tasks, &[927]);
+    authorized
+        .forms
+        .get_mut(&tasks.id)
+        .expect("the Form is authorized")
+        .columns
+        .insert("field_101".into());
+    let context = workspace.authorized_query_context(authorized).await?;
+
+    let array_source = "SELECT field_101 FROM tasks";
+    let array_document = parse_sql_document(array_source);
+    let array_value = array_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::IdentifierExpression
+                && node
+                    .range
+                    .and_then(|range| array_document.source_slice(range))
+                    == Some("field_101")
+        })
+        .expect("the Form list value is an editable source expression");
+    let indexed = apply_sql_document_semantic_edit_transaction(
+        array_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: array_document.contract_version,
+            expected_source: array_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: array_value.id,
+                expected_kind: array_value.kind,
+                access: SqlDocumentValueAccess::ArrayIndex {
+                    one_based_index: "1".to_owned(),
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        indexed.document.to_sql(),
+        "SELECT (field_101)[1] FROM tasks"
+    );
+    let rows = context.execute(indexed.document.to_sql()).await?;
+    let batch = rows.first().expect("the indexed list returns a row");
+    assert_eq!(batch.num_rows(), 1);
+    let values = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::StructArray>()
+        .expect("one-based list indexing returns the nested struct");
+    assert_eq!(
+        values
+            .column_by_name("name")
+            .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+            .expect("the struct retains its named field")
+            .value(0),
+        "Ada"
+    );
+
+    Ok(())
+}

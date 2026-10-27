@@ -23,7 +23,10 @@ requirements:
           source-byte or syntax-token limits before AST construction, and
           distinguishes syntax or statement-shape diagnostics. A parsed syntax
           tree alone never means that the SQL executor admits the query.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: source-aware-parameter-rename
         kind: behavior
         statement: >-
@@ -33,7 +36,10 @@ requirements:
           names are rejected, no-match input remains unchanged, and edited
           drafts are reparsed so syntax diagnostics remain current; this edit
           does not authorize parameter binding or query execution.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: guarded-edit-transaction
         kind: behavior
         statement: >-
@@ -45,7 +51,10 @@ requirements:
           incomplete draft, and returns a guarded inverse transaction that
           restores the original source; editing does not authorize or execute
           SQL.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: projection-position-bindings
         kind: behavior
         statement: >-
@@ -55,7 +64,10 @@ requirements:
           width whose binding cannot be established, rejects the complete edit
           with a stable local diagnostic. Nested query positions remain
           unchanged, and guarded Undo restores every original source byte.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: projection-alias-binding-safety
         kind: behavior
         statement: >-
@@ -73,7 +85,10 @@ requirements:
           output expressions. The
           same guarded operation and inverse are exposed through the portable
           WASM protocol.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: typed-expression-attributes
         kind: behavior
         statement: >-
@@ -96,7 +111,29 @@ requirements:
           planning remains authoritative for physical type and operator
           validity. Parameter values remain exact decimal strings across the
           protocol.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: array-element-indexing
+        kind: behavior
+        statement: >-
+          The SQL Document tree can add one typed array element access using a
+          positive signed-64-bit-range, one-based integer literal to a
+          selected source-backed expression. Rust owns the operation, preserves
+          the expression source and all source outside its range, and returns guarded
+          undo and exposes the same operation through WASM and the browser
+          inspector. The inspector offers only this bounded single-suffix
+          constructor. It does not infer or certify the expression's array
+          type, element bounds, or result type.
+          authorized SQL planning and execution remain authoritative. The
+          operation rejects aliased projection items when the parser cannot
+          isolate a complete expression range; this bounded edit does not
+          promise full nested query or collection-access-chain editing.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: relational-constructors
         kind: behavior
         statement: >-
@@ -112,7 +149,10 @@ requirements:
           source outside its selected ranges and provides a guarded inverse.
           These controls describe editable SQL syntax and do not promise that
           arbitrary drafts pass executor admission.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: portable-protocol
         kind: behavior
         statement: >-
@@ -125,4 +165,7 @@ requirements:
           unbounded JSON. Requests beyond each action's bounded envelope are
           rejected before JSON decoding. These actions do not grant executor
           admission or execute the SQL.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]

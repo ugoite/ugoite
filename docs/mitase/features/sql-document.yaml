@@ -41,6 +41,7 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
       - id: typed-expression-attributes
         role: implementation
         facet: core
@@ -55,6 +56,7 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
@@ -69,6 +71,7 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
       - id: sql-document-verification
         role: verification
         facet: verification
@@ -639,6 +642,8 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: projection-position-verification
         role: verification
         facet: verification
@@ -943,6 +948,26 @@ features:
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
             selector: { kind: test, name: renames a CTE output column and its binding through the actual WASM tree editor }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: renames a CTE output column and its binding through the actual WASM tree editor } } }]
+          - id: array-index-native-edit-and-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_value_access_constructs_one_based_array_access_losslessly }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_value_access_constructs_one_based_array_access_losslessly } } }]
+          - id: array-index-wasm-protocol-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_array_index_edit_matches_native_and_undo }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_array_index_edit_matches_native_and_undo } } }]
+          - id: array-index-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: typed_sql_document_array_index_executes_authorized_queries }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_array_index_executes_authorized_queries } } }]
+          - id: array-index-browser-interaction
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: authors one-based array access through actual WASM }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors one-based array access through actual WASM } } }]
     contracts:
       - id: typed-expression-attributes-portable-contract
         kind: custom
@@ -954,7 +979,7 @@ features:
             role: rust-wasm
           - target: FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls
             role: browser-editor
-        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes]
+        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes, REQ-SQL-001#criterion.array-element-indexing]
       - id: guarded-edit-portable-protocol
         kind: custom
         source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
