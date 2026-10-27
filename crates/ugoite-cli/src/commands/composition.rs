@@ -1609,7 +1609,8 @@ mod tests {
         let invalid_assignments = [
             "enabled=TRUE".to_string(),
             "count=12x".to_string(),
-            "count=9007199254740992".to_string(),
+            "count=9223372036854775808".to_string(),
+            "count=-9223372036854775809".to_string(),
             "ratio=1e309".to_string(),
             format!("ratio={}", "1".to_string() + &"0".repeat(64)),
             "date=2025-02-29".to_string(),
@@ -1631,6 +1632,11 @@ mod tests {
                 .expect("64-byte finite float token is valid");
         assert_eq!(at_float_limit["ratio"], json!(1e63));
         assert!(unset_variables.is_empty());
+        for value in [i64::MIN, i64::MAX] {
+            let (values, _) = parse_cli_variables(&definitions, &[format!("count={value}")])
+                .expect("signed 64-bit integer token is valid");
+            assert_eq!(values["count"], json!(value));
+        }
     }
 
     #[test]

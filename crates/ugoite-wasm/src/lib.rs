@@ -5592,6 +5592,21 @@ mod tests {
             (
                 VariableGraphScalarType::Integer,
                 "9007199254740992",
+                serde_json::json!({"status": "valid", "value": 9_007_199_254_740_992_i64}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "9223372036854775807",
+                serde_json::json!({"status": "valid", "value": i64::MAX}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "-9223372036854775808",
+                serde_json::json!({"status": "valid", "value": i64::MIN}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "9223372036854775808",
                 serde_json::json!({"status": "invalid"}),
             ),
             (

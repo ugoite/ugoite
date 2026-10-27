@@ -1843,7 +1843,7 @@ async fn authorized_saved_and_draft_query_selection_isolates_unrelated_missing_a
     for supplied in [
         BTreeMap::new(),
         BTreeMap::from([("other".to_owned(), json!("invalid"))]),
-        BTreeMap::from([("other".to_owned(), json!(9_007_199_254_740_992_i64))]),
+        BTreeMap::from([("other".to_owned(), json!(9_223_372_036_854_775_808_u64))]),
     ] {
         for target in [
             CompositionQueryEvaluationTarget::SavedRevision {
