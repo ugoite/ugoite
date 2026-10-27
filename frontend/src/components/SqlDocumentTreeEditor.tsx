@@ -22,6 +22,7 @@ import { IconButton } from "~/components/IconButton";
 import type {
   SqlDocument,
   SqlDocumentAggregateFunction,
+  SqlDocumentGroupByMode,
   SqlDocumentCastType,
   SqlDocumentCastTarget,
   SqlDocumentColumnReference,
@@ -29,6 +30,7 @@ import type {
   SqlDocumentJoinOperator,
   SqlDocumentNode,
   SqlDocumentPredicateTemplate,
+  SqlDocumentQueryLimit,
   SqlDocumentRelationFactor,
   SqlDocumentSemanticBinaryOperator,
   SqlDocumentSemanticEdit,
@@ -95,6 +97,8 @@ type RelationChoice = "table" | "derived";
 type ListItemAction = "remove" | "move" | "";
 type QueryClauseAction =
   | "set_limit"
+  | "set_limit_parameter"
+  | "set_limit_expression"
   | "remove_limit"
   | "set_offset"
   | "remove_offset"
@@ -118,6 +122,10 @@ const joinOperators: { kind: SqlDocumentJoinOperator; label: string }[] = [
   { kind: "natural_right_outer", label: "NATURAL RIGHT OUTER JOIN" },
   { kind: "natural_full", label: "NATURAL FULL JOIN" },
   { kind: "natural_full_outer", label: "NATURAL FULL OUTER JOIN" },
+  { kind: "left_semi", label: "LEFT SEMI JOIN" },
+  { kind: "right_semi", label: "RIGHT SEMI JOIN" },
+  { kind: "left_anti", label: "LEFT ANTI JOIN" },
+  { kind: "right_anti", label: "RIGHT ANTI JOIN" },
 ];
 const predicateTemplates: {
   kind: SqlDocumentPredicateTemplate;
@@ -391,6 +399,30 @@ function commonTableExpressionName(
   return node.semantic?.kind === "common_table_expression"
     ? { ...node.semantic.name }
     : { value: "", quote_style: null };
+}
+
+function columnAliasesForNode(
+  node: SqlDocumentNode,
+): SqlDocumentSemanticIdentifier[] {
+  if (node.semantic?.kind === "common_table_expression") {
+    return node.semantic.columns.map((column) => ({ ...column }));
+  }
+  if (node.semantic?.kind === "table_factor") {
+    return node.semantic.column_aliases.map((column) => ({ ...column }));
+  }
+  return [];
+}
+
+function parseSimpleColumnAliases(
+  draft: string,
+): SqlDocumentSemanticIdentifier[] | undefined {
+  if (!draft.trim()) return [];
+  const values = draft.split(",").map((value) => value.trim());
+  if (
+    values.some((value) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) ||
+    new Set(values.map((value) => value.toLowerCase())).size !== values.length
+  ) return undefined;
+  return values.map((value) => ({ value, quote_style: null }));
 }
 
 function semanticEdit(
@@ -949,6 +981,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   );
   const [cteQueryNodeId, setCteQueryNodeId] = createSignal<number>();
   const [cteMoveToIndex, setCteMoveToIndex] = createSignal<number>();
+  const [columnAliasesDraft, setColumnAliasesDraft] = createSignal("");
+  const [columnAliasesAction, setColumnAliasesAction] = createSignal(false);
   const [predicateIsNegated, setPredicateIsNegated] = createSignal(false);
   const [unarySign, setUnarySign] = createSignal<SqlDocumentUnarySign | "">(
     "",
@@ -975,6 +1009,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const [groupByExpressionAction, setGroupByExpressionAction] = createSignal<
     GroupByExpressionAction
   >("");
+  const [groupByStructureAction, setGroupByStructureAction] = createSignal(false);
+  const [groupByMode, setGroupByMode] = createSignal<SqlDocumentGroupByMode>(
+    "expressions",
+  );
+  const [groupByGroups, setGroupByGroups] = createSignal<number[][]>([[]]);
+  const [groupByStructureEditable, setGroupByStructureEditable] = createSignal(true);
   const [orderByExpressionAction, setOrderByExpressionAction] = createSignal<
     OrderByExpressionAction
   >("");
@@ -1051,14 +1091,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     SqlDocumentAggregateFunction | ""
   >("");
   const [aggregateDistinct, setAggregateDistinct] = createSignal(false);
+  const [aggregateFilter, setAggregateFilter] = createSignal(false);
   const [aggregateAction, setAggregateAction] = createSignal<
-    "set_function" | "set_distinct" | "remove" | ""
+    "set_function" | "set_distinct" | "set_filter" | "remove" | ""
   >("");
   const [selectDistinct, setSelectDistinct] = createSignal(false);
   const [queryClauseAction, setQueryClauseAction] = createSignal<
     QueryClauseAction
   >("");
   const [limitValue, setLimitValue] = createSignal("");
+  const [limitParameterName, setLimitParameterName] = createSignal("page_size");
+  const [limitExpressionNodeId, setLimitExpressionNodeId] = createSignal<number>();
   const [offsetValue, setOffsetValue] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
@@ -1245,7 +1288,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (
       !currentDocument ||
       !projectionItem ||
-      (!["select_item", "select_list", "select", "query", "order_by_item"]
+      (!["select_item", "select_list", "select", "query", "limit_clause", "order_by_item"]
         .includes(
           projectionItem.kind,
         ) &&
@@ -1256,7 +1299,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         isExpressionKind(child.kind)
       )?.range ?? projectionItem.range
       : projectionItem.kind === "select_list" ||
-          projectionItem.kind === "select" || projectionItem.kind === "query"
+          projectionItem.kind === "select" || projectionItem.kind === "query" ||
+          projectionItem.kind === "limit_clause"
       ? undefined
       : projectionItem.range;
     const selectedQueryId = queryScopeId(projectionItem);
@@ -1396,11 +1440,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const joinRequiresNoConstraint = () =>
     joinOperator() === "cross" ||
     joinOperator().startsWith("natural");
+  const joinRequiresExplicitConstraint = () =>
+    joinOperator() === "left_semi" || joinOperator() === "right_semi" ||
+    joinOperator() === "left_anti" || joinOperator() === "right_anti";
   const relationJoinConstraint = (
     node: SqlDocumentNode,
   ): SqlDocumentJoinConstraint | undefined => {
     if (joinRequiresNoConstraint()) return { kind: "none" };
-    if (joinConstraintChoice() === "none") return { kind: "none" };
+    if (joinConstraintChoice() === "none") {
+      return joinRequiresExplicitConstraint() ? undefined : { kind: "none" };
+    }
     if (joinConstraintChoice() === "on") {
       const expression = relationExpressionCandidates(node).find((item) =>
         item.id === joinOnExpressionNodeId()
@@ -1486,6 +1535,27 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   };
   const selectedProjectionExpression = () =>
     nodeById().get(projectionExpressionNodeId() ?? -1);
+  const selectedLimitExpression = () =>
+    nodeById().get(limitExpressionNodeId() ?? -1);
+  const limitExpressionRequest = (): SqlDocumentQueryLimit | undefined => {
+    if (queryClauseAction() === "set_limit_parameter") {
+      const name = limitParameterName();
+      return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+        ? { kind: "literal", literal: { kind: "named_parameter", name } }
+        : undefined;
+    }
+    if (queryClauseAction() === "set_limit_expression") {
+      const expression = selectedLimitExpression();
+      return expression && isExpressionKind(expression.kind) && expression.range
+        ? {
+          kind: "expression",
+          expression_node_id: expression.id,
+          expression_expected_kind: expression.kind,
+        }
+        : undefined;
+    }
+    return undefined;
+  };
   const selectedBinaryExpressionLeftNode = () =>
     nodeById().get(binaryExpressionLeftNodeId() ?? -1);
   const selectedBinaryExpressionRightNode = () =>
@@ -1551,6 +1621,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   };
   const selectedFunctionExpression = () =>
     nodeById().get(functionExpressionNodeId() ?? -1);
+  const requestedColumnAliases = (node: SqlDocumentNode) => {
+    const aliases = parseSimpleColumnAliases(columnAliasesDraft());
+    if (!aliases) return undefined;
+    const current = columnAliasesForNode(node);
+    return JSON.stringify(current) === JSON.stringify(aliases)
+      ? undefined
+      : aliases;
+  };
   const hasFunctionArgumentInspector = (node: SqlDocumentNode) =>
     node.kind === "function_expression" &&
     node.semantic?.kind === "function" &&
@@ -1571,6 +1649,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const editorCanApply = () => {
     const node = selectedNode();
     if (!node || props.disabled?.() || busy()) return false;
+    if (columnAliasesAction()) {
+      const eligible = node.semantic?.kind === "common_table_expression" ||
+        (node.semantic?.kind === "table_factor" &&
+          node.semantic.factor_kind === "derived" &&
+          !node.semantic.has_column_alias_types);
+      return eligible && node.range !== null &&
+        Boolean(requestedColumnAliases(node));
+    }
     if (node.kind === "select_item" && expandWildcard()) {
       return node.semantic?.kind === "wildcard" && node.range !== null &&
         !!wildcardQualifier(node);
@@ -1580,6 +1666,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     }
     if (node.kind === "select" && addHavingClause()) {
       return node.range !== null && !selectHasHavingClause(node);
+    }
+    if (node.kind === "select" && groupByStructureAction()) {
+      if (!groupByStructureEditable()) return false;
+      if (groupByMode() === "all") return node.range !== null;
+      const groups = groupByGroups();
+      if (groupByMode() === "grouping_sets") {
+        return node.range !== null && groups.length > 0 && groups.length <= 32 &&
+          groups.every((group) => group.length <= 64);
+      }
+      return node.range !== null && groups.length === 1 &&
+        groups[0].length > 0;
     }
     if (
       node.kind === "select" && node.semantic?.kind === "select" &&
@@ -1637,6 +1734,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         return node.range !== null && node.semantic?.kind === "function" &&
           aggregateDistinct() !== node.semantic.distinct;
       }
+      if (aggregateAction() === "set_filter") {
+        return node.range !== null && node.semantic?.kind === "function" &&
+          aggregateFilter() !== node.semantic.has_filter;
+      }
     }
     if (
       node.kind === "query" || node.kind === "limit_clause" ||
@@ -1646,6 +1747,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       if (!query?.range) return false;
       if (queryClauseAction() === "set_limit") {
         return unsignedDraft(limitValue()) !== undefined;
+      }
+      if (queryClauseAction() === "set_limit_parameter" ||
+        queryClauseAction() === "set_limit_expression") {
+        return Boolean(limitExpressionRequest()) &&
+          (queryClauseAction() !== "set_limit_expression" ||
+            queryScopeId(selectedLimitExpression()!) === query.id);
       }
       if (queryClauseAction() === "set_offset") {
         return unsignedDraft(offsetValue()) !== undefined;
@@ -1698,7 +1805,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       return Boolean(literal().kind && literal().value.trim());
     }
     if (node.kind === "select" && groupByExpressionAction() === "add") {
-      return Boolean(selectedProjectionExpression());
+      return groupByStructureEditable() &&
+        Boolean(selectedProjectionExpression());
     }
     if (
       isExpressionKind(node.kind) && binaryExpressionAction() === "replace"
@@ -1758,6 +1866,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         JSON.stringify(target) !== JSON.stringify(currentTarget);
     }
     if (node.kind === "common_table_expression") {
+      if (columnAliasesAction()) {
+        return node.range !== null && Boolean(requestedColumnAliases(node));
+      }
       if (cteAction() === "remove") return node.range !== null;
       if (cteAction() === "move") {
         return node.range !== null && cteMoveToIndex() !== undefined &&
@@ -1778,6 +1889,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           (setOperationAdd() === "add" && Boolean(setOperationOperator())) ||
           (orderByExpressionAction() === "add" &&
             Boolean(selectedProjectionExpression())));
+    }
+    if (node.kind === "table_factor" && node.semantic?.kind === "table_factor") {
+      if (columnAliasesAction()) {
+        return node.range !== null && node.semantic.factor_kind === "derived" &&
+          !node.semantic.has_column_alias_types &&
+          Boolean(requestedColumnAliases(node));
+      }
     }
     if (
       node.kind === "predicate_expression" &&
@@ -1880,6 +1998,15 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         kind: "add_having_clause",
         node_id: node.id,
         expected_kind: "select",
+      };
+    }
+    if (node.kind === "select" && groupByStructureAction()) {
+      return {
+        kind: "set_group_by_structure",
+        node_id: node.id,
+        expected_kind: "select",
+        mode: groupByMode(),
+        groups: groupByMode() === "all" ? [] : groupByGroups(),
       };
     }
     if (
@@ -1998,6 +2125,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           distinct: aggregateDistinct(),
         };
       }
+      if (aggregateAction() === "set_filter") {
+        return {
+          kind: "set_aggregate_filter",
+          node_id: node.id,
+          expected_kind: "function_expression",
+          enabled: aggregateFilter(),
+        };
+      }
     }
     if (
       node.kind === "query" || node.kind === "limit_clause" ||
@@ -2010,6 +2145,18 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         if (value !== undefined) {
           return {
             kind: "set_limit_value",
+            node_id: query.id,
+            expected_kind: "query",
+            value,
+          };
+        }
+      }
+      if (queryClauseAction() === "set_limit_parameter" ||
+        queryClauseAction() === "set_limit_expression") {
+        const value = limitExpressionRequest();
+        if (value) {
+          return {
+            kind: "set_limit_expression",
             node_id: query.id,
             expected_kind: "query",
             value,
@@ -2071,6 +2218,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           expected_kind: node.kind,
           expression_node_id: expression.id,
           expression_expected_kind: expression.kind,
+        };
+      }
+    }
+    if (columnAliasesAction()) {
+      const aliases = requestedColumnAliases(node);
+      if (aliases) {
+        return {
+          kind: "set_relation_column_aliases",
+          node_id: node.id,
+          expected_kind: node.kind as "common_table_expression" | "table_factor",
+          aliases,
         };
       }
     }
@@ -2208,6 +2366,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setWrapAggregateDistinct(false);
     setCteName(commonTableExpressionName(node));
     setCteAction("");
+    setColumnAliasesDraft(columnAliasesForNode(node).map((column) => column.value).join(", "));
+    setColumnAliasesAction(false);
     setCteQueryNodeId(undefined);
     setCteMoveToIndex(undefined);
     if (node.kind === "query") {
@@ -2239,6 +2399,46 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     }
     setProjectionExpressionNodeId(undefined);
     setGroupByExpressionAction("");
+    setGroupByStructureAction(false);
+    if (node.kind === "select") {
+      const group = (childrenByParent().get(node.id) ?? []).find((child) =>
+        child.kind === "group_by_clause"
+      );
+      const groupSource = group?.range
+        ? sourceSlice(document()?.source ?? "", group)
+        : "";
+      const parsedGroup = group?.semantic?.kind === "group_by"
+        ? group.semantic
+        : undefined;
+      setGroupByStructureEditable(parsedGroup?.editable ?? true);
+      const mode: SqlDocumentGroupByMode = parsedGroup?.mode ?? (/\bGROUP\s+BY\s+ALL\b/i.test(
+          groupSource,
+        )
+        ? "all"
+        : /\bGROUP\s+BY\s+ROLLUP\b/i.test(groupSource)
+        ? "rollup"
+        : /\bGROUP\s+BY\s+CUBE\b/i.test(groupSource)
+        ? "cube"
+        : /\bGROUP\s+BY\s+GROUPING\s+SETS\b/i.test(groupSource)
+        ? "grouping_sets"
+        : "expressions");
+      const items = group
+        ? (childrenByParent().get(group.id) ?? [])
+          .filter((item) => item.kind === "group_by_item")
+        : [];
+      const members = items.flatMap((item) => {
+        const expression = (childrenByParent().get(item.id) ?? []).find((child) =>
+          isExpressionKind(child.kind)
+        );
+        return expression ? [expression.id] : [];
+      });
+      setGroupByMode(mode);
+      setGroupByGroups(parsedGroup?.groups.map((members) => [...members]) ?? [members]);
+    } else {
+      setGroupByGroups([[]]);
+      setGroupByMode("expressions");
+      setGroupByStructureEditable(true);
+    }
     setOrderByExpressionAction("");
     setOrderDirection(
       node.semantic?.kind === "order_by_item"
@@ -2280,12 +2480,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setAggregateDistinct(
       node.semantic?.kind === "function" ? node.semantic.distinct : false,
     );
+    setAggregateFilter(
+      node.semantic?.kind === "function" ? node.semantic.has_filter : false,
+    );
     setAggregateAction("");
     setSelectDistinct(
       node.semantic?.kind === "select" ? node.semantic.distinct : false,
     );
     setQueryClauseAction("");
     setLimitValue(queryClauseValue(node, "limit_clause"));
+    setLimitExpressionNodeId(undefined);
     setOffsetValue(queryClauseValue(node, "offset_clause"));
     const relationTarget = node.kind === "table_factor"
       ? node
@@ -2719,7 +2923,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                                   markRelationEdit(node());
                                 }}
                               >
-                                <option value="none">
+                                <option
+                                  value="none"
+                                  disabled={joinRequiresExplicitConstraint()}
+                                >
                                   {t(
                                     "sqlPage.structure.documentJoinNoConstraint",
                                   )}
@@ -3587,6 +3794,35 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       </button>
                     </Show>
 
+                    <Show when={node().semantic?.kind === "common_table_expression" ||
+                      (node().semantic?.kind === "table_factor" &&
+                        node().semantic.factor_kind === "derived")}
+                    >
+                      <div class="sql-document-tree__fields">
+                        <label class="ui-label">
+                          Output column aliases (comma-separated)
+                          <input
+                            class="ui-input"
+                            value={columnAliasesDraft()}
+                            disabled={busy() || props.disabled?.() ||
+                              node().semantic?.kind === "table_factor" &&
+                                node().semantic.has_column_alias_types}
+                            onInput={(event) =>
+                              setColumnAliasesDraft(event.currentTarget.value)}
+                          />
+                        </label>
+                        <IconButton
+                          icon="edit"
+                          label="Set output column aliases"
+                          disabled={busy() || props.disabled?.() ||
+                            !parseSimpleColumnAliases(columnAliasesDraft()) ||
+                            node().semantic?.kind === "table_factor" &&
+                              node().semantic.has_column_alias_types}
+                          onClick={() => setColumnAliasesAction(true)}
+                        />
+                      </div>
+                    </Show>
+
                     <Show
                       when={node().kind === "common_table_expression" &&
                         node().semantic?.kind === "common_table_expression"}
@@ -3956,8 +4192,156 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             "sqlPage.structure.documentAddGroupByExpression",
                           )}
                           disabled={busy() || props.disabled?.() ||
-                            !selectedProjectionExpression()}
+                            !selectedProjectionExpression() ||
+                            !groupByStructureEditable()}
                           onClick={() => setGroupByExpressionAction("add")}
+                        />
+                        <label class="ui-label">
+                          GROUP BY form
+                          <select
+                            class="ui-input"
+                            value={groupByMode()}
+                            disabled={busy() || props.disabled?.()}
+                            onChange={(event) => {
+                              setGroupByStructureEditable(true);
+                              setGroupByMode(
+                                event.currentTarget.value as SqlDocumentGroupByMode,
+                              );
+                              setGroupByExpressionAction("");
+                              setGroupByStructureAction(false);
+                              if (event.currentTarget.value === "grouping_sets" &&
+                                groupByGroups().length === 0) {
+                                setGroupByGroups([[]]);
+                              }
+                            }}
+                          >
+                            <option value="expressions">Grouping keys</option>
+                            <option value="all">ALL</option>
+                            <option value="rollup">ROLLUP</option>
+                            <option value="cube">CUBE</option>
+                            <option value="grouping_sets">GROUPING SETS</option>
+                          </select>
+                        </label>
+                        <Show when={!groupByStructureEditable()}>
+                          <p class="ui-text-muted" role="status">
+                            This nested ROLLUP or CUBE structure is read-only.
+                            Choose a different GROUP BY form to replace it.
+                          </p>
+                        </Show>
+                        <Show when={groupByMode() !== "all"}>
+                          <Show
+                            when={groupByMode() === "grouping_sets"}
+                            fallback={
+                              <label class="ui-label">
+                                Grouping keys
+                                <select
+                                  class="ui-input"
+                                  multiple
+                                  value={(groupByGroups()[0] ?? []).map(String)}
+                                  disabled={busy() || props.disabled?.() ||
+                                    !groupByStructureEditable() ||
+                                    queryExpressionCandidates().length === 0}
+                                  onChange={(event) => {
+                                    const members = Array.from(
+                                      event.currentTarget.selectedOptions,
+                                      (option) => Number(option.value),
+                                    );
+                                    setGroupByGroups([members]);
+                                  }}
+                                >
+                                  <For each={queryExpressionCandidates()}>
+                                    {(candidate) => (
+                                      <option value={candidate.id}>
+                                        {sourceSlice(
+                                          document()?.source ?? "",
+                                          candidate,
+                                        )}
+                                      </option>
+                                    )}
+                                  </For>
+                                </select>
+                              </label>
+                            }
+                          >
+                            <For each={groupByGroups()}>
+                              {(members, groupIndex) => (
+                                <label class="ui-label">
+                                  Grouping set {groupIndex() + 1}
+                                  <select
+                                    class="ui-input"
+                                    multiple
+                                    value={members.map(String)}
+                                    disabled={busy() || props.disabled?.() ||
+                                      !groupByStructureEditable() ||
+                                      queryExpressionCandidates().length === 0}
+                                    onChange={(event) => {
+                                      const values = Array.from(
+                                        event.currentTarget.selectedOptions,
+                                        (option) => Number(option.value),
+                                      );
+                                      setGroupByGroups((current) =>
+                                        current.map((group, index) =>
+                                          index === groupIndex() ? values : group
+                                        )
+                                      );
+                                    }}
+                                  >
+                                    <For each={queryExpressionCandidates()}>
+                                      {(candidate) => (
+                                        <option value={candidate.id}>
+                                          {sourceSlice(
+                                            document()?.source ?? "",
+                                            candidate,
+                                          )}
+                                        </option>
+                                      )}
+                                    </For>
+                                  </select>
+                                  <button
+                                    type="button"
+                                    class="ui-button"
+                                    disabled={busy() || props.disabled?.() ||
+                                      groupByGroups().length <= 1}
+                                    onClick={() =>
+                                      setGroupByGroups((current) =>
+                                        current.filter((_, index) =>
+                                          index !== groupIndex()
+                                        )
+                                      )}
+                                  >
+                                    Remove grouping set {groupIndex() + 1}
+                                  </button>
+                                </label>
+                              )}
+                            </For>
+                            <button
+                              type="button"
+                              class="ui-button"
+                              disabled={busy() || props.disabled?.() ||
+                                !groupByStructureEditable() ||
+                                groupByGroups().length >= 32}
+                              onClick={() =>
+                                setGroupByGroups((current) => [...current, []])}
+                            >
+                              Add grouping set
+                            </button>
+                          </Show>
+                        </Show>
+                        <IconButton
+                          icon="edit"
+                          label="Apply GROUP BY form"
+                          disabled={busy() || props.disabled?.() ||
+                            !groupByStructureEditable() ||
+                            (groupByMode() !== "all" &&
+                              (groupByGroups().length === 0 ||
+                                (groupByMode() !== "grouping_sets" &&
+                                  groupByGroups().some((group) =>
+                                    group.length === 0
+                                  ))))}
+                          onClick={() => {
+                            setGroupByExpressionAction("");
+                            setGroupByStructureAction(true);
+                          }}
                         />
                         <IconButton
                           icon="filter"
@@ -4094,6 +4478,58 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           disabled={busy() || props.disabled?.() ||
                             unsignedDraft(limitValue()) === undefined}
                           onClick={() => setQueryClauseAction("set_limit")}
+                        />
+                        <label class="ui-label">
+                          LIMIT parameter name
+                          <input
+                            class="ui-input"
+                            value={limitParameterName()}
+                            disabled={busy() || props.disabled?.()}
+                            onInput={(event) =>
+                              setLimitParameterName(event.currentTarget.value)}
+                          />
+                        </label>
+                        <IconButton
+                          icon="edit"
+                          label="Set LIMIT parameter"
+                          disabled={busy() || props.disabled?.() ||
+                            !/^[A-Za-z_][A-Za-z0-9_]*$/.test(limitParameterName())}
+                          onClick={() =>
+                            setQueryClauseAction("set_limit_parameter")}
+                        />
+                        <label class="ui-label">
+                          LIMIT expression
+                          <select
+                            class="ui-input"
+                            value={limitExpressionNodeId() ?? ""}
+                            disabled={busy() || props.disabled?.() ||
+                              queryExpressionCandidates().length === 0}
+                            onChange={(event) => {
+                              setLimitExpressionNodeId(
+                                event.currentTarget.value
+                                  ? Number(event.currentTarget.value)
+                                  : undefined,
+                              );
+                              setQueryClauseAction("set_limit_expression");
+                            }}
+                          >
+                            <option value="">Choose an expression from this query</option>
+                            <For each={queryExpressionCandidates()}>
+                              {(candidate) => (
+                                <option value={candidate.id}>
+                                  {sourceSlice(document()?.source ?? "", candidate)}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </label>
+                        <IconButton
+                          icon="edit"
+                          label="Set LIMIT expression"
+                          disabled={busy() || props.disabled?.() ||
+                            !selectedLimitExpression()?.range}
+                          onClick={() =>
+                            setQueryClauseAction("set_limit_expression")}
                         />
                         <label class="ui-label">
                           {t("sqlPage.structure.documentOffsetValue")}
@@ -4614,6 +5050,19 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             }}
                           />
                           {t("sqlPage.structure.documentAggregateDistinct")}
+                        </label>
+                        <label class="ui-label sql-document-tree__negation">
+                          <input
+                            type="checkbox"
+                            checked={node().semantic?.kind === "function" &&
+                              node().semantic.has_filter}
+                            disabled={busy() || props.disabled?.()}
+                            onChange={(event) => {
+                              setAggregateFilter(event.currentTarget.checked);
+                              setAggregateAction("set_filter");
+                            }}
+                          />
+                          Aggregate FILTER
                         </label>
                         <IconButton
                           icon="trash"

@@ -1822,10 +1822,12 @@ mod tests {
             serde_json::from_str(&super::invoke_json(&legacy_request.to_string()))
                 .expect("legacy INNER JOIN proposal JSON");
         assert_eq!(legacy_proposal["ok"], true, "{legacy_proposal}");
-        assert!(legacy_proposal["value"]["proposed_sql"]
-            .as_str()
-            .unwrap()
-            .contains(" INNER JOIN "));
+        assert!(
+            legacy_proposal["value"]["proposed_sql"]
+                .as_str()
+                .unwrap()
+                .contains(" INNER JOIN ")
+        );
     }
 
     #[test]
@@ -1957,9 +1959,11 @@ mod tests {
             "missing expression must not clear WHERE"
         );
         assert_eq!(response["error"]["kind"], "domain_validation");
-        assert!(response["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("expression")));
+        assert!(
+            response["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("expression"))
+        );
     }
 
     #[test]
@@ -2025,9 +2029,11 @@ mod tests {
             .expect("column comparison proposal JSON");
         assert_eq!(proposal["ok"], true, "{proposal}");
         assert_eq!(proposal["value"]["status"], "supported");
-        assert!(proposal["value"]["proposed_sql"]
-            .as_str()
-            .is_some_and(|sql| sql.contains("\"field_101\" = \"_ugoite_id\"")));
+        assert!(
+            proposal["value"]["proposed_sql"]
+                .as_str()
+                .is_some_and(|sql| sql.contains("\"field_101\" = \"_ugoite_id\""))
+        );
     }
 
     #[test]
@@ -2234,10 +2240,12 @@ mod tests {
         let proposal: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
         assert_eq!(proposal["ok"], true, "{proposal}");
         assert_eq!(proposal["value"], expected);
-        assert!(proposal["value"]["proposed_sql"]
-            .as_str()
-            .unwrap()
-            .contains("AS second_copy, \"field_102\" AS first_copy"));
+        assert!(
+            proposal["value"]["proposed_sql"]
+                .as_str()
+                .unwrap()
+                .contains("AS second_copy, \"field_102\" AS first_copy")
+        );
     }
 
     #[test]
@@ -2394,8 +2402,8 @@ mod tests {
     #[test]
     fn sql_document_node_edit_protocol_matches_native_transaction_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeEdit, SqlDocumentNodeEditTransaction, SqlDocumentNodeKind,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeEdit, SqlDocumentNodeEditTransaction,
+            SqlDocumentNodeKind,
         };
 
         let source = "-- report\nSELECT /* left */ amount AS total FROM \"G\" WHERE amount > 1 ORDER BY total DESC /* tail */";
@@ -2451,9 +2459,9 @@ mod tests {
     #[test]
     fn sql_document_semantic_edit_protocol_matches_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral,
         };
 
         let source = "-- 日本語\nSELECT amount FROM \"G\" WHERE amount > 1";
@@ -2544,10 +2552,11 @@ mod tests {
     #[test]
     fn sql_document_filter_condition_protocol_matches_native_view_edit_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentColumnReference, SqlDocumentConditionGroupOperator,
-            SqlDocumentFilterCondition, SqlDocumentFilterOperator, SqlDocumentIdentifier,
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SqlDocumentSemanticLiteral, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentColumnReference,
+            SqlDocumentConditionGroupOperator, SqlDocumentFilterCondition,
+            SqlDocumentFilterOperator, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral,
         };
 
         let source = "SELECT * FROM \"G\" WHERE age >= 18 AND name IS NOT NULL";
@@ -2606,14 +2615,18 @@ mod tests {
             serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
-        assert!(native
-            .document
-            .source
-            .contains("age >= 18 AND name IS NOT NULL"));
-        assert!(native
-            .document
-            .source
-            .contains("AND ((score >= 10 OR active = TRUE))"));
+        assert!(
+            native
+                .document
+                .source
+                .contains("age >= 18 AND name IS NOT NULL")
+        );
+        assert!(
+            native
+                .document
+                .source
+                .contains("AND ((score >= 10 OR active = TRUE))")
+        );
         let undo_request = serde_json::json!({ "action": "domain.apply_sql_document_edit_transaction", "value": { "current_source": native.document.source, "transaction": native.undo } });
         let undo_response: Value =
             serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
@@ -2670,10 +2683,10 @@ mod tests {
     #[test]
     fn sql_document_signed_numeric_filter_literals_match_native_and_preserve_unknown_forms() {
         use ugoite_domain::sql_document::{
-            SqlDocumentColumnReference, SqlDocumentFilterCondition, SqlDocumentFilterOperator,
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentColumnReference, SqlDocumentFilterCondition,
+            SqlDocumentFilterOperator, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral,
         };
 
         let source = "SELECT * FROM G WHERE amount >= -92233720368547758081234567890";
@@ -2760,8 +2773,8 @@ mod tests {
     #[test]
     fn projection_alias_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
         let source = "SELECT amount FROM \"G\"";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
@@ -2801,10 +2814,9 @@ mod tests {
     #[test]
     fn sql_document_relation_edit_protocol_matches_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,
-            SqlDocumentJoinOperator, SqlDocumentNodeKind, SqlDocumentRelationFactor,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentJoin,
+            SqlDocumentJoinConstraint, SqlDocumentJoinOperator, SqlDocumentNodeKind,
+            SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT (SELECT 1) FROM \"G\"";
@@ -2902,10 +2914,134 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_relational_constructors_protocol_match_native_and_undo() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,
+            SqlDocumentJoinOperator, SqlDocumentNodeKind, SqlDocumentQueryLimit,
+            SqlDocumentRelationFactor, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        fn assert_protocol(source: &str, transaction: SqlDocumentSemanticEditTransaction) {
+            let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+                source,
+                &transaction,
+            )
+            .expect("the typed relational edit applies natively");
+            let request = serde_json::json!({
+                "action": "domain.apply_sql_document_semantic_edit_transaction",
+                "value": { "current_source": source, "transaction": transaction },
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+
+            let undo_request = serde_json::json!({
+                "action": "domain.apply_sql_document_edit_transaction",
+                "value": { "current_source": native.document.source, "transaction": native.undo },
+            });
+            let undo_response: Value =
+                serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+            assert_eq!(undo_response["ok"], true, "{undo_response}");
+            assert_eq!(undo_response["value"]["document"]["source"], source);
+        }
+
+        let source = "SELECT 1 + 2";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is parser-backed");
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the LIMIT expression source is typed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                    node_id: query.id,
+                    expected_kind: query.kind,
+                    value: SqlDocumentQueryLimit::Expression {
+                        expression_node_id: expression.id,
+                        expression_expected_kind: expression.kind,
+                    },
+                }],
+            },
+        );
+
+        let source = "WITH c (old_name) AS (SELECT 1) SELECT c.old_name FROM c";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let cte = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CommonTableExpression)
+            .expect("the CTE is parser-backed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: cte.id,
+                    expected_kind: cte.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "new_name".to_owned(),
+                        quote_style: None,
+                    }],
+                }],
+            },
+        );
+
+        let source = "SELECT 1 FROM \"G\" WHERE 1 = 1";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let tree = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RelationTree)
+            .expect("the relation tree is parser-backed");
+        let condition = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the ON expression source is typed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::AddJoin {
+                    node_id: tree.id,
+                    expected_kind: tree.kind,
+                    join: SqlDocumentJoin {
+                        operator: SqlDocumentJoinOperator::LeftSemi,
+                        relation: SqlDocumentRelationFactor::Table {
+                            name: vec![SqlDocumentIdentifier {
+                                value: "H".to_owned(),
+                                quote_style: None,
+                            }],
+                            alias: None,
+                        },
+                        constraint: SqlDocumentJoinConstraint::On {
+                            expression_node_id: condition.id,
+                            expression_expected_kind: condition.kind,
+                        },
+                    },
+                }],
+            },
+        );
+    }
+
+    #[test]
     fn sql_document_cast_target_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentCastType, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentCastType, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT TRY_CAST(amount + 1 AS BIGINT)";
@@ -2949,9 +3085,8 @@ mod tests {
     #[test]
     fn sql_document_parameterized_cast_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentCastTarget, SqlDocumentCastType, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentCastTarget, SqlDocumentCastType,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
         let source = "SELECT CAST(1 AS DECIMAL)";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
@@ -2993,8 +3128,8 @@ mod tests {
     #[test]
     fn sql_document_cte_rename_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "WITH c AS (SELECT 1 AS n) SELECT n FROM c";
@@ -3041,8 +3176,8 @@ mod tests {
     #[test]
     fn sql_document_cte_add_and_remove_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1";
@@ -3124,8 +3259,8 @@ mod tests {
     #[test]
     fn sql_document_predicate_negation_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT amount FROM \"G\" WHERE amount IS /* keep */ NULL";
@@ -3169,8 +3304,8 @@ mod tests {
     #[test]
     fn sql_document_unary_sign_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SqlDocumentUnarySign, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentUnarySign,
         };
 
         let source = "SELECT - /* keep */ amount";
@@ -3222,8 +3357,8 @@ mod tests {
     #[test]
     fn sql_document_bitwise_operator_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentBinaryOperator, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentBinaryOperator, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
         let source = "SELECT 5 + 1";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
@@ -3264,8 +3399,8 @@ mod tests {
     #[test]
     fn sql_document_set_operation_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SqlDocumentSetOperator, SqlDocumentSetQuantifier, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentSetOperator, SqlDocumentSetQuantifier,
         };
 
         let source = "SELECT 1 UNION ALL SELECT 2";
@@ -3314,8 +3449,8 @@ mod tests {
     #[test]
     fn sql_document_set_operation_swap_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1 UNION ALL SELECT 2";
@@ -3358,9 +3493,9 @@ mod tests {
     #[test]
     fn sql_document_set_operation_add_remove_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SqlDocumentSetOperand, SqlDocumentSetOperator, SqlDocumentSetQuantifier,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentSetOperand, SqlDocumentSetOperator,
+            SqlDocumentSetQuantifier,
         };
 
         let source = "SELECT 1";
@@ -3441,10 +3576,9 @@ mod tests {
     #[test]
     fn sql_document_nested_structure_edit_protocol_matches_native_and_undo() {
         use ugoite_domain::sql_document::{
-            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentRelationFactor,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSetOperator,
-            SqlDocumentSetQuantifier, SqlDocumentSubqueryPredicateTemplate,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentIdentifier, SqlDocumentNodeKind,
+            SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSetOperator, SqlDocumentSetQuantifier, SqlDocumentSubqueryPredicateTemplate,
         };
 
         fn assert_matches_native(
@@ -3741,8 +3875,8 @@ mod tests {
     #[test]
     fn sql_document_case_structure_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT CASE WHEN amount > 0 THEN 1 ELSE 0 END";
@@ -3785,8 +3919,8 @@ mod tests {
     #[test]
     fn sql_document_case_operand_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
         let source = "SELECT amount, CASE WHEN amount = 1 THEN 2 END";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
@@ -3835,8 +3969,8 @@ mod tests {
     #[test]
     fn sql_document_function_argument_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT COUNT(field_100) AS item_count, field_100 FROM \"G\"";
@@ -3899,8 +4033,8 @@ mod tests {
     #[test]
     fn sql_document_projection_expression_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100, CASE WHEN field_100 = 'alpha' THEN field_100 ELSE 'other' END AS label FROM \"G\"";
@@ -3953,9 +4087,8 @@ mod tests {
     #[test]
     fn sql_document_common_toolbar_semantic_operations_have_wasm_parity() {
         use ugoite_domain::sql_document::{
-            SqlDocumentAggregateFunction, SqlDocumentNodeData, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentAggregateFunction, SqlDocumentNodeData,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let assert_parity = |source: &str, edit: SqlDocumentSemanticEdit| {
@@ -4019,10 +4152,12 @@ mod tests {
                 expression_expected_kind: replacement.kind,
             },
         );
-        assert!(replaced_filter
-            .document
-            .source
-            .ends_with("WHERE amount > 0"));
+        assert!(
+            replaced_filter
+                .document
+                .source
+                .ends_with("WHERE amount > 0")
+        );
         let filter_document =
             ugoite_domain::sql_document::parse_sql_document(&replaced_filter.document.source);
         let where_clause = filter_document
@@ -4111,6 +4246,15 @@ mod tests {
                 function: SqlDocumentAggregateFunction::Avg,
             },
         );
+        let filter_seed = assert_parity(
+            aggregate_source,
+            SqlDocumentSemanticEdit::SetAggregateFilter {
+                node_id: sum.id,
+                expected_kind: sum.kind,
+                enabled: true,
+            },
+        );
+        assert!(filter_seed.document.source.contains("FILTER (WHERE TRUE)"));
         let average_document =
             ugoite_domain::sql_document::parse_sql_document(&average.document.source);
         let avg = average_document
@@ -4200,9 +4344,8 @@ mod tests {
     #[test]
     fn sql_document_binary_expression_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentBinaryOperator, SqlDocumentNodeData, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentBinaryOperator, SqlDocumentNodeData,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100, 'x' FROM \"G\"";
@@ -4269,8 +4412,8 @@ mod tests {
     #[test]
     fn sql_document_non_projection_binary_expression_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentBinaryOperator, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentBinaryOperator, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1 WHERE 1 = 2";
@@ -4334,8 +4477,8 @@ mod tests {
     #[test]
     fn sql_document_group_by_expression_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentGroupByMode, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 FROM \"G\" ORDER BY field_100";
@@ -4385,14 +4528,41 @@ mod tests {
             response["value"]["document"]["source"],
             "SELECT field_100 FROM \"G\" GROUP BY field_100 ORDER BY field_100"
         );
+
+        let group_sets = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetGroupByStructure {
+                node_id: select.id,
+                expected_kind: SqlDocumentNodeKind::Select,
+                mode: SqlDocumentGroupByMode::GroupingSets,
+                groups: vec![vec![expression.id], vec![]],
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &group_sets,
+        )
+        .expect("native grouping-set construction succeeds");
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": group_sets },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            native.document.source,
+            "SELECT field_100 FROM \"G\" GROUP BY GROUPING SETS ((field_100), ()) ORDER BY field_100"
+        );
     }
 
     #[test]
     fn sql_document_order_by_expression_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentNullsOrder, SqlDocumentOrderDirection,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentNullsOrder,
+            SqlDocumentOrderDirection, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 FROM \"G\" LIMIT 10";
@@ -4449,10 +4619,10 @@ mod tests {
     #[test]
     fn sql_document_task_filter_sort_constructors_match_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentColumnReference, SqlDocumentFilterOperator, SqlDocumentIdentifier,
-            SqlDocumentNodeKind, SqlDocumentOrderDirection, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentColumnReference, SqlDocumentFilterOperator,
+            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentOrderDirection,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral,
         };
 
         let source = "SELECT * FROM \"Form Expenses\" AS e WHERE a = 1 OR b = 2";
@@ -4502,14 +4672,18 @@ mod tests {
             &transaction,
         )
         .expect("the native typed edits succeed");
-        assert!(native
-            .document
-            .source
-            .contains("WHERE (a = 1 OR b = 2) AND (e.\"field amount\" >= 3)"));
-        assert!(native
-            .document
-            .source
-            .ends_with("ORDER BY e.\"field amount\" DESC"));
+        assert!(
+            native
+                .document
+                .source
+                .contains("WHERE (a = 1 OR b = 2) AND (e.\"field amount\" >= 3)")
+        );
+        assert!(
+            native
+                .document
+                .source
+                .ends_with("ORDER BY e.\"field amount\" DESC")
+        );
         let request = serde_json::json!({
             "action": "domain.apply_sql_document_semantic_edit_transaction",
             "value": { "current_source": source, "transaction": transaction },
@@ -4523,8 +4697,8 @@ mod tests {
     #[test]
     fn sql_document_expression_leaf_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 + 1 FROM \"G\"";
@@ -4570,8 +4744,8 @@ mod tests {
     #[test]
     fn sql_document_expression_cast_wrapper_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentCastType, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentCastType, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 + 1 FROM \"G\"";
@@ -4615,8 +4789,8 @@ mod tests {
     #[test]
     fn sql_document_expression_aggregate_wrapper_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentAggregateFunction, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentAggregateFunction, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT amount + 1 FROM \"G\"";
@@ -4661,8 +4835,8 @@ mod tests {
     #[test]
     fn sql_document_expression_case_wrapper_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT amount + 1 FROM \"G\"";
@@ -4705,8 +4879,8 @@ mod tests {
     #[test]
     fn sql_document_add_where_clause_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1 FROM \"G\" GROUP BY 1 ORDER BY 1 LIMIT 2";
@@ -4746,8 +4920,8 @@ mod tests {
     #[test]
     fn sql_document_predicate_template_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentPredicateTemplate, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentPredicateTemplate,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT amount + 1 FROM \"G\"";
@@ -4788,9 +4962,9 @@ mod tests {
     #[test]
     fn sql_document_postfix_predicate_and_typed_literal_protocol_match_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentPredicateTemplate, SqlDocumentSemanticEdit,
-            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
-            SqlDocumentTypedLiteralType, SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentPredicateTemplate,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral, SqlDocumentTypedLiteralType,
         };
 
         let source = "SELECT DATE '2026-01-01'";
@@ -4866,8 +5040,8 @@ mod tests {
     #[test]
     fn sql_document_in_list_value_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT amount FROM \"G\" WHERE amount IN (1, 2) /* keep */";
@@ -4916,8 +5090,8 @@ mod tests {
     #[test]
     fn sql_document_expression_copy_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 + 1, field_100 FROM \"G\"";
@@ -4976,8 +5150,8 @@ mod tests {
     #[test]
     fn sql_document_projection_expression_add_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT field_100 FROM \"G\" WHERE field_100 > 10";
@@ -5027,8 +5201,8 @@ mod tests {
     #[test]
     fn sql_document_scalar_subquery_projection_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1 FROM \"G\"";
@@ -5071,8 +5245,8 @@ mod tests {
     #[test]
     fn sql_document_projection_item_edits_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
 
         let source = "SELECT 1, 2, 3 FROM \"G\"";
@@ -5154,8 +5328,8 @@ mod tests {
     #[test]
     fn sql_document_projection_alias_removal_conflict_is_exposed_to_wasm() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SQL_DOCUMENT_CONTRACT_VERSION, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction,
         };
         let source =
             "SELECT 'fixed' AS field_100, field_100 AS actual FROM tasks ORDER BY field_100";
@@ -5549,8 +5723,8 @@ mod tests {
     #[test]
     fn variable_graph_input_protocol_matches_native_domain_contract() {
         use ugoite_domain::composition::{
-            parse_variable_graph_input, VariableGraphInputValue, VariableGraphScalarDescriptor,
-            VariableGraphScalarType,
+            VariableGraphInputValue, VariableGraphScalarDescriptor, VariableGraphScalarType,
+            parse_variable_graph_input,
         };
 
         let cases = [

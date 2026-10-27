@@ -83,12 +83,35 @@ requirements:
           expression operators, simple-versus-searched CASE operands,
           IS TRUE/FALSE/UNKNOWN and DISTINCT FROM predicates, ILIKE and
           SIMILAR TO predicates, and typed DATE/TIMESTAMP/INTERVAL/hex literal
-          values. Semantic edits retain untouched source bytes and comments,
+          values, a typed FILTER toggle for registered aggregate calls, and
+          ordinary, ALL, ROLLUP, CUBE, and GROUPING SETS structures with
+          explicit per-set expression members; editing an existing GROUPING
+          SETS clause preserves each boundary, and an empty grouping set is
+          authorable. Composite ROLLUP/CUBE forms that exceed the editor's
+          grouping controls retain exact source and disable Apply. New
+          aggregate filters use an editable TRUE predicate seed.
+          Semantic edits retain untouched source bytes and comments,
           support guarded inverse edits, and preserve incomplete or
           planner-invalid drafts for correction. The editor does not claim executor admission;
           planning remains authoritative for physical type and operator
           validity. Parameter values remain exact decimal strings across the
           protocol.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: relational-constructors
+        kind: behavior
+        statement: >-
+          The SQL Document editor exposes typed constructors for DataFusion
+          admitted LEFT/RIGHT SEMI and ANTI joins, LIMIT literals, named
+          parameters and same-query expressions, and output column aliases on
+          CTEs and derived tables. Semi and anti joins require an explicit
+          typed ON or USING constraint before Apply is enabled. The
+          constructors use guarded source ranges
+          and bounded Rust operations; alias references are renamed only when
+          their binding is established, respecting nested CTE shadowing and
+          rejecting ambiguous unqualified references. Each edit preserves
+          source outside its selected ranges and provides a guarded inverse.
+          These controls describe editable SQL syntax and do not promise that
+          arbitrary drafts pass executor admission.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: portable-protocol
         kind: behavior

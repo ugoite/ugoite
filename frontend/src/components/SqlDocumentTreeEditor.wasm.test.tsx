@@ -11,6 +11,233 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("keeps composite ROLLUP and CUBE forms read-only without rewriting them", async () => {
+    for (const [mode, initial] of [
+      [
+        "rollup",
+        'SELECT a, b, c FROM "G" GROUP BY ROLLUP ((a, b), c)',
+      ],
+      [
+        "cube",
+        'SELECT a, b, c FROM "G" GROUP BY CUBE ((a, b), c)',
+      ],
+    ] as const) {
+      const document = await parseSqlDocument(initial);
+      const select = document.nodes.find((node) => node.kind === "select")!;
+      const group = document.nodes.find((node) =>
+        node.kind === "group_by_clause"
+      )!;
+      expect(group.semantic).toMatchObject({
+        kind: "group_by",
+        mode,
+        editable: false,
+        groups: [[expect.any(Number), expect.any(Number)], [expect.any(Number)]],
+      });
+      const [sql, setSql] = createSignal(initial);
+      const view = render(() => (
+        <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />
+      ));
+      const selectItem = (await screen.findAllByRole("treeitem")).find(
+        (item) => item.dataset.sqlDocumentNode === String(select.id),
+      );
+      expect(selectItem).toBeDefined();
+      fireEvent.click(selectItem!);
+      expect(screen.getByLabelText("GROUP BY form")).toHaveValue(mode);
+      expect(screen.getByText(/nested ROLLUP or CUBE structure is read-only/))
+        .toBeVisible();
+      expect(screen.getByRole("button", { name: "Apply GROUP BY form" }))
+        .toBeDisabled();
+      expect(screen.getByRole("button", { name: "Add group expression" }))
+        .toBeDisabled();
+      expect(sql()).toBe(initial);
+      view.unmount();
+    }
+  });
+
+  it("requires a typed condition before applying a semi join", async () => {
+    const initial = 'SELECT g.id FROM "G" AS g WHERE g.id = 1';
+    const document = await parseSqlDocument(initial);
+    const relationTree = document.nodes.find((node) =>
+      node.kind === "relation_tree"
+    )!;
+    const [sql, setSql] = createSignal(initial);
+    render(() => (
+      <SqlDocumentTreeEditor
+        sql={sql}
+        onSqlChange={setSql}
+        relationOptions={() => [
+          { relation: "G", label: "G" },
+          { relation: "H", label: "H" },
+        ]}
+      />
+    ));
+    const relationItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(relationTree.id),
+    );
+    expect(relationItem).toBeDefined();
+    fireEvent.click(relationItem!);
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "H" },
+    });
+    fireEvent.input(screen.getByLabelText("Alias"), {
+      target: { value: "h" },
+    });
+    fireEvent.change(screen.getByLabelText("Join"), {
+      target: { value: "left_semi" },
+    });
+    const constraint = screen.getByLabelText("Condition") as HTMLSelectElement;
+    expect(constraint.querySelector('option[value="none"]')).toBeDisabled();
+    const addJoin = screen.getByRole("button", { name: "Add join" });
+    expect(addJoin).toBeDisabled();
+
+    fireEvent.change(constraint, { target: { value: "on" } });
+    const onExpression = screen.getByLabelText(
+      "ON expression",
+    ) as HTMLSelectElement;
+    const conditionOption = Array.from(onExpression.options).find((option) =>
+      option.textContent === "g.id = 1"
+    );
+    expect(conditionOption).toBeDefined();
+    fireEvent.change(onExpression, {
+      target: { value: conditionOption!.value },
+    });
+    expect(addJoin).toBeEnabled();
+    fireEvent.click(addJoin);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toContain("LEFT SEMI JOIN \"H\" AS h ON g.id = 1")
+    );
+  });
+
+  it("preserves grouping-set boundaries and authors the empty set from the inspector", async () => {
+    const initial =
+      'SELECT field_100, field_101 FROM "G" GROUP BY GROUPING SETS ((field_100, field_101), (field_100))';
+    const document = await parseSqlDocument(initial);
+    const select = document.nodes.find((node) => node.kind === "select")!;
+    const groupBy = document.nodes.find((node) =>
+      node.kind === "group_by_clause"
+    )!;
+    expect(groupBy.semantic).toMatchObject({
+      kind: "group_by",
+      mode: "grouping_sets",
+      groups: expect.arrayContaining([
+        expect.arrayContaining([expect.any(Number), expect.any(Number)]),
+      ]),
+    });
+    const grouping = groupBy.semantic;
+    if (grouping?.kind !== "group_by") throw new Error("Missing group metadata");
+    expect(grouping.groups).toHaveLength(2);
+    expect(grouping.groups[0]).toHaveLength(2);
+    expect(grouping.groups[1]).toHaveLength(1);
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "set_group_by_structure",
+        node_id: select.id,
+        expected_kind: "select",
+        mode: "grouping_sets",
+      groups: [...grouping.groups, []],
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const selectItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(select.id),
+    );
+    expect(selectItem).toBeDefined();
+    fireEvent.click(selectItem!);
+    expect(screen.getByLabelText("GROUP BY form")).toHaveValue("grouping_sets");
+    expect(screen.getByLabelText("Grouping set 1")).toHaveValue(
+      grouping.groups[0].map(String),
+    );
+    expect(screen.getByLabelText("Grouping set 2")).toHaveValue(
+      grouping.groups[1].map(String),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add grouping set" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply GROUP BY form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(expected.document.source));
+    expect(sql()).toContain(
+      "GROUPING SETS ((field_100, field_101), (field_100), ())",
+    );
+  });
+
+  it("authors ROLLUP with selected typed keys and restores it with WASM undo", async () => {
+    const initial = 'SELECT field_100, field_101 FROM "G"';
+    const document = await parseSqlDocument(initial);
+    const select = document.nodes.find((node) => node.kind === "select")!;
+    const keys = document.nodes.filter((node) =>
+      node.kind === "identifier_expression" &&
+      node.range && ["field_100", "field_101"].includes(
+        document.source.slice(node.range.start, node.range.end),
+      )
+    );
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "set_group_by_structure",
+        node_id: select.id,
+        expected_kind: "select",
+        mode: "rollup",
+        groups: [[keys[0].id, keys[1].id]],
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const selectItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(select.id),
+    );
+    expect(selectItem).toBeDefined();
+    fireEvent.click(selectItem!);
+    fireEvent.change(screen.getByLabelText("GROUP BY form"), {
+      target: { value: "rollup" },
+    });
+    const keySelect = screen.getByLabelText("Grouping keys") as HTMLSelectElement;
+    for (const option of Array.from(keySelect.options)) {
+      option.selected = keys.some((key) => String(key.id) === option.value);
+    }
+    fireEvent.change(keySelect);
+    fireEvent.click(screen.getByRole("button", { name: "Apply GROUP BY form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(expected.document.source));
+    expect(sql()).toContain("GROUP BY ROLLUP (field_100, field_101)");
+    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    expect(restored.document.source).toBe(initial);
+  });
+
+  it("adds a typed aggregate FILTER from the inspector and restores it with WASM undo", async () => {
+    const initial = "SELECT COUNT(amount)";
+    const document = await parseSqlDocument(initial);
+    const aggregate = document.nodes.find((node) =>
+      node.kind === "function_expression" && node.semantic?.kind === "function"
+    )!;
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "set_aggregate_filter",
+        node_id: aggregate.id,
+        expected_kind: "function_expression",
+        enabled: true,
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const aggregateItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(aggregate.id),
+    );
+    expect(aggregateItem).toBeDefined();
+    fireEvent.click(aggregateItem!);
+    fireEvent.click(screen.getByLabelText("Aggregate FILTER"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(expected.document.source));
+    expect(sql()).toContain("FILTER (WHERE TRUE)");
+    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    expect(restored.document.source).toBe(initial);
+  });
+
   it("switches CASE to a selected operand and back through the CASE mode control", async () => {
     const initial = "SELECT amount, CASE WHEN amount = 1 THEN 2 ELSE 3 END";
     const [sql, setSql] = createSignal(initial);
@@ -211,5 +438,43 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(sql()).toBe("SELECT (amount) IS NOT DISTINCT FROM NULL");
     const restored = await applySqlDocumentEditTransaction(sql(), result.undo);
     expect(restored.document.source).toBe(initial);
+  });
+
+  it("constructs a parameter LIMIT through the actual WASM tree editor", async () => {
+    const initial = "SELECT field_100 FROM tasks";
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+
+    fireEvent.click(
+      await screen.findByRole("treeitem", { name: /Query: SELECT field_100/ }),
+    );
+    fireEvent.input(screen.getByLabelText("LIMIT parameter name"), {
+      target: { value: "page_size" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set LIMIT parameter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe("SELECT field_100 FROM tasks LIMIT $page_size"));
+  });
+
+  it("renames a CTE output column and its binding through the actual WASM tree editor", async () => {
+    const initial = "WITH c (old_name) AS (SELECT 1) SELECT c.old_name FROM c";
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+
+    fireEvent.click(
+      await screen.findByRole("treeitem", {
+        name: /Common table expression: c \(old_name\)/,
+      }),
+    );
+    fireEvent.input(screen.getByLabelText("Output column aliases (comma-separated)"), {
+      target: { value: "new_name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set output column aliases" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        "WITH c (new_name) AS (SELECT 1) SELECT c.new_name FROM c",
+      )
+    );
   });
 });

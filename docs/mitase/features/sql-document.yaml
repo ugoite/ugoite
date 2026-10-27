@@ -1,11 +1,11 @@
 schema: mitase/authoring/v2
 kind: features
 namespace: sql
-category: SQL Document parsing foundation
+category: SQL Document source and typed editing
 features:
   - id: FEAT-SQL-001
-    title: Lossless SQL Document source view
-    summary: Preserve bounded SQL drafts as exact Rust-owned source with token ranges, syntax ranges, and distinct projection-item nodes while keeping syntax parsing separate from executor admission.
+    title: Source-preserving SQL Document editing
+    summary: Keep bounded SQL drafts in one exact Rust-owned document, expose typed source-aware editing for supported expressions, predicates, relations, grouping and output fields, and keep parse success separate from executor admission.
     status: implemented
     bindings:
       - id: sql-document-core
@@ -30,7 +30,7 @@ features:
       - id: typed-expression-attributes-contract
         role: contract-source
         facet: domain
-        responsibility: Define the typed semantic edit requests shared by Rust editing, WASM dispatch, and the browser tree editor.
+        responsibility: Define the typed semantic edit requests for expression, predicate, grouping, relation, LIMIT, and output-alias edits shared by Rust editing, WASM dispatch, and the browser tree editor.
         targets:
           - id: semantic-edit-request
             adapter: rust
@@ -39,10 +39,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.relational-constructors
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, and typed temporal or hex literals while retaining untouched SQL source and guarded undo.
+        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, and CTE or derived-table output aliases while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
         targets:
           - id: semantic-expression-edits
             adapter: rust
@@ -51,10 +53,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.relational-constructors
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, and typed temporal or hex literal controls in the SQL document tree editor.
+        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, and CTE or derived-table output aliases in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -63,10 +67,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.relational-constructors
       - id: sql-document-verification
         role: verification
         facet: verification
-        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, token-scoped parameter renaming, and the parser-versus-executor boundary with focused tests.
+        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, token-scoped parameter renaming, relational constructors, and the parser-versus-executor boundary with focused tests.
         targets:
           - id: lossless-document-source-and-ranges
             adapter: rust
@@ -619,8 +625,8 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-position-bindings
       - id: projection-position-protocol
         role: implementation
-        facet: protocol
-        responsibility: Expose the same guarded projection edit and stable positional conflict through the Rust WASM dispatcher.
+        facet: wasm
+        responsibility: Dispatch bounded guarded SQL Document semantic edits, including projection-position, predicate, grouping, relational, LIMIT, and output-alias operations, through the portable Rust/WASM protocol.
         targets:
           - id: semantic-edit-action
             adapter: rust
@@ -631,6 +637,8 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-position-bindings
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.relational-constructors
       - id: projection-position-verification
         role: verification
         facet: verification
@@ -686,6 +694,92 @@ features:
         facet: verification
         responsibility: Verify lossless typed CAST, operator, CASE, predicate, and literal edits in native Rust, authorized executor contexts, actual WASM protocol dispatch, and browser DOM controls.
         targets:
+          - id: group-by-structure-native-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_group_by_structures_construct_admitted_modes_with_set_boundaries_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_group_by_structures_construct_admitted_modes_with_set_boundaries_and_undo } }
+          - id: grouping-set-source-boundary-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::group_by_document_metadata_preserves_grouping_set_boundaries_and_empty_set }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::group_by_document_metadata_preserves_grouping_set_boundaries_and_empty_set } }
+          - id: group-by-modes-wasm-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_group_by_expression_protocol_matches_native }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_group_by_expression_protocol_matches_native } }
+          - id: group-and-aggregate-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: typed_sql_document_group_and_aggregate_edits_execute_authorized_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_group_and_aggregate_edits_execute_authorized_queries } }
+          - id: group-by-mode-dom-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: authors ROLLUP with selected typed keys and restores it with WASM undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors ROLLUP with selected typed keys and restores it with WASM undo } }
+          - id: grouping-set-boundary-round-trip-dom-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: preserves grouping-set boundaries and authors the empty set from the inspector }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: preserves grouping-set boundaries and authors the empty set from the inspector } }
+          - id: composite-rollup-cube-read-only-dom-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: keeps composite ROLLUP and CUBE forms read-only without rewriting them }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: keeps composite ROLLUP and CUBE forms read-only without rewriting them } } }]
+          - id: aggregate-filter-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_aggregate_filter_toggle_is_typed_undoable_and_preserves_source }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_aggregate_filter_toggle_is_typed_undoable_and_preserves_source } }
+          - id: aggregate-filter-wasm-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity } }
+          - id: aggregate-filter-dom-control
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.test.tsx
+            selector: { kind: test, name: adds aggregate FILTER with a Rust-typed seed operation }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.test.tsx, test: adds aggregate FILTER with a Rust-typed seed operation } }
           - id: predicate-literal-authorized-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
@@ -794,6 +888,61 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: edits an existing NOT expression to a unary sign and restores it with WASM undo } }
+          - id: relational-join-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_relation_edits_author_multiple_join_kinds_and_undo_losslessly }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_relation_edits_author_multiple_join_kinds_and_undo_losslessly } } }]
+          - id: relational-alias-binding-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_cte_column_aliases_rename_only_their_bound_references }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_cte_column_aliases_rename_only_their_bound_references } } }]
+          - id: derived-alias-binding-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_derived_column_aliases_construct_and_rename_bound_references }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_derived_column_aliases_construct_and_rename_bound_references } } }]
+          - id: relational-limit-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_limit_accepts_parameters_and_same_scope_expressions }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_limit_accepts_parameters_and_same_scope_expressions } } }]
+          - id: relational-protocol-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_relational_constructors_protocol_match_native_and_undo }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_relational_constructors_protocol_match_native_and_undo } } }]
+          - id: authorized-semi-anti-joins
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: semi_and_anti_join_constructors_execute_in_authorized_queries }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: semi_and_anti_join_constructors_execute_in_authorized_queries } } }]
+          - id: authorized-limit-edit
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: expression_and_parameter_limit_constructors_execute_in_authorized_queries }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: expression_and_parameter_limit_constructors_execute_in_authorized_queries } } }]
+          - id: filter-predicate-and-remove-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: typed_sql_document_filter_predicate_edits_execute_authorized_queries }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_filter_predicate_edits_execute_authorized_queries } } }]
+          - id: semi-anti-constraint-ui-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: requires a typed condition before applying a semi join }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: requires a typed condition before applying a semi join } } }]
+          - id: limit-tree-ui-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: constructs a parameter LIMIT through the actual WASM tree editor }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: constructs a parameter LIMIT through the actual WASM tree editor } } }]
+          - id: cte-alias-tree-ui-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: renames a CTE output column and its binding through the actual WASM tree editor }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: renames a CTE output column and its binding through the actual WASM tree editor } } }]
     contracts:
       - id: typed-expression-attributes-portable-contract
         kind: custom
@@ -828,76 +977,3 @@ features:
           - target: FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action
             role: rust-wasm
         guarantees: [REQ-SQL-001#criterion.projection-position-bindings]
-  - id: FEAT-SQL-005
-    title: Safe SQL projection alias authoring
-    summary: Allow users to add, edit and remove output aliases through the Rust-owned SQL Document while preserving source and same-scope bindings.
-    status: implemented
-    bindings:
-      - id: alias-domain
-        role: implementation
-        facet: domain
-        responsibility: Expose typed alias operations that preserve unrelated source and reject alias changes that could rebind same-scope references.
-        targets:
-          - id: typed-alias-operation
-            adapter: rust
-            path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: symbol, name: set_projection_alias }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
-      - id: alias-editor
-        role: implementation
-        facet: frontend
-        responsibility: Provide inline output-alias authoring in the shared projection fields editor through the typed operation.
-        targets:
-          - id: result-field-alias
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.tsx
-            selector: { kind: symbol, name: projectionAliasEdit }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
-      - id: alias-verification
-        role: verification
-        facet: verification
-        responsibility: Verify guarded native behavior, WASM parity and the browser editor interaction.
-        targets:
-          - id: native-binding-check
-            adapter: rust
-            path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: symbol, name: tests::projection_alias_edits_are_typed_guarded_and_preserve_bindings }
-            claims:
-              - kind: verifies
-                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
-                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::projection_alias_edits_are_typed_guarded_and_preserve_bindings } }
-          - id: wasm-protocol-check
-            adapter: rust
-            path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: symbol, name: tests::projection_alias_semantic_edit_protocol_matches_native }
-            claims:
-              - kind: verifies
-                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
-                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::projection_alias_semantic_edit_protocol_matches_native } }
-          - id: editor-interaction
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.test.tsx
-            selector: { kind: test, name: authors quoted output aliases and keeps SQL outside the alias intact }
-            claims:
-              - kind: verifies
-                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
-                covers: [FEAT-SQL-005#binding.alias-editor/target.result-field-alias]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: authors quoted output aliases and keeps SQL outside the alias intact } }
-    contracts:
-      - id: projection-alias-portable-edit
-        kind: custom
-        source: FEAT-SQL-001#binding.projection-position-contract/target.semantic-request
-        participants:
-          - target: FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation
-            role: native-domain
-          - target: FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action
-            role: rust-wasm
-          - target: FEAT-SQL-005#binding.alias-editor/target.result-field-alias
-            role: frontend-client
-        guarantees: [REQ-SQL-001#criterion.projection-alias-binding-safety]
