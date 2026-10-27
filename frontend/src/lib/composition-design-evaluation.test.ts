@@ -32,7 +32,7 @@ const draft = (): CompositionGraphDraft => ({
       kind: "input",
       value_type: { scalar_type: "integer", nullable: false },
       required: true,
-      default: { kind: "integer", value: 1 },
+      default: { kind: "integer", value: "1" },
     },
     {
       id: "rows",
@@ -83,7 +83,7 @@ const response = (
         kind: "scalar",
         value: {
           kind: "integer",
-          value: id === "stable" ? 10 : request.variables?.minimum ?? 1,
+          value: id === "stable" ? "10" : request.variables?.minimum ?? "1",
         },
       },
       has_more: false,
@@ -119,9 +119,7 @@ describe("Composition Design Work evaluation", () => {
     }));
     evaluate.mockImplementation(async (_space, request) => response(request));
     parse.mockImplementation(async (_type, raw) =>
-      raw === "bad"
-        ? { status: "invalid" }
-        : { status: "valid", value: Number(raw) }
+      raw === "bad" ? { status: "invalid" } : { status: "valid", value: raw }
     );
   });
 
@@ -137,10 +135,10 @@ describe("Composition Design Work evaluation", () => {
     );
     state.onInput("minimum", "2");
     expect(state.saveSnapshot()).toBeUndefined();
-    finish({ status: "valid", value: 2 });
+    finish({ status: "valid", value: "2" });
     await vi.waitFor(() =>
       expect(state.saveSnapshot()).toEqual({
-        variables: { minimum: 2 },
+        variables: { minimum: "2" },
         unset_variables: [],
       })
     );
@@ -148,7 +146,7 @@ describe("Composition Design Work evaluation", () => {
     state.onInput("minimum", "bad");
     expect(state.saveSnapshot()).toBeUndefined();
     expect(frozen).toEqual({
-      variables: { minimum: 2 },
+      variables: { minimum: "2" },
       unset_variables: [],
     });
   });
@@ -172,16 +170,16 @@ describe("Composition Design Work evaluation", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(state.evaluation()?.query_results.stable.value).toEqual({
       kind: "scalar",
-      value: { kind: "integer", value: 10 },
+      value: { kind: "integer", value: "10" },
     });
     state.onInput("minimum", "2");
     expect(state.blocked().has("rows")).toBe(true);
     await vi.advanceTimersByTimeAsync(250);
     expect(evaluate.mock.calls[1][1].requested_queries).toEqual(["rows"]);
-    expect(evaluate.mock.calls[1][1].variables).toEqual({ minimum: 2 });
+    expect(evaluate.mock.calls[1][1].variables).toEqual({ minimum: "2" });
     expect(state.evaluation()?.query_results.stable.value).toEqual({
       kind: "scalar",
-      value: { kind: "integer", value: 10 },
+      value: { kind: "integer", value: "10" },
     });
     expect(canonicalize.mock.calls[1][0].spec).not.toHaveProperty("rawInputs");
     expect(canonicalize.mock.calls[1][0].spec).not.toHaveProperty(
@@ -227,7 +225,7 @@ describe("Composition Design Work evaluation", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(evaluate).toHaveBeenCalledTimes(2);
     expect(evaluate.mock.calls[1][1]).not.toHaveProperty("page");
-    expect(evaluate.mock.calls[1][1].variables).toEqual({ minimum: 2 });
+    expect(evaluate.mock.calls[1][1].variables).toEqual({ minimum: "2" });
     expect(state.blocked().size).toBe(0);
   });
 
@@ -252,7 +250,7 @@ describe("Composition Design Work evaluation", () => {
     state.onInput("minimum", "20");
     changeScope("two");
     await vi.advanceTimersByTimeAsync(250);
-    finishParse({ status: "valid", value: 20 });
+    finishParse({ status: "valid", value: "20" });
     await vi.advanceTimersByTimeAsync(300);
     expect(evaluate).toHaveBeenCalledTimes(2);
     expect(evaluate.mock.calls[1][0]).toBe("two");
@@ -280,7 +278,7 @@ describe("Composition Design Work evaluation", () => {
         : node
     );
     changeDraft(next);
-    finishParse({ status: "valid", value: 2 });
+    finishParse({ status: "valid", value: "2" });
     await vi.advanceTimersByTimeAsync(250);
     expect(evaluate.mock.calls.at(-1)?.[1].variables).toEqual({});
     expect(state.rawInputs()).toEqual({});
@@ -309,7 +307,7 @@ describe("Composition Design Work evaluation", () => {
       kind: "input",
       value_type: { scalar_type: "integer", nullable: false },
       required: true,
-      default: { kind: "integer", value: 10 },
+      default: { kind: "integer", value: "10" },
     });
     const stable = graph.variables.find((node) => node.id === "stable")!;
     if (stable.kind !== "query") throw new Error("query fixture");
@@ -354,7 +352,7 @@ describe("Composition Design Work evaluation", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(evaluate.mock.calls.at(-1)?.[1]).toMatchObject({
       requested_queries: ["stable"],
-      variables: { other: 7 },
+      variables: { other: "7" },
       unset_variables: ["minimum"],
     });
     expect(state.blocked().has("rows")).toBe(true);

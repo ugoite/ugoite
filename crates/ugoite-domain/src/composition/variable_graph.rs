@@ -739,7 +739,7 @@ pub fn variable_graph_literal_matches(
         }
         (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_)) => true,
         (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(value)) => {
-            (-super::MAX_COMPOSITION_VARIABLE_INTEGER..=super::MAX_COMPOSITION_VARIABLE_INTEGER)
+            (super::MIN_COMPOSITION_VARIABLE_INTEGER..=super::MAX_COMPOSITION_VARIABLE_INTEGER)
                 .contains(value)
         }
         (VariableGraphScalarType::Float, VariableGraphLiteral::Float(value)) => value.is_finite(),
@@ -1907,18 +1907,20 @@ mod tests {
         );
         assert_eq!(multiple_rows[0].observed_count, Some(2));
 
-        let valid = validate_variable_graph_result(
-            &expected,
-            &columns,
-            &[vec![VariableGraphLiteral::Integer(7)]],
-        )
-        .expect("one typed row and column");
-        assert_eq!(
-            valid,
-            VariableGraphValidatedResult::Scalar {
-                value: VariableGraphLiteral::Integer(7),
-            }
-        );
+        for value in [i64::MIN, i64::MAX] {
+            let valid = validate_variable_graph_result(
+                &expected,
+                &columns,
+                &[vec![VariableGraphLiteral::Integer(value)]],
+            )
+            .expect("one signed 64-bit typed row and column");
+            assert_eq!(
+                valid,
+                VariableGraphValidatedResult::Scalar {
+                    value: VariableGraphLiteral::Integer(value),
+                }
+            );
+        }
 
         let drifted_schema = [VariableGraphColumn {
             name: "count".to_owned(),
@@ -2231,9 +2233,8 @@ mod tests {
     }
 
     #[test]
-    fn integer_constants_and_defaults_obey_the_portable_safe_range() {
-        let maximum = super::super::MAX_COMPOSITION_VARIABLE_INTEGER;
-        for value in [maximum, -maximum] {
+    fn integer_constants_and_defaults_accept_the_complete_i64_range() {
+        for value in [i64::MIN, i64::MAX] {
             let constant = VariableGraphNode {
                 id: "value".to_owned(),
                 kind: VariableGraphNodeKind::Constant {
@@ -2254,35 +2255,19 @@ mod tests {
             assert!(compile_variable_graph(&graph(vec![input])).is_ok());
         }
 
-        for value in [maximum + 1, -maximum - 1] {
-            let constant = VariableGraphNode {
-                id: "value".to_owned(),
-                kind: VariableGraphNodeKind::Constant {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                    value: VariableGraphLiteral::Integer(value),
-                },
-            };
-            assert_eq!(
-                compile_variable_graph(&graph(vec![constant]))
-                    .expect_err("unsafe integer constant")[0]
-                    .code,
-                VariableGraphDiagnosticCode::InvalidConstantValue
-            );
-
-            let input = VariableGraphNode {
-                id: "value".to_owned(),
-                kind: VariableGraphNodeKind::Input {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                    required: false,
-                    default: Some(VariableGraphLiteral::Integer(value)),
-                },
-            };
-            assert_eq!(
-                compile_variable_graph(&graph(vec![input])).expect_err("unsafe integer default")[0]
-                    .code,
-                VariableGraphDiagnosticCode::InvalidInputDefault
-            );
-        }
+        let mismatched = VariableGraphNode {
+            id: "value".to_owned(),
+            kind: VariableGraphNodeKind::Constant {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+                value: VariableGraphLiteral::Float(1.0),
+            },
+        };
+        assert_eq!(
+            compile_variable_graph(&graph(vec![mismatched]))
+                .expect_err("non-integer literal for integer constant")[0]
+                .code,
+            VariableGraphDiagnosticCode::InvalidConstantValue
+        );
     }
 
     #[test]
@@ -2300,5 +2285,24 @@ mod tests {
             "legacy": true
         });
         assert!(serde_json::from_value::<VariableGraphLiteral>(unknown_field).is_err());
+    }
+
+    #[test]
+    fn integer_literal_wire_rejects_values_outside_signed_i64() {
+        assert!(serde_json::from_str::<VariableGraphLiteral>(
+            r#"{"kind":"integer","value":9223372036854775808}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<VariableGraphLiteral>(
+            r#"{"kind":"integer","value":-9223372036854775809}"#
+        )
+        .is_err());
+        assert_eq!(
+            serde_json::from_str::<VariableGraphLiteral>(
+                r#"{"kind":"integer","value":-9223372036854775808}"#
+            )
+            .expect("minimum signed i64"),
+            VariableGraphLiteral::Integer(i64::MIN)
+        );
     }
 }

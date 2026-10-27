@@ -72,14 +72,14 @@ describe("CompositionGraphDesignCanvas", () => {
         id: "total",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 7 },
+        value: { kind: "integer", value: "7" },
       },
       {
         id: "minimum",
         kind: "input",
         value_type: { scalar_type: "integer", nullable: false },
         required: true,
-        default: { kind: "integer", value: 1 },
+        default: { kind: "integer", value: "1" },
       },
     ];
     initial.components = [

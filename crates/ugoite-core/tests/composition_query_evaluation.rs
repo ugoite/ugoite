@@ -678,14 +678,12 @@ fn selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_valida
 #[test]
 fn selected_query_inputs_apply_complete_domain_value_constraints() {
     use ugoite_core::composition::bind_variables_for_queries;
-    use ugoite_domain::composition::{
-        MAX_COMPOSITION_VARIABLE_INTEGER, MAX_COMPOSITION_VARIABLE_STRING_BYTES,
-    };
+    use ugoite_domain::composition::MAX_COMPOSITION_VARIABLE_STRING_BYTES;
     for (kind, json_value, literal) in [
         (
             VariableGraphScalarType::Integer,
-            json!(MAX_COMPOSITION_VARIABLE_INTEGER + 1),
-            VariableGraphLiteral::Integer(MAX_COMPOSITION_VARIABLE_INTEGER + 1),
+            json!(1.5),
+            VariableGraphLiteral::Float(1.5),
         ),
         (
             VariableGraphScalarType::Date,
@@ -755,6 +753,45 @@ fn selected_query_inputs_apply_complete_domain_value_constraints() {
             Uuid::from_u128(0x4490),
             &inputs,
             Some(&selected)
+        )
+        .is_ok());
+    }
+}
+
+#[test]
+fn selected_query_inputs_preserve_full_i64_values() {
+    use ugoite_core::composition::bind_variables_for_queries;
+    for value in [i64::MIN, i64::MAX] {
+        let graph = VariableGraph {
+            variables: vec![
+                input("amount", VariableGraphScalarType::Integer),
+                scalar_query(
+                    "total",
+                    VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT $amount AS value".to_owned(),
+                    },
+                    vec![argument("amount", "amount")],
+                ),
+            ],
+        };
+        let supplied = BTreeMap::from([("amount".to_owned(), json!(value))]);
+        let bindings = bind_variables_for_queries(&graph.variables, &supplied, &[], None);
+        assert!(
+            bindings.diagnostics.is_empty(),
+            "{:?}",
+            bindings.diagnostics
+        );
+        assert_eq!(
+            bindings.values["amount"],
+            VariableGraphLiteral::Integer(value)
+        );
+
+        let typed = BTreeMap::from([("amount".to_owned(), VariableGraphLiteral::Integer(value))]);
+        assert!(VariableGraphQueryEvaluation::new_for_queries(
+            &graph,
+            Uuid::from_u128(0x4490),
+            &typed,
+            None,
         )
         .is_ok());
     }

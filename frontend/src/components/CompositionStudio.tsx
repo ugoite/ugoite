@@ -20,6 +20,7 @@ import {
   type CompositionEvaluationResponse,
   type CompositionGraphPreviewResponse,
 } from "~/lib/composition-api";
+import { stringifyCompositionDocument } from "~/lib/exact-integer";
 import {
   CompositionBindingDiagnosticError,
   compositionBindingDiagnostics,
@@ -594,7 +595,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const document = compositionGraphAuthoringDocument(candidate);
     return await compositionApi.previewGraph(
       props.spaceId,
-      JSON.stringify(document),
+      stringifyCompositionDocument(document),
       Object.fromEntries(candidate.variables.flatMap((node) => {
         if (node.kind !== "input") return [];
         const value = inputDefaultValue(node);
@@ -607,6 +608,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
         }
         : undefined,
       signal,
+      candidate.variables.flatMap((node) =>
+        node.kind === "input" &&
+          node.value_type.scalar_type === "integer"
+          ? [node.id]
+          : []
+      ),
     );
   };
 
@@ -990,10 +997,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
             compositionId: attempt.saveTarget.compositionId,
             baseRevisionId: attempt.saveTarget.baseRevisionId,
             variables: attempt.variables ?? {},
+            ...(attempt.integerVariableIds?.length
+              ? { integerVariableIds: attempt.integerVariableIds }
+              : {}),
             unset_variables: attempt.unset_variables ?? [],
           }
           : {
             variables: attempt.variables ?? {},
+            ...(attempt.integerVariableIds?.length
+              ? { integerVariableIds: attempt.integerVariableIds }
+              : {}),
             unset_variables: attempt.unset_variables ?? [],
           },
       );
@@ -1065,6 +1078,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       name: current.name.trim(),
       yaml: "",
       variables: { ...inputSnapshot.variables },
+      integerVariableIds: current.variables.flatMap((node) =>
+        node.kind === "input" &&
+          node.value_type.scalar_type === "integer"
+          ? [node.id]
+          : []
+      ),
       unset_variables: [...inputSnapshot.unset_variables],
       idempotencyKey: crypto.randomUUID(),
     };

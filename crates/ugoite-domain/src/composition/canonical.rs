@@ -91,14 +91,9 @@ pub(super) fn normalize_composition_document(
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
     document.spec.components_in_render_order()?;
-    if document
-        .spec
-        .components
-        .iter()
-        .any(|component| {
-            !component.metric_shape_is_well_formed() || !component.table_shape_is_well_formed()
-        })
-        || !metric_bindings_are_well_formed(document)
+    if document.spec.components.iter().any(|component| {
+        !component.metric_shape_is_well_formed() || !component.table_shape_is_well_formed()
+    }) || !metric_bindings_are_well_formed(document)
         || !table_bindings_are_well_formed(document)
     {
         return Err(CompositionDiagnosticCode::InvalidComposition);
@@ -314,8 +309,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!(canonical_table.columns[0].column, "amount");
-        assert!(canonical.yaml.find("column: amount").unwrap()
-            < canonical.yaml.find("column: Date").unwrap());
+        assert!(
+            canonical.yaml.find("column: amount").unwrap()
+                < canonical.yaml.find("column: Date").unwrap()
+        );
 
         let mut duplicate = canonical.document.clone();
         let table = duplicate
@@ -350,15 +347,21 @@ mod tests {
         );
 
         let mut unresolved = canonical.document.clone();
-        let table_variable = unresolved.spec.components.iter().find_map(|component| {
-            match component {
+        let table_variable = unresolved
+            .spec
+            .components
+            .iter()
+            .find_map(|component| match component {
                 CompositionComponent::Table { variable, .. } => Some(variable.clone()),
                 _ => None,
-            }
-        }).unwrap();
-        let node = unresolved.spec.variables.iter_mut().find(|node| {
-            node.id == table_variable
-        }).unwrap();
+            })
+            .unwrap();
+        let node = unresolved
+            .spec
+            .variables
+            .iter_mut()
+            .find(|node| node.id == table_variable)
+            .unwrap();
         let VariableGraphNodeKind::Query { query, .. } = &mut node.kind else {
             panic!("Table view must reference a query");
         };

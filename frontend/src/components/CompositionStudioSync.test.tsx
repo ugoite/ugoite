@@ -294,7 +294,7 @@ describe("CompositionStudio graph surface", () => {
             {
               value: {
                 kind: "scalar",
-                value: { kind: "integer", value: 1 },
+                value: { kind: "integer", value: "1" },
               },
               has_more: false,
             },
@@ -792,13 +792,13 @@ describe("CompositionStudio graph surface", () => {
         id: "first",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 1 },
+        value: { kind: "integer", value: "1" },
       },
       {
         id: "second",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 2 },
+        value: { kind: "integer", value: "2" },
       },
     );
     renderStudio(draft);
@@ -831,13 +831,13 @@ describe("CompositionStudio graph surface", () => {
         id: "threshold",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 1 },
+        value: { kind: "integer", value: "1" },
       },
       {
         id: "replacement",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 2 },
+        value: { kind: "integer", value: "2" },
       },
       {
         id: "query_1",
@@ -867,7 +867,7 @@ describe("CompositionStudio graph surface", () => {
               query_1: {
                 value: {
                   kind: "scalar",
-                  value: { kind: "integer", value: 99 },
+                  value: { kind: "integer", value: "99" },
                 },
                 has_more: false,
               },
@@ -909,7 +909,7 @@ describe("CompositionStudio graph surface", () => {
         kind: "input",
         value_type: { scalar_type: "integer", nullable: false },
         required: true,
-        default: { kind: "integer", value: 1 },
+        default: { kind: "integer", value: "1" },
       },
       {
         id: "query_1",
@@ -939,7 +939,7 @@ describe("CompositionStudio graph surface", () => {
               query_1: {
                 value: {
                   kind: "scalar",
-                  value: { kind: "integer", value: 99 },
+                  value: { kind: "integer", value: "99" },
                 },
                 has_more: false,
               },
@@ -979,7 +979,7 @@ describe("CompositionStudio graph surface", () => {
         id: "threshold",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 1 },
+        value: { kind: "integer", value: "1" },
       },
       {
         id: "query_1",

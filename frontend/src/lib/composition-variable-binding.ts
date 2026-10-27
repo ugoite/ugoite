@@ -23,7 +23,7 @@ export interface CompositionScalarDescriptor {
 export type CompositionLiteral =
   | { kind: "string"; value: string }
   | { kind: "boolean"; value: boolean }
-  | { kind: "integer"; value: number }
+  | { kind: "integer"; value: string }
   | { kind: "float"; value: number }
   | { kind: "decimal"; value: string }
   | { kind: "date"; value: string }
@@ -137,7 +137,12 @@ export interface CompositionGraphDocumentDraft {
 }
 
 export interface CompositionTablePresentation {
-  columns: Array<{ column: string; label: string }>;
+  columns: CompositionTablePresentationColumn[];
+}
+
+export interface CompositionTablePresentationColumn {
+  column: string;
+  label: string;
 }
 
 export const compositionGraphSpecDraft = (
@@ -430,14 +435,14 @@ export const bindCompositionComponent = (
   const node = draft.variables.find((item) => item.id === variableId);
   if (!node || !compositionVariableFitsComponent(node, kind)) return undefined;
   const componentId = nextComponentId(draft.components);
-  const component: CompositionComponent = {
-    id: componentId,
-    kind,
-    variable: variableId,
-    ...(kind === "table" && tablePresentation
-      ? { presentation: tablePresentation }
-      : {}),
-  };
+  const component: CompositionComponent = kind === "table"
+    ? {
+      id: componentId,
+      kind,
+      variable: variableId,
+      ...(tablePresentation ? { presentation: tablePresentation } : {}),
+    }
+    : { id: componentId, kind, variable: variableId };
   return appendCompositionGraphComponent(draft, component);
 };
 

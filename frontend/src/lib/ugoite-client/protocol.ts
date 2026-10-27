@@ -2,6 +2,16 @@ import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
 import type { AssetReference } from "../types";
 import {
+  decodeCompositionDocumentIntegers,
+  decodeCompositionEvaluationIntegers,
+  decodeCompositionPreviewIntegerDefaults,
+  encodeCompositionDocumentIntegers,
+  encodeMarkedIntegerVariableValues,
+  encodeVariableGraphIntegers,
+  exactIntegerSourceValue,
+  parseJsonWithNumberSources,
+} from "../exact-integer";
+import {
   classifyMutationOutcome,
   MUTATION_ERROR_CODES,
   type MutationOutcome,
@@ -160,7 +170,8 @@ const invokeProtocolWithExports = <T, TCode extends string = string>(
   exports: UgoiteWasmExports,
   command: unknown,
 ): T => {
-  const input = textEncoder.encode(JSON.stringify(command));
+  const encodedCommand = encodeTypedIntegerCommand(command);
+  const input = textEncoder.encode(JSON.stringify(encodedCommand));
   const inputPointer = exports.ugoite_alloc(input.byteLength);
 
   try {
@@ -186,14 +197,96 @@ const invokeProtocolWithExports = <T, TCode extends string = string>(
         outputLength,
       ).slice(),
     );
-    const envelope = JSON.parse(output) as ProtocolEnvelope<T, TCode>;
+    const parsed = parseJsonWithNumberSources<ProtocolEnvelope<T, TCode>>(
+      output,
+    );
+    const envelope = parsed.value;
     if (!envelope.ok) {
       throw new UgoiteApiError<TCode>(envelope.error);
     }
+    decodeTypedIntegerResponse(command, envelope.value, parsed.integerSource);
     return envelope.value;
   } finally {
     exports.ugoite_dealloc(inputPointer, input.byteLength);
     exports.ugoite_protocol_clear_result();
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+/** Keep exact integers confined to explicitly typed Composition protocol paths. */
+const encodeTypedIntegerCommand = (command: unknown): unknown => {
+  if (!isRecord(command)) return command;
+  if (command.action === "domain.canonicalize_composition_document") {
+    const value = command.value;
+    if (!isRecord(value) || !Object.hasOwn(value, "document")) return command;
+    return {
+      ...command,
+      value: {
+        ...value,
+        document: encodeCompositionDocumentIntegers(value.document),
+      },
+    };
+  }
+  if (command.action === "domain.compile_variable_graph.v1") {
+    return { ...command, value: encodeVariableGraphIntegers(command.value) };
+  }
+  if (command.action === "prepare" && isRecord(command.body)) {
+    const body = command.body;
+    if (isRecord(body.variables)) {
+      const variables = encodeMarkedIntegerVariableValues(body.variables);
+      if (variables !== body.variables) {
+        return { ...command, body: { ...body, variables } };
+      }
+    }
+  }
+  return command;
+};
+
+const decodeLiteralInteger = (
+  literal: unknown,
+  source: (parent: object, key: string) => string | undefined,
+): void => {
+  if (
+    !isRecord(literal) || literal.kind !== "integer" ||
+    typeof literal.value !== "number"
+  ) return;
+  literal.value = exactIntegerSourceValue(literal, "value", source);
+};
+
+const decodeTypedIntegerResponse = (
+  command: unknown,
+  value: unknown,
+  source: (parent: object, key: string) => string | undefined,
+): void => {
+  if (!isRecord(command)) return;
+  if (command.action === "domain.canonicalize_composition_document") {
+    if (isRecord(value)) {
+      decodeCompositionDocumentIntegers(value.document, source);
+    }
+    return;
+  }
+  if (command.action === "domain.parse_variable_graph_input") {
+    const request = isRecord(command.value) ? command.value : undefined;
+    if (
+      request?.value_type && isRecord(request.value_type) &&
+      request.value_type.scalar_type === "integer" && isRecord(value) &&
+      value.status === "valid"
+    ) {
+      value.value = exactIntegerSourceValue(value, "value", source);
+    }
+    return;
+  }
+  if (command.action !== "decode" || !isRecord(value)) return;
+  if (command.operation === "composition.evaluate") {
+    decodeCompositionEvaluationIntegers(value, source);
+  } else if (command.operation === "composition.lint") {
+    if (isRecord(value.value)) {
+      decodeCompositionDocumentIntegers(value.value.document, source);
+    }
+  } else if (command.operation === "composition.preview") {
+    decodeCompositionPreviewIntegerDefaults(value, source);
   }
 };
 
@@ -254,7 +347,7 @@ export type VariableGraphScalarDescriptor = {
 export type VariableGraphLiteral =
   | { kind: "string" | "decimal" | "date" | "timestamp"; value: string }
   | { kind: "boolean"; value: boolean }
-  | { kind: "integer"; value: number }
+  | { kind: "integer"; value: string }
   | { kind: "float"; value: number }
   | { kind: "json"; value: unknown }
   | { kind: "null" };
@@ -568,8 +661,20 @@ export type SqlDocument = {
 
 export type SqlDocumentConditionGroupOperator = "and" | "or";
 export type SqlDocumentConditionNode =
-  | { kind: "group"; node_id: number; operator: SqlDocumentConditionGroupOperator; children: SqlDocumentConditionNode[] }
-  | { kind: "comparison"; node_id: number; column_node_id: number; column: SqlDocumentColumnReference; operator: SqlDocumentFilterOperator; value: SqlDocumentSemanticLiteral | null }
+  | {
+    kind: "group";
+    node_id: number;
+    operator: SqlDocumentConditionGroupOperator;
+    children: SqlDocumentConditionNode[];
+  }
+  | {
+    kind: "comparison";
+    node_id: number;
+    column_node_id: number;
+    column: SqlDocumentColumnReference;
+    operator: SqlDocumentFilterOperator;
+    value: SqlDocumentSemanticLiteral | null;
+  }
   | { kind: "advanced"; node_id: number; sql: string };
 export type SqlDocumentConditionScope = {
   query_node_id: number;
@@ -611,12 +716,25 @@ export type SqlDocumentSemanticLiteral =
   | { kind: "boolean"; value: boolean }
   | { kind: "null" }
   | { kind: "named_parameter"; name: string }
-  | { kind: "typed_string"; data_type: "date" | "timestamp" | "interval"; value: string }
+  | {
+    kind: "typed_string";
+    data_type: "date" | "timestamp" | "interval";
+    value: string;
+  }
   | { kind: "hex_string"; value: string };
 
 export type SqlDocumentFilterCondition =
-  | { kind: "group"; operator: SqlDocumentConditionGroupOperator; children: SqlDocumentFilterCondition[] }
-  | { kind: "comparison"; column: SqlDocumentColumnReference; operator: SqlDocumentFilterOperator; value: SqlDocumentSemanticLiteral | null }
+  | {
+    kind: "group";
+    operator: SqlDocumentConditionGroupOperator;
+    children: SqlDocumentFilterCondition[];
+  }
+  | {
+    kind: "comparison";
+    column: SqlDocumentColumnReference;
+    operator: SqlDocumentFilterOperator;
+    value: SqlDocumentSemanticLiteral | null;
+  }
   | { kind: "copy_node"; node_id: number; expected_kind: SqlDocumentNodeKind };
 
 export type SqlDocumentSemanticBinaryOperator =
@@ -738,10 +856,29 @@ export type SqlDocumentJoin = {
 };
 
 export type SqlDocumentSemanticEdit =
-  | { kind: "insert_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind; condition: SqlDocumentFilterCondition }
-  | { kind: "update_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind; condition: SqlDocumentFilterCondition }
-  | { kind: "remove_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind }
-  | { kind: "set_filter_group_operator"; node_id: number; expected_kind: SqlDocumentNodeKind; operator: SqlDocumentConditionGroupOperator }
+  | {
+    kind: "insert_filter_condition";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    condition: SqlDocumentFilterCondition;
+  }
+  | {
+    kind: "update_filter_condition";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    condition: SqlDocumentFilterCondition;
+  }
+  | {
+    kind: "remove_filter_condition";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "set_filter_group_operator";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    operator: SqlDocumentConditionGroupOperator;
+  }
   | {
     kind: "set_projection_alias";
     node_id: number;
@@ -1305,7 +1442,7 @@ export type SqlStructureContext = {
 export type VariableGraphInputValueByType = {
   string: string;
   boolean: boolean;
-  integer: number;
+  integer: string;
   float: number;
   decimal: string;
   date: string;

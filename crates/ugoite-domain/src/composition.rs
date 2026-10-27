@@ -259,11 +259,10 @@ impl CompositionSpec {
 
 /// Maximum UTF-8 byte length accepted for a typed Composition string value.
 pub const MAX_COMPOSITION_VARIABLE_STRING_BYTES: usize = 4 * 1024;
-/// Maximum magnitude accepted for a typed Composition integer value.
-///
-/// Keeping integers within JavaScript's safe range preserves exact values
-/// across portable JSON clients.
-pub const MAX_COMPOSITION_VARIABLE_INTEGER: i64 = 9_007_199_254_740_991;
+/// Minimum signed integer accepted for typed Composition integer values.
+pub const MIN_COMPOSITION_VARIABLE_INTEGER: i64 = i64::MIN;
+/// Maximum signed integer accepted for typed Composition integer values.
+pub const MAX_COMPOSITION_VARIABLE_INTEGER: i64 = i64::MAX;
 /// Maximum UTF-8 byte length accepted for a numeric Composition input token.
 ///
 /// This bounds lexical parsing consistently across local CLI, browser, and
@@ -451,9 +450,10 @@ pub struct CompositionTablePresentationColumn {
 impl CompositionTablePresentation {
     pub(crate) fn is_well_formed(&self) -> bool {
         !self.columns.is_empty()
-            && self.columns.iter().all(|column| {
-                !column.column.trim().is_empty() && !column.label.trim().is_empty()
-            })
+            && self
+                .columns
+                .iter()
+                .all(|column| !column.column.trim().is_empty() && !column.label.trim().is_empty())
             && self
                 .columns
                 .iter()

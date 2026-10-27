@@ -9,6 +9,7 @@ import {
   type CompositionDocumentCanonicalization,
   protocolFetch,
 } from "./ugoite-client";
+import { markExactIntegerVariableValues } from "./exact-integer";
 import type { SqlEntry, SqlQueryRequest } from "./types";
 
 export interface CompositionListItem {
@@ -81,6 +82,7 @@ export interface CompositionSaveOptions {
   compositionId?: string;
   baseRevisionId?: string;
   variables?: Record<string, unknown>;
+  integerVariableIds?: readonly string[];
   unset_variables?: string[];
 }
 
@@ -270,7 +272,12 @@ export const compositionApi = {
         ...(opts?.baseRevisionId === undefined
           ? {}
           : { base_revision_id: opts.baseRevisionId }),
-        ...(opts?.variables === undefined ? {} : { variables: opts.variables }),
+        ...(opts?.variables === undefined ? {} : {
+          variables: markExactIntegerVariableValues(
+            opts.variables,
+            opts.integerVariableIds ?? [],
+          ),
+        }),
         ...(opts?.unset_variables === undefined
           ? {}
           : { unset_variables: opts.unset_variables }),
@@ -381,6 +388,7 @@ export const compositionApi = {
     variables: Record<string, unknown>,
     base?: CompositionRevisionBase,
     signal?: AbortSignal,
+    integerVariableIds: readonly string[] = [],
   ): Promise<CompositionGraphPreviewResponse> {
     const snapshot = splitVariableSnapshot(variables);
     return await protocolFetch<CompositionGraphPreviewResponse>(
@@ -394,7 +402,10 @@ export const compositionApi = {
             base_revision_id: base.revisionId,
           }
           : {}),
-        variables: snapshot.variables,
+        variables: markExactIntegerVariableValues(
+          snapshot.variables,
+          integerVariableIds,
+        ),
         ...(snapshot.unset_variables.length > 0
           ? { unset_variables: snapshot.unset_variables }
           : {}),
@@ -408,11 +419,19 @@ export const compositionApi = {
     spaceId: string,
     request: CompositionEvaluationRequest,
     signal?: AbortSignal,
+    integerVariableIds: readonly string[] = [],
   ): Promise<CompositionEvaluationResponse> {
+    const exactRequest = {
+      ...request,
+      variables: markExactIntegerVariableValues(
+        request.variables,
+        integerVariableIds,
+      ),
+    };
     return await protocolFetch<CompositionEvaluationResponse>(
       "composition.evaluate",
       { space_id: spaceId },
-      request,
+      exactRequest,
       { signal },
     );
   },
