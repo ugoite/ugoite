@@ -27,17 +27,17 @@ features:
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: symbol, name: invoke_sql_document_parameter_rename }
-            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.source-aware-parameter-rename }, { kind: satisfies, criterion: REQ-SQL-001#criterion.portable-protocol }]
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.source-aware-parameter-rename }]
       - id: parameter-rename-contract-source
         role: contract-source
-        facet: protocol
+        facet: frontend
         responsibility: Define the typed frontend request shape for the portable parameter-rename action.
         targets:
           - id: typed-parameter-rename-request
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
             selector: { kind: symbol, name: renameSqlDocumentParameter }
-            claims: [{ kind: evidences, anchor: REQ-SQL-001#criterion.portable-protocol }]
+            claims: [{ kind: evidences, anchor: REQ-SQL-001#criterion.source-aware-parameter-rename }]
       - id: parameter-rename-verification
         role: verification
         facet: verification
@@ -69,10 +69,6 @@ features:
             selector: { kind: test, name: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges }
             claims:
               - kind: verifies
-                criterion: REQ-SQL-001#criterion.portable-protocol
-                covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges } }
-              - kind: verifies
                 criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
                 covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges } }
@@ -80,17 +76,17 @@ features:
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: test, name: tests::sql_document_parameter_rename_bounds_amplified_output }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.portable-protocol, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_bounds_amplified_output } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.source-aware-parameter-rename, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_bounds_amplified_output } } }]
           - id: wasm-request-bound
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: test, name: tests::sql_document_parameter_rename_rejects_request_over_limit }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.portable-protocol, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_rejects_request_over_limit } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.source-aware-parameter-rename, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_parameter_rename_rejects_request_over_limit } } }]
           - id: typed-client-request
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
             selector: { kind: test, name: renames SQL Document parameters through the typed Rust/WASM client }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.portable-protocol, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: renames SQL Document parameters through the typed Rust/WASM client } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.source-aware-parameter-rename, covers: [FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: renames SQL Document parameters through the typed Rust/WASM client } } }]
     contracts:
       - id: parameter-rename-portable-contract
         kind: custom

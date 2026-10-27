@@ -795,10 +795,6 @@ features:
             role: rust-wasm
           - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
             role: frontend-client
-          - target: FEAT-SQL-008#binding.parameter-rename-wasm/target.parameter-rename-action
-            role: rust-wasm
-          - target: FEAT-SQL-008#binding.parameter-rename-contract-source/target.typed-parameter-rename-request
-            role: frontend-client
         guarantees: [REQ-SQL-001#criterion.portable-protocol]
       - id: projection-position-native-wasm
         kind: custom
