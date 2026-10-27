@@ -172,5 +172,37 @@ test("Composition Table inspector keeps selected fields legible on mobile", asyn
         JSON.stringify(metrics)
       }`,
     ).toBeGreaterThanOrEqual(44);
+
+    const disclosure = inspector.getByText("Add result columns", {
+      exact: true,
+    });
+    await disclosure.evaluate((element) =>
+      element.scrollIntoView({ block: "center" })
+    );
+    const bottomNavigation = await page.getByRole("navigation", {
+      name: "Space navigation",
+    }).boundingBox();
+    expect(bottomNavigation).not.toBeNull();
+    for (
+      const control of [
+        disclosure,
+        inspector.getByRole("button", {
+          name: "Remove Quantity from the Table",
+        }),
+        inspector.getByRole("button", { name: "Show every result column" }),
+      ]
+    ) {
+      const controlBounds = await control.boundingBox();
+      expect(controlBounds, `control missing at ${width}px`).not.toBeNull();
+      expect(
+        controlBounds!.y + controlBounds!.height,
+        `control is behind bottom navigation at ${width}px`,
+      ).toBeLessThanOrEqual(bottomNavigation!.y);
+    }
+    if (screenshotDir) {
+      await page.screenshot({
+        path: `${screenshotDir}/table-inspector-${width}-controls.png`,
+      });
+    }
   }
 });
