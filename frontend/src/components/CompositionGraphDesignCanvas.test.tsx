@@ -286,6 +286,9 @@ describe("CompositionGraphDesignCanvas", () => {
     });
     renderCanvas(vi.fn(), draft);
     fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    expect(
+      screen.queryByRole("button", { name: "Show every result column" }),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Change variable, rows" }))
       .toBeInTheDocument();
     fireEvent.click(
@@ -385,7 +388,9 @@ describe("CompositionGraphDesignCanvas", () => {
     ));
 
     fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "_ugoite_id" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show every result column" }),
+    );
     await waitFor(() =>
       expect(current().components[0]).toMatchObject({
         presentation: {
@@ -396,6 +401,9 @@ describe("CompositionGraphDesignCanvas", () => {
         },
       })
     );
+    expect(
+      screen.queryByRole("button", { name: "Show every result column" }),
+    ).toBeNull();
     fireEvent.input(
       screen.getByRole("textbox", { name: "Display label for _ugoite_id" }),
       { target: { value: "Record ID" } },

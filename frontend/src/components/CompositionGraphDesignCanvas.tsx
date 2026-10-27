@@ -126,6 +126,42 @@ function CompositionTableInspector(props: {
     [next[index], next[target]] = [next[target], next[index]];
     props.onPresentation({ columns: next });
   };
+  const needsShowEveryResultColumn = () => {
+    const presentation = props.component().presentation;
+    if (!presentation) return false;
+    const columns = props.columns();
+    const available = new Set(columns.map(({ name }) => name));
+    const selected = presentation.columns;
+    const selectedKeys = new Set(selected.map(({ column }) => column));
+    return available.size !== columns.length ||
+      selected.length !== selectedKeys.size ||
+      selected.some(({ column }) => !available.has(column)) ||
+      columns.some(({ name }) => !selectedKeys.has(name));
+  };
+  const showEveryResultColumn = () => {
+    const columns = props.columns();
+    const allKeys = new Set(columns.map(({ name }) => name));
+    if (columns.length === 0 || allKeys.size !== columns.length) {
+      props.onPresentation();
+      return;
+    }
+    const available = allKeys;
+    const seen = new Set<string>();
+    const existing = selectedColumns().filter(({ column }) => {
+      if (!available.has(column) || seen.has(column)) return false;
+      seen.add(column);
+      return true;
+    });
+    const next = [...existing];
+    for (const { name } of columns) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      next.push({ column: name, label: name });
+    }
+    props.onPresentation({
+      columns: next,
+    });
+  };
 
   return (
     <section class="compositionGraphTableInspector">
@@ -191,13 +227,15 @@ function CompositionTableInspector(props: {
           </div>
         )}
       </For>
-      <button
-        type="button"
-        class="compositionGraphVariableChange"
-        onClick={() => props.onPresentation()}
-      >
-        {t("composition.studioShowAllColumns")}
-      </button>
+      <Show when={needsShowEveryResultColumn()}>
+        <button
+          type="button"
+          class="compositionGraphVariableChange"
+          onClick={showEveryResultColumn}
+        >
+          {t("composition.studioShowAllColumns")}
+        </button>
+      </Show>
     </section>
   );
 }
