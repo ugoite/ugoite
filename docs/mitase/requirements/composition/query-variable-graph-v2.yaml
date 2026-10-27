@@ -157,6 +157,37 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: full-signed-i64-graph-values
+        kind: behavior
+        statement: >-
+          Typed Composition integer constants, defaults, supplied Inputs, SQL
+          arguments, and integer results preserve every signed 64-bit value
+          exactly from -9223372036854775808 through 9223372036854775807.
+          Values outside that range are rejected. Browser serialization keeps
+          exact numeric tokens only where the Composition type identifies an
+          integer; it rejects already-rounded unsafe JavaScript numbers and
+          leaves JSON-typed payloads opaque.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: table-result-column-presentation
+        kind: behavior
+        statement: >-
+          A Table may persist an ordered display projection whose keys are
+          exact names from its bound query result and whose headings are
+          presentation metadata for those result columns. The projection does
+          not change query SQL, aliases, result schema, or the Table
+          component's identity. Duplicate or unknown keys are rejected, and a
+          key made unavailable by a changed query remains visibly unresolved
+          until repaired; it never selects another column by position or
+          heading. A Form-derived initial projection uses the Form's visible
+          field headings while retaining the resolved query's exact result
+          keys and authorized Form binding.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
     bindings:
       - id: query-result-validation-verification
         role: verification
