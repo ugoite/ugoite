@@ -121,15 +121,16 @@ requirements:
           The SQL Document tree can add one typed array element access using a
           positive signed-64-bit-range, one-based integer literal to a
           selected source-backed expression. Rust owns the operation, preserves
-          the expression source and all source outside its range, and returns guarded
-          undo and exposes the same operation through WASM and the browser
-          inspector. The inspector offers only this bounded single-suffix
-          constructor. It does not infer or certify the expression's array
-          type, element bounds, or result type.
-          authorized SQL planning and execution remain authoritative. The
-          operation rejects aliased projection items when the parser cannot
-          isolate a complete expression range; this bounded edit does not
-          promise full nested query or collection-access-chain editing.
+          the expression source and all source outside its range, and returns
+          a guarded undo through the WASM and browser inspector. The inspector
+          offers this bounded single-suffix constructor and clears a pending
+          index when the SQL source or selected node changes. An aliased
+          projection row is not a target; a complete child expression can be
+          selected when its source range is exact, preserving the alias. The
+          operation does not infer or certify the expression's array type,
+          element bounds, or result type; authorized SQL planning and execution
+          remain authoritative. It does not promise full nested query or
+          collection-access-chain editing.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,

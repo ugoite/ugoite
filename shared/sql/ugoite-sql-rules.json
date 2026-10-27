@@ -647,7 +647,7 @@
           ],
           "limits": [
             "Typed literals, identifiers, operators, registered aggregates, casts, CASE, predicates and subquery seeds.",
-            "A selected complete projection expression can receive one positive one-based Int64 array-index suffix through a typed Rust operation; DataFusion checks the actual source type and index during authorized planning/execution. Struct-field access is not currently admitted by the SQL planner.",
+            "A selected complete projection expression can receive one positive one-based Int64 array-index suffix through a typed Rust operation; DataFusion checks the actual source type and index during authorized planning/execution. The inspector clears a pending index on source/selection changes, excludes aliased projection rows, and preserves aliases when an exact child expression is edited. Struct-field access is not currently admitted by the SQL planner.",
             "Array literal AST ranges that do not cover their full source can be edited only through an unaliased complete projection-item range; aliased incomplete ranges fail closed. Nested array/map access chains, slices, arbitrary access keys and general collection construction remain explicit gaps.",
             "Unmodeled expression source is preserved; unsupported semantic fields and arbitrary construction remain explicit gaps."
           ]
