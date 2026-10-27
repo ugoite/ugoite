@@ -168,28 +168,6 @@ function CompositionTableInspector(props: {
   return (
     <section class="compositionGraphTableInspector">
       <h3>{t("composition.studioTableColumns")}</h3>
-      <For
-        each={props.columns().filter((column) =>
-          selectedColumns().some((item) => item.column === column.name)
-        )}
-      >
-        {(column) => {
-          const label = () => selectedLabel(column.name);
-          return (
-            <label class="compositionGraphTableColumnChoice">
-              <input
-                type="checkbox"
-                checked
-                disabled={selectedColumns().length <= 1}
-                aria-label={label()}
-                onChange={(event) =>
-                  selectColumn(column.name, event.currentTarget.checked)}
-              />
-              <span>{label()}</span>
-            </label>
-          );
-        }}
-      </For>
       <Show
         when={props.columns().some((column) =>
           !selectedColumns().some((item) => item.column === column.name)
@@ -224,7 +202,7 @@ function CompositionTableInspector(props: {
             <label>
               <span class="ui-sr-only">
                 {t("composition.studioTableColumnLabel", {
-                  column: column.column,
+                  column: selectedLabel(column.column),
                 })}
               </span>
               <input

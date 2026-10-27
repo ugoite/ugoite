@@ -473,7 +473,6 @@ describe("CompositionGraphDesignCanvas", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
 
-    expect(screen.getByRole("checkbox", { name: "Date" })).toBeChecked();
     expect(
       screen.getByRole("textbox", { name: "Display label for Date" }),
     ).toHaveValue("Date");
