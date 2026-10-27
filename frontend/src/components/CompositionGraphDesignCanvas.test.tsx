@@ -10,7 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal } from "solid-js";
 import { CompositionGraphDesignCanvas } from "./CompositionGraphDesignCanvas";
 import type { CompositionBindingProvider } from "~/lib/composition-variable-binding";
-import { createCompositionGraphDraft } from "~/lib/composition-variable-binding";
+import {
+  type CompositionGraphDraft,
+  createCompositionGraphDraft,
+} from "~/lib/composition-variable-binding";
 import { setLocale } from "~/lib/i18n";
 
 const { evaluateMock } = vi.hoisted(() => ({ evaluateMock: vi.fn() }));
@@ -52,6 +55,41 @@ describe("CompositionGraphDesignCanvas", () => {
         onDraftChange={onDraftChange}
       />
     ));
+
+  const tableDraft = (
+    resultColumns: string[],
+    presentationColumns: Array<{ column: string; label: string }>,
+  ): CompositionGraphDraft => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables.push({
+      id: "rows",
+      kind: "query",
+      returns: {
+        kind: "table",
+        columns: resultColumns.map((name) => ({
+          name,
+          value_type: { scalar_type: "string", nullable: false },
+        })),
+      },
+      query: {
+        kind: "inline_sql",
+        sql: "SELECT value",
+        arguments: [],
+        schema_fingerprint: "schema",
+      },
+    });
+    draft.components.push({
+      id: "table_1",
+      kind: "table",
+      variable: "rows",
+      presentation: { columns: presentationColumns },
+    });
+    draft.layout.rows[0].items.push({
+      kind: "component",
+      component: "table_1",
+    });
+    return draft;
+  };
 
   it("renders real values, reorders the shared layout, and preserves variables when removing displays", async () => {
     const initial = createCompositionGraphDraft("Live");
@@ -421,6 +459,70 @@ describe("CompositionGraphDesignCanvas", () => {
           ],
         },
       })
+    );
+  });
+
+  it("removes a stale Table key and adds current columns without changing valid headings", () => {
+    const onDraftChange = vi.fn();
+    renderCanvas(
+      onDraftChange,
+      tableDraft(["current"], [{ column: "stale", label: "Old heading" }]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show every result column" }),
+    );
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        components: [{
+          id: "table_1",
+          kind: "table",
+          variable: "rows",
+          presentation: {
+            columns: [{ column: "current", label: "current" }],
+          },
+        }],
+      }),
+    );
+  });
+
+  it("clears a keyed Table view when result column names are ambiguous", () => {
+    const onDraftChange = vi.fn();
+    renderCanvas(
+      onDraftChange,
+      tableDraft(
+        ["duplicate", "duplicate"],
+        [{ column: "duplicate", label: "Value" }],
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show every result column" }),
+    );
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        components: [{ id: "table_1", kind: "table", variable: "rows" }],
+      }),
+    );
+  });
+
+  it("clears stale Table keys when the current result schema is empty", () => {
+    const onDraftChange = vi.fn();
+    renderCanvas(
+      onDraftChange,
+      tableDraft([], [{ column: "stale", label: "Old heading" }]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show every result column" }),
+    );
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        components: [{ id: "table_1", kind: "table", variable: "rows" }],
+      }),
     );
   });
 
