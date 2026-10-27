@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
@@ -14,12 +14,52 @@ type SavedRevision = {
   revision: { entry_id: string; revision_id: string };
   fields: Record<string, unknown>;
 };
+type ListedEntry = { id?: string; form?: string };
+type EntryDetail = { id?: string; form?: string; revision_id?: string };
+type UserEntryIdentity = { id: string; form: string; revision_id: string };
+
+const RESERVED_METADATA_FORMS = new Set([
+  "SQL",
+  "User",
+  "UserGroup",
+  "_ugoite_compositions",
+]);
 
 const sqlIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
 const slug = (value: string) =>
   value.normalize("NFKD").toLowerCase()
     .replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+
+async function snapshotUserEntryIdentities(
+  request: APIRequestContext,
+  spaceId: string,
+): Promise<UserEntryIdentity[]> {
+  const listResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/entries?limit=1000&offset=0`),
+  );
+  expect(listResponse.ok()).toBe(true);
+  const listedEntries = await listResponse.json() as ListedEntry[];
+  const userEntries = listedEntries.filter((entry) =>
+    !!entry.id && !!entry.form && !RESERVED_METADATA_FORMS.has(entry.form)
+  );
+  const identities = await Promise.all(userEntries.map(async (entry) => {
+    const detailResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`),
+    );
+    expect(detailResponse.ok()).toBe(true);
+    const detail = await detailResponse.json() as EntryDetail;
+    expect(detail.id).toBe(entry.id);
+    expect(detail.form).toBe(entry.form);
+    expect(detail.revision_id).toBeTruthy();
+    return {
+      id: detail.id!,
+      form: detail.form!,
+      revision_id: detail.revision_id!,
+    };
+  }));
+  return identities.sort((left, right) => left.id.localeCompare(right.id));
+}
 
 test("Composition rebinds one shared Form table to exact Saved SQL and reopens both", async ({ page, request }) => {
   test.setTimeout(120_000);
@@ -67,6 +107,12 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
     );
     expect(entry.status()).toBe(201);
   }
+  const userEntriesBefore = await snapshotUserEntryIdentities(request, spaceId);
+  expect(userEntriesBefore).toHaveLength(2);
+  expect(userEntriesBefore.map(({ form }) => form)).toEqual([
+    formName,
+    formName,
+  ]);
 
   const formsResponse = await request.get(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -180,6 +226,10 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
       timeout: 30_000,
     },
   );
+  await expect(componentOne.getByRole("table").locator("tbody tr"))
+    .toHaveCount(2);
+  await expect(componentTwo.getByRole("table").locator("tbody tr"))
+    .toHaveCount(2);
 
   await componentOne.getByRole("button", {
     name: `table, ${formVariableId}`,
@@ -220,6 +270,10 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
   await expect(componentTwo.getByRole("table")).toHaveAccessibleName(
     `${formVariableId} results`,
   );
+  await expect(componentOne.getByRole("table").locator("tbody tr"))
+    .toHaveCount(2);
+  await expect(componentTwo.getByRole("table").locator("tbody tr"))
+    .toHaveCount(2);
 
   const saveResponsePromise = page.waitForResponse((response) =>
     response.request().method() === "POST" &&
@@ -331,6 +385,16 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
   ).toContainText("Second shared row", {
     timeout: 30_000,
   });
+  await expect(
+    page.locator(
+      '.compositionGraphValue[data-component-id="component_1"]',
+    ).getByRole("table").locator("tbody tr"),
+  ).toHaveCount(2);
+  await expect(
+    page.locator(
+      '.compositionGraphValue[data-component-id="component_2"]',
+    ).getByRole("table").locator("tbody tr"),
+  ).toHaveCount(2);
 
   const formsAfter = await (await request.get(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -361,6 +425,9 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
     name !== "_ugoite_compositions"
   ).map(({ id }) => id).sort();
   expect(userFormIdsAfter).toEqual(userFormIdsBefore);
+  expect(await snapshotUserEntryIdentities(request, spaceId)).toEqual(
+    userEntriesBefore,
+  );
   const sqlListAfter = await request.get(
     getBackendUrl(`/spaces/${spaceId}/sql`),
   );
