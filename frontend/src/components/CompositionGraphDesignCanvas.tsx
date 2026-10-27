@@ -168,34 +168,6 @@ function CompositionTableInspector(props: {
   return (
     <section class="compositionGraphTableInspector">
       <h3>{t("composition.studioTableColumns")}</h3>
-      <Show
-        when={props.columns().some((column) =>
-          !selectedColumns().some((item) => item.column === column.name)
-        )}
-      >
-        <details class="compositionGraphTableOptionalColumns">
-          <summary>{t("composition.studioAddResultColumns")}</summary>
-          <For
-            each={props.columns().filter((column) =>
-              !selectedColumns().some((item) => item.column === column.name)
-            )}
-          >
-            {(column) => (
-              <label class="compositionGraphTableColumnChoice">
-                <input
-                  type="checkbox"
-                  aria-label={t("composition.studioAddResultColumn", {
-                    column: column.name,
-                  })}
-                  onChange={(event) =>
-                    selectColumn(column.name, event.currentTarget.checked)}
-                />
-                <span>{column.name}</span>
-              </label>
-            )}
-          </For>
-        </details>
-      </Show>
       <For each={selectedColumns()}>
         {(column, index) => (
           <div class="compositionGraphTableColumnSettings">
@@ -239,6 +211,34 @@ function CompositionTableInspector(props: {
           </div>
         )}
       </For>
+      <Show
+        when={props.columns().some((column) =>
+          !selectedColumns().some((item) => item.column === column.name)
+        )}
+      >
+        <details class="compositionGraphTableOptionalColumns">
+          <summary>{t("composition.studioAddResultColumns")}</summary>
+          <For
+            each={props.columns().filter((column) =>
+              !selectedColumns().some((item) => item.column === column.name)
+            )}
+          >
+            {(column) => (
+              <label class="compositionGraphTableColumnChoice">
+                <input
+                  type="checkbox"
+                  aria-label={t("composition.studioAddResultColumn", {
+                    column: column.name,
+                  })}
+                  onChange={(event) =>
+                    selectColumn(column.name, event.currentTarget.checked)}
+                />
+                <span>{column.name}</span>
+              </label>
+            )}
+          </For>
+        </details>
+      </Show>
       <Show when={needsShowEveryResultColumn()}>
         <button
           type="button"
