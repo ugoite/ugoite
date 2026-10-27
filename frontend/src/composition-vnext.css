@@ -341,14 +341,24 @@
   align-items: center;
   gap: var(--ui-spacing-sm);
 }
+.compositionGraphVariableBinding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
 .compositionGraphVariableChange {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   justify-content: space-between;
   padding: 0 var(--ui-spacing-sm);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md);
   background: var(--ui-surface-1);
   color: var(--ui-foreground);
+}
+.compositionGraphVariableChange > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .compositionGraphTextInspector {
   display: grid;
