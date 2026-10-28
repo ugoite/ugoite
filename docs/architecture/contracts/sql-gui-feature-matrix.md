@@ -110,6 +110,16 @@ source-safe; their verification does not claim executor admission for every
 result shape. Directionless SEMI/ANTI spellings are not offered because
 DataFusion's SQL planner does not admit them.
 
+The expression inspector can wrap a typed expression in a one-element
+`ARRAY[...]` literal, then append typed literal elements in order to an
+unaliased complete projection item. Array elements remain normal typed
+expressions and can be edited with the existing literal or expression
+operations. Native, WASM, DOM, and authorized-executor tests cover constructing
+and executing `ARRAY[4, 9]` through the inspector. Appending to aliased or
+comment-bearing array spans fails closed. Reordering elements, editing array
+literals whose parser range is incomplete, and other collection constructors
+remain gaps under #4565.
+
 ## Planner diagnostics and persistence
 
 `sql.query.plan` builds and validates an authorized physical plan and returns

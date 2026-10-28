@@ -4078,8 +4078,8 @@ mod tests {
     fn sql_document_common_toolbar_semantic_operations_have_wasm_parity() {
         use ugoite_domain::sql_document::{
             SqlDocumentAggregateFunction, SqlDocumentNodeData, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral, SqlDocumentValueAccess, SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
         let assert_parity = |source: &str, edit: SqlDocumentSemanticEdit| {
@@ -4118,6 +4118,55 @@ mod tests {
             assert_eq!(undo_response["value"]["document"]["source"], source);
             native
         };
+
+        let array_source = "SELECT 4 /* preserve */";
+        let array_document = ugoite_domain::sql_document::parse_sql_document(array_source);
+        let value = array_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Value
+                    && node
+                        .range
+                        .and_then(|range| array_document.source_slice(range))
+                        == Some("4")
+            })
+            .expect("the ARRAY element is a typed value");
+        let array = assert_parity(
+            array_source,
+            SqlDocumentSemanticEdit::WrapExpressionInArray {
+                node_id: value.id,
+                expected_kind: value.kind,
+            },
+        );
+        assert_eq!(array.document.source, "SELECT ARRAY[4] /* preserve */");
+        let array_document =
+            ugoite_domain::sql_document::parse_sql_document(&array.document.source);
+        let array_expression = array_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem
+                    && node
+                        .range
+                        .and_then(|range| array_document.source_slice(range))
+                        == Some("ARRAY[4]")
+            })
+            .expect("the constructed ARRAY is selectable");
+        let appended = assert_parity(
+            &array.document.source,
+            SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                node_id: array_expression.id,
+                expected_kind: array_expression.kind,
+                literal: SqlDocumentSemanticLiteral::Number {
+                    value: "9".to_owned(),
+                },
+            },
+        );
+        assert_eq!(
+            appended.document.source,
+            "SELECT ARRAY[4, 9] /* preserve */"
+        );
 
         let filter_source = "SELECT amount > 0 FROM \"G\" WHERE amount = 1";
         let filter_document = ugoite_domain::sql_document::parse_sql_document(filter_source);

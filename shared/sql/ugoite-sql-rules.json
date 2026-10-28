@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 22,
+        "version": 23,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -648,7 +648,7 @@
           "limits": [
             "Typed literals, identifiers, operators, registered aggregates, casts, CASE, predicates and subquery seeds.",
             "A selected complete projection expression can receive one positive one-based Int64 array-index suffix through a typed Rust operation; DataFusion checks the actual source type and index during authorized planning/execution. The inspector clears a pending index on source/selection changes, excludes aliased projection rows, and preserves aliases when an exact child expression is edited. Struct-field access is not currently admitted by the SQL planner.",
-            "Array literal AST ranges that do not cover their full source can be edited only through an unaliased complete projection-item range; aliased incomplete ranges fail closed. Nested array/map access chains, slices, arbitrary access keys and general collection construction remain explicit gaps.",
+            "The inspector can wrap a selected typed expression in a one-element ARRAY literal and append typed literal elements to an unaliased complete projection item containing an ARRAY; every element remains editable through ordinary expression operations and append order is retained. Comments inside an ARRAY span and aliased ARRAY projection append fail closed. Array literal AST ranges that do not cover their full source can otherwise be edited only through an unaliased complete projection-item range; aliased incomplete ranges fail closed. Reordering elements, nested array/map access chains, slices, arbitrary access keys and general collection construction remain explicit gaps.",
             "Unmodeled expression source is preserved; unsupported semantic fields and arbitrary construction remain explicit gaps."
           ]
         }
@@ -667,6 +667,8 @@
         "replace_cast_target_type",
         "set_parameterized_cast_target",
         "wrap_expression_in_cast",
+        "wrap_expression_in_array",
+        "append_array_literal_element",
         "wrap_expression_in_value_access",
         "wrap_expression_in_aggregate",
         "set_aggregate_function",
@@ -738,7 +740,7 @@
       "verification_gaps": [
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
-        "One-based array indexing has a typed authorized execution example over a Form ObjectList; struct-field access, nested access chains, array slices, map/dynamic keys, full array-literal range editing, and broader admitted collection expression construction remain unverified.",
+        "One-based array indexing has a typed authorized execution example over a Form ObjectList. ARRAY construction by wrapping a typed expression, appending typed literal elements in order to an unaliased complete projection, and ordinary typed element editing are verified through native, WASM, DOM and authorized execution paths. Struct-field access, nested access chains, array slices, map/dynamic keys, full array-literal range editing, aliased array append, element reordering, and broader admitted collection construction remain unverified.",
         "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Planner validity for authored type parameters remains authoritative.",
         "Aggregate ordered argument clauses remain read-only and are outside the enabled aggregate registry.",
         "The active tree exposes LEFT/RIGHT SEMI and ANTI joins admitted by DataFusion; directionless SEMI/ANTI spellings are not offered. LIMIT accepts typed literals, named parameters, and same-query expressions. CTE and derived-table output aliases can be added or renamed with exact binding checks; nested CTE shadowing is respected and ambiguous unqualified references fail closed."
@@ -766,6 +768,27 @@
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
               "async fn typed_sql_document_group_and_aggregate_edits_execute_authorized_queries"
+            ]
+          ]
+        },
+        {
+          "id": "array-literal-construction",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_array_wrapper_constructs_and_edits_literal_with_undo"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_common_toolbar_semantic_operations_have_wasm_parity"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "constructs and edits ARRAY elements through the expression inspector"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_array_index_executes_authorized_queries"
             ]
           ]
         },

@@ -355,6 +355,85 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     view.unmount();
   });
 
+  it("constructs and edits ARRAY elements through the expression inspector", async () => {
+    const initial = "SELECT 4 /* preserve */";
+    const [sql, setSql] = createSignal(initial);
+    const view = render(() => (
+      <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />
+    ));
+    const firstDocument = await parseSqlDocument(initial);
+    const value = firstDocument.nodes.find((node) =>
+      node.kind === "value" && node.range &&
+      initial.slice(node.range.start, node.range.end) === "4"
+    );
+    expect(value).toBeDefined();
+    const firstItem = (await screen.findAllByRole("treeitem")).find((node) =>
+      node.dataset.sqlDocumentNode === String(value!.id)
+    );
+    expect(firstItem).toBeDefined();
+    fireEvent.click(firstItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "array" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe("SELECT ARRAY[4] /* preserve */"));
+
+    const arrayDocument = await parseSqlDocument(sql());
+    const arrayExpression = arrayDocument.nodes.find((node) =>
+      node.kind === "select_item" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "ARRAY[4]"
+    );
+    expect(arrayExpression).toBeDefined();
+    const arrayExpressionItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(arrayExpression!.id),
+    );
+    expect(arrayExpressionItem).toBeDefined();
+    fireEvent.click(arrayExpressionItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "array" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "number" },
+    });
+    fireEvent.input(screen.getByLabelText("Number"), {
+      target: { value: "9" },
+    });
+    expect(
+      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT ARRAY[4, 9] /* preserve */")
+    );
+
+    const updatedDocument = await parseSqlDocument(sql());
+    const firstArrayElement = updatedDocument.nodes.find((node) =>
+      node.kind === "value" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "4"
+    );
+    expect(firstArrayElement).toBeDefined();
+    const firstArrayElementItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(firstArrayElement!.id),
+    );
+    expect(firstArrayElementItem).toBeDefined();
+    fireEvent.click(firstArrayElementItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "literal" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "number" },
+    });
+    fireEvent.input(screen.getByLabelText("Number"), {
+      target: { value: "5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT ARRAY[5, 9] /* preserve */")
+    );
+    view.unmount();
+  });
+
   it("indexes an aliased projection child without changing its alias", async () => {
     const source = "SELECT field_101 AS values_out";
     const document = await parseSqlDocument(source);

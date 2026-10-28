@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 22;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 23;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -870,6 +870,19 @@ pub enum SqlDocumentSemanticEdit {
         expected_kind: SqlDocumentNodeKind,
         /// Portable target type chosen from the closed SQL GUI type set.
         target_type: SqlDocumentCastType,
+    },
+    /// Construct a one-element ARRAY literal from an existing expression.
+    /// The wrapped expression remains editable as the array element.
+    WrapExpressionInArray {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+    },
+    /// Append a typed literal to an existing ARRAY literal. Source comments
+    /// in the array span are rejected so original element text stays safe.
+    AppendArrayLiteralElement {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        literal: SqlDocumentSemanticLiteral,
     },
     /// Wrap an expression in one typed array access suffix. The
     /// source expression is retained verbatim inside parentheses; planning
@@ -2648,6 +2661,17 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(wrap_expression_in_cast(&document, node, *target_type)?);
             continue;
         }
+        if matches!(
+            semantic_edit,
+            SqlDocumentSemanticEdit::WrapExpressionInArray { .. }
+        ) {
+            edits.push(wrap_expression_in_array(&document, node)?);
+            continue;
+        }
+        if let SqlDocumentSemanticEdit::AppendArrayLiteralElement { literal, .. } = semantic_edit {
+            edits.push(append_array_literal_element(&document, node, literal)?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::WrapExpressionInValueAccess { access, .. } = semantic_edit {
             edits.push(wrap_expression_in_value_access(&document, node, access)?);
             continue;
@@ -3115,6 +3139,12 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::WrapExpressionInCast { .. } => {
                 unreachable!("CAST wrapper edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::WrapExpressionInArray { .. } => {
+                unreachable!("ARRAY wrapper edits are expanded before single-node edits")
+            }
+            SqlDocumentSemanticEdit::AppendArrayLiteralElement { .. } => {
+                unreachable!("ARRAY element edits are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::WrapExpressionInValueAccess { .. } => {
                 unreachable!("value access edits are expanded before single-node edits")
             }
@@ -3317,6 +3347,15 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::WrapExpressionInCast {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::WrapExpressionInArray {
+                node_id,
+                expected_kind,
+            }
+            | Self::AppendArrayLiteralElement {
                 node_id,
                 expected_kind,
                 ..
@@ -6239,6 +6278,90 @@ fn wrap_expression_in_cast(
     Ok(SqlDocumentEdit {
         range,
         expected_text: operand.to_owned(),
+        replacement,
+    })
+}
+
+fn wrap_expression_in_array(
+    document: &SqlDocument,
+    expression: &SqlDocumentNode,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if !is_expression_node_kind(expression.kind)
+        || matches!(
+            expression.kind,
+            SqlDocumentNodeKind::OtherExpression | SqlDocumentNodeKind::SubqueryExpression
+        )
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let range = expression
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if range_has_comment(document, range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let value = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if value.trim().is_empty() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let replacement = format!("ARRAY[{value}]");
+    if parse_sql_document(&format!("SELECT {replacement}")).status != SqlDocumentStatus::Parsed {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    Ok(SqlDocumentEdit {
+        range,
+        expected_text: value.to_owned(),
+        replacement,
+    })
+}
+
+fn append_array_literal_element(
+    document: &SqlDocument,
+    array: &SqlDocumentNode,
+    literal: &SqlDocumentSemanticLiteral,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if array.kind != SqlDocumentNodeKind::SelectItem || array.semantic.is_some() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let range = array
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if range_has_comment(document, range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let source = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let is_array_literal =
+        parse_generic_sql_statements(&format!("SELECT {source}")).is_ok_and(|statements| {
+            matches!(
+                statements.as_slice(),
+                [Statement::Query(query)]
+                    if matches!(query.body.as_ref(), SetExpr::Select(select)
+                        if matches!(select.projection.as_slice(),
+                            [SelectItem::UnnamedExpr(Expr::Array(_))]))
+            )
+        });
+    if !is_array_literal {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let (literal, _) = render_semantic_literal(literal)?;
+    let closing_bracket = source
+        .rfind(']')
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let mut replacement = String::with_capacity(source.len() + literal.len() + 2);
+    replacement.push_str(&source[..closing_bracket]);
+    replacement.push_str(", ");
+    replacement.push_str(&literal);
+    replacement.push_str(&source[closing_bracket..]);
+    if parse_sql_document(&format!("SELECT {replacement}")).status != SqlDocumentStatus::Parsed {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    Ok(SqlDocumentEdit {
+        range,
+        expected_text: source.to_owned(),
         replacement,
     })
 }
@@ -18616,6 +18739,182 @@ mod tests {
                         node_id: expression.id,
                         expected_kind: expression.kind,
                         target_type: SqlDocumentCastType::Varchar,
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+    }
+
+    #[test]
+    fn semantic_array_wrapper_constructs_and_edits_literal_with_undo() {
+        let source = "SELECT 4 AS values /* outside */";
+        let document = parse_sql_document(source);
+        let value = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Value
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("4")
+            })
+            .expect("the scalar array element is a typed value");
+        let wrapped = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::WrapExpressionInArray {
+                    node_id: value.id,
+                    expected_kind: value.kind,
+                }],
+            ),
+        )
+        .expect("a typed scalar can be wrapped in a one-element ARRAY");
+        assert_eq!(
+            wrapped.document.source,
+            "SELECT ARRAY[4] AS values /* outside */"
+        );
+
+        let array_source = "SELECT ARRAY[4] /* outside */";
+        let array_document = parse_sql_document(array_source);
+        let array_expression = array_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem
+                    && node
+                        .range
+                        .and_then(|range| array_document.source_slice(range))
+                        == Some("ARRAY[4]")
+            })
+            .expect("an unaliased array projection is selectable");
+        let appended = apply_sql_document_semantic_edit_transaction(
+            array_source,
+            &semantic_transaction(
+                array_source,
+                vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                    node_id: array_expression.id,
+                    expected_kind: array_expression.kind,
+                    literal: SqlDocumentSemanticLiteral::Number {
+                        value: "9".to_owned(),
+                    },
+                }],
+            ),
+        )
+        .expect("a typed literal can be appended to an ARRAY");
+        assert_eq!(appended.document.source, "SELECT ARRAY[4, 9] /* outside */");
+
+        let array_document = &appended.document;
+        let element = array_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Value
+                    && node
+                        .range
+                        .and_then(|range| array_document.source_slice(range))
+                        == Some("4")
+            })
+            .expect("the constructed array element remains a typed tree value");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            &appended.document.source,
+            &semantic_transaction(
+                &appended.document.source,
+                vec![SqlDocumentSemanticEdit::ReplaceLiteral {
+                    node_id: element.id,
+                    expected_kind: element.kind,
+                    literal: SqlDocumentSemanticLiteral::Number {
+                        value: "9".to_owned(),
+                    },
+                }],
+            ),
+        )
+        .expect("the array element can be edited through the existing literal operation");
+        assert_eq!(edited.document.source, "SELECT ARRAY[9, 9] /* outside */");
+        assert_eq!(
+            apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
+                .expect("element edit undo applies")
+                .document
+                .source,
+            appended.document.source
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(&appended.document.source, &appended.undo)
+                .expect("array append undo applies")
+                .document
+                .source,
+            array_source
+        );
+
+        let aliased_source = "SELECT ARRAY[4] AS values_out";
+        let aliased_document = parse_sql_document(aliased_source);
+        let aliased_item = aliased_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .expect("the aliased projection item is represented");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                aliased_source,
+                &semantic_transaction(
+                    aliased_source,
+                    vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                        node_id: aliased_item.id,
+                        expected_kind: aliased_item.kind,
+                        literal: SqlDocumentSemanticLiteral::Number {
+                            value: "9".to_owned(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(&wrapped.document.source, &wrapped.undo)
+                .expect("array construction undo applies")
+                .document
+                .source,
+            source
+        );
+
+        let commented_array_source = "SELECT ARRAY[4 /* keep inside */]";
+        let commented_array_document = parse_sql_document(commented_array_source);
+        let commented_array = commented_array_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .expect("the commented ARRAY expression is represented");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                commented_array_source,
+                &semantic_transaction(
+                    commented_array_source,
+                    vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                        node_id: commented_array.id,
+                        expected_kind: commented_array.kind,
+                        literal: SqlDocumentSemanticLiteral::Number {
+                            value: "9".to_owned(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+
+        let commented_source = "SELECT (4 /* keep inside */ + 1)";
+        let commented_document = parse_sql_document(commented_source);
+        let expression = commented_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the commented expression is typed");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                commented_source,
+                &semantic_transaction(
+                    commented_source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInArray {
+                        node_id: expression.id,
+                        expected_kind: expression.kind,
                     }],
                 ),
             ),

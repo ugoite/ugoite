@@ -1001,6 +1001,17 @@ export type SqlDocumentSemanticEdit =
     target_type: SqlDocumentCastType;
   }
   | {
+    kind: "wrap_expression_in_array";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "append_array_literal_element";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    literal: SqlDocumentSemanticLiteral;
+  }
+  | {
     kind: "wrap_expression_in_value_access";
     node_id: number;
     expected_kind: SqlDocumentNodeKind;

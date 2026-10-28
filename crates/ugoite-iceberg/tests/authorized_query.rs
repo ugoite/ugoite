@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
-use arrow_array::{BooleanArray, Float64Array, Int64Array, StringArray};
+use arrow_array::{BooleanArray, Float64Array, Int64Array, ListArray, StringArray};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
@@ -4767,7 +4767,8 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
-        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+        SqlDocumentValueAccess,
     };
 
     let workspace = IcebergWorkspace::memory_for_tests(
@@ -4867,6 +4868,76 @@ async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow:
             .value(0),
         "Ada"
     );
+
+    let scalar_source = "SELECT 4 FROM tasks";
+    let scalar_document = parse_sql_document(scalar_source);
+    let scalar = scalar_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::Value
+                && node
+                    .range
+                    .and_then(|range| scalar_document.source_slice(range))
+                    == Some("4")
+        })
+        .expect("the array element seed is a typed literal");
+    let array_query = apply_sql_document_semantic_edit_transaction(
+        scalar_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: scalar_document.contract_version,
+            expected_source: scalar_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInArray {
+                node_id: scalar.id,
+                expected_kind: scalar.kind,
+            }],
+        },
+    )?;
+    assert_eq!(array_query.document.to_sql(), "SELECT ARRAY[4] FROM tasks");
+    let array_document = parse_sql_document(&array_query.document.source);
+    let array_expression = array_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::SelectItem
+                && node
+                    .range
+                    .and_then(|range| array_document.source_slice(range))
+                    == Some("ARRAY[4]")
+        })
+        .expect("the constructed ARRAY remains selectable");
+    let array_query = apply_sql_document_semantic_edit_transaction(
+        &array_query.document.source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: array_document.contract_version,
+            expected_source: array_query.document.source.clone(),
+            edits: vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                node_id: array_expression.id,
+                expected_kind: array_expression.kind,
+                literal: SqlDocumentSemanticLiteral::Number {
+                    value: "9".to_owned(),
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        array_query.document.to_sql(),
+        "SELECT ARRAY[4, 9] FROM tasks"
+    );
+    let array_batches = context.execute(array_query.document.to_sql()).await?;
+    let array = array_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("the typed ARRAY expression returns an integer list");
+    let list_values = array.value(0);
+    let values = list_values
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the list contains Int64 values");
+    assert_eq!(values.len(), 2);
+    assert_eq!(values.value(0), 4);
+    assert_eq!(values.value(1), 9);
 
     Ok(())
 }
