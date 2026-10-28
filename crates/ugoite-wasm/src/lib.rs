@@ -2763,7 +2763,7 @@ mod tests {
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
             SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
         };
-        let source = "SELECT amount FROM \"G\"";
+        let source = "SELECT amount AS total FROM \"G\" ORDER BY total DESC";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
         let item = document
             .nodes
@@ -2794,7 +2794,7 @@ mod tests {
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
         assert_eq!(
             response["value"]["document"]["source"],
-            "SELECT amount AS \"gross total\" FROM \"G\""
+            "SELECT amount AS \"gross total\" FROM \"G\" ORDER BY \"gross total\" DESC"
         );
     }
 

@@ -11,6 +11,26 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("renames an output alias and its resolved bare ORDER BY reference atomically", async () => {
+    const source = "SELECT 1 AS total ORDER BY total DESC";
+    const document = await parseSqlDocument(source);
+    const item = document.nodes.find((node) => node.kind === "select_item");
+    expect(item).toBeDefined();
+    const [sql, setSql] = createSignal(source);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const treeItem = (await screen.findAllByRole("treeitem")).find((node) =>
+      node.dataset.sqlDocumentNode === String(item!.id)
+    );
+    expect(treeItem).toBeDefined();
+    fireEvent.click(treeItem!);
+    const alias = screen.getByLabelText("Output name");
+    fireEvent.input(alias, { target: { value: "renamed" } });
+    fireEvent.blur(alias);
+    await waitFor(() =>
+      expect(sql()).toBe('SELECT 1 AS "renamed" ORDER BY "renamed" DESC')
+    );
+  });
+
   it("keeps composite ROLLUP and CUBE forms read-only without rewriting them", async () => {
     for (
       const [mode, initial] of [

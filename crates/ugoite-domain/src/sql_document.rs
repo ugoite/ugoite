@@ -2335,8 +2335,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
                     &transaction.edits,
                 )?;
             }
-            let edit = set_projection_alias(&document, node, alias.as_ref())?;
-            edits.push(edit);
+            edits.extend(set_projection_alias(&document, node, alias.as_ref())?);
             continue;
         }
         if node.kind != expected_kind {
@@ -8425,11 +8424,95 @@ fn ensure_projection_name_unreferenced(
     }
 }
 
+fn projection_alias_reference_edits(
+    document: &SqlDocument,
+    item: &SqlDocumentNode,
+    old_alias: &SqlDocumentIdentifier,
+    new_alias: &SqlDocumentIdentifier,
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
+    let item_range = item
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    ensure_unique_projection_alias(document.nodes.as_slice(), item, Some(old_alias), &[])?;
+    let query_id =
+        query_ancestor_id(document, item.id).ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let mut edits = Vec::new();
+    for candidate in &document.nodes {
+        if candidate.kind != SqlDocumentNodeKind::IdentifierExpression
+            || query_ancestor_id(document, candidate.id) != Some(query_id)
+            || candidate
+                .range
+                .is_some_and(|range| item_range.start <= range.start && range.end <= item_range.end)
+            || !matches!(
+                &candidate.semantic,
+                Some(SqlDocumentNodeData::Identifier { value, quote_style })
+                    if sql_identifiers_match(
+                        &SqlDocumentIdentifier { value: value.clone(), quote_style: *quote_style },
+                        old_alias
+                    )
+            )
+        {
+            continue;
+        }
+
+        // Only a bare ORDER BY item in the same query has an unambiguous
+        // output-alias binding. Other same-spelled references may be source
+        // columns or belong to a clause with different name-resolution rules.
+        let order_item = ancestor_of_kind(document, candidate.id, SqlDocumentNodeKind::OrderByItem)
+            .ok_or(SqlDocumentEditError::ProjectionAliasConflict)?;
+        if order_by_item_expression(document, order_item)?.id != candidate.id {
+            return Err(SqlDocumentEditError::ProjectionAliasConflict);
+        }
+        let order_clause = order_item
+            .parent
+            .and_then(|parent| document.nodes.get(parent as usize))
+            .filter(|parent| parent.kind == SqlDocumentNodeKind::OrderByClause)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let order_range = order_clause
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if document.tokens.iter().any(|token| {
+            token.kind == SqlDocumentTokenKind::Comment && token.range.start >= order_range.start
+        }) {
+            return Err(SqlDocumentEditError::NodeRangeUnavailable);
+        }
+        let range = candidate
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let expected_text = document
+            .source_slice(range)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        edits.push(SqlDocumentEdit {
+            range,
+            expected_text: expected_text.to_owned(),
+            replacement: render_identifier_parts(std::slice::from_ref(new_alias))?,
+        });
+    }
+    Ok(edits)
+}
+
+fn ancestor_of_kind(
+    document: &SqlDocument,
+    mut node_id: u32,
+    expected_kind: SqlDocumentNodeKind,
+) -> Option<&SqlDocumentNode> {
+    loop {
+        let node = document.nodes.get(node_id as usize)?;
+        if node.id != node_id {
+            return None;
+        }
+        if node.kind == expected_kind {
+            return Some(node);
+        }
+        node_id = node.parent?;
+    }
+}
+
 fn set_projection_alias(
     document: &SqlDocument,
     item: &SqlDocumentNode,
     alias: Option<&SqlDocumentIdentifier>,
-) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
     if item.kind != SqlDocumentNodeKind::SelectItem {
         return Err(SqlDocumentEditError::NodeKindMismatch);
     }
@@ -8442,9 +8525,6 @@ fn set_projection_alias(
     };
     if old_alias == alias {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
-    }
-    if old_alias.is_some() {
-        ensure_projection_alias_unreferenced(document, item)?;
     }
     if let Some(new_alias) = alias {
         ensure_projection_name_unreferenced(document, item, new_alias)?;
@@ -8475,16 +8555,25 @@ fn set_projection_alias(
         })
     };
     if let Some(old) = old_alias {
+        let reference_edits = match alias {
+            Some(new_alias) => projection_alias_reference_edits(document, item, old, new_alias)?,
+            None => {
+                ensure_projection_alias_unreferenced(document, item)?;
+                Vec::new()
+            }
+        };
         let alias_range = token(old).ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
         if let Some(new) = alias {
-            return Ok(SqlDocumentEdit {
+            let mut edits = vec![SqlDocumentEdit {
                 range: alias_range,
                 expected_text: document
                     .source_slice(alias_range)
                     .unwrap_or_default()
                     .to_string(),
                 replacement: render(new)?,
-            });
+            }];
+            edits.extend(reference_edits);
+            return Ok(edits);
         }
         let expression_end = document
             .nodes
@@ -8525,11 +8614,11 @@ fn set_projection_alias(
         }) {
             return Err(SqlDocumentEditError::NodeRangeUnavailable);
         }
-        return Ok(SqlDocumentEdit {
+        return Ok(vec![SqlDocumentEdit {
             range,
             expected_text: document.source_slice(range).unwrap_or_default().to_string(),
             replacement: String::new(),
-        });
+        }]);
     }
     let Some(new) = alias else {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
@@ -8545,11 +8634,11 @@ fn set_projection_alias(
         start: expression_end,
         end: expression_end,
     };
-    Ok(SqlDocumentEdit {
+    Ok(vec![SqlDocumentEdit {
         range: insertion,
         expected_text: String::new(),
         replacement: format!(" AS {}", render(new)?),
-    })
+    }])
 }
 
 fn ensure_unique_projection_alias(
@@ -19217,11 +19306,35 @@ mod tests {
 
     #[test]
     fn projection_alias_edits_are_typed_guarded_and_preserve_bindings() {
-        for clause in [
-            "ORDER BY total",
-            "GROUP BY total",
-            "GROUP BY amount HAVING total > 1",
-        ] {
+        let order_source = "SELECT amount AS total FROM \"G\" ORDER BY total DESC";
+        let order_document = parse_sql_document(order_source);
+        let item = order_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "renamed".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            order_source,
+            &semantic_transaction(order_source, vec![rename]),
+        )
+        .expect("a bare same-scope ORDER BY reference resolves to the output alias");
+        assert_eq!(
+            renamed.document.source,
+            "SELECT amount AS \"renamed\" FROM \"G\" ORDER BY \"renamed\" DESC"
+        );
+        let restored = apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
+            .expect("alias and reference edits undo atomically");
+        assert_eq!(restored.document.source, order_source);
+
+        for clause in ["GROUP BY total", "GROUP BY amount HAVING total > 1"] {
             let source = format!("SELECT amount AS total FROM \"G\" {clause}");
             let document = parse_sql_document(&source);
             let item = document
@@ -19248,6 +19361,37 @@ mod tests {
                 ),
                 Err(SqlDocumentEditError::ProjectionAliasConflict),
                 "{clause}"
+            );
+        }
+
+        for source in [
+            "SELECT amount AS total FROM \"G\" ORDER BY total + 1",
+            "SELECT amount AS total FROM \"G\" ORDER BY total /* keep */",
+        ] {
+            let document = parse_sql_document(source);
+            let item = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .unwrap();
+            let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "renamed".into(),
+                    quote_style: Some('"'),
+                }),
+            };
+            assert!(
+                matches!(
+                    apply_sql_document_semantic_edit_transaction(
+                        source,
+                        &semantic_transaction(source, vec![rename])
+                    ),
+                    Err(SqlDocumentEditError::ProjectionAliasConflict)
+                        | Err(SqlDocumentEditError::NodeRangeUnavailable)
+                ),
+                "{source}"
             );
         }
 

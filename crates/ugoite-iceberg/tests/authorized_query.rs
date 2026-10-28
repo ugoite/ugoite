@@ -4654,7 +4654,7 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
     let context = workspace
         .authorized_query_context(policy(&tasks, &[513]))
         .await?;
-    let source = "SELECT field_100 FROM tasks ORDER BY 1";
+    let source = "SELECT field_100 AS total FROM tasks ORDER BY total";
     let document = parse_sql_document(source);
     let item = document
         .nodes
@@ -4684,6 +4684,10 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
         .downcast_ref::<StringArray>()
         .unwrap();
     assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
+    assert_eq!(
+        edited.document.to_sql(),
+        "SELECT field_100 AS \"task title\" FROM tasks ORDER BY \"task title\""
+    );
     Ok(())
 }
 

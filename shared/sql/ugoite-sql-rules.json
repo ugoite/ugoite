@@ -364,7 +364,7 @@
           ],
           "limits": [
             "Typed projection expression, Form-column and wildcard expansion, append/remove/reorder; source outside the edit is retained.",
-            "Projection alias preservation does not yet prove full alias construction or binding-aware renaming."
+            "Typed alias construction and rename are supported; rename updates a bare same-scope ORDER BY alias reference atomically. References in other clauses, expression-shaped ORDER BY items, and comment-bearing ORDER BY items fail closed; full alias resolution coverage remains unverified."
           ]
         },
         {
