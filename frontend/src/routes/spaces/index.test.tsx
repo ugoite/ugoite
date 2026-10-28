@@ -8,6 +8,7 @@ import {
   within,
 } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
+import { setLocale } from "~/lib/i18n";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
@@ -49,6 +50,7 @@ vi.mock("~/lib/ugoite-client", () => ({
 
 describe("/spaces", () => {
   beforeEach(() => {
+    setLocale("en");
     navigateMock.mockReset();
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (spaceApi.create as ReturnType<typeof vi.fn>).mockReset();
@@ -62,8 +64,9 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "New Space" }))
-      .toBeInTheDocument();
+    const newSpaceButton = screen.getByRole("button", { name: "New Space" });
+    expect(newSpaceButton).toBeInTheDocument();
+    expect(newSpaceButton).toHaveTextContent("New Space");
     expect(screen.getByRole("link", { name: "Join with invitation" }))
       .toHaveAttribute(
         "href",
@@ -75,6 +78,21 @@ describe("/spaces", () => {
       }),
     ).toHaveAttribute("href", browserWalkthroughUrl);
     expect(spaceApi.create).not.toHaveBeenCalled();
+  });
+
+  it("REQ-FE-002: keeps the visible create label localized", async () => {
+    setLocale("ja");
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByText("利用可能なスペースはありません。"))
+        .toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "新しいスペース" }))
+      .toHaveTextContent("新しいスペース");
+    expect(screen.getByRole("link", { name: "招待コード" }))
+      .toBeInTheDocument();
   });
 
   it("REQ-FE-002: creates a space only after explicit user submission", async () => {
@@ -267,6 +285,9 @@ describe("/spaces", () => {
       expect(screen.getByRole("link", { name: "default" }))
         .toBeInTheDocument();
     });
+
+    const newSpaceButton = screen.getByRole("button", { name: "New Space" });
+    expect(newSpaceButton).toHaveTextContent("New Space");
 
     expect(screen.queryByRole("heading", { name: "Authentication" })).not
       .toBeInTheDocument();

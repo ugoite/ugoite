@@ -238,7 +238,12 @@ describe("UI spec YAML registry", () => {
       type: "toolbar",
       actions: [
         { join: "/spaces/join" },
-        { create: "explicit-create-action" },
+        {
+          create: {
+            action: "explicit-create-action",
+            visible_label: "spacesPage.newSpaceAria",
+          },
+        },
       ],
     });
   });

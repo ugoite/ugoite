@@ -222,7 +222,7 @@ export default function SpacesIndexRoute() {
                 aria-label={t("spacesPage.newSpaceAria")}
                 onClick={openCreateForm}
               >
-                {t("spacesPage.createShort")}
+                {t("spacesPage.newSpaceAria")}
               </button>
             </Show>
           </div>
@@ -346,7 +346,7 @@ export default function SpacesIndexRoute() {
                   aria-label={t("spacesPage.newSpaceAria")}
                   onClick={openCreateForm}
                 >
-                  {t("spacesPage.createShort")}
+                  {t("spacesPage.newSpaceAria")}
                 </button>
               </div>
               <a
