@@ -309,8 +309,14 @@ async fn resolve_committed_mutation_audits(
         .iter()
         .map(|item| item.event_id.clone())
         .collect::<Vec<_>>();
-    let (canonical, retained_out) =
-        audit::verified_events_and_retained_by_id(op, space_id, &event_ids).await?;
+    let verification_checkpoint = checkpoint.map(|config| (space_uid, config));
+    let (canonical, retained_out) = audit::verified_events_and_retained_by_id_with_checkpoint(
+        op,
+        space_id,
+        &event_ids,
+        verification_checkpoint,
+    )
+    .await?;
     let mut resolved = BTreeMap::new();
     let mut missing = Vec::new();
     for item in expected {
@@ -357,7 +363,13 @@ async fn resolve_committed_mutation_audits(
             // Markers alone do not prove chain presence. Read the verified
             // chain and retention receipts after every bounded append.
             let (canonical_after, retained_after) =
-                audit::verified_events_and_retained_by_id(op, space_id, &chunk_ids).await?;
+                audit::verified_events_and_retained_by_id_with_checkpoint(
+                    op,
+                    space_id,
+                    &chunk_ids,
+                    verification_checkpoint,
+                )
+                .await?;
             if let Err(error) = append_result {
                 // A failed append may be retried when a competing writer
                 // already committed every deterministic event. Retention
@@ -392,7 +404,13 @@ async fn resolve_committed_mutation_audits(
             .map(|item| item.event_id.clone())
             .collect::<Vec<_>>();
         let (canonical_final, retained_final) =
-            audit::verified_events_and_retained_by_id(op, space_id, &all_ids).await?;
+            audit::verified_events_and_retained_by_id_with_checkpoint(
+                op,
+                space_id,
+                &all_ids,
+                verification_checkpoint,
+            )
+            .await?;
         for item in expected {
             if let Some(event) = canonical_final.get(&item.event_id) {
                 item.validate_binding(event)?;
