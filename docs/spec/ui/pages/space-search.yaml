@@ -40,6 +40,13 @@ components:
         failure: preserve-results-and-offer-form-list-retry
         unresolved_id: show-unknown-form-label-without-removing-entry
         consistency: separate-read-no-shared-snapshot-guarantee
+      initial_state:
+        when: no-query-has-been-submitted-or-deep-linked
+        guidance: keyword-placeholder
+        empty_results_message: hidden
+      completed_empty_state:
+        when: query-has-been-submitted-or-deep-linked-and-has-no-results
+        message: entryBrowser.empty
       rendering:
         mode: native-page-table
         rows: all-fetched-page-rows

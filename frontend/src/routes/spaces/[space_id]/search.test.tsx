@@ -80,6 +80,9 @@ describe("/spaces/:space_id/search", () => {
     );
     expect(container.querySelectorAll(".entry-browser-display-button"))
       .toHaveLength(3);
+    expect(entryApi.query).not.toHaveBeenCalled();
+    expect(screen.queryByText("No entries match this query."))
+      .not.toBeInTheDocument();
   });
 
   it("keeps typed text in the field while the committed query waits for submit", async () => {
@@ -98,9 +101,13 @@ describe("/spaces/:space_id/search", () => {
     fireEvent.input(field, { target: { value: "hello world" } });
     expect(field.value).toBe("hello world");
     expect(entryApi.query).not.toHaveBeenCalled();
+    expect(screen.queryByText("No entries match this query."))
+      .not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
     await waitFor(() => expect(entryApi.query).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("No entries match this query."))
+      .toBeInTheDocument();
     const request = vi.mocked(entryApi.query).mock.calls[0][1];
     expect(request.query.text).toBe("hello world");
     // The draft survives the committed execution.
@@ -157,6 +164,8 @@ describe("/spaces/:space_id/search", () => {
     expect(vi.mocked(entryApi.query).mock.calls[0][1].query.text).toBe(
       "deep linked",
     );
+    expect(await screen.findByText("No entries match this query."))
+      .toBeInTheDocument();
   });
 
   it("holds the draft during IME composition and adopts it on compositionend", async () => {
