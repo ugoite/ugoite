@@ -505,18 +505,69 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
 /// IDs that are absent from the canonical chain. A disposition is never an
 /// event authority: callers must not return its snapshot as canonical evidence
 /// or use its attribution. The chain always wins when the event is present.
+#[cfg(test)]
 pub(crate) async fn verified_events_and_retained_by_id(
     op: &Operator,
     space_id: &str,
     event_ids: &[String],
+) -> Result<(BTreeMap<String, Value>, BTreeMap<String, Value>)> {
+    verified_events_and_retained_by_id_with_checkpoint(op, space_id, event_ids, None).await
+}
+
+/// As above, with an optional Node-authenticated checkpoint for avoiding
+/// repeated hash-chain work while reconciling bounded batches. The checkpoint
+/// is only a cache: any missing, stale, or invalid checkpoint falls back to
+/// full verification, and the suffix after a valid prefix is always verified.
+pub(crate) async fn verified_events_and_retained_by_id_with_checkpoint(
+    op: &Operator,
+    space_id: &str,
+    event_ids: &[String],
+    checkpoint: Option<(&str, &AuditCheckpointConfig)>,
 ) -> Result<(BTreeMap<String, Value>, BTreeMap<String, Value>)> {
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
     let _local_lock = local_audit_lock(op, &safe_space_id)?;
 
-    let events = read_events(op, &safe_space_id).await?;
-    verify_chain(&events)?;
+    let path = audit_file_path(&safe_space_id);
+    let audit_bytes = crate::read_object_exact_optional(op, &path)
+        .await?
+        .unwrap_or_default();
+    let events = parse_audit_events(&audit_bytes)?;
+    let chain_verify_started = Instant::now();
+    let stored_checkpoint =
+        match checkpoint {
+            Some((space_uid, config)) => read_audit_checkpoint(config, &safe_space_id)
+                .await
+                .filter(|checkpoint| {
+                    valid_checkpoint_prefix(
+                        checkpoint,
+                        &config.node_secret,
+                        &safe_space_id,
+                        space_uid,
+                        &audit_bytes,
+                        &events,
+                    )
+                }),
+            None => None,
+        };
+    if let Some(verified) = stored_checkpoint.as_ref() {
+        verify_chain_from(
+            &events,
+            verified.claims.event_count,
+            &verified.claims.last_event_hash,
+        )?;
+    } else {
+        verify_chain(&events)?;
+    }
+    emit_startup_audit_measurement(
+        "audit_verified_lookup_chain_verification",
+        chain_verify_started.elapsed(),
+        json!({
+            "events": events.len(),
+            "checkpoint_used": stored_checkpoint.is_some()
+        }),
+    );
     let requested = event_ids
         .iter()
         .map(String::as_str)
@@ -2001,6 +2052,16 @@ mod tests {
             &events,
         ));
         assert_eq!(checkpoint.claims.event_count, 1);
+        let first_id = first["event_id"].as_str().unwrap().to_string();
+        let (verified, retained) = verified_events_and_retained_by_id_with_checkpoint(
+            &op,
+            "demo",
+            std::slice::from_ref(&first_id),
+            Some((&space_uid, &config)),
+        )
+        .await?;
+        assert_eq!(verified.len(), 1);
+        assert!(retained.is_empty());
 
         let second = json!({
             "event_id": uuid::Uuid::now_v7(),
@@ -2013,6 +2074,17 @@ mod tests {
             "metadata": {"revision_id": "revision-2"}
         });
         append_audit_event(&op, "demo", &second, None).await?;
+        // A checkpoint from before an external append remains valid only for
+        // its exact prefix; the newly appended tail must still be verified.
+        let second_id = second["event_id"].as_str().unwrap().to_string();
+        let (verified, _) = verified_events_and_retained_by_id_with_checkpoint(
+            &op,
+            "demo",
+            &[first_id, second_id],
+            Some((&space_uid, &config)),
+        )
+        .await?;
+        assert_eq!(verified.len(), 2);
         // A replay of the original deterministic payload uses the signed
         // prefix, verifies the appended tail, and refreshes the checkpoint.
         append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[first], &config).await?;
@@ -2065,6 +2137,16 @@ mod tests {
             .compare_and_swap(&key, &old_version, stored.value)
             .await?;
 
+        let event_id = event["event_id"].as_str().unwrap().to_string();
+        let (verified, _) = verified_events_and_retained_by_id_with_checkpoint(
+            &op,
+            "demo",
+            std::slice::from_ref(&event_id),
+            Some((&space_uid, &config)),
+        )
+        .await?;
+        assert_eq!(verified.len(), 1, "invalid checkpoint falls back safely");
+
         // An invalid cache is discarded as a trust input; the authoritative
         // chain remains fully checked and the duplicate event is not appended.
         append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[event], &config).await?;
@@ -2087,6 +2169,15 @@ mod tests {
             .unwrap();
         bytes[offset] = b'X';
         op.write(&path, bytes).await?;
+        let error = verified_events_and_retained_by_id_with_checkpoint(
+            &op,
+            "demo",
+            std::slice::from_ref(&event_id),
+            Some((&space_uid, &config)),
+        )
+        .await
+        .expect_err("tampered chain must fail full verification");
+        assert!(error.to_string().contains("integrity check failed"));
         let error = append_audit_events_with_checkpoint(
             &op,
             "demo",
@@ -2457,6 +2548,8 @@ mod tests {
     async fn reconciliation_retention_disposition_is_not_canonical_event() -> Result<()> {
         let op = operator_from_uri("memory://audit-retained-disposition")?;
         let space_uid = uuid::Uuid::now_v7().to_string();
+        let store = MemoryCheckpointStore::default();
+        let config = AuditCheckpointConfig::new(Arc::new(store), test_node_secret());
         let payloads = (0..101)
             .map(|index| {
                 json!({
@@ -2476,7 +2569,15 @@ mod tests {
             .expect("stable event id")
             .to_string();
 
-        append_audit_events_inner(&op, "demo", &payloads, None, Some(100), false).await?;
+        append_audit_events_inner(
+            &op,
+            "demo",
+            &payloads,
+            Some((&space_uid, &config)),
+            Some(100),
+            false,
+        )
+        .await?;
 
         let events = read_events(&op, "demo").await?;
         verify_chain(&events)?;
@@ -2489,9 +2590,13 @@ mod tests {
             .expect("retention disposition marker");
         assert_eq!(marker["status"], RETAINED_OUT_MARKER_STATUS);
 
-        let (canonical, retained_out) =
-            verified_events_and_retained_by_id(&op, "demo", std::slice::from_ref(&retained_out_id))
-                .await?;
+        let (canonical, retained_out) = verified_events_and_retained_by_id_with_checkpoint(
+            &op,
+            "demo",
+            std::slice::from_ref(&retained_out_id),
+            Some((&space_uid, &config)),
+        )
+        .await?;
         assert!(
             canonical.is_empty(),
             "a marker is never canonical chain evidence"
