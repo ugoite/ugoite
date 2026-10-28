@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 21,
+        "version": 22,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -110,6 +110,7 @@
           "unmodeled_expression",
           "order_by_item",
           "select",
+          "group_by",
           "wildcard",
           "query_clause_value"
         ],
@@ -239,7 +240,8 @@
           "toolbar_category": "structure",
           "protocol": "apply_sql_document_semantic_edit_transaction",
           "sql": [
-            "SELECT aggregate projection"
+            "SELECT aggregate projection",
+            "aggregate FILTER (WHERE)"
           ],
           "coverage": "bounded",
           "functions": [
@@ -257,7 +259,11 @@
           "toolbar_category": "structure",
           "protocol": "apply_sql_document_semantic_edit_transaction",
           "sql": [
-            "GROUP BY"
+            "GROUP BY",
+            "GROUP BY ALL",
+            "ROLLUP",
+            "CUBE",
+            "GROUPING SETS"
           ],
           "coverage": "bounded",
           "protocol_family": "sql_document"
@@ -417,7 +423,7 @@
             "group_by_item"
           ],
           "limits": [
-            "Typed grouping-key append/remove/reorder in the same SELECT scope."
+            "Typed grouping-key append/remove/reorder in the same SELECT scope; typed structures author ordinary keys, GROUP BY ALL, ROLLUP, CUBE, and GROUPING SETS with explicit per-set expression-member boundaries."
           ]
         },
         {
@@ -671,6 +677,7 @@
         "add_join",
         "add_from_relation",
         "replace_join",
+        "set_relation_column_aliases",
         "rename_common_table_expression",
         "add_common_table_expression",
         "remove_common_table_expression",
@@ -710,6 +717,7 @@
         "move_order_by_item",
         "set_select_distinct",
         "set_limit_value",
+        "set_limit_expression",
         "remove_limit",
         "set_offset_value",
         "remove_offset",
@@ -718,14 +726,18 @@
         "remove_projection_item",
         "move_projection_item",
         "set_function_argument",
-        "remove_last_function_argument"
+        "remove_last_function_argument",
+        "set_aggregate_filter",
+        "set_group_by_structure"
       ],
       "active_engine": "sql_document",
       "coverage_complete": false,
       "verification_gaps": [
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
-        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Planner validity for authored type parameters remains authoritative."
+        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Planner validity for authored type parameters remains authoritative.",
+        "Aggregate ordered argument clauses remain read-only and are outside the enabled aggregate registry.",
+        "The active tree exposes LEFT/RIGHT SEMI and ANTI joins admitted by DataFusion; directionless SEMI/ANTI spellings are not offered. LIMIT accepts typed literals, named parameters, and same-query expressions. CTE and derived-table output aliases can be added or renamed with exact binding checks; nested CTE shadowing is respected and ambiguous unqualified references fail closed."
       ],
       "source_parser": {
         "crate": "sqlparser",
@@ -749,7 +761,16 @@
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries"
+              "async fn typed_sql_document_group_and_aggregate_edits_execute_authorized_queries"
+            ]
+          ]
+        },
+        {
+          "id": "filter-condition-groups",
+          "selectors": [
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_filter_conditions_execute_authorized_queries"
             ]
           ]
         },
@@ -821,6 +842,47 @@
             [
               "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
               "constructs a NULL-safe predicate from the inspector and restores it with WASM undo"
+            ]
+          ]
+        },
+        {
+          "id": "relational-constructors",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_cte_column_aliases_rename_only_their_bound_references"
+            ],
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_derived_column_aliases_construct_and_rename_bound_references"
+            ],
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_relation_edits_author_multiple_join_kinds_and_undo_losslessly"
+            ],
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_limit_accepts_parameters_and_same_scope_expressions"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_relational_constructors_protocol_match_native_and_undo"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn semi_and_anti_join_constructors_execute_in_authorized_queries"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn expression_and_parameter_limit_constructors_execute_in_authorized_queries"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "constructs a parameter LIMIT through the actual WASM tree editor"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "renames a CTE output column and its binding through the actual WASM tree editor"
             ]
           ]
         }
@@ -1022,7 +1084,7 @@
           "sql": [
             "SQL syntax tree"
           ],
-          "coverage": "typed identifier, literal, binary operator, arithmetic unary sign, CAST/TRY_CAST/SAFE_CAST/::/CONVERT/TRY_CONVERT target type and CAST wrapper, registered aggregate wrapper, searched CASE wrapper, typed IN/NOT IN/BETWEEN/NOT BETWEEN/LIKE/NOT LIKE/IS NULL/IS NOT NULL predicate templates, editable IN-list value append/remove, WHERE clause seed, CTE rename/add-seed/remove-unreferenced, set-operation operator/quantifier/add-seed/remove-one-operand/swap-operands, supported predicate negation, CASE branch/ELSE, typed projection expression replacement, binary expression construction on a selected SELECT item or expression node from same-query typed operands, same-query expression replacement, projection append/removal/reorder, GROUP BY expression append, and ORDER BY expression append; reorder is limited to comment-free SELECT lists and removal rejects comments in the removed span; aggregate argument edits follow the Rust registry, and scalar subquery projection seed"
+          "coverage": "typed identifier, literal, binary operator, arithmetic unary sign, CAST/TRY_CAST/SAFE_CAST/::/CONVERT/TRY_CONVERT target type and CAST wrapper, registered aggregate wrapper, searched CASE wrapper, typed IN/NOT IN/BETWEEN/NOT BETWEEN/LIKE/NOT LIKE/IS NULL/IS NOT NULL predicate templates, editable IN-list value append/remove, WHERE clause seed, CTE rename/add-seed/remove-unreferenced/output-column aliases, derived-table output-column aliases with fail-closed binding resolution, set-operation operator/quantifier/add-seed/remove-one-operand/swap-operands, supported predicate negation, CASE branch/ELSE, typed projection expression replacement, binary expression construction on a selected SELECT item or expression node from same-query typed operands, same-query expression replacement, projection append/removal/reorder, GROUP BY expression append and typed ALL/ROLLUP/CUBE/GROUPING SETS structures with explicit member boundaries preserved when reopened; empty grouping sets are authorable; ORDER BY expression append; LIMIT accepts typed literals, named parameters and same-query expressions; LEFT/RIGHT SEMI and ANTI joins use typed constraints; reorder is limited to comment-free SELECT lists and removal rejects comments in the removed span; aggregate argument edits follow the Rust registry, and scalar subquery projection seed"
         },
         {
           "action": "distinct",
@@ -1041,7 +1103,7 @@
             "LIMIT",
             "OFFSET"
           ],
-          "coverage": "non-negative integer literals; both clauses can be added, edited, or removed"
+          "coverage": "the subset editor uses non-negative integer literals; the active SQL Document tree also accepts typed literals, named parameters and same-query expressions for LIMIT"
         }
       ],
       "literal_projection_operation": {
@@ -1288,6 +1350,7 @@
           ],
           "limits": [
             "the structure parser recognizes and edits non-negative Int64 literals as decimal strings without JavaScript number conversion",
+            "LIMIT accepts a typed literal, named parameter, or expression node in the same query scope; OFFSET remains an exact non-negative integer operation",
             "LIMIT and OFFSET can be set or removed independently; both absent removes the row-limit clause",
             "LIMIT/OFFSET placement is inserted after ORDER BY when present"
           ]
@@ -1317,14 +1380,16 @@
             "other_expression"
           ],
           "limits": [
-            "one self-join of the selected Form with explicit distinct aliases and a closed INNER/LEFT/RIGHT/FULL join-kind choice",
+            "the active SQL Document tree constructs DataFusion-admitted LEFT/RIGHT SEMI and ANTI joins with typed ON or USING constraints; the subset editor retains its own bounded join-kind list",
+            "one self-join of the selected Form with explicit distinct aliases and a closed INNER/LEFT/RIGHT/FULL join-kind choice in the subset editor",
             "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
             "wildcard projection only; editing the join kind or ON expression preserves source trivia outside the edited tokens",
             "WHERE supports bounded AND/OR/NOT trees of qualified parameter comparisons, single-value IN/NOT IN, two-bound BETWEEN, LIKE/ILIKE, and IS NULL/IS NOT NULL on qualified columns; adding a JOIN qualifies every supported predicate leaf; ORDER BY supports simple qualified columns with ASC/DESC and NULLS FIRST/LAST; unqualified references fail closed",
             "filter and sort edits fail closed when comments in the query could be lost by AST serialization",
             "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
             "unquoted aliases and columns resolve with SQL case folding; quoted identifiers remain exact",
-            "CROSS/NATURAL/USING, multiple joins, derived relations, reversed equality operands, and other ON expressions fail closed"
+            "The SQL Document tree edits CTE and derived-table output alias lists; it renames qualified references only when the binding resolves, respects CTE shadowing, rejects ambiguous unqualified references, and fails closed when comments or typed derived alias declarations would be lost",
+            "CROSS/NATURAL/USING, multiple joins, derived relations, reversed equality operands, and other ON expressions remain outside the subset editor"
           ]
         },
         {
@@ -1444,7 +1509,7 @@
             "A selected projection expression can be replaced with another typed expression node in the same document while preserving aliases and surrounding SQL; new projection items are not created through this operation",
             "A typed expression from the SQL document can be appended to an existing SELECT list as a new projection item while preserving source outside the insertion point",
             "Existing projection items can be removed without deleting comments in the removed span, and reordered when the SELECT list contains no comments; output outside the projection list remains unchanged",
-            "For registered aggregates, typed projection expressions can be wrapped in COUNT, SUM, AVG, MIN, or MAX with optional single-argument DISTINCT; existing arguments can be replaced by selecting another typed expression node; COUNT arguments can be appended or removed only when the Rust aggregate registry permits the resulting arity; other function calls and predicates are not constructed, and FILTER, OVER, ordered argument clauses, and subquery arguments remain read-only",
+            "For registered aggregates, typed projection expressions can be wrapped in COUNT, SUM, AVG, MIN, or MAX with optional single-argument DISTINCT; existing arguments can be replaced by selecting another typed expression node; COUNT arguments can be appended or removed only when the Rust aggregate registry permits the resulting arity; a registered aggregate can receive a typed FILTER (WHERE TRUE) seed that remains editable through the predicate tree; other function calls and predicates are not constructed, and OVER, ordered argument clauses, and subquery arguments remain read-only",
             "the SQL tree can seed a scalar subquery as `(SELECT 1)` in a SELECT list; it does not create an arbitrary nested query or infer a relation for that nested scope"
           ]
         }

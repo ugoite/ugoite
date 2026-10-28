@@ -1,0 +1,78 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: SQL projection alias authoring
+features:
+  - id: FEAT-SQL-005
+    title: Safe SQL projection alias authoring
+    summary: Allow users to add, edit and remove output aliases through the Rust-owned SQL Document while preserving source and same-scope bindings.
+    status: implemented
+    bindings:
+      - id: alias-domain
+        role: implementation
+        facet: core
+        responsibility: Expose typed alias operations that preserve unrelated source and reject alias changes that could rebind same-scope references.
+        targets:
+          - id: typed-alias-operation
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: set_projection_alias }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+      - id: alias-editor
+        role: implementation
+        facet: frontend
+        responsibility: Provide inline output-alias authoring in the shared projection fields editor through the typed operation.
+        targets:
+          - id: result-field-alias
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.tsx
+            selector: { kind: symbol, name: projectionAliasEdit }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+      - id: alias-verification
+        role: verification
+        facet: verification
+        responsibility: Verify guarded native behavior, WASM parity and the browser editor interaction.
+        targets:
+          - id: native-binding-check
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::projection_alias_edits_are_typed_guarded_and_preserve_bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::projection_alias_edits_are_typed_guarded_and_preserve_bindings } }
+          - id: wasm-protocol-check
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::projection_alias_semantic_edit_protocol_matches_native }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: projection_alias_semantic_edit_protocol_matches_native } }
+          - id: editor-interaction
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: authors quoted output aliases and keeps SQL outside the alias intact }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-editor/target.result-field-alias]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: authors quoted output aliases and keeps SQL outside the alias intact } }
+    contracts:
+      - id: projection-alias-portable-edit
+        kind: custom
+        source: FEAT-SQL-001#binding.projection-position-contract/target.semantic-request
+        participants:
+          - target: FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation
+            role: native-domain
+          - target: FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action
+            role: rust-wasm
+          - target: FEAT-SQL-005#binding.alias-editor/target.result-field-alias
+            role: frontend-client
+        guarantees: [REQ-SQL-001#criterion.projection-alias-binding-safety]

@@ -9,17 +9,18 @@ use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg, FunctionArgExpr,
-    FunctionArguments, GroupByExpr, Ident, LimitClause, ObjectName, ObjectNamePart, OrderByKind,
-    OrderBySort, Query, Select, SelectItem, SetExpr, Spanned, Statement, TableFactor, Value,
-    ValueWithSpan, Visit, Visitor,
+    FunctionArguments, GroupByExpr, GroupByWithModifier, Ident, LimitClause, ObjectName,
+    ObjectNamePart, OrderByKind, OrderBySort, Query, Select, SelectItem, SetExpr, Spanned,
+    Statement, TableFactor, Value, ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
+use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 21;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 22;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -305,6 +306,15 @@ pub enum SqlDocumentNodeData {
         /// Whether DISTINCT ON is present and therefore needs a richer editor.
         distinct_on: bool,
     },
+    /// Parsed GROUP BY mode and exact per-set members for editable grouping
+    /// structures. Empty member lists represent the valid empty set `()`.
+    GroupBy {
+        mode: SqlDocumentGroupByMode,
+        groups: Vec<Vec<u32>>,
+        /// Whether the current source grouping shape fits the tree controls.
+        /// Composite ROLLUP/CUBE elements remain source-backed and read-only.
+        editable: bool,
+    },
     /// Direction and NULL placement parsed from one ORDER BY item.
     OrderByItem {
         /// Explicit direction, or `None` when SQL leaves it implicit.
@@ -443,6 +453,10 @@ pub enum SqlDocumentNodeData {
         factor_kind: String,
         /// Declared alias, if present.
         alias: Option<SqlDocumentIdentifier>,
+        /// Declared output column aliases.
+        column_aliases: Vec<SqlDocumentIdentifier>,
+        /// Whether any declared alias column includes a type annotation.
+        has_column_alias_types: bool,
     },
     /// An expression AST variant without dedicated semantic fields.
     ///
@@ -876,6 +890,13 @@ pub enum SqlDocumentSemanticEdit {
         /// Whether the aggregate should use DISTINCT arguments.
         distinct: bool,
     },
+    /// Add or remove the FILTER clause on a registered aggregate. New filters
+    /// start with a typed TRUE predicate that can be refined in the tree.
+    SetAggregateFilter {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        enabled: bool,
+    },
     /// Remove a simple one-argument aggregate wrapper and keep its argument.
     RemoveAggregate {
         /// Aggregate function call to unwrap.
@@ -964,6 +985,15 @@ pub enum SqlDocumentSemanticEdit {
         expected_kind: SqlDocumentNodeKind,
         /// Replacement CTE name emitted as a typed identifier.
         name: SqlDocumentIdentifier,
+    },
+    /// Set the complete output column alias list for one CTE or derived table.
+    SetRelationColumnAliases {
+        /// CTE declaration or derived table-factor node.
+        node_id: u32,
+        /// Exact node category selected by the caller.
+        expected_kind: SqlDocumentNodeKind,
+        /// Complete ordered output alias list; Rust owns identifier spelling.
+        aliases: Vec<SqlDocumentIdentifier>,
     },
     /// Add an unused `name AS (SELECT 1)` entry to this query's WITH clause,
     /// creating the clause when needed. The new body is a typed editable seed.
@@ -1181,6 +1211,15 @@ pub enum SqlDocumentSemanticEdit {
         /// Parser category of the selected expression.
         expression_expected_kind: SqlDocumentNodeKind,
     },
+    /// Construct or replace a GROUP BY structure from same-scope expression
+    /// nodes. `groups` carries explicit grouping-set boundaries; its members
+    /// are expression node IDs resolved by Rust against the guarded document.
+    SetGroupByStructure {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        mode: SqlDocumentGroupByMode,
+        groups: Vec<Vec<u32>>,
+    },
     /// Remove a grouping key, removing GROUP BY if it was the final key.
     RemoveGroupByItem {
         /// Grouping key to remove.
@@ -1270,6 +1309,15 @@ pub enum SqlDocumentSemanticEdit {
         expected_kind: SqlDocumentNodeKind,
         /// Non-negative row limit.
         value: u64,
+    },
+    /// Set or replace LIMIT using a typed literal or same-scope expression.
+    SetLimitExpression {
+        /// Query node to update.
+        node_id: u32,
+        /// Query category selected by the caller.
+        expected_kind: SqlDocumentNodeKind,
+        /// Closed typed value or exact parser-backed expression.
+        value: SqlDocumentQueryLimit,
     },
     /// Remove LIMIT while retaining an existing OFFSET.
     RemoveLimit {
@@ -1537,6 +1585,10 @@ pub enum SqlDocumentJoinOperator {
     NaturalRightOuter,
     NaturalFull,
     NaturalFullOuter,
+    LeftSemi,
+    RightSemi,
+    LeftAnti,
+    RightAnti,
 }
 
 impl SqlDocumentJoinOperator {
@@ -1558,6 +1610,10 @@ impl SqlDocumentJoinOperator {
             Self::NaturalRightOuter => "NATURAL RIGHT OUTER JOIN",
             Self::NaturalFull => "NATURAL FULL JOIN",
             Self::NaturalFullOuter => "NATURAL FULL OUTER JOIN",
+            Self::LeftSemi => "LEFT SEMI JOIN",
+            Self::RightSemi => "RIGHT SEMI JOIN",
+            Self::LeftAnti => "LEFT ANTI JOIN",
+            Self::RightAnti => "RIGHT ANTI JOIN",
         }
     }
 
@@ -1649,13 +1705,13 @@ impl SqlDocumentCastTarget {
                                 format!("{precision}, {scale}")
                             }
                             Some(_) => {
-                                return Err(SqlDocumentEditError::InvalidSemanticReplacement)
+                                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                             }
                             None => precision.to_owned(),
                         })
                     }
                     (Some(_), _) | (None, Some(_)) => {
-                        return Err(SqlDocumentEditError::InvalidSemanticReplacement)
+                        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                     }
                 }
             }
@@ -1719,6 +1775,17 @@ pub enum SqlDocumentAggregateFunction {
     Max,
 }
 
+/// Supported grouping forms authored by the SQL tree editor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlDocumentGroupByMode {
+    Expressions,
+    All,
+    Rollup,
+    Cube,
+    GroupingSets,
+}
+
 impl SqlDocumentAggregateFunction {
     fn sql_spelling(self) -> &'static str {
         match self {
@@ -1770,6 +1837,19 @@ pub enum SqlDocumentSemanticLiteral {
     },
     /// A hexadecimal byte string. The value contains hexadecimal digits only.
     HexString { value: String },
+}
+
+/// Closed source for a LIMIT expression constructed through the typed editor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlDocumentQueryLimit {
+    /// A typed literal, including an exact named parameter reference.
+    Literal { literal: SqlDocumentSemanticLiteral },
+    /// Copy one parser-backed expression from the same query scope.
+    Expression {
+        expression_node_id: u32,
+        expression_expected_kind: SqlDocumentNodeKind,
+    },
 }
 
 /// Closed type keywords supported by typed string literal construction.
@@ -2296,6 +2376,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.extend(rename_cte_and_references(&document, node, name)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::SetRelationColumnAliases { aliases, .. } = semantic_edit {
+            edits.extend(set_relation_column_aliases(&document, node, aliases)?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::AddCommonTableExpression { name, .. } = semantic_edit {
             edits.push(add_common_table_expression(&document, node, name)?);
             continue;
@@ -2448,6 +2532,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
             )?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::SetLimitExpression { value, .. } = semantic_edit {
+            edits.push(set_query_clause_expression(&document, node, value)?);
+            continue;
+        }
         if matches!(semantic_edit, SqlDocumentSemanticEdit::RemoveLimit { .. }) {
             edits.push(remove_query_clause_value(
                 &document,
@@ -2560,6 +2648,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(set_aggregate_distinct(&document, node, *distinct)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::SetAggregateFilter { enabled, .. } = semantic_edit {
+            edits.push(set_aggregate_filter(&document, node, *enabled)?);
+            continue;
+        }
         if matches!(
             semantic_edit,
             SqlDocumentSemanticEdit::RemoveAggregate { .. }
@@ -2666,6 +2758,30 @@ pub fn apply_sql_document_semantic_edit_transaction(
                 return Err(SqlDocumentEditError::NodeKindMismatch);
             }
             edits.push(add_group_by_expression(&document, node, expression)?);
+            continue;
+        }
+        if let SqlDocumentSemanticEdit::SetGroupByStructure { mode, groups, .. } = semantic_edit {
+            let resolved_groups = groups
+                .iter()
+                .map(|group| {
+                    group
+                        .iter()
+                        .map(|expression_node_id| {
+                            document
+                                .nodes
+                                .get(*expression_node_id as usize)
+                                .filter(|candidate| candidate.id == *expression_node_id)
+                                .ok_or(SqlDocumentEditError::NodeNotFound)
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            edits.push(set_group_by_structure(
+                &document,
+                node,
+                *mode,
+                &resolved_groups,
+            )?);
             continue;
         }
         if matches!(
@@ -2987,6 +3103,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::RenameCommonTableExpression { .. } => {
                 unreachable!("CTE edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::SetRelationColumnAliases { .. } => {
+                unreachable!("relation column aliases are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::AddCommonTableExpression { .. }
             | SqlDocumentSemanticEdit::RemoveCommonTableExpression { .. }
             | SqlDocumentSemanticEdit::ReplaceCommonTableExpressionQuery { .. }
@@ -3013,6 +3132,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
             | SqlDocumentSemanticEdit::RemoveHavingClause { .. }
             | SqlDocumentSemanticEdit::SetSelectDistinct { .. }
             | SqlDocumentSemanticEdit::SetLimitValue { .. }
+            | SqlDocumentSemanticEdit::SetLimitExpression { .. }
             | SqlDocumentSemanticEdit::RemoveLimit { .. }
             | SqlDocumentSemanticEdit::SetOffsetValue { .. }
             | SqlDocumentSemanticEdit::RemoveOffset { .. }
@@ -3033,6 +3153,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
             | SqlDocumentSemanticEdit::AddProjectionColumn { .. }
             | SqlDocumentSemanticEdit::ExpandProjectionWildcard { .. }
             | SqlDocumentSemanticEdit::AddGroupByExpression { .. }
+            | SqlDocumentSemanticEdit::SetGroupByStructure { .. }
             | SqlDocumentSemanticEdit::RemoveGroupByItem { .. }
             | SqlDocumentSemanticEdit::MoveGroupByItem { .. }
             | SqlDocumentSemanticEdit::AddOrderByExpression { .. }
@@ -3046,6 +3167,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
             | SqlDocumentSemanticEdit::RemoveLastFunctionArgument { .. }
             | SqlDocumentSemanticEdit::SetAggregateFunction { .. }
             | SqlDocumentSemanticEdit::SetAggregateDistinct { .. }
+            | SqlDocumentSemanticEdit::SetAggregateFilter { .. }
             | SqlDocumentSemanticEdit::RemoveAggregate { .. } => {
                 unreachable!("structural expression edits are resolved before node edits")
             }
@@ -3190,6 +3312,11 @@ impl SqlDocumentSemanticEdit {
                 expected_kind,
                 ..
             }
+            | Self::SetAggregateFilter {
+                node_id,
+                expected_kind,
+                ..
+            }
             | Self::RemoveAggregate {
                 node_id,
                 expected_kind,
@@ -3232,6 +3359,11 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::RenameCommonTableExpression {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::SetRelationColumnAliases {
                 node_id,
                 expected_kind,
                 ..
@@ -3339,6 +3471,11 @@ impl SqlDocumentSemanticEdit {
                 expected_kind,
                 ..
             }
+            | Self::SetGroupByStructure {
+                node_id,
+                expected_kind,
+                ..
+            }
             | Self::RemoveGroupByItem {
                 node_id,
                 expected_kind,
@@ -3378,6 +3515,11 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::SetLimitValue {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::SetLimitExpression {
                 node_id,
                 expected_kind,
                 ..
@@ -5434,6 +5576,98 @@ fn set_query_clause_value(
     }
 }
 
+fn set_query_clause_expression(
+    document: &SqlDocument,
+    query: &SqlDocumentNode,
+    value: &SqlDocumentQueryLimit,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if query.kind != SqlDocumentNodeKind::Query {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let replacement = match value {
+        SqlDocumentQueryLimit::Literal { literal } => render_semantic_literal(literal)?.0,
+        SqlDocumentQueryLimit::Expression {
+            expression_node_id,
+            expression_expected_kind,
+        } => {
+            let expression = document
+                .nodes
+                .get(*expression_node_id as usize)
+                .filter(|candidate| candidate.id == *expression_node_id)
+                .ok_or(SqlDocumentEditError::NodeNotFound)?;
+            if expression.kind != *expression_expected_kind
+                || !is_expression_node_kind(expression.kind)
+                || expression.kind == SqlDocumentNodeKind::OtherExpression
+                || query_ancestor_id(document, expression.id) != Some(query.id)
+            {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let range = expression
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            document
+                .source_slice(range)
+                .filter(|source| source.len() <= MAX_SQL_DOCUMENT_BYTES)
+                .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?
+                .to_owned()
+        }
+    };
+    if replacement.is_empty() || replacement.len() > MAX_SQL_DOCUMENT_BYTES {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+
+    let query_range = query
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let (limit_clause, offset_clause) = query_clause_nodes(document, query)?;
+    if let Some(limit_clause) = limit_clause {
+        let clause_range = limit_clause
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if let Some(current) = document
+            .nodes
+            .iter()
+            .filter(|candidate| {
+                candidate.parent == Some(limit_clause.id) && is_expression_node_kind(candidate.kind)
+            })
+            .filter_map(|candidate| candidate.range)
+            .min_by_key(|range| range.start)
+        {
+            if range_has_comment(document, current) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let expected_text = document
+                .source_slice(current)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            return Ok(SqlDocumentEdit {
+                range: current,
+                expected_text: expected_text.to_owned(),
+                replacement,
+            });
+        }
+        if let Some(keyword) = keyword_token_in_range(document, clause_range, "LIMIT") {
+            let value = next_significant_token(document, keyword.range.end, clause_range.end)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let text = document
+                .source_slice(value.range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if text.eq_ignore_ascii_case("ALL") {
+                return Ok(SqlDocumentEdit {
+                    range: value.range,
+                    expected_text: text.to_owned(),
+                    replacement,
+                });
+            }
+        }
+        let offset_start = offset_clause
+            .and_then(|offset| offset.range)
+            .map(|range| range.start)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        return source_insertion(document, offset_start, format!("LIMIT {replacement} "));
+    }
+    source_insertion(document, query_range.end, format!(" LIMIT {replacement}"))
+}
+
 fn remove_query_clause_value(
     document: &SqlDocument,
     query: &SqlDocumentNode,
@@ -6138,6 +6372,111 @@ fn set_aggregate_distinct(
     source_removal(document, range)
 }
 
+fn set_aggregate_filter(
+    document: &SqlDocument,
+    function: &SqlDocumentNode,
+    enabled: bool,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    let Some(SqlDocumentNodeData::Function {
+        name,
+        argument_count: Some(argument_count),
+        has_filter,
+        has_over,
+        has_argument_clauses,
+        ..
+    }) = function.semantic.as_ref()
+    else {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    };
+    if function.kind != SqlDocumentNodeKind::FunctionExpression
+        || name.len() != 1
+        || crate::sql_functions::user_sql_aggregate(&name[0].value).is_none()
+        || *argument_count == 0
+        || *has_over
+        || *has_argument_clauses
+        || *has_filter == enabled
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let function_range = function
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if enabled {
+        let ranges = function_argument_ranges(document, function)?;
+        let close = document.tokens[ranges.close_paren].range;
+        return source_insertion(document, close.end, " FILTER (WHERE TRUE)".to_owned());
+    }
+
+    let filter_index = document
+        .tokens
+        .iter()
+        .enumerate()
+        .find_map(|(index, token)| {
+            (token.range.start >= function_range.start
+                && token.range.end <= function_range.end
+                && token_is_keyword_at(&document.source, &document.tokens, index, "FILTER"))
+            .then_some(index)
+        })
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let where_index = (filter_index + 1..document.tokens.len())
+        .find(|index| {
+            document.tokens[*index].range.start < function_range.end
+                && token_is_keyword_at(&document.source, &document.tokens, *index, "WHERE")
+        })
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let over_start = document
+        .tokens
+        .iter()
+        .enumerate()
+        .skip(where_index + 1)
+        .find(|(index, token)| {
+            token.range.start < function_range.end
+                && token_is_keyword_at(&document.source, &document.tokens, *index, "OVER")
+        })
+        .map(|(_, token)| token.range.start)
+        .unwrap_or(document.source.len());
+    let mut paren_depth = 0usize;
+    let mut clause_end = None;
+    for token in document.tokens.iter().skip(filter_index + 1) {
+        if token.range.start >= over_start {
+            break;
+        }
+        match token_text(&document.source, token) {
+            Some("(") => paren_depth += 1,
+            Some(")") if paren_depth > 0 => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    clause_end = Some(token.range.end);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let clause_end = clause_end.ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let predicate = document
+        .nodes
+        .iter()
+        .filter(|candidate| is_expression_node_kind(candidate.kind))
+        .filter_map(|candidate| candidate.range)
+        .filter(|range| {
+            range.start >= document.tokens[where_index].range.end && range.end <= clause_end
+        })
+        .max_by_key(|range| range.end)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let range = SqlSourceRange {
+        start: preceding_horizontal_space_start(
+            &document.source,
+            document.tokens[filter_index].range.start,
+        ),
+        end: clause_end.max(predicate.end),
+    };
+    if range_has_comment(document, range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    source_removal(document, range)
+}
+
 fn remove_aggregate(
     document: &SqlDocument,
     function_node: &SqlDocumentNode,
@@ -6333,6 +6672,16 @@ fn join_sql(
     target: &SqlDocumentNode,
     join: &SqlDocumentJoin,
 ) -> Result<String, SqlDocumentEditError> {
+    if matches!(
+        join.operator,
+        SqlDocumentJoinOperator::LeftSemi
+            | SqlDocumentJoinOperator::RightSemi
+            | SqlDocumentJoinOperator::LeftAnti
+            | SqlDocumentJoinOperator::RightAnti
+    ) && matches!(join.constraint, SqlDocumentJoinConstraint::None)
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
     if join.operator.forbids_explicit_constraint()
         && !matches!(&join.constraint, SqlDocumentJoinConstraint::None)
     {
@@ -6920,6 +7269,178 @@ fn unique_scalar_subquery_alias(document: &SqlDocument, list_range: SqlSourceRan
         }
         suffix += 1;
     }
+}
+
+fn set_group_by_structure(
+    document: &SqlDocument,
+    select: &SqlDocumentNode,
+    mode: SqlDocumentGroupByMode,
+    groups: &[Vec<&SqlDocumentNode>],
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if select.kind != SqlDocumentNodeKind::Select {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let query_id = query_ancestor_id(document, select.id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    match mode {
+        SqlDocumentGroupByMode::All if !groups.is_empty() => {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        SqlDocumentGroupByMode::Expressions
+        | SqlDocumentGroupByMode::Rollup
+        | SqlDocumentGroupByMode::Cube
+            if groups.len() != 1 || groups[0].is_empty() =>
+        {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        SqlDocumentGroupByMode::GroupingSets if groups.is_empty() || groups.len() > 32 => {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        _ => {}
+    }
+    if groups.iter().any(|group| group.len() > 64) {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let mut rendered_groups = Vec::with_capacity(groups.len());
+    for group in groups {
+        let mut expression_texts = Vec::with_capacity(group.len());
+        let mut seen = HashSet::new();
+        for expression in group {
+            if !is_grouping_expression_kind(expression.kind)
+                || query_ancestor_id(document, expression.id) != Some(query_id)
+                || !seen.insert(expression.id)
+            {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let range = expression
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let text = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+                .trim();
+            if text.is_empty() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            expression_texts.push(text.to_owned());
+        }
+        rendered_groups.push(expression_texts.join(", "));
+    }
+    let body = match mode {
+        SqlDocumentGroupByMode::All => "ALL".to_owned(),
+        SqlDocumentGroupByMode::Expressions => rendered_groups[0].clone(),
+        SqlDocumentGroupByMode::Rollup => format!("ROLLUP ({})", rendered_groups[0]),
+        SqlDocumentGroupByMode::Cube => format!("CUBE ({})", rendered_groups[0]),
+        SqlDocumentGroupByMode::GroupingSets => format!(
+            "GROUPING SETS ({})",
+            rendered_groups
+                .iter()
+                .map(|group| format!("({group})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    let replacement = format!("GROUP BY {body}");
+    if let Some(group) = document.nodes.iter().find(|candidate| {
+        candidate.parent == Some(select.id) && candidate.kind == SqlDocumentNodeKind::GroupByClause
+    }) {
+        let range = group
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if range_has_comment(document, range) {
+            return Err(SqlDocumentEditError::NodeRangeUnavailable);
+        }
+        return Ok(SqlDocumentEdit {
+            range,
+            expected_text: document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+                .to_owned(),
+            replacement,
+        });
+    }
+
+    let select_range = select
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let select_list = document
+        .nodes
+        .iter()
+        .find(|candidate| {
+            candidate.parent == Some(select.id) && candidate.kind == SqlDocumentNodeKind::SelectList
+        })
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let previous_end = document
+        .nodes
+        .iter()
+        .filter(|candidate| candidate.parent == Some(select.id))
+        .filter(|candidate| {
+            matches!(
+                candidate.kind,
+                SqlDocumentNodeKind::SelectList
+                    | SqlDocumentNodeKind::FromClause
+                    | SqlDocumentNodeKind::WhereClause
+            )
+        })
+        .filter_map(|candidate| candidate.range.map(|range| range.end))
+        .max()
+        .or_else(|| select_list.range.map(|range| range.end))
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let next_clause = document
+        .nodes
+        .iter()
+        .filter(|candidate| {
+            (candidate.parent == Some(select.id)
+                && candidate.kind == SqlDocumentNodeKind::HavingClause)
+                || (candidate.parent == Some(query_id)
+                    && matches!(
+                        candidate.kind,
+                        SqlDocumentNodeKind::OrderByClause
+                            | SqlDocumentNodeKind::LimitClause
+                            | SqlDocumentNodeKind::OffsetClause
+                    ))
+        })
+        .filter_map(|candidate| candidate.range)
+        .filter(|range| range.start >= previous_end)
+        .min_by_key(|range| range.start);
+    let insert_at = next_clause.map_or(select_range.end, |range| range.start);
+    if insert_at < previous_end || insert_at > select_range.end && next_clause.is_none() {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let preceding_is_space = document
+        .source
+        .get(..insert_at)
+        .and_then(|prefix| prefix.chars().next_back())
+        .is_some_and(char::is_whitespace);
+    let prefix = if preceding_is_space { "" } else { " " };
+    let suffix = if next_clause.is_some() { " " } else { "" };
+    source_insertion(
+        document,
+        insert_at,
+        format!("{prefix}{replacement}{suffix}"),
+    )
+}
+
+fn is_grouping_expression_kind(kind: SqlDocumentNodeKind) -> bool {
+    matches!(
+        kind,
+        SqlDocumentNodeKind::IdentifierExpression
+            | SqlDocumentNodeKind::CompoundIdentifierExpression
+            | SqlDocumentNodeKind::LiteralExpression
+            | SqlDocumentNodeKind::BinaryExpression
+            | SqlDocumentNodeKind::UnaryExpression
+            | SqlDocumentNodeKind::FunctionExpression
+            | SqlDocumentNodeKind::CaseExpression
+            | SqlDocumentNodeKind::CastExpression
+            | SqlDocumentNodeKind::SubqueryExpression
+            | SqlDocumentNodeKind::PredicateExpression
+            | SqlDocumentNodeKind::NestedExpression
+            | SqlDocumentNodeKind::OtherExpression
+            | SqlDocumentNodeKind::Value
+    )
 }
 
 fn add_group_by_expression(
@@ -8887,6 +9408,559 @@ fn rename_cte_and_references(
     Ok(edits)
 }
 
+fn set_relation_column_aliases(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    aliases: &[SqlDocumentIdentifier],
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
+    if aliases.len() > 64
+        || aliases.iter().any(|alias| alias.value.trim().is_empty())
+        || aliases.iter().enumerate().any(|(index, alias)| {
+            aliases[..index]
+                .iter()
+                .any(|previous| sql_identifiers_match(previous, alias))
+        })
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let (current_aliases, target_kind, current_name, has_types) =
+        match (node.kind, node.semantic.as_ref()) {
+            (
+                SqlDocumentNodeKind::CommonTableExpression,
+                Some(SqlDocumentNodeData::CommonTableExpression { name, columns, .. }),
+            ) => (
+                columns.as_slice(),
+                AliasBindingTarget::Cte(node.id),
+                name.clone(),
+                false,
+            ),
+            (
+                SqlDocumentNodeKind::TableFactor,
+                Some(SqlDocumentNodeData::TableFactor {
+                    factor_kind,
+                    alias: Some(alias),
+                    column_aliases,
+                    has_column_alias_types,
+                }),
+            ) if factor_kind == "derived" => (
+                column_aliases.as_slice(),
+                AliasBindingTarget::Derived(node.id),
+                alias.clone(),
+                *has_column_alias_types,
+            ),
+            _ => return Err(SqlDocumentEditError::InvalidSemanticReplacement),
+        };
+    if has_types {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    if current_aliases == aliases {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+
+    let (alias_range, insertion) =
+        relation_column_alias_source_range(document, node, &current_name)?;
+    if alias_range.is_some_and(|range| range_has_comment(document, range)) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let expected_text = alias_range
+        .and_then(|range| document.source_slice(range))
+        .unwrap_or("")
+        .to_owned();
+    let rendered_aliases = if aliases.is_empty() {
+        String::new()
+    } else {
+        let mut rendered = String::from(if alias_range.is_some() { "(" } else { " (" });
+        for (index, alias) in aliases.iter().enumerate() {
+            if index > 0 {
+                rendered.push_str(", ");
+            }
+            rendered.push_str(&render_identifier_parts(std::slice::from_ref(alias))?);
+        }
+        rendered.push(')');
+        rendered
+    };
+    let source_range = alias_range.unwrap_or(SqlSourceRange {
+        start: insertion,
+        end: insertion,
+    });
+    let mut edits = vec![SqlDocumentEdit {
+        range: source_range,
+        expected_text,
+        replacement: rendered_aliases,
+    }];
+
+    for (index, old_alias) in current_aliases.iter().enumerate() {
+        let replacement = aliases.get(index).filter(|new| *new != old_alias);
+        if replacement.is_none() && index < aliases.len() {
+            continue;
+        }
+        if replacement.is_none() && index >= aliases.len() {
+            let references = relation_column_reference_edits(
+                document,
+                node,
+                source_range,
+                &target_kind,
+                old_alias,
+                None,
+            )?;
+            if !references.is_empty() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            continue;
+        }
+        if let Some(new_alias) = replacement {
+            edits.extend(relation_column_reference_edits(
+                document,
+                node,
+                source_range,
+                &target_kind,
+                old_alias,
+                Some(new_alias),
+            )?);
+        }
+    }
+    edits.sort_by_key(|edit| (edit.range.start, edit.range.end));
+    edits.dedup_by(|left, right| left.range == right.range);
+    Ok(edits)
+}
+
+#[derive(Clone, Copy)]
+enum AliasBindingTarget {
+    Cte(u32),
+    Derived(u32),
+}
+
+fn relation_column_alias_source_range(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    declared_name: &SqlDocumentIdentifier,
+) -> Result<(Option<SqlSourceRange>, usize), SqlDocumentEditError> {
+    let node_range = node
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let name_token = match node.kind {
+        SqlDocumentNodeKind::CommonTableExpression => document.tokens.iter().find(|token| {
+            token.range.start >= node_range.start
+                && token.range.end <= node_range.end
+                && !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+                && token_text(&document.source, token).is_some_and(|text| {
+                    validate_identifier_fragment(text, std::slice::from_ref(declared_name)).is_ok()
+                })
+        }),
+        SqlDocumentNodeKind::TableFactor => {
+            let query_end = document
+                .nodes
+                .iter()
+                .filter(|candidate| candidate.kind == SqlDocumentNodeKind::Query)
+                .filter_map(|candidate| candidate.range)
+                .filter(|range| node_range.start <= range.start && range.end <= node_range.end)
+                .max_by_key(|range| range.end.saturating_sub(range.start))
+                .map(|range| range.end)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            document.tokens.iter().find(|token| {
+                token.range.start >= query_end
+                    && token.range.end <= node_range.end
+                    && !matches!(
+                        token.kind,
+                        SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                    )
+                    && token_text(&document.source, token).is_some_and(|text| {
+                        validate_identifier_fragment(text, std::slice::from_ref(declared_name))
+                            .is_ok()
+                    })
+            })
+        }
+        _ => return Err(SqlDocumentEditError::InvalidSemanticReplacement),
+    }
+    .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let name_index = document
+        .tokens
+        .iter()
+        .position(|token| token.range == name_token.range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let next = skip_trivia_tokens(&document.tokens, name_index + 1);
+    let Some(open) = document.tokens.get(next).filter(|token| {
+        token.kind == SqlDocumentTokenKind::Punctuation
+            && token_text(&document.source, token) == Some("(")
+    }) else {
+        return Ok((None, name_token.range.end));
+    };
+    let range = SqlSourceRange {
+        start: open.range.start,
+        end: matching_source_parenthesis(&document.source, open.range.start)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?,
+    };
+    if range.end > node_range.end + usize::from(node.kind == SqlDocumentNodeKind::TableFactor)
+        || range.end > document.source.len()
+    {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    Ok((Some(range), name_token.range.end))
+}
+
+/// Finds the end of a source parenthesis while respecting SQL quoting and
+/// comments. The document's compact token stream can merge a derived alias
+/// with its immediately adjacent `(`, so this bounded byte scan is used for
+/// alias lists whose contents are subsequently validated as identifiers.
+fn matching_source_parenthesis(source: &str, open_start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if bytes.get(open_start) != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut index = open_start;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\'' | b'"' | b'`' => {
+                let delimiter = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == delimiter {
+                        if bytes.get(index + 1) == Some(&delimiter) {
+                            index += 2;
+                            continue;
+                        }
+                        index += 1;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            b'[' => {
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b']' {
+                        if bytes.get(index + 1) == Some(&b']') {
+                            index += 2;
+                            continue;
+                        }
+                        index += 1;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            b'-' if bytes.get(index + 1) == Some(&b'-') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                let mut comment_depth = 1usize;
+                while index < bytes.len() && comment_depth > 0 {
+                    if bytes[index] == b'/' && bytes.get(index + 1) == Some(&b'*') {
+                        comment_depth += 1;
+                        index += 2;
+                    } else if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                        comment_depth -= 1;
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'(' => {
+                depth = depth.checked_add(1)?;
+                index += 1;
+            }
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                index += 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn relation_column_reference_edits(
+    document: &SqlDocument,
+    declaration: &SqlDocumentNode,
+    declaration_range: SqlSourceRange,
+    target: &AliasBindingTarget,
+    old_name: &SqlDocumentIdentifier,
+    new_name: Option<&SqlDocumentIdentifier>,
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
+    let mut edits = Vec::new();
+    for reference in document.nodes.iter().filter(|candidate| {
+        matches!(
+            candidate.kind,
+            SqlDocumentNodeKind::IdentifierExpression
+                | SqlDocumentNodeKind::CompoundIdentifierExpression
+        )
+    }) {
+        let Some(range) = reference.range else {
+            continue;
+        };
+        if declaration_range.start <= range.start && range.end <= declaration_range.end {
+            continue;
+        }
+        let parts = match reference.semantic.as_ref() {
+            Some(SqlDocumentNodeData::Identifier { value, quote_style }) => {
+                vec![SqlDocumentIdentifier {
+                    value: value.clone(),
+                    quote_style: *quote_style,
+                }]
+            }
+            Some(SqlDocumentNodeData::CompoundIdentifier { parts }) => parts.clone(),
+            _ => continue,
+        };
+        let Some(last) = parts.last() else { continue };
+        if !sql_identifiers_match(last, old_name) {
+            continue;
+        }
+        let qualifier = (parts.len() == 2).then(|| &parts[0]);
+        match relation_column_reference_binding(
+            document,
+            reference,
+            declaration,
+            target,
+            qualifier,
+        )? {
+            ColumnReferenceBinding::Target => {
+                let Some(new_name) = new_name else {
+                    // Removing a referenced alias would invalidate or rebind SQL.
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                };
+                let token = identifier_part_token(document, reference, parts.len() - 1)?;
+                let current_text = document
+                    .source_slice(token.range)
+                    .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+                validate_identifier_fragment(current_text, std::slice::from_ref(last))
+                    .map_err(|_| SqlDocumentEditError::NodeRangeUnavailable)?;
+                edits.push(SqlDocumentEdit {
+                    range: token.range,
+                    expected_text: current_text.to_owned(),
+                    replacement: render_identifier_parts(std::slice::from_ref(new_name))?,
+                });
+            }
+            ColumnReferenceBinding::Other => {}
+            ColumnReferenceBinding::Ambiguous => {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+        }
+    }
+    Ok(edits)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColumnReferenceBinding {
+    Target,
+    Other,
+    Ambiguous,
+}
+
+fn identifier_part_token<'a>(
+    document: &'a SqlDocument,
+    node: &SqlDocumentNode,
+    part_index: usize,
+) -> Result<&'a SqlDocumentToken, SqlDocumentEditError> {
+    let range = node
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    document
+        .tokens
+        .iter()
+        .filter(|token| range.start <= token.range.start && token.range.end <= range.end)
+        .filter(|token| {
+            matches!(
+                token.kind,
+                SqlDocumentTokenKind::Word | SqlDocumentTokenKind::QuotedIdentifier
+            )
+        })
+        .nth(part_index)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)
+}
+
+fn relation_column_reference_binding(
+    document: &SqlDocument,
+    reference: &SqlDocumentNode,
+    declaration: &SqlDocumentNode,
+    target: &AliasBindingTarget,
+    qualifier: Option<&SqlDocumentIdentifier>,
+) -> Result<ColumnReferenceBinding, SqlDocumentEditError> {
+    let mut query_ids = Vec::new();
+    let mut current = reference.id;
+    while let Some(node) = document.nodes.get(current as usize) {
+        if node.id != current {
+            return Err(SqlDocumentEditError::NodeRangeUnavailable);
+        }
+        if node.kind == SqlDocumentNodeKind::Query {
+            query_ids.push(node.id);
+        }
+        let Some(parent) = node.parent else { break };
+        current = parent;
+    }
+    let target_cte = match target {
+        AliasBindingTarget::Cte(id) => document.nodes.get(*id as usize),
+        AliasBindingTarget::Derived(_) => None,
+    };
+    let (target_with, target_index, target_recursive) = if let Some(cte) = target_cte {
+        let with_clause = cte
+            .parent
+            .and_then(|id| document.nodes.get(id as usize))
+            .filter(|node| node.kind == SqlDocumentNodeKind::WithClause)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let mut siblings = document
+            .nodes
+            .iter()
+            .filter(|node| {
+                node.parent == Some(with_clause.id)
+                    && node.kind == SqlDocumentNodeKind::CommonTableExpression
+            })
+            .collect::<Vec<_>>();
+        siblings.sort_by_key(|node| node.range.map(|range| range.start));
+        let index = siblings
+            .iter()
+            .position(|node| node.id == cte.id)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let recursive = matches!(
+            with_clause.semantic,
+            Some(SqlDocumentNodeData::WithClause {
+                recursive: true,
+                ..
+            })
+        );
+        (Some(with_clause.id), Some(index), recursive)
+    } else {
+        (None, None, false)
+    };
+    let mut deferred_unqualified = false;
+    for query_id in query_ids {
+        let factors = document
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::TableFactor)
+            .filter(|node| query_ancestor_id(document, node.id) == Some(query_id))
+            .collect::<Vec<_>>();
+        if let Some(qualifier) = qualifier {
+            let mut matching = Vec::new();
+            for factor in &factors {
+                let Some(SqlDocumentNodeData::TableFactor {
+                    factor_kind, alias, ..
+                }) = factor.semantic.as_ref()
+                else {
+                    continue;
+                };
+                let relation = document.nodes.iter().find(|candidate| {
+                    candidate.parent == Some(factor.id)
+                        && matches!(
+                            candidate.semantic,
+                            Some(SqlDocumentNodeData::Relation { .. })
+                        )
+                });
+                let relation_name =
+                    relation.and_then(|relation| match relation.semantic.as_ref() {
+                        Some(SqlDocumentNodeData::Relation { name }) if name.len() == 1 => {
+                            name.first()
+                        }
+                        _ => None,
+                    });
+                let visible_name = alias.as_ref().or(relation_name);
+                if visible_name.is_some_and(|name| sql_identifiers_match(name, qualifier)) {
+                    matching.push((*factor, factor_kind.as_str(), relation));
+                }
+            }
+            if !matching.is_empty() {
+                if matching.len() > 1 {
+                    return Ok(ColumnReferenceBinding::Ambiguous);
+                }
+                let (factor, factor_kind, relation) = matching[0];
+                let is_target = match target {
+                    AliasBindingTarget::Derived(id) => factor.id == *id,
+                    AliasBindingTarget::Cte(id) => {
+                        if factor_kind != "table" {
+                            false
+                        } else if let (Some(relation), Some(with_id), Some(index)) =
+                            (relation, target_with, target_index)
+                        {
+                            cte_reference_resolves_to_target(
+                                document,
+                                relation,
+                                *id,
+                                with_id,
+                                index,
+                                target_recursive,
+                            )
+                        } else {
+                            false
+                        }
+                    }
+                };
+                return Ok(if is_target {
+                    ColumnReferenceBinding::Target
+                } else {
+                    ColumnReferenceBinding::Other
+                });
+            }
+        } else {
+            let mut targets = Vec::new();
+            for factor in &factors {
+                let is_target = match target {
+                    AliasBindingTarget::Derived(id) => factor.id == *id,
+                    AliasBindingTarget::Cte(id) => {
+                        let relation = document.nodes.iter().find(|candidate| {
+                            candidate.parent == Some(factor.id)
+                                && matches!(
+                                    candidate.semantic,
+                                    Some(SqlDocumentNodeData::Relation { .. })
+                                )
+                        });
+                        if let (Some(relation), Some(with_id), Some(index)) =
+                            (relation, target_with, target_index)
+                        {
+                            cte_reference_resolves_to_target(
+                                document,
+                                relation,
+                                *id,
+                                with_id,
+                                index,
+                                target_recursive,
+                            )
+                        } else {
+                            false
+                        }
+                    }
+                };
+                if is_target {
+                    targets.push(*factor);
+                }
+            }
+            if !targets.is_empty() {
+                if deferred_unqualified {
+                    return Ok(ColumnReferenceBinding::Ambiguous);
+                }
+                return Ok(if targets.len() == 1 && factors.len() == 1 {
+                    ColumnReferenceBinding::Target
+                } else {
+                    ColumnReferenceBinding::Ambiguous
+                });
+            }
+            if !factors.is_empty() {
+                deferred_unqualified = true;
+            }
+        }
+    }
+    if qualifier.is_some() {
+        Ok(ColumnReferenceBinding::Other)
+    } else if deferred_unqualified {
+        Ok(ColumnReferenceBinding::Ambiguous)
+    } else {
+        // With no local relation, this could be a correlated reference. Only
+        // update it when the target is a CTE declared in the same lexical tree.
+        let _ = declaration;
+        Ok(ColumnReferenceBinding::Other)
+    }
+}
+
 /// Returns whether a one-part relation name resolves to `target_cte_id` from
 /// its nearest lexical WITH scope. Nested CTEs with the same name shadow the
 /// target and are intentionally left untouched.
@@ -9997,6 +11071,109 @@ struct QueryStructureCollector<'a> {
 }
 
 impl QueryStructureCollector<'_> {
+    fn group_by_data(&self, group_by: &GroupByExpr) -> Option<SqlDocumentNodeData> {
+        let expression_groups = |groups: &[Vec<Expr>]| -> Option<Vec<Vec<u32>>> {
+            groups
+                .iter()
+                .map(|group| {
+                    group
+                        .iter()
+                        .map(|expression| self.expression_node_id(expression))
+                        .collect()
+                })
+                .collect()
+        };
+        let expression_ids = |expressions: &[Expr]| -> Option<Vec<u32>> {
+            expressions
+                .iter()
+                .map(|expression| self.expression_node_id(expression))
+                .collect()
+        };
+        let grouped_expression =
+            |expression: &Expr| -> Option<(SqlDocumentGroupByMode, Vec<Vec<u32>>, bool)> {
+                match expression {
+                    Expr::GroupingSets(groups) => Some((
+                        SqlDocumentGroupByMode::GroupingSets,
+                        expression_groups(groups)?,
+                        true,
+                    )),
+                    Expr::Rollup(groups) | Expr::Cube(groups) => {
+                        let mode = if matches!(expression, Expr::Rollup(_)) {
+                            SqlDocumentGroupByMode::Rollup
+                        } else {
+                            SqlDocumentGroupByMode::Cube
+                        };
+                        let groups = expression_groups(groups)?;
+                        let editable = groups.iter().all(|group| group.len() == 1);
+                        let groups = if editable {
+                            vec![groups.into_iter().flatten().collect()]
+                        } else {
+                            groups
+                        };
+                        Some((mode, groups, editable))
+                    }
+                    _ => None,
+                }
+            };
+
+        let (mode, groups, editable) = match group_by {
+            GroupByExpr::All(_) => (SqlDocumentGroupByMode::All, Vec::new(), true),
+            GroupByExpr::Expressions(expressions, modifiers) => {
+                if let Some((mode, groups, editable)) =
+                    modifiers.iter().find_map(|modifier| match modifier {
+                        GroupByWithModifier::GroupingSets(expression) => {
+                            grouped_expression(expression)
+                        }
+                        GroupByWithModifier::Rollup => Some((
+                            SqlDocumentGroupByMode::Rollup,
+                            vec![expression_ids(expressions)?],
+                            true,
+                        )),
+                        GroupByWithModifier::Cube => Some((
+                            SqlDocumentGroupByMode::Cube,
+                            vec![expression_ids(expressions)?],
+                            true,
+                        )),
+                        GroupByWithModifier::Totals => None,
+                    })
+                {
+                    (mode, groups, editable)
+                } else if expressions.len() == 1 {
+                    grouped_expression(&expressions[0]).unwrap_or((
+                        SqlDocumentGroupByMode::Expressions,
+                        vec![expression_ids(expressions)?],
+                        true,
+                    ))
+                } else {
+                    (
+                        SqlDocumentGroupByMode::Expressions,
+                        vec![expression_ids(expressions)?],
+                        true,
+                    )
+                }
+            }
+        };
+        Some(SqlDocumentNodeData::GroupBy {
+            mode,
+            groups,
+            editable,
+        })
+    }
+
+    fn expression_node_id(&self, expression: &Expr) -> Option<u32> {
+        let range = SqlSourceRange::from_span(self.source, self.source_map, expression.span())?;
+        self.nodes[..self.original_node_count]
+            .iter()
+            .filter(|node| {
+                node.kind == expression_kind(expression)
+                    && node
+                        .range
+                        .is_some_and(|candidate| candidate.start == range.start)
+            })
+            .max_by_key(|node| node.range.map(|candidate| candidate.end))
+            .map(|node| node.id)
+    }
+
     fn expression_node_range(&self, parent: u32, expression: &Expr) -> Option<SqlSourceRange> {
         let span = SqlSourceRange::from_span(self.source, self.source_map, expression.span())?;
         self.nodes[..self.original_node_count]
@@ -10426,6 +11603,51 @@ impl QueryStructureCollector<'_> {
         end
     }
 
+    fn select_clause_end(&self, start: usize, depth: usize) -> usize {
+        let mut end = start;
+        for (index, token) in self.tokens.iter().enumerate() {
+            if token.range.start < start {
+                continue;
+            }
+            let token_depth = self.token_depths[index];
+            let word =
+                |candidate: &str| token_is_keyword_at(self.source, self.tokens, index, candidate);
+            if token_depth < depth
+                || (token_depth == depth
+                    && (word("HAVING")
+                        || word("QUALIFY")
+                        || word("WINDOW")
+                        || word("ORDER")
+                            && self
+                                .keyword_phrase(
+                                    &["ORDER", "BY"],
+                                    token.range.start,
+                                    self.source.len(),
+                                    depth,
+                                )
+                                .is_some()
+                        || word("LIMIT")
+                        || word("OFFSET")
+                        || word("FETCH")
+                        || word("FOR")
+                        || word("UNION")
+                        || word("INTERSECT")
+                        || word("EXCEPT")
+                        || token.kind == SqlDocumentTokenKind::Punctuation
+                            && token_text(self.source, token) == Some(";")))
+            {
+                return end;
+            }
+            if !matches!(
+                token.kind,
+                SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+            ) {
+                end = token.range.end;
+            }
+        }
+        end
+    }
+
     fn collect_limit_clause(&mut self, query: &Query, query_id: u32, limit_clause: &LimitClause) {
         let Some(payload_range) = self.span_range(limit_clause) else {
             return;
@@ -10443,6 +11665,10 @@ impl QueryStructureCollector<'_> {
                 offset.as_ref().and_then(|offset| self.span_range(offset))
             }
             LimitClause::OffsetCommaLimit { offset, .. } => self.span_range(offset),
+        };
+        let limit_expression = match limit_clause {
+            LimitClause::LimitOffset { limit, .. } => limit.as_ref(),
+            LimitClause::OffsetCommaLimit { limit, .. } => Some(limit),
         };
         let offset_keyword = offset_payload.and_then(|offset_range| {
             self.keyword_phrase(&["OFFSET"], body_end, offset_range.start, query_depth)
@@ -10471,6 +11697,16 @@ impl QueryStructureCollector<'_> {
             query_id,
             Some(SqlDocumentNodeData::QueryClauseValue { value: limit_value }),
         );
+        if let Some(limit_range) =
+            limit_expression.and_then(|expression| self.span_range(expression))
+        {
+            self.reparent_direct_children(
+                query_id,
+                limit_id,
+                limit_range,
+                &expression_node_kinds(),
+            );
+        }
         if let Some(offset_range) = offset_payload {
             let offset_start = offset_keyword
                 .map(|range| range.start)
@@ -10579,12 +11815,15 @@ impl QueryStructureCollector<'_> {
                     ) {
                         let range = SqlSourceRange {
                             start: keyword.start,
-                            end: group_range.end,
+                            end: self
+                                .select_clause_end(keyword.end, select_depth)
+                                .max(group_range.end),
                         };
-                        let clause_id = self.add_node(
+                        let clause_id = self.add_node_with_data(
                             SqlDocumentNodeKind::GroupByClause,
                             Some(range),
                             select_id,
+                            self.group_by_data(&select.group_by),
                         );
                         for expression in expressions {
                             if let Some(expression_range) = self.span_range(expression) {
@@ -10601,7 +11840,7 @@ impl QueryStructureCollector<'_> {
                                 );
                             }
                         }
-                        previous_clause_end = group_range.end;
+                        previous_clause_end = range.end;
                     }
                 }
             }
@@ -10651,7 +11890,12 @@ impl QueryStructureCollector<'_> {
                             start: keyword.start,
                             end: all_range.end,
                         };
-                        self.add_node(SqlDocumentNodeKind::GroupByClause, Some(range), select_id);
+                        self.add_node_with_data(
+                            SqlDocumentNodeKind::GroupByClause,
+                            Some(range),
+                            select_id,
+                            self.group_by_data(&select.group_by),
+                        );
                         previous_clause_end = all_range.end;
                     }
                 }
@@ -12172,9 +13416,27 @@ fn table_factor_data(table_factor: &TableFactor) -> SqlDocumentNodeData {
         TableFactor::XmlTable { alias, .. } => ("xml_table", alias.as_ref()),
         TableFactor::SemanticView { alias, .. } => ("semantic_view", alias.as_ref()),
     };
+    let alias_columns = alias.map(|alias| {
+        (
+            alias
+                .columns
+                .iter()
+                .map(|column| identifier_data(&column.name))
+                .collect::<Vec<_>>(),
+            alias
+                .columns
+                .iter()
+                .any(|column| column.data_type.is_some()),
+        )
+    });
     SqlDocumentNodeData::TableFactor {
         factor_kind: factor_kind.to_owned(),
         alias: alias.map(|alias| identifier_data(&alias.name)),
+        column_aliases: alias_columns
+            .as_ref()
+            .map(|(columns, _)| columns.clone())
+            .unwrap_or_default(),
+        has_column_alias_types: alias_columns.is_some_and(|(_, has_types)| has_types),
     }
 }
 
@@ -13818,7 +15080,7 @@ mod tests {
         ));
         assert!(has_semantic(
             SqlDocumentNodeKind::TableFactor,
-            &|data| matches!(data, SqlDocumentNodeData::TableFactor { factor_kind, alias }
+            &|data| matches!(data, SqlDocumentNodeData::TableFactor { factor_kind, alias, .. }
                 if factor_kind == "table"
                     && alias.as_ref().is_some_and(|alias| alias.value == "g"))
         ));
@@ -14357,6 +15619,193 @@ mod tests {
             "WITH rows AS (SELECT 1 AS n), d AS (WITH c AS (SELECT 2 AS n) SELECT n FROM c), e AS (SELECT n FROM rows) SELECT n FROM rows"
         );
         assert_eq!(changed.document.status, SqlDocumentStatus::Parsed);
+    }
+
+    #[test]
+    fn semantic_cte_column_aliases_rename_only_their_bound_references() {
+        let source = "WITH c (old_name) AS (SELECT 1), wrapper AS (WITH c (old_name) AS (SELECT 2) SELECT c.old_name FROM c) SELECT c.old_name FROM c";
+        let document = parse_sql_document(source);
+        let target = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::CommonTableExpression
+                    && matches!(node.semantic.as_ref(), Some(SqlDocumentNodeData::CommonTableExpression { name, .. }) if name.value == "c")
+                    && node.range.is_some_and(|range| range.start < source.find("wrapper").unwrap())
+            })
+            .expect("the outer CTE declaration is selectable");
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: target.id,
+                    expected_kind: SqlDocumentNodeKind::CommonTableExpression,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "new_name".into(),
+                        quote_style: None,
+                    }],
+                }],
+            ),
+        )
+        .unwrap_or_else(|error| panic!("CTE output alias rename failed: {error:?}"));
+        assert_eq!(
+            renamed.document.source,
+            "WITH c (new_name) AS (SELECT 1), wrapper AS (WITH c (old_name) AS (SELECT 2) SELECT c.old_name FROM c) SELECT c.new_name FROM c"
+        );
+        let restored = apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
+            .expect("CTE output alias rename has a guarded inverse");
+        assert_eq!(restored.document.source, source);
+
+        let source = "WITH c (old_name) AS (SELECT 1) SELECT old_name FROM c";
+        let document = parse_sql_document(source);
+        let target = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CommonTableExpression)
+            .expect("the CTE declaration is selectable");
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: target.id,
+                    expected_kind: target.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "renamed".into(),
+                        quote_style: None,
+                    }],
+                }],
+            ),
+        )
+        .expect("a uniquely bound unqualified output reference is renamed");
+        assert_eq!(
+            renamed.document.source,
+            "WITH c (renamed) AS (SELECT 1) SELECT renamed FROM c"
+        );
+    }
+
+    #[test]
+    fn semantic_derived_column_aliases_construct_and_rename_bound_references() {
+        let source = "SELECT d.old_name FROM (SELECT 1) AS d(old_name)";
+        let document = parse_sql_document(source);
+        let target = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::TableFactor
+                    && matches!(node.semantic.as_ref(), Some(SqlDocumentNodeData::TableFactor { factor_kind, .. }) if factor_kind == "derived")
+            })
+            .expect("the derived table is selectable");
+        assert!(
+            matches!(target.semantic.as_ref(), Some(SqlDocumentNodeData::TableFactor { column_aliases, .. }) if column_aliases.len() == 1 && column_aliases[0].value == "old_name")
+        );
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: target.id,
+                    expected_kind: target.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "new_name".into(),
+                        quote_style: None,
+                    }],
+                }],
+            ),
+        )
+        .unwrap_or_else(|error| panic!("derived output alias rename failed: {error:?}"));
+        assert_eq!(
+            renamed.document.source,
+            "SELECT d.new_name FROM (SELECT 1) AS d(new_name)"
+        );
+        let restored = apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
+            .expect("derived output alias rename has a guarded inverse");
+        assert_eq!(restored.document.source, source);
+
+        let nested_source = "SELECT d.old_name FROM (SELECT d.old_name FROM (SELECT 1) AS d(old_name)) AS d(old_name)";
+        let nested = parse_sql_document(nested_source);
+        let outer = nested
+            .nodes
+            .iter()
+            .filter(|node| {
+                node.kind == SqlDocumentNodeKind::TableFactor
+                    && matches!(node.semantic.as_ref(), Some(SqlDocumentNodeData::TableFactor { factor_kind, .. }) if factor_kind == "derived")
+            })
+            .min_by_key(|node| node.range.map(|range| range.start).unwrap_or_default())
+            .expect("the outer derived table is selectable");
+        let outer_renamed = apply_sql_document_semantic_edit_transaction(
+            nested_source,
+            &semantic_transaction(
+                nested_source,
+                vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: outer.id,
+                    expected_kind: outer.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "new_name".into(),
+                        quote_style: None,
+                    }],
+                }],
+            ),
+        )
+        .expect("derived alias rename respects a nested same-name binding");
+        assert_eq!(
+            outer_renamed.document.source,
+            "SELECT d.new_name FROM (SELECT d.old_name FROM (SELECT 1) AS d(old_name)) AS d(new_name)"
+        );
+
+        let source = "SELECT d.column1 FROM (SELECT 1) AS d";
+        let document = parse_sql_document(source);
+        let target = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::TableFactor)
+            .expect("the derived table is selectable");
+        let added = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: target.id,
+                    expected_kind: target.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "column1".into(),
+                        quote_style: None,
+                    }],
+                }],
+            ),
+        )
+        .expect("typed output aliases can be added to a derived table");
+        assert_eq!(
+            added.document.source,
+            "SELECT d.column1 FROM (SELECT 1) AS d (column1)"
+        );
+
+        let ambiguous_source =
+            "WITH c (old_name) AS (SELECT 1) SELECT old_name FROM c JOIN other AS o ON o.id = 1";
+        let ambiguous = parse_sql_document(ambiguous_source);
+        let target = ambiguous
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CommonTableExpression)
+            .expect("the CTE declaration is selectable");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                ambiguous_source,
+                &semantic_transaction(
+                    ambiguous_source,
+                    vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                        node_id: target.id,
+                        expected_kind: target.kind,
+                        aliases: vec![SqlDocumentIdentifier {
+                            value: "renamed".into(),
+                            quote_style: None,
+                        }],
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
     }
 
     #[test]
@@ -15592,6 +17041,196 @@ mod tests {
     }
 
     #[test]
+    fn semantic_group_by_structures_construct_admitted_modes_with_set_boundaries_and_undo() {
+        let source = "SELECT field_100, field_101 FROM tasks";
+        let document = parse_sql_document(source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let column = |name: &str| {
+            document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::IdentifierExpression
+                        && node.range.and_then(|range| document.source_slice(range)) == Some(name)
+                })
+                .unwrap()
+                .id
+        };
+        let a = column("field_100");
+        let b = column("field_101");
+        for (mode, groups, expected) in [
+            (
+                SqlDocumentGroupByMode::Expressions,
+                vec![vec![a, b]],
+                "SELECT field_100, field_101 FROM tasks GROUP BY field_100, field_101",
+            ),
+            (
+                SqlDocumentGroupByMode::All,
+                vec![],
+                "SELECT field_100, field_101 FROM tasks GROUP BY ALL",
+            ),
+            (
+                SqlDocumentGroupByMode::Rollup,
+                vec![vec![a, b]],
+                "SELECT field_100, field_101 FROM tasks GROUP BY ROLLUP (field_100, field_101)",
+            ),
+            (
+                SqlDocumentGroupByMode::Cube,
+                vec![vec![a, b]],
+                "SELECT field_100, field_101 FROM tasks GROUP BY CUBE (field_100, field_101)",
+            ),
+            (
+                SqlDocumentGroupByMode::GroupingSets,
+                vec![vec![a, b], vec![a], vec![]],
+                "SELECT field_100, field_101 FROM tasks GROUP BY GROUPING SETS ((field_100, field_101), (field_100), ())",
+            ),
+        ] {
+            let changed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::SetGroupByStructure {
+                        node_id: select.id,
+                        expected_kind: select.kind,
+                        mode,
+                        groups,
+                    }],
+                ),
+            )
+            .expect("the grouping mode is Rust-rendered from parser-backed members");
+            assert_eq!(changed.document.source, expected);
+            assert_eq!(changed.document.status, SqlDocumentStatus::Parsed);
+            let undone =
+                apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+                    .expect("grouping structure returns a guarded inverse");
+            assert_eq!(undone.document.source, source);
+        }
+    }
+
+    #[test]
+    fn group_by_document_metadata_preserves_grouping_set_boundaries_and_empty_set() {
+        let source = "SELECT field_100, field_101 FROM tasks GROUP BY GROUPING SETS ((field_100, field_101), (field_100), ()) ORDER BY field_100";
+        let document = parse_sql_document(source);
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        let group = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::GroupByClause)
+            .expect("the parser exposes GROUP BY");
+        let Some(SqlDocumentNodeData::GroupBy { mode, groups, .. }) = group.semantic.as_ref()
+        else {
+            panic!("GROUP BY exposes typed grouping structure");
+        };
+        assert_eq!(
+            document.source_slice(group.range.unwrap()),
+            Some("GROUP BY GROUPING SETS ((field_100, field_101), (field_100), ())")
+        );
+        assert_eq!(*mode, SqlDocumentGroupByMode::GroupingSets);
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].len(), 2);
+        assert_eq!(groups[1].len(), 1);
+        assert!(groups[2].is_empty());
+        let group_members = groups
+            .iter()
+            .map(|members| {
+                members
+                    .iter()
+                    .map(|id| {
+                        let member = &document.nodes[*id as usize];
+                        document
+                            .source_slice(member.range.expect("member has source range"))
+                            .expect("member is source backed")
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            group_members,
+            vec![
+                vec!["field_100".to_owned(), "field_101".to_owned()],
+                vec!["field_100".to_owned()],
+                vec![],
+            ]
+        );
+
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .expect("GROUP BY belongs to SELECT");
+        for member in groups.iter().flatten() {
+            assert!(is_grouping_expression_kind(
+                document.nodes[*member as usize].kind
+            ));
+            assert_eq!(
+                query_ancestor_id(&document, *member),
+                query_ancestor_id(&document, select.id)
+            );
+        }
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetGroupByStructure {
+                    node_id: select.id,
+                    expected_kind: select.kind,
+                    mode: *mode,
+                    groups: groups.iter().cloned().chain([vec![groups[0][0]]]).collect(),
+                }],
+            ),
+        )
+        .expect("the parser metadata round trips through the typed constructor");
+        assert_eq!(
+            result.document.source,
+            "SELECT field_100, field_101 FROM tasks GROUP BY GROUPING SETS ((field_100, field_101), (field_100), (), (field_100)) ORDER BY field_100"
+        );
+    }
+
+    #[test]
+    fn composite_rollup_and_cube_metadata_preserves_groups_and_marks_them_read_only() {
+        for (source, expected_mode, expected_group) in [
+            (
+                "SELECT a, b, c FROM tasks GROUP BY ROLLUP ((a, b), c)",
+                SqlDocumentGroupByMode::Rollup,
+                "GROUP BY ROLLUP ((a, b), c)",
+            ),
+            (
+                "SELECT a, b, c FROM tasks GROUP BY CUBE ((a, b), c)",
+                SqlDocumentGroupByMode::Cube,
+                "GROUP BY CUBE ((a, b), c)",
+            ),
+        ] {
+            let document = parse_sql_document(source);
+            assert_eq!(document.status, SqlDocumentStatus::Parsed, "{source}");
+            let group = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::GroupByClause)
+                .expect("the parser exposes GROUP BY");
+            let Some(SqlDocumentNodeData::GroupBy {
+                mode,
+                groups,
+                editable,
+            }) = group.semantic.as_ref()
+            else {
+                panic!("GROUP BY exposes typed grouping boundaries");
+            };
+            assert_eq!(*mode, expected_mode);
+            assert!(!editable);
+            assert_eq!(groups.iter().map(Vec::len).collect::<Vec<_>>(), vec![2, 1]);
+            assert_eq!(
+                document.source_slice(group.range.unwrap()),
+                Some(expected_group)
+            );
+        }
+    }
+
+    #[test]
     fn semantic_group_by_expression_adds_before_later_clauses_and_supports_undo() {
         let source = "SELECT field_100, field_200 FROM \"G\" ORDER BY field_100 DESC NULLS LAST";
         let document = parse_sql_document(source);
@@ -16039,6 +17678,130 @@ mod tests {
     }
 
     #[test]
+    fn semantic_limit_accepts_parameters_and_same_scope_expressions() {
+        let source = "SELECT 1 + 2 FROM tasks";
+        let document = parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is represented");
+        let parameter = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    value: SqlDocumentQueryLimit::Literal {
+                        literal: SqlDocumentSemanticLiteral::NamedParameter {
+                            name: "page_size".into(),
+                        },
+                    },
+                }],
+            ),
+        )
+        .expect("a parameter LIMIT is constructible");
+        assert_eq!(
+            parameter.document.source,
+            "SELECT 1 + 2 FROM tasks LIMIT $page_size"
+        );
+        let restored =
+            apply_sql_document_edit_transaction(&parameter.document.source, &parameter.undo)
+                .expect("parameter LIMIT has a guarded inverse");
+        assert_eq!(restored.document.source, source);
+
+        let document = parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is represented");
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::BinaryExpression
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("1 + 2")
+            })
+            .expect("the arithmetic expression has a typed node");
+        let with_expression = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    value: SqlDocumentQueryLimit::Expression {
+                        expression_node_id: expression.id,
+                        expression_expected_kind: expression.kind,
+                    },
+                }],
+            ),
+        )
+        .expect("a same-query expression LIMIT is constructible");
+        assert_eq!(
+            with_expression.document.source,
+            "SELECT 1 + 2 FROM tasks LIMIT 1 + 2"
+        );
+        assert_eq!(with_expression.document.status, SqlDocumentStatus::Parsed);
+        let restored = apply_sql_document_edit_transaction(
+            &with_expression.document.source,
+            &with_expression.undo,
+        )
+        .expect("expression LIMIT has a guarded inverse");
+        assert_eq!(restored.document.source, source);
+
+        let stale = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: "SELECT 0".into(),
+            edits: vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                node_id: query.id,
+                expected_kind: SqlDocumentNodeKind::Query,
+                value: SqlDocumentQueryLimit::Expression {
+                    expression_node_id: expression.id,
+                    expression_expected_kind: expression.kind,
+                },
+            }],
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(source, &stale),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+
+        let nested_source = "SELECT (SELECT 1 + 2) FROM tasks";
+        let nested = parse_sql_document(nested_source);
+        let outer_query = nested
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::Query)
+            .min_by_key(|node| node.range.map(|range| range.start))
+            .expect("outer query is represented");
+        let nested_expression = nested
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("nested expression is represented");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                nested_source,
+                &semantic_transaction(
+                    nested_source,
+                    vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                        node_id: outer_query.id,
+                        expected_kind: SqlDocumentNodeKind::Query,
+                        value: SqlDocumentQueryLimit::Expression {
+                            expression_node_id: nested_expression.id,
+                            expression_expected_kind: nested_expression.kind,
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+    }
+
+    #[test]
     fn semantic_filter_group_and_aggregate_ops_are_typed_and_undoable() {
         let source = "SELECT DISTINCT amount > 0, amount FROM t WHERE amount = 1 GROUP BY amount, amount + 1 HAVING SUM(amount) > 0 ORDER BY amount DESC NULLS LAST LIMIT 10 OFFSET 2";
         let document = parse_sql_document(source);
@@ -16287,7 +18050,116 @@ mod tests {
     }
 
     #[test]
+    fn semantic_aggregate_filter_toggle_is_typed_undoable_and_preserves_source() {
+        let source = "SELECT /* before */ SUM(amount) AS total FROM tasks /* after */";
+        let document = parse_sql_document(source);
+        let aggregate = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::FunctionExpression
+                    && matches!(node.semantic, Some(SqlDocumentNodeData::Function { ref name, .. })
+                    if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("sum")))
+            })
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: document.contract_version,
+                    expected_source: "SELECT SUM(amount)".to_owned(),
+                    edits: vec![SqlDocumentSemanticEdit::SetAggregateFilter {
+                        node_id: aggregate.id,
+                        expected_kind: aggregate.kind,
+                        enabled: true,
+                    }],
+                },
+            ),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+        let added = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetAggregateFilter {
+                    node_id: aggregate.id,
+                    expected_kind: aggregate.kind,
+                    enabled: true,
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            added.document.source,
+            "SELECT /* before */ SUM(amount) FILTER (WHERE TRUE) AS total FROM tasks /* after */"
+        );
+        let added_document = parse_sql_document(&added.document.source);
+        let aggregate = added_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::FunctionExpression
+                    && matches!(
+                        node.semantic,
+                        Some(SqlDocumentNodeData::Function {
+                            has_filter: true,
+                            ..
+                        })
+                    )
+            })
+            .unwrap();
+        let removed = apply_sql_document_semantic_edit_transaction(
+            &added.document.source,
+            &semantic_transaction(
+                &added.document.source,
+                vec![SqlDocumentSemanticEdit::SetAggregateFilter {
+                    node_id: aggregate.id,
+                    expected_kind: aggregate.kind,
+                    enabled: false,
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(removed.document.source, source);
+        let restored =
+            apply_sql_document_edit_transaction(&removed.document.source, &removed.undo).unwrap();
+        assert_eq!(restored.document.source, added.document.source);
+    }
+
+    #[test]
     fn semantic_filter_group_and_aggregate_edits_fail_closed_on_comments() {
+        let aggregate_filter_source = "SELECT SUM(amount) FILTER (WHERE /* keep */ TRUE)";
+        let aggregate_filter_document = parse_sql_document(aggregate_filter_source);
+        let aggregate = aggregate_filter_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::FunctionExpression
+                    && matches!(
+                        node.semantic,
+                        Some(SqlDocumentNodeData::Function {
+                            has_filter: true,
+                            ..
+                        })
+                    )
+            })
+            .expect("aggregate FILTER is represented");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                aggregate_filter_source,
+                &semantic_transaction(
+                    aggregate_filter_source,
+                    vec![SqlDocumentSemanticEdit::SetAggregateFilter {
+                        node_id: aggregate.id,
+                        expected_kind: aggregate.kind,
+                        enabled: false,
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::NodeRangeUnavailable),
+            "FILTER removal must not erase comments in its source span"
+        );
+
         let filter_source = "SELECT amount > 0 FROM t WHERE amount /* keep */ = 1";
         let filter_document = parse_sql_document(filter_source);
         let where_clause = filter_document
@@ -17568,7 +19440,10 @@ mod tests {
             ),
         )
         .expect("moving a field preserves all positional references");
-        assert_eq!(edited.document.source, "-- 保持\nSELECT day, category, amount FROM \"G\" GROUP BY 3, 1, 2 ORDER BY 1 DESC, (1) ASC LIMIT 10");
+        assert_eq!(
+            edited.document.source,
+            "-- 保持\nSELECT day, category, amount FROM \"G\" GROUP BY 3, 1, 2 ORDER BY 1 DESC, (1) ASC LIMIT 10"
+        );
         let restored =
             apply_sql_document_edit_transaction(&edited.document.source, &edited.undo).unwrap();
         assert_eq!(restored.document.source, source);
@@ -18513,8 +20388,83 @@ mod tests {
                 },
                 constraint: SqlDocumentJoinConstraint::None,
             },
+            SqlDocumentJoin {
+                operator: SqlDocumentJoinOperator::LeftSemi,
+                relation: SqlDocumentRelationFactor::Table {
+                    name: vec![SqlDocumentIdentifier {
+                        value: "M".to_owned(),
+                        quote_style: None,
+                    }],
+                    alias: None,
+                },
+                constraint: SqlDocumentJoinConstraint::On {
+                    expression_node_id: on_expression.id,
+                    expression_expected_kind: on_expression.kind,
+                },
+            },
+            SqlDocumentJoin {
+                operator: SqlDocumentJoinOperator::RightSemi,
+                relation: SqlDocumentRelationFactor::Table {
+                    name: vec![SqlDocumentIdentifier {
+                        value: "N".to_owned(),
+                        quote_style: None,
+                    }],
+                    alias: None,
+                },
+                constraint: SqlDocumentJoinConstraint::On {
+                    expression_node_id: on_expression.id,
+                    expression_expected_kind: on_expression.kind,
+                },
+            },
+            SqlDocumentJoin {
+                operator: SqlDocumentJoinOperator::LeftAnti,
+                relation: SqlDocumentRelationFactor::Table {
+                    name: vec![SqlDocumentIdentifier {
+                        value: "P".to_owned(),
+                        quote_style: None,
+                    }],
+                    alias: None,
+                },
+                constraint: SqlDocumentJoinConstraint::On {
+                    expression_node_id: on_expression.id,
+                    expression_expected_kind: on_expression.kind,
+                },
+            },
+            SqlDocumentJoin {
+                operator: SqlDocumentJoinOperator::RightAnti,
+                relation: SqlDocumentRelationFactor::Table {
+                    name: vec![SqlDocumentIdentifier {
+                        value: "Q".to_owned(),
+                        quote_style: None,
+                    }],
+                    alias: None,
+                },
+                constraint: SqlDocumentJoinConstraint::On {
+                    expression_node_id: on_expression.id,
+                    expression_expected_kind: on_expression.kind,
+                },
+            },
         ] {
             let document = parse_sql_document(&current_source);
+            let on_expression = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::BinaryExpression
+                        && node.range.and_then(|range| document.source_slice(range))
+                            == Some("g.id = 1")
+                })
+                .expect("the current query predicate can seed a JOIN ON clause");
+            let join = match join.constraint {
+                SqlDocumentJoinConstraint::On { .. } => SqlDocumentJoin {
+                    constraint: SqlDocumentJoinConstraint::On {
+                        expression_node_id: on_expression.id,
+                        expression_expected_kind: on_expression.kind,
+                    },
+                    ..join
+                },
+                _ => join,
+            };
             let relation_tree = document
                 .nodes
                 .iter()
@@ -18541,6 +20491,10 @@ mod tests {
         assert!(current_source.contains("FULL OUTER JOIN \"I\" USING (\"id\")"));
         assert!(current_source.contains("NATURAL LEFT JOIN \"J\""));
         assert!(current_source.contains("CROSS JOIN \"K\""));
+        assert!(current_source.contains("LEFT SEMI JOIN M ON g.id = 1"));
+        assert!(current_source.contains("RIGHT SEMI JOIN N ON g.id = 1"));
+        assert!(current_source.contains("LEFT ANTI JOIN P ON g.id = 1"));
+        assert!(current_source.contains("RIGHT ANTI JOIN Q ON g.id = 1"));
     }
 
     #[test]
@@ -19611,10 +21565,13 @@ mod tests {
             let unsupported = format!("SELECT * FROM G WHERE amount = {spelling}");
             let parsed = parse_sql_document(&unsupported);
             assert_eq!(parsed.status, SqlDocumentStatus::Parsed, "{spelling}");
-            assert!(matches!(
-                parsed.conditions[0].expression,
-                Some(SqlDocumentConditionNode::Advanced { .. })
-            ), "unsupported numeric spelling must remain an exact-source advanced predicate: {spelling}");
+            assert!(
+                matches!(
+                    parsed.conditions[0].expression,
+                    Some(SqlDocumentConditionNode::Advanced { .. })
+                ),
+                "unsupported numeric spelling must remain an exact-source advanced predicate: {spelling}"
+            );
         }
     }
 

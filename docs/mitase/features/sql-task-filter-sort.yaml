@@ -252,10 +252,10 @@ features:
                   arguments:
                     file: e2e/composition-filter-conditions.test.ts
                     test: "Composition inline SQL filters preserve scalar bindings through nested groups, history, and save"
-          - id: condition-authorized-execution
+          - id: condition-group-authorized-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
-            selector: { kind: symbol, name: typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries }
+            selector: { kind: test, name: typed_sql_document_filter_conditions_execute_authorized_queries }
             claims:
               - kind: verifies
                 criterion: REQ-SQL-003#criterion.condition-group-editing
@@ -265,7 +265,7 @@ features:
                   arguments:
                     package: ugoite-iceberg
                     harness: authorized_query
-                    test: typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries
+                    test: typed_sql_document_filter_conditions_execute_authorized_queries
     contracts:
       - id: typed-task-filter-sort-protocol
         kind: custom

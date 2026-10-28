@@ -84,9 +84,28 @@ and execution admission remain guarded.
 
 The runtime aggregate registry admits COUNT, SUM, AVG, MIN and MAX with MEAN as
 an AVG spelling. The typed picker uses canonical registry names; parsing an
-existing MEAN expression does not add a distinct runtime aggregate. Native Core
+existing MEAN expression does not add a distinct runtime aggregate. Registered
+aggregate calls can add or remove a typed `FILTER (WHERE TRUE)` seed; the seed
+is an ordinary expression node that remains editable through Rust operations.
+The tree can also author `GROUP BY ALL`, `ROLLUP`, `CUBE`, and `GROUPING SETS`.
+Grouping-set members are explicit typed groups of same-query expression nodes;
+the tree editor preserves those boundaries when reopening an existing clause
+and can author the empty grouping set `()`.
+Ordered aggregate argument clauses remain read-only because they are outside
+the enabled aggregate registry. Native Core
 tests check the enabled registry against admission; the tools inventory must not
 treat an unused descriptor as an enabled function.
+
+The SQL Document tree can add the DataFusion-supported LEFT/RIGHT SEMI and
+ANTI joins with typed ON or USING constraints. LIMIT supports a typed literal,
+named parameter, or same-query expression. CTE and derived-table output alias
+lists can be added or edited; reference renames follow resolved qualifiers and
+lexical CTE shadowing, while ambiguous unqualified bindings fail closed. The
+focused authorized query tests establish execution for those four join kinds
+and LIMIT expression/parameter forms. Alias edits are parser-backed and
+source-safe; their verification does not claim executor admission for every
+result shape. Directionless SEMI/ANTI spellings are not offered because
+DataFusion's SQL planner does not admit them.
 
 ## Planner diagnostics and persistence
 

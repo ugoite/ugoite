@@ -548,6 +548,12 @@ export type SqlDocumentNodeData =
   | { kind: "projection_alias"; alias: SqlDocumentIdentifier }
   | { kind: "select"; distinct: boolean; distinct_on: boolean }
   | {
+    kind: "group_by";
+    mode: SqlDocumentGroupByMode;
+    groups: number[][];
+    editable: boolean;
+  }
+  | {
     kind: "wildcard";
     qualifier: SqlDocumentIdentifier[];
     qualifier_is_expression: boolean;
@@ -602,6 +608,8 @@ export type SqlDocumentNodeData =
     kind: "table_factor";
     factor_kind: string;
     alias: SqlDocumentIdentifier | null;
+    column_aliases: SqlDocumentIdentifier[];
+    has_column_alias_types: boolean;
   }
   | {
     kind: "unmodeled_expression";
@@ -716,6 +724,14 @@ export type SqlDocumentSemanticLiteral =
   }
   | { kind: "hex_string"; value: string };
 
+export type SqlDocumentQueryLimit =
+  | { kind: "literal"; literal: SqlDocumentSemanticLiteral }
+  | {
+    kind: "expression";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  };
+
 export type SqlDocumentFilterCondition =
   | {
     kind: "group";
@@ -801,6 +817,12 @@ export type SqlDocumentAggregateFunction =
   | "avg"
   | "min"
   | "max";
+export type SqlDocumentGroupByMode =
+  | "expressions"
+  | "all"
+  | "rollup"
+  | "cube"
+  | "grouping_sets";
 
 export type SqlDocumentRelationFactor =
   | {
@@ -831,7 +853,11 @@ export type SqlDocumentJoinOperator =
   | "natural_right"
   | "natural_right_outer"
   | "natural_full"
-  | "natural_full_outer";
+  | "natural_full_outer"
+  | "left_semi"
+  | "right_semi"
+  | "left_anti"
+  | "right_anti";
 
 export type SqlDocumentJoinConstraint =
   | { kind: "none" }
@@ -992,6 +1018,12 @@ export type SqlDocumentSemanticEdit =
     distinct: boolean;
   }
   | {
+    kind: "set_aggregate_filter";
+    node_id: number;
+    expected_kind: "function_expression";
+    enabled: boolean;
+  }
+  | {
     kind: "remove_aggregate";
     node_id: number;
     expected_kind: "function_expression";
@@ -1006,6 +1038,12 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: "common_table_expression";
     name: SqlDocumentIdentifier;
+  }
+  | {
+    kind: "set_relation_column_aliases";
+    node_id: number;
+    expected_kind: "common_table_expression" | "table_factor";
+    aliases: SqlDocumentIdentifier[];
   }
   | {
     kind: "add_common_table_expression";
@@ -1159,6 +1197,13 @@ export type SqlDocumentSemanticEdit =
     expression_expected_kind: SqlDocumentNodeKind;
   }
   | {
+    kind: "set_group_by_structure";
+    node_id: number;
+    expected_kind: "select";
+    mode: SqlDocumentGroupByMode;
+    groups: number[][];
+  }
+  | {
     kind: "remove_group_by_item";
     node_id: number;
     expected_kind: "group_by_item";
@@ -1214,6 +1259,12 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: "query";
     value: number;
+  }
+  | {
+    kind: "set_limit_expression";
+    node_id: number;
+    expected_kind: "query";
+    value: SqlDocumentQueryLimit;
   }
   | {
     kind: "remove_limit";

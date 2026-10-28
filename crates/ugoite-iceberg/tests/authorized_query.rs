@@ -3729,7 +3729,209 @@ async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries(
+async fn typed_sql_document_filter_conditions_execute_authorized_queries() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        SqlDocumentConditionGroupOperator, SqlDocumentFilterCondition, SqlDocumentFilterOperator,
+        SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+        SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(970)),
+        "memory://authorized-query-sql-document-condition-groups",
+    )
+    .await?;
+    let tasks = aggregate_form(971);
+    create_form(&workspace, &tasks).await?;
+    let revisions = [
+        aggregate_revision(&tasks, 972, 982, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 973, 983, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 974, 984, "travel", 20, FieldValue::Null),
+    ];
+    append_aggregate_batch(&workspace, revisions.to_vec()).await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[972, 973, 974]))
+        .await?;
+
+    let source = "SELECT field_101 FROM tasks";
+    let document = ugoite_domain::sql_document::parse_sql_document(source);
+    let select = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::Select)
+        .expect("the SELECT scope is represented");
+    let comparison = |operator, value: &str| SqlDocumentFilterCondition::Comparison {
+        column: ugoite_domain::sql_document::SqlDocumentColumnReference {
+            qualifier: None,
+            column: SqlDocumentIdentifier {
+                value: "field_101".to_owned(),
+                quote_style: None,
+            },
+        },
+        operator,
+        value: Some(SqlDocumentSemanticLiteral::Number {
+            value: value.to_owned(),
+        }),
+    };
+    let edit = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                node_id: select.id,
+                expected_kind: select.kind,
+                condition: SqlDocumentFilterCondition::Group {
+                    operator: SqlDocumentConditionGroupOperator::Or,
+                    children: vec![
+                        comparison(SqlDocumentFilterOperator::Gte, "20"),
+                        comparison(SqlDocumentFilterOperator::Lt, "0"),
+                    ],
+                },
+            }],
+        },
+    )?;
+    let matching = context.execute(edit.document.to_sql()).await?;
+    assert_eq!(
+        matching.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        matching[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the selected amount is an integer")
+            .value(0),
+        20
+    );
+
+    let grouped = ugoite_domain::sql_document::parse_sql_document(edit.document.to_sql());
+    let ugoite_domain::sql_document::SqlDocumentConditionNode::Group { node_id, .. } = grouped
+        .conditions[0]
+        .expression
+        .as_ref()
+        .expect("the nested filter group is represented")
+    else {
+        panic!("the inserted filter is a typed group");
+    };
+    let changed = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        edit.document.to_sql(),
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: grouped.contract_version,
+            expected_source: edit.document.to_sql().to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetFilterGroupOperator {
+                node_id: *node_id,
+                expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                operator: SqlDocumentConditionGroupOperator::And,
+            }],
+        },
+    )?;
+    let nonmatching = context.execute(changed.document.to_sql()).await?;
+    assert_eq!(
+        nonmatching
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_sql_document_filter_predicate_edits_execute_authorized_queries() -> anyhow::Result<()>
+{
+    use ugoite_domain::sql_document::{
+        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(9870)),
+        "memory://authorized-query-sql-document-filter-predicate-edits",
+    )
+    .await?;
+    let tasks = aggregate_form(9871);
+    create_form(&workspace, &tasks).await?;
+    let revisions = [
+        aggregate_revision(&tasks, 9872, 9882, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 9873, 9883, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 9874, 9884, "travel", 20, FieldValue::Null),
+    ];
+    append_aggregate_batch(&workspace, revisions.to_vec()).await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[9872, 9873, 9874]))
+        .await?;
+
+    let source = "SELECT field_101 > 0 FROM tasks WHERE field_101 = 10";
+    let document = ugoite_domain::sql_document::parse_sql_document(source);
+    let where_clause = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::WhereClause)
+        .expect("the source predicate is represented");
+    let replacement = document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::BinaryExpression
+                && document.source_slice(node.range.unwrap()) == Some("field_101 > 0")
+        })
+        .expect("the SELECT predicate is a reusable typed expression");
+    let replaced = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetFilterPredicate {
+                node_id: where_clause.id,
+                expected_kind: where_clause.kind,
+                expression_node_id: replacement.id,
+                expression_expected_kind: replacement.kind,
+            }],
+        },
+    )?;
+    let filtered = context.execute(replaced.document.to_sql()).await?;
+    assert_eq!(
+        filtered.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        3
+    );
+    let predicate = filtered[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("the typed predicate expression returns booleans");
+    assert!(predicate.values().iter().all(|value| value));
+
+    let edited = ugoite_domain::sql_document::parse_sql_document(replaced.document.to_sql());
+    let where_clause = edited
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::WhereClause)
+        .expect("the replaced WHERE clause remains represented");
+    let removed = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        replaced.document.to_sql(),
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: edited.contract_version,
+            expected_source: replaced.document.to_sql().to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::RemoveFilterClause {
+                node_id: where_clause.id,
+                expected_kind: where_clause.kind,
+            }],
+        },
+    )?;
+    let unfiltered = context.execute(removed.document.to_sql()).await?;
+    assert_eq!(
+        unfiltered
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        3
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_sql_document_group_and_aggregate_edits_execute_authorized_queries(
 ) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(970)),
@@ -3748,60 +3950,144 @@ async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_
         .authorized_query_context(aggregate_policy(&tasks, &[972, 973, 974]))
         .await?;
 
-    let generated_source = "SELECT field_101 FROM tasks";
-    let generated_document = ugoite_domain::sql_document::parse_sql_document(generated_source);
-    let select = generated_document
-        .nodes
-        .iter()
-        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Select)
-        .unwrap();
-    let generated = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
-        generated_source,
+    let filter_seed_source = "SELECT COUNT(field_101) FROM tasks";
+    let filter_seed_document = ugoite_domain::sql_document::parse_sql_document(filter_seed_source);
+    let count = filter_seed_document.nodes.iter().find(|node| {
+        node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression
+            && matches!(node.semantic, Some(ugoite_domain::sql_document::SqlDocumentNodeData::Function { ref name, .. })
+                if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("count")))
+    }).expect("COUNT is represented");
+    let filter_seed = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        filter_seed_source,
         &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
-            contract_version: generated_document.contract_version,
-            expected_source: generated_source.to_owned(),
+            contract_version: filter_seed_document.contract_version,
+            expected_source: filter_seed_source.to_owned(),
             edits: vec![
-                ugoite_domain::sql_document::SqlDocumentSemanticEdit::InsertFilterCondition {
-                    node_id: select.id,
-                    expected_kind: select.kind,
-                    condition:
-                        ugoite_domain::sql_document::SqlDocumentFilterCondition::Comparison {
-                            column: ugoite_domain::sql_document::SqlDocumentColumnReference {
-                                qualifier: None,
-                                column: ugoite_domain::sql_document::SqlDocumentIdentifier {
-                                    value: "field_101".into(),
-                                    quote_style: None,
-                                },
-                            },
-                            operator: ugoite_domain::sql_document::SqlDocumentFilterOperator::Gte,
-                            value: Some(
-                                ugoite_domain::sql_document::SqlDocumentSemanticLiteral::Number {
-                                    value: "20".into(),
-                                },
-                            ),
-                        },
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetAggregateFilter {
+                    node_id: count.id,
+                    expected_kind: count.kind,
+                    enabled: true,
                 },
             ],
         },
     )?
     .document;
-    let generated_result = context.execute(generated.to_sql()).await?;
+    let filter_seed_result = context.execute(filter_seed.to_sql()).await?;
     assert_eq!(
-        generated_result
-            .iter()
-            .map(|batch| batch.num_rows())
-            .sum::<usize>(),
-        1
-    );
-    assert_eq!(
-        generated_result[0]
+        filter_seed_result[0]
             .column(0)
             .as_any()
             .downcast_ref::<Int64Array>()
             .unwrap()
             .value(0),
-        20
+        3
     );
+    let filter_seed_document =
+        ugoite_domain::sql_document::parse_sql_document(filter_seed.to_sql());
+    let true_literal = filter_seed_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::LiteralExpression
+                && node
+                    .range
+                    .and_then(|range| filter_seed_document.source_slice(range))
+                    == Some("TRUE")
+        })
+        .expect("the FILTER seed is an editable boolean literal");
+    let disabled_filter =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            filter_seed.to_sql(),
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: filter_seed_document.contract_version,
+                expected_source: filter_seed.to_sql().to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceLiteral {
+                        node_id: true_literal.id,
+                        expected_kind: true_literal.kind,
+                        literal: ugoite_domain::sql_document::SqlDocumentSemanticLiteral::Boolean {
+                            value: false,
+                        },
+                    },
+                ],
+            },
+        )?
+        .document;
+    let disabled_result = context.execute(disabled_filter.to_sql()).await?;
+    assert_eq!(
+        disabled_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        0
+    );
+    let grouping_source = "SELECT field_100, COUNT(*) FROM tasks";
+    let grouping_document = ugoite_domain::sql_document::parse_sql_document(grouping_source);
+    let grouping_select = grouping_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Select)
+        .unwrap();
+    let grouping_key = grouping_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && node
+                    .range
+                    .and_then(|range| grouping_document.source_slice(range))
+                    == Some("field_100")
+        })
+        .unwrap();
+    for (mode, groups) in [
+        (
+            ugoite_domain::sql_document::SqlDocumentGroupByMode::Expressions,
+            vec![vec![grouping_key.id]],
+        ),
+        (
+            ugoite_domain::sql_document::SqlDocumentGroupByMode::All,
+            vec![],
+        ),
+        (
+            ugoite_domain::sql_document::SqlDocumentGroupByMode::Rollup,
+            vec![vec![grouping_key.id]],
+        ),
+        (
+            ugoite_domain::sql_document::SqlDocumentGroupByMode::Cube,
+            vec![vec![grouping_key.id]],
+        ),
+        (
+            ugoite_domain::sql_document::SqlDocumentGroupByMode::GroupingSets,
+            vec![vec![grouping_key.id], vec![]],
+        ),
+    ] {
+        let grouped_document =
+            ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+                grouping_source,
+                &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                    contract_version: grouping_document.contract_version,
+                    expected_source: grouping_source.to_owned(),
+                    edits: vec![
+                        ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetGroupByStructure {
+                            node_id: grouping_select.id,
+                            expected_kind: grouping_select.kind,
+                            mode,
+                            groups,
+                        },
+                    ],
+                },
+            )?
+            .document;
+        let grouped = context.execute(grouped_document.to_sql()).await?;
+        assert!(!grouped.is_empty(), "{}", grouped_document.to_sql());
+        assert!(
+            grouped.iter().any(|batch| batch.num_rows() > 0),
+            "{}",
+            grouped_document.to_sql()
+        );
+    }
 
     let apply = |source: &str, edit: ugoite_domain::sql_document::SqlDocumentSemanticEdit| {
         let document = ugoite_domain::sql_document::parse_sql_document(source);
@@ -3816,64 +4102,6 @@ async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_
         .map(|result| result.document.to_sql().to_owned())
         .map_err(anyhow::Error::from)
     };
-
-    let filter_source = "SELECT field_101 > 0 FROM tasks WHERE field_101 = 10";
-    let filter_document = ugoite_domain::sql_document::parse_sql_document(filter_source);
-    let where_clause = filter_document
-        .nodes
-        .iter()
-        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::WhereClause)
-        .expect("the filter clause is represented");
-    let replacement = filter_document
-        .nodes
-        .iter()
-        .find(|node| {
-            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression
-                && filter_document.source_slice(node.range.unwrap()) == Some("field_101 > 0")
-        })
-        .expect("the SELECT predicate is a reusable typed filter expression");
-    let replaced_filter = apply(
-        filter_source,
-        ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetFilterPredicate {
-            node_id: where_clause.id,
-            expected_kind: where_clause.kind,
-            expression_node_id: replacement.id,
-            expression_expected_kind: replacement.kind,
-        },
-    )?;
-    let filtered = context.execute(&replaced_filter).await?;
-    assert_eq!(
-        filtered.iter().map(|batch| batch.num_rows()).sum::<usize>(),
-        3
-    );
-    let predicate = filtered[0]
-        .column(0)
-        .as_any()
-        .downcast_ref::<BooleanArray>()
-        .expect("filter replacement remains a boolean expression");
-    assert!(predicate.values().iter().all(|value| value));
-
-    let replaced_document = ugoite_domain::sql_document::parse_sql_document(&replaced_filter);
-    let where_clause = replaced_document
-        .nodes
-        .iter()
-        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::WhereClause)
-        .expect("the replaced filter remains represented");
-    let without_filter = apply(
-        &replaced_filter,
-        ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveFilterClause {
-            node_id: where_clause.id,
-            expected_kind: where_clause.kind,
-        },
-    )?;
-    let unfiltered = context.execute(&without_filter).await?;
-    assert_eq!(
-        unfiltered
-            .iter()
-            .map(|batch| batch.num_rows())
-            .sum::<usize>(),
-        3
-    );
 
     let group_source = "SELECT field_100, SUM(field_101) FROM tasks GROUP BY field_100, field_102";
     let group_document = ugoite_domain::sql_document::parse_sql_document(group_source);
@@ -4201,6 +4429,141 @@ async fn predicate_and_typed_literal_constructors_execute_in_authorized_queries(
             2
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn semi_and_anti_join_constructors_execute_in_authorized_queries() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentIdentifier,
+        SqlDocumentJoin, SqlDocumentJoinConstraint, SqlDocumentJoinOperator, SqlDocumentNodeKind,
+        SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(9910)),
+        "memory://authorized-query-sql-document-semi-anti-joins",
+    )
+    .await?;
+    let tasks = aggregate_form(9911);
+    create_form(&workspace, &tasks).await?;
+    append_aggregate_batch(
+        &workspace,
+        vec![
+            aggregate_revision(&tasks, 9912, 9922, "alpha", 10, FieldValue::Null),
+            aggregate_revision(&tasks, 9913, 9923, "beta", 20, FieldValue::Null),
+        ],
+    )
+    .await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[9912, 9913]))
+        .await?;
+
+    for (operator, expected_rows) in [
+        (SqlDocumentJoinOperator::LeftSemi, 2),
+        (SqlDocumentJoinOperator::RightSemi, 2),
+        (SqlDocumentJoinOperator::LeftAnti, 0),
+        (SqlDocumentJoinOperator::RightAnti, 0),
+    ] {
+        let source = "SELECT 1 FROM tasks AS l WHERE 1 = 1";
+        let document = parse_sql_document(source);
+        let tree = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RelationTree)
+            .expect("the left relation has a typed relation tree");
+        let condition = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the equality condition is a typed expression");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::AddJoin {
+                    node_id: tree.id,
+                    expected_kind: tree.kind,
+                    join: SqlDocumentJoin {
+                        operator,
+                        relation: SqlDocumentRelationFactor::Table {
+                            name: vec![SqlDocumentIdentifier {
+                                value: "tasks".into(),
+                                quote_style: None,
+                            }],
+                            alias: Some(SqlDocumentIdentifier {
+                                value: "r".into(),
+                                quote_style: None,
+                            }),
+                        },
+                        constraint: SqlDocumentJoinConstraint::On {
+                            expression_node_id: condition.id,
+                            expression_expected_kind: condition.kind,
+                        },
+                    },
+                }],
+            },
+        )?;
+        let batches = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(
+            batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            expected_rows,
+            "{operator:?}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn expression_and_parameter_limit_constructors_execute_in_authorized_queries(
+) -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(9930)),
+        "memory://authorized-query-sql-document-limit-expressions",
+    )
+    .await?;
+    let tasks = aggregate_form(9931);
+    create_form(&workspace, &tasks).await?;
+    append_aggregate_batch(
+        &workspace,
+        vec![
+            aggregate_revision(&tasks, 9932, 9942, "alpha", 10, FieldValue::Null),
+            aggregate_revision(&tasks, 9933, 9943, "beta", 20, FieldValue::Null),
+        ],
+    )
+    .await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[9932, 9933]))
+        .await?;
+
+    let expression = context
+        .execute("SELECT field_100 FROM tasks LIMIT 1 + 1")
+        .await?;
+    assert_eq!(
+        expression
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        2
+    );
+
+    let parameter = context
+        .execute_with_parameters(
+            "SELECT field_100 FROM tasks LIMIT $rows",
+            HashMap::from([(
+                "rows".to_owned(),
+                datafusion::scalar::ScalarValue::Int64(Some(1)),
+            )]),
+        )
+        .await?;
+    assert_eq!(
+        parameter
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1
+    );
     Ok(())
 }
 

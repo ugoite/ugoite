@@ -2902,6 +2902,130 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_relational_constructors_protocol_match_native_and_undo() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,
+            SqlDocumentJoinOperator, SqlDocumentNodeKind, SqlDocumentQueryLimit,
+            SqlDocumentRelationFactor, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        fn assert_protocol(source: &str, transaction: SqlDocumentSemanticEditTransaction) {
+            let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+                source,
+                &transaction,
+            )
+            .expect("the typed relational edit applies natively");
+            let request = serde_json::json!({
+                "action": "domain.apply_sql_document_semantic_edit_transaction",
+                "value": { "current_source": source, "transaction": transaction },
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+
+            let undo_request = serde_json::json!({
+                "action": "domain.apply_sql_document_edit_transaction",
+                "value": { "current_source": native.document.source, "transaction": native.undo },
+            });
+            let undo_response: Value =
+                serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+            assert_eq!(undo_response["ok"], true, "{undo_response}");
+            assert_eq!(undo_response["value"]["document"]["source"], source);
+        }
+
+        let source = "SELECT 1 + 2";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is parser-backed");
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the LIMIT expression source is typed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::SetLimitExpression {
+                    node_id: query.id,
+                    expected_kind: query.kind,
+                    value: SqlDocumentQueryLimit::Expression {
+                        expression_node_id: expression.id,
+                        expression_expected_kind: expression.kind,
+                    },
+                }],
+            },
+        );
+
+        let source = "WITH c (old_name) AS (SELECT 1) SELECT c.old_name FROM c";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let cte = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CommonTableExpression)
+            .expect("the CTE is parser-backed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                    node_id: cte.id,
+                    expected_kind: cte.kind,
+                    aliases: vec![SqlDocumentIdentifier {
+                        value: "new_name".to_owned(),
+                        quote_style: None,
+                    }],
+                }],
+            },
+        );
+
+        let source = "SELECT 1 FROM \"G\" WHERE 1 = 1";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let tree = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RelationTree)
+            .expect("the relation tree is parser-backed");
+        let condition = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the ON expression source is typed");
+        assert_protocol(
+            source,
+            SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::AddJoin {
+                    node_id: tree.id,
+                    expected_kind: tree.kind,
+                    join: SqlDocumentJoin {
+                        operator: SqlDocumentJoinOperator::LeftSemi,
+                        relation: SqlDocumentRelationFactor::Table {
+                            name: vec![SqlDocumentIdentifier {
+                                value: "H".to_owned(),
+                                quote_style: None,
+                            }],
+                            alias: None,
+                        },
+                        constraint: SqlDocumentJoinConstraint::On {
+                            expression_node_id: condition.id,
+                            expression_expected_kind: condition.kind,
+                        },
+                    },
+                }],
+            },
+        );
+    }
+
+    #[test]
     fn sql_document_cast_target_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentCastType, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
@@ -4111,6 +4235,15 @@ mod tests {
                 function: SqlDocumentAggregateFunction::Avg,
             },
         );
+        let filter_seed = assert_parity(
+            aggregate_source,
+            SqlDocumentSemanticEdit::SetAggregateFilter {
+                node_id: sum.id,
+                expected_kind: sum.kind,
+                enabled: true,
+            },
+        );
+        assert!(filter_seed.document.source.contains("FILTER (WHERE TRUE)"));
         let average_document =
             ugoite_domain::sql_document::parse_sql_document(&average.document.source);
         let avg = average_document
@@ -4334,8 +4467,8 @@ mod tests {
     #[test]
     fn sql_document_group_by_expression_protocol_matches_native() {
         use ugoite_domain::sql_document::{
-            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
-            SQL_DOCUMENT_CONTRACT_VERSION,
+            SqlDocumentGroupByMode, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
         let source = "SELECT field_100 FROM \"G\" ORDER BY field_100";
@@ -4384,6 +4517,34 @@ mod tests {
         assert_eq!(
             response["value"]["document"]["source"],
             "SELECT field_100 FROM \"G\" GROUP BY field_100 ORDER BY field_100"
+        );
+
+        let group_sets = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetGroupByStructure {
+                node_id: select.id,
+                expected_kind: SqlDocumentNodeKind::Select,
+                mode: SqlDocumentGroupByMode::GroupingSets,
+                groups: vec![vec![expression.id], vec![]],
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &group_sets,
+        )
+        .expect("native grouping-set construction succeeds");
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": group_sets },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            native.document.source,
+            "SELECT field_100 FROM \"G\" GROUP BY GROUPING SETS ((field_100), ()) ORDER BY field_100"
         );
     }
 
