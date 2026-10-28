@@ -259,6 +259,7 @@ export function parseDelimitedPreview(
   let row: string[] = [];
   let field = "";
   let quoted = false;
+  let truncatedRows = false;
 
   const pushField = () => {
     row.push(field);
@@ -269,11 +270,19 @@ export function parseDelimitedPreview(
     if (row.length > 0 || field !== "" || rows.length === 0) {
       pushField();
       rows.push(row);
+      // The preview shows only the first MAX_PREVIEW_ROWS rows. Once one
+      // extra complete row proves truncation, parsing the remaining text
+      // cannot change the preview or its truncation notice.
+      truncatedRows = rows.length > MAX_PREVIEW_ROWS;
     }
     row = [];
   };
 
-  for (let index = 0; index < text.length; index += 1) {
+  for (
+    let index = 0;
+    index < text.length && !truncatedRows;
+    index += 1
+  ) {
     const character = text[index];
     if (quoted) {
       if (character === '"') {
@@ -298,9 +307,8 @@ export function parseDelimitedPreview(
       field += character;
     }
   }
-  if (quoted || field !== "" || row.length > 0) pushRow();
+  if (!truncatedRows && (quoted || field !== "" || row.length > 0)) pushRow();
 
-  const truncatedRows = rows.length > MAX_PREVIEW_ROWS;
   const visibleRows = rows.slice(0, MAX_PREVIEW_ROWS);
   const truncatedColumns = visibleRows.some((candidate) =>
     candidate.length > MAX_PREVIEW_COLUMNS
