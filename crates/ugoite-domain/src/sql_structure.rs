@@ -5949,7 +5949,7 @@ mod tests {
             .filter_map(serde_json::Value::as_str)
             .collect::<BTreeSet<_>>();
         assert!(join_limits.contains(
-            &"one self-join of the selected Form with explicit distinct aliases and a closed INNER/LEFT/RIGHT/FULL join-kind choice"
+            &"one self-join of the selected Form with explicit distinct aliases and a closed INNER/LEFT/RIGHT/FULL join-kind choice in the subset editor"
         ));
         assert!(join_limits.contains(
             &"WHERE supports bounded AND/OR/NOT trees of qualified parameter comparisons, single-value IN/NOT IN, two-bound BETWEEN, LIKE/ILIKE, and IS NULL/IS NOT NULL on qualified columns; adding a JOIN qualifies every supported predicate leaf; ORDER BY supports simple qualified columns with ASC/DESC and NULLS FIRST/LAST; unqualified references fail closed"
