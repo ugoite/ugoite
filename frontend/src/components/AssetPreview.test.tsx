@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 
 import { AssetPreview } from "./AssetPreview";
+import { MAX_PREVIEW_ROWS } from "~/lib/asset-preview";
 import type { AssetReference } from "~/lib/types";
 
 const asset = (name: string, media_type: string): AssetReference => ({
@@ -93,6 +94,37 @@ describe("AssetPreview", () => {
     expect(await screen.findByRole("columnheader", { name: "Name" }))
       .toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Apple" })).toBeInTheDocument();
+  });
+
+  it("keeps the row limit and truncation notice when the ignored CSV tail is malformed", async () => {
+    const csv = [
+      "Name,Note",
+      ...Array.from(
+        { length: MAX_PREVIEW_ROWS },
+        (_, index) => `Row ${index + 1},Visible value ${index + 1}`,
+      ),
+      '"unterminated,hidden tail',
+    ].join("\n");
+    const { container } = render(() => (
+      <AssetPreview
+        reference={asset("data.csv", "text/csv")}
+        blob={new Blob([csv])}
+        url="blob:csv"
+      />
+    ));
+
+    expect(await screen.findByRole("columnheader", { name: "Name" }))
+      .toBeInTheDocument();
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(
+      MAX_PREVIEW_ROWS - 1,
+    );
+    expect(screen.getByRole("cell", { name: "Visible value 199" }))
+      .toBeInTheDocument();
+    expect(
+      screen.getByText("Only the first 200 rows and 50 columns are shown."),
+    )
+      .toBeInTheDocument();
+    expect(screen.queryByText("hidden tail")).not.toBeInTheDocument();
   });
 
   it("does not offer an active preview for SVG or HTML", () => {

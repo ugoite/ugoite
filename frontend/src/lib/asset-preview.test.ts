@@ -146,6 +146,29 @@ describe("bounded asset preview helpers", () => {
     expect(preview.truncatedColumns).toBe(true);
   });
 
+  it("keeps the visible CSV rows and row-truncation state when the tail is malformed", () => {
+    const visibleRows = [
+      "Name,Note",
+      ...Array.from(
+        { length: MAX_PREVIEW_ROWS },
+        (_, index) => `Row ${index + 1},Visible value ${index + 1}`,
+      ),
+    ];
+    const preview = parseDelimitedPreview(
+      [...visibleRows, '"unterminated,hidden tail'].join("\n"),
+      ",",
+    );
+
+    expect(preview.rows).toHaveLength(MAX_PREVIEW_ROWS);
+    expect(preview.rows[0]).toEqual(["Name", "Note"]);
+    expect(preview.rows.at(-1)).toEqual([
+      `Row ${MAX_PREVIEW_ROWS - 1}`,
+      `Visible value ${MAX_PREVIEW_ROWS - 1}`,
+    ]);
+    expect(preview.truncatedRows).toBe(true);
+    expect(preview.truncatedColumns).toBe(false);
+  });
+
   it("reads only the bounded text prefix", async () => {
     const blob = new Blob(["x".repeat(600_000)], { type: "text/plain" });
     const text = await readPreviewText(blob);
