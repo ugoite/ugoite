@@ -14798,6 +14798,8 @@ mod authentication_regression_tests {
     const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
     const SQL_FIRST_COMPOSITION_TEST_YAML: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
+    const REMOVED_SOURCE_GRAMMAR_TEST_YAML: &str =
+        include_str!("../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
 
     #[tokio::test]
     async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
@@ -15025,6 +15027,17 @@ mod authentication_regression_tests {
             let (status, _) = route_json(owner_route.clone(), post_save(body)?).await?;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         }
+        let (removed_grammar_status, removed_grammar_body) = route_json(
+            owner_route.clone(),
+            post_save(json!({"yaml": REMOVED_SOURCE_GRAMMAR_TEST_YAML}))?,
+        )
+        .await?;
+        assert_eq!(
+            removed_grammar_status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{removed_grammar_body}"
+        );
+        assert_eq!(removed_grammar_body["code"], "invalid_composition");
         let (empty_status, empty_page) = route_json(
             owner_route.clone(),
             Request::get(format!("/spaces/{space_id}/compositions?limit=1")).body(Body::empty())?,
