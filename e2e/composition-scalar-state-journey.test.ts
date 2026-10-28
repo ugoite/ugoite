@@ -358,6 +358,89 @@ function metricOutput(page: Page, variableId: string) {
 
 const scalarResultTimeoutMs = 30_000;
 
+test("Composition preserves signed 64-bit SQL results in Table and Metric after reopening", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const spaceId = await createSpace(request);
+  const name = `Exact integer ${crypto.randomUUID().slice(0, 8)}`;
+  const sql = "SELECT CAST('9223372036854775807' AS BIGINT) AS maximum, " +
+    "CAST('-9223372036854775808' AS BIGINT) AS minimum";
+  const inline = {
+    kind: "inline_sql",
+    sql,
+    arguments: [],
+    form_bindings: [],
+    schema_fingerprint: "",
+  };
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name,
+    variables: [
+      {
+        id: "bounds",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: inline,
+      },
+      {
+        id: "maximum",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          ...inline,
+          sql: "SELECT CAST('9223372036854775807' AS BIGINT) AS maximum",
+        },
+      },
+      {
+        id: "minimum",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          ...inline,
+          sql: "SELECT CAST('-9223372036854775808' AS BIGINT) AS minimum",
+        },
+      },
+    ],
+    components: [
+      { id: "table", kind: "table", variable: "bounds" },
+      { id: "max_metric", kind: "metric", variable: "maximum" },
+      { id: "min_metric", kind: "metric", variable: "minimum" },
+    ],
+    rows: [{
+      id: "values",
+      items: ["table", "max_metric", "min_metric"].map((component) => ({
+        kind: "component" as const,
+        component,
+      })),
+    }],
+  });
+  const seed = await saveCompositionSeed(request, spaceId, yaml, name);
+  await openSavedComposition(page, seed);
+  for (let visit = 0; visit < 2; visit++) {
+    const table = page.getByRole("table", { name: "bounds results" });
+    await expect(table).toContainText("9223372036854775807", {
+      timeout: scalarResultTimeoutMs,
+    });
+    await expect(table).toContainText("-9223372036854775808", {
+      timeout: scalarResultTimeoutMs,
+    });
+    await expect(metricOutput(page, "maximum")).toHaveText(
+      "9223372036854775807",
+      { timeout: scalarResultTimeoutMs },
+    );
+    await expect(metricOutput(page, "minimum")).toHaveText(
+      "-9223372036854775808",
+      { timeout: scalarResultTimeoutMs },
+    );
+    if (visit === 0) await page.reload({ waitUntil: "domcontentloaded" });
+  }
+});
+
 async function openOwnerPage(
   browser: Browser,
   context: BrowserContext,

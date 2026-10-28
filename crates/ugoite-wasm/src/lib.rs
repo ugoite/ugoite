@@ -4786,6 +4786,84 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_postfix_predicate_and_typed_literal_protocol_match_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentNodeKind, SqlDocumentPredicateTemplate, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+            SqlDocumentTypedLiteralType, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "SELECT DATE '2026-01-01'";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let literal = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::LiteralExpression)
+            .expect("DATE literal is an expression node");
+        let literal_edit = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::ReplaceLiteral {
+                node_id: literal.id,
+                expected_kind: literal.kind,
+                literal: SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Date,
+                    value: "2026-02-03".into(),
+                },
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &literal_edit,
+        )
+        .expect("native typed literal edit succeeds");
+        let literal_request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": literal_edit },
+        });
+        let literal_response: Value =
+            serde_json::from_str(&super::invoke_json(&literal_request.to_string())).unwrap();
+        assert_eq!(literal_response["ok"], true, "{literal_response}");
+        assert_eq!(
+            literal_response["value"],
+            serde_json::to_value(&native).unwrap()
+        );
+
+        let source = "SELECT enabled FROM \"G\"";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::IdentifierExpression)
+            .expect("the selected expression is parsed");
+        let predicate_edit = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInPredicate {
+                node_id: expression.id,
+                expected_kind: expression.kind,
+                template: SqlDocumentPredicateTemplate::IsNotDistinctFrom,
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &predicate_edit,
+        )
+        .expect("native typed predicate edit succeeds");
+        let predicate_request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": predicate_edit },
+        });
+        let predicate_response: Value =
+            serde_json::from_str(&super::invoke_json(&predicate_request.to_string())).unwrap();
+        assert_eq!(predicate_response["ok"], true, "{predicate_response}");
+        assert_eq!(
+            predicate_response["value"],
+            serde_json::to_value(&native).unwrap()
+        );
+    }
+
+    #[test]
     fn sql_document_in_list_value_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
@@ -5514,6 +5592,21 @@ mod tests {
             (
                 VariableGraphScalarType::Integer,
                 "9007199254740992",
+                serde_json::json!({"status": "valid", "value": 9_007_199_254_740_992_i64}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "9223372036854775807",
+                serde_json::json!({"status": "valid", "value": i64::MAX}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "-9223372036854775808",
+                serde_json::json!({"status": "valid", "value": i64::MIN}),
+            ),
+            (
+                VariableGraphScalarType::Integer,
+                "9223372036854775808",
                 serde_json::json!({"status": "invalid"}),
             ),
             (

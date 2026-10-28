@@ -401,32 +401,26 @@ mod tests {
     }
 
     #[test]
-    fn supplied_integers_obey_the_portable_safe_range() {
-        let maximum = super::super::MAX_COMPOSITION_VARIABLE_INTEGER;
-        for value in [maximum, -maximum] {
+    fn supplied_integers_accept_the_complete_i64_range() {
+        for value in [i64::MIN, i64::MAX] {
             let resolved = resolve_variable_graph_inputs(
                 &graph(vec![input("amount", false, None)]),
                 &BTreeMap::from([("amount".to_owned(), VariableGraphLiteral::Integer(value))]),
             )
-            .expect("safe integer input");
+            .expect("signed 64-bit integer input");
             assert_eq!(
                 resolved.values["amount"],
                 VariableGraphLiteral::Integer(value)
             );
         }
 
-        for value in [maximum + 1, -maximum - 1] {
-            let error = resolve_variable_graph_inputs(
-                &graph(vec![input("amount", false, None)]),
-                &BTreeMap::from([("amount".to_owned(), VariableGraphLiteral::Integer(value))]),
-            )
-            .expect_err("unsafe integer input");
+        for raw in ["9223372036854775808", "-9223372036854775809", "1.0"] {
             assert_eq!(
-                error.inputs,
-                [diagnostic(
-                    VariableGraphInputDiagnosticCode::InputTypeMismatch,
-                    "amount"
-                )]
+                parse_variable_graph_input(
+                    descriptor(VariableGraphScalarType::Integer, false),
+                    raw,
+                ),
+                VariableGraphInputValue::Invalid,
             );
         }
     }

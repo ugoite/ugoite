@@ -42,7 +42,7 @@ features:
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, and simple CASE operands while retaining untouched SQL source and guarded undo.
+        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, and typed temporal or hex literals while retaining untouched SQL source and guarded undo.
         targets:
           - id: semantic-expression-edits
             adapter: rust
@@ -54,7 +54,7 @@ features:
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, and simple-versus-searched CASE operand selection in the SQL document tree editor.
+        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, and typed temporal or hex literal controls in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -684,8 +684,17 @@ features:
       - id: typed-expression-attributes-verification
         role: verification
         facet: verification
-        responsibility: Verify lossless typed CAST, operator, and CASE edits in native Rust, actual WASM protocol dispatch, and browser DOM controls.
+        responsibility: Verify lossless typed CAST, operator, CASE, predicate, and literal edits in native Rust, authorized executor contexts, actual WASM protocol dispatch, and browser DOM controls.
         targets:
+          - id: predicate-literal-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: predicate_and_typed_literal_constructors_execute_in_authorized_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: predicate_and_typed_literal_constructors_execute_in_authorized_queries } }
           - id: native-cast-case-operator-edits
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
@@ -740,6 +749,42 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors NOT and bitwise AND from the inspector and restores both with WASM undo } }
+          - id: predicate-and-typed-literal-native
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_typed_temporal_and_hex_literals_are_editable_and_undoable }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_typed_temporal_and_hex_literals_are_editable_and_undoable } }
+          - id: predicate-and-typed-literal-wasm
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_postfix_predicate_and_typed_literal_protocol_match_native }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_postfix_predicate_and_typed_literal_protocol_match_native } }
+          - id: typed-date-literal-dom-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: authors typed DATE literals from the inspector and restores them with WASM undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors typed DATE literals from the inspector and restores them with WASM undo } }
+          - id: null-safe-predicate-dom-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: constructs a NULL-safe predicate from the inspector and restores it with WASM undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: constructs a NULL-safe predicate from the inspector and restores it with WASM undo } }
           - id: frontend-existing-not-actual-wasm
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx

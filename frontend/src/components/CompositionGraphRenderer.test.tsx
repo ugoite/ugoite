@@ -18,7 +18,7 @@ const draft: CompositionGraphDraft = {
       kind: "input",
       value_type: { scalar_type: "integer", nullable: false },
       required: true,
-      default: { kind: "integer", value: 1 },
+      default: { kind: "integer", value: "1" },
     },
     {
       id: "rows",
@@ -70,7 +70,7 @@ const evaluation: CompositionEvaluationResponse = {
   evaluation_id: "evaluation-1",
   ok: true,
   computed_query_ids: ["rows", "total"],
-  variable_values: { minimum: { kind: "integer", value: 1 } },
+  variable_values: { minimum: { kind: "integer", value: "1" } },
   queries: [],
   component_bindings: [],
   dependencies: {},
@@ -89,15 +89,15 @@ const evaluation: CompositionEvaluationResponse = {
           },
         ],
         rows: [
-          [{ kind: "string", value: "Alpha" }, { kind: "integer", value: 4 }],
-          [{ kind: "string", value: "Beta" }, { kind: "integer", value: 7 }],
+          [{ kind: "string", value: "Alpha" }, { kind: "integer", value: "4" }],
+          [{ kind: "string", value: "Beta" }, { kind: "integer", value: "7" }],
         ],
       },
       has_more: true,
       next: "cursor-2",
     },
     total: {
-      value: { kind: "scalar", value: { kind: "integer", value: 2 } },
+      value: { kind: "scalar", value: { kind: "integer", value: "2" } },
       has_more: false,
     },
   },
@@ -136,6 +136,50 @@ describe("CompositionGraphRenderer", () => {
     expect(onNext).toHaveBeenCalledWith("rows", "cursor-2");
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     expect(onPrevious).toHaveBeenCalledWith("rows");
+  });
+
+  it("renders i64 values exactly in Table cells and Metrics", () => {
+    const maximum = "9223372036854775807";
+    const largeEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      query_results: {
+        ...evaluation.query_results,
+        rows: {
+          ...evaluation.query_results.rows,
+          value: {
+            kind: "table",
+            columns: evaluation.query_results.rows.value.kind === "table"
+              ? evaluation.query_results.rows.value.columns
+              : [],
+            rows: [[
+              { kind: "string", value: "Large" },
+              { kind: "integer", value: maximum },
+            ]],
+          },
+        },
+        total: {
+          value: { kind: "scalar", value: { kind: "integer", value: maximum } },
+          has_more: false,
+        },
+      },
+    };
+    render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={largeEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("cell", { name: maximum })).toBeInTheDocument();
+    expect(screen.getByLabelText("total")).toHaveTextContent(maximum);
   });
 
   it("announces an empty table after successful evaluation without keeping previous rows", () => {
@@ -209,7 +253,7 @@ describe("CompositionGraphRenderer", () => {
       query_results: {
         ...evaluation.query_results,
         [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: 20 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "20" } },
           has_more: false,
         },
       },
@@ -269,7 +313,7 @@ describe("CompositionGraphRenderer", () => {
       query_results: {
         ...evaluation.query_results,
         [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
           has_more: false,
         },
       },
@@ -328,7 +372,7 @@ describe("CompositionGraphRenderer", () => {
       query_results: {
         ...evaluation.query_results,
         [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: 20 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "20" } },
           has_more: false,
         },
       },

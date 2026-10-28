@@ -410,3 +410,222 @@ features:
                     test: "independent Composition results update while another Input is invalid in Design and runtime",
                   },
                 }
+  - id: FEAT-COMP-012
+    title: Exact signed 64-bit Composition integers
+    summary: Preserve the complete signed 64-bit integer range across typed Composition documents, inputs, SQL arguments, query results, and browser protocol boundaries without assigning integer semantics to opaque JSON.
+    status: planned
+    bindings:
+      - id: typed-integer-domain
+        role: implementation
+        facet: core
+        responsibility: Validate typed graph integer values against signed i64 bounds and retain their integer meaning through result validation.
+        targets:
+          - id: variable-graph-integer-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: symbol, name: VariableGraphLiteral }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+      - id: exact-browser-integer-transport
+        role: implementation
+        facet: frontend
+        responsibility: Preserve exact source tokens only for typed Composition integers and reject unsafe rounded numbers while leaving JSON payloads opaque.
+        targets:
+          - id: exact-composition-integer-codec
+            adapter: typescript
+            path: frontend/src/lib/exact-integer.ts
+            selector: { kind: symbol, name: decodeCompositionDocumentIntegers }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+          - id: exact-composition-integer-encoder
+            adapter: typescript
+            path: frontend/src/lib/exact-integer.ts
+            selector: { kind: symbol, name: encodeCompositionDocumentIntegers }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+      - id: exact-composition-integer-verification
+        role: verification
+        facet: verification
+        responsibility: Verify signed 64-bit endpoints, rejection beyond the typed integer range, exact browser boundary transport, and opaque JSON behavior.
+        targets:
+          - id: domain-i64-constants-and-defaults
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: test, name: integer_constants_and_defaults_accept_the_complete_i64_range }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.typed-integer-domain/target.variable-graph-integer-contract]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: integer_constants_and_defaults_accept_the_complete_i64_range } }
+          - id: domain-i64-rejection
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: test, name: integer_literal_wire_rejects_values_outside_signed_i64 }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.typed-integer-domain/target.variable-graph-integer-contract]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: integer_literal_wire_rejects_values_outside_signed_i64 } }
+          - id: core-i64-query-inputs
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector: { kind: test, name: selected_query_inputs_preserve_full_i64_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.typed-integer-domain/target.variable-graph-integer-contract]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-core, harness: composition_query_evaluation, test: selected_query_inputs_preserve_full_i64_values } }
+          - id: browser-i64-protocol-boundaries
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: preserves typed Composition i64 values across real HTTP and WASM boundaries }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.exact-browser-integer-transport/target.exact-composition-integer-codec]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: preserves typed Composition i64 values across real HTTP and WASM boundaries } }
+          - id: browser-opaque-json-and-unsafe-number
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: keeps exact i64 literals in Composition documents and leaves JSON payloads opaque }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.exact-browser-integer-transport/target.exact-composition-integer-codec]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: keeps exact i64 literals in Composition documents and leaves JSON payloads opaque } }
+          - id: browser-rejects-rounded-number
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: rejects unsafe JavaScript numbers instead of encoding their rounded value }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers: [FEAT-COMP-012#binding.exact-browser-integer-transport/target.exact-composition-integer-encoder]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: rejects unsafe JavaScript numbers instead of encoding their rounded value } }
+          - id: complete-i64-sql-browser-journey
+            adapter: typescript
+            path: e2e/composition-scalar-state-journey.test.ts
+            selector: { kind: test, name: Composition preserves signed 64-bit SQL results in Table and Metric after reopening }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.full-signed-i64-graph-values
+                covers:
+                  - FEAT-COMP-012#binding.typed-integer-domain/target.variable-graph-integer-contract
+                  - FEAT-COMP-012#binding.exact-browser-integer-transport/target.exact-composition-integer-codec
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-scalar-state-journey.test.ts, test: Composition preserves signed 64-bit SQL results in Table and Metric after reopening } }
+  - id: FEAT-COMP-013
+    title: Table result column presentation
+    summary: Persist an ordered, exact-key Table display projection with human-readable headings while keeping SQL aliases and result schemas owned by the query variable.
+    status: planned
+    bindings:
+      - id: table-presentation-domain
+        role: implementation
+        facet: core
+        responsibility: Canonicalize Table presentation metadata only when each ordered key is unique and belongs to the bound table result schema.
+        targets:
+          - id: canonical-table-presentation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: canonicalize_composition }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+      - id: table-presentation-browser
+        role: implementation
+        facet: frontend
+        responsibility: Render configured Table columns by exact result key and heading, preserve projection order, and expose unresolved stale keys for repair instead of retargeting by position.
+        targets:
+          - id: composition-table-rendering
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphRenderer.tsx
+            selector: { kind: symbol, name: CompositionGraphRenderer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+          - id: sql-result-table-projection
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.tsx
+            selector: { kind: symbol, name: SqlResultTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+          - id: composition-table-inspector
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphDesignCanvas.tsx
+            selector: { kind: symbol, name: CompositionTableInspector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+      - id: table-presentation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact key validation, order, stale-key failure and repair, Form-derived initial projection, and exact-key browser rendering.
+        targets:
+          - id: canonical-table-presentation-test
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: test, name: table_presentation_is_ordered_display_metadata_bound_to_exact_result_columns }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-domain/target.canonical-table-presentation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: table_presentation_is_ordered_display_metadata_bound_to_exact_result_columns } }
+          - id: stale-table-presentation-repair-test
+            adapter: typescript
+            path: frontend/src/lib/composition-variable-binding.test.ts
+            selector: { kind: test, name: lets edited SQL resolve before a stale Table view is repaired }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.composition-table-rendering]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-variable-binding.test.ts, test: lets edited SQL resolve before a stale Table view is repaired } }
+          - id: form-table-presentation-rebinding-test
+            adapter: typescript
+            path: frontend/src/lib/composition-variable-binding.test.ts
+            selector: { kind: test, name: attaches a Form table view and clears it when the component changes source }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.composition-table-rendering]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-variable-binding.test.ts, test: attaches a Form table view and clears it when the component changes source } }
+          - id: populated-form-table-save-and-reopen
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: Composition Studio creates a populated Form table from a fresh unnamed Composition and reopens it }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers:
+                  - FEAT-COMP-013#binding.table-presentation-domain/target.canonical-table-presentation
+                  - FEAT-COMP-013#binding.table-presentation-browser/target.sql-result-table-projection
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio creates a populated Form table from a fresh unnamed Composition and reopens it } }
+          - id: exact-key-table-rendering-test
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: projects ordered display columns without changing row keys or indexes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.sql-result-table-projection]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: projects ordered display columns without changing row keys or indexes } }
+          - id: mobile-table-inspector-test
+            adapter: typescript
+            path: e2e/composition-table-inspector-mobile.test.ts
+            selector: { kind: test, name: Composition Table inspector keeps selected fields legible on mobile }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.composition-table-inspector]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-inspector-mobile.test.ts, test: Composition Table inspector keeps selected fields legible on mobile } }
+          - id: invalid-table-projection-fails-closed-test
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: fails closed for a configured view with an unknown result key }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.table-result-column-presentation
+                covers: [FEAT-COMP-013#binding.table-presentation-browser/target.sql-result-table-projection]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: fails closed for a configured view with an unknown result key } }

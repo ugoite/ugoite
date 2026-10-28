@@ -25,7 +25,10 @@ describe("SqlResultTable", () => {
   it.each([0, 1, 50, 100])(
     "renders the %i-row page as a complete native table",
     (count) => {
-      const rows = Array.from({ length: count }, (_, index) => [`row-${index}`]);
+      const rows = Array.from(
+        { length: count },
+        (_, index) => [`row-${index}`],
+      );
       renderTable(["value"], rows);
       if (count === 0) {
         expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -171,5 +174,82 @@ describe("SqlResultTable", () => {
     expect(screen.getByRole("cell", { name: "42" })).not.toHaveClass(
       "result-table-cell--numeric",
     );
+  });
+
+  it("projects ordered display columns without changing row keys or indexes", () => {
+    const { container } = render(() => (
+      <SqlResultTable
+        columns={["_ugoite_id", "field_101", "_ugoite_updated_at"]}
+        columnTypes={["string", "integer", "timestamp"]}
+        displayColumns={[
+          { column: "field_101", label: "Quantity" },
+          { column: "_ugoite_id", label: "Entry ID" },
+        ]}
+        rows={[["entry-a", 7, "2026-10-27T00:00:00Z"]]}
+        exactIntegerRows={[[null, "9007199254740999", null]]}
+        pageIdentity="composition-preview"
+        tableLabel="Orders results"
+      />
+    ));
+
+    const table = container.querySelector("table")!;
+    expect(
+      Array.from(
+        table.querySelectorAll("thead th"),
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(["Quantity", "Entry ID"]);
+    expect(
+      Array.from(
+        table.querySelectorAll("tbody td"),
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(["9007199254740999", "entry-a"]);
+    expect(
+      Array.from(
+        table.querySelectorAll("tbody td"),
+        (cell) => cell.getAttribute("data-column-key"),
+      ),
+    ).toEqual(["field_101", "_ugoite_id"]);
+  });
+
+  it("keeps Composition headers and empty feedback for zero-row results", () => {
+    const { container } = render(() => (
+      <SqlResultTable
+        columns={["name"]}
+        rows={[]}
+        pageIdentity="composition-preview"
+        tableLabel="Rows results"
+        emptyMessage="No results"
+      />
+    ));
+
+    expect(container.querySelector("thead th")).toHaveTextContent("name");
+    expect(screen.getByRole("status")).toHaveTextContent("No results");
+  });
+
+  it.each([
+    ["unknown result key", ["missing"]],
+    ["ambiguous duplicate source key", ["value"]],
+  ])("fails closed for a configured view with an %s", (_cause, columns) => {
+    const sourceColumns = _cause === "ambiguous duplicate source key"
+      ? ["value", "value"]
+      : ["value"];
+    const { container } = render(() => (
+      <SqlResultTable
+        columns={sourceColumns}
+        displayColumns={[{ column: columns[0], label: "Visible" }]}
+        rows={[["first", "second"]]}
+        pageIdentity="composition-preview"
+        tableLabel="Rows results"
+        invalidViewMessage="Configured columns are unavailable"
+      />
+    ));
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Configured columns are unavailable",
+    );
+    expect(container.querySelector("table")).toBeNull();
+    expect(screen.queryByText("first")).toBeNull();
   });
 });

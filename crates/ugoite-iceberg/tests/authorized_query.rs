@@ -4026,6 +4026,185 @@ async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_
 }
 
 #[tokio::test]
+async fn predicate_and_typed_literal_constructors_execute_in_authorized_queries(
+) -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeData,
+        SqlDocumentNodeKind, SqlDocumentPredicateTemplate, SqlDocumentSemanticEdit,
+        SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+        SqlDocumentTypedLiteralType,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(9900)),
+        "memory://authorized-query-sql-document-predicate-literals",
+    )
+    .await?;
+    let tasks = aggregate_form(9901);
+    create_form(&workspace, &tasks).await?;
+    append_aggregate_batch(
+        &workspace,
+        vec![
+            aggregate_revision(&tasks, 9902, 9912, "alpha", 10, FieldValue::Null),
+            aggregate_revision(&tasks, 9903, 9913, "beta", 20, FieldValue::Null),
+        ],
+    )
+    .await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[9902, 9903]))
+        .await?;
+
+    let construct = |source: &str, edit: SqlDocumentSemanticEdit| {
+        let document = parse_sql_document(source);
+        apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![edit],
+            },
+        )
+    };
+    let cases = [
+        (
+            "SELECT field_101 FROM tasks",
+            SqlDocumentPredicateTemplate::In,
+        ),
+        (
+            "SELECT field_101 FROM tasks",
+            SqlDocumentPredicateTemplate::NotIn,
+        ),
+        (
+            "SELECT field_101 FROM tasks",
+            SqlDocumentPredicateTemplate::Between,
+        ),
+        (
+            "SELECT field_101 FROM tasks",
+            SqlDocumentPredicateTemplate::NotBetween,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::Like,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::NotLike,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::ILike,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::NotILike,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::SimilarTo,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::NotSimilarTo,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::IsNull,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::IsNotNull,
+        ),
+        (
+            "SELECT TRUE FROM tasks",
+            SqlDocumentPredicateTemplate::IsTrue,
+        ),
+        (
+            "SELECT TRUE FROM tasks",
+            SqlDocumentPredicateTemplate::IsFalse,
+        ),
+        (
+            "SELECT TRUE FROM tasks",
+            SqlDocumentPredicateTemplate::IsUnknown,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::IsDistinctFrom,
+        ),
+        (
+            "SELECT field_100 FROM tasks",
+            SqlDocumentPredicateTemplate::IsNotDistinctFrom,
+        ),
+    ];
+    for (source, template) in cases {
+        let document = parse_sql_document(source);
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| {
+                matches!(
+                    node.kind,
+                    SqlDocumentNodeKind::IdentifierExpression | SqlDocumentNodeKind::Value
+                )
+            })
+            .expect("the selected expression is parsed");
+        let edited = construct(
+            source,
+            SqlDocumentSemanticEdit::WrapExpressionInPredicate {
+                node_id: expression.id,
+                expected_kind: expression.kind,
+                template,
+            },
+        )?;
+        let batches = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(
+            batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            2
+        );
+    }
+
+    let literal_cases = [
+        (SqlDocumentSemanticLiteral::TypedString {
+            data_type: SqlDocumentTypedLiteralType::Date,
+            value: "2026-02-03".into(),
+        },),
+        (SqlDocumentSemanticLiteral::TypedString {
+            data_type: SqlDocumentTypedLiteralType::Timestamp,
+            value: "2026-02-03 13:45:00".into(),
+        },),
+        (SqlDocumentSemanticLiteral::TypedString {
+            data_type: SqlDocumentTypedLiteralType::Interval,
+            value: "2".into(),
+        },),
+        (SqlDocumentSemanticLiteral::HexString {
+            value: "BEEF".into(),
+        },),
+    ];
+    for (literal,) in literal_cases {
+        let source = "SELECT 1 FROM tasks";
+        let document = parse_sql_document(source);
+        let value = document
+            .nodes
+            .iter()
+            .find(|node| matches!(node.semantic, Some(SqlDocumentNodeData::Literal { .. })))
+            .expect("the seed literal is parsed");
+        let edited = construct(
+            source,
+            SqlDocumentSemanticEdit::ReplaceLiteral {
+                node_id: value.id,
+                expected_kind: value.kind,
+                literal,
+            },
+        )?;
+        let batches = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(
+            batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            2
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn projection_reorder_keeps_authorized_grouping_and_sort_meaning() -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_edit_transaction, apply_sql_document_semantic_edit_transaction,

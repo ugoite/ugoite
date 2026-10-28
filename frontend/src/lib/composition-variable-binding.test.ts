@@ -7,6 +7,7 @@ import {
   compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
   compositionGraphDraftFromDocument,
+  compositionTablePresentationDiagnostics,
   type CompositionVariableNode,
   createCompositionGraphDraft,
   rebindResolvedCompositionComponent,
@@ -138,7 +139,14 @@ describe("strict variable-only Composition bindings", () => {
     const draft = {
       ...createCompositionGraphDraft("Report"),
       variables: [tableNode],
-      components: [{ id: "table_1", kind: "table" as const, variable: "rows" }],
+      components: [{
+        id: "table_1",
+        kind: "table" as const,
+        variable: "rows",
+        presentation: {
+          columns: [{ column: "amount", label: "Amount paid" }],
+        },
+      }],
       layout: {
         kind: "flow" as const,
         rows: [{
@@ -155,7 +163,14 @@ describe("strict variable-only Composition bindings", () => {
       name: "Report",
       spec: {
         variables: [tableNode],
-        components: [{ id: "table_1", kind: "table", variable: "rows" }],
+        components: [{
+          id: "table_1",
+          kind: "table",
+          variable: "rows",
+          presentation: {
+            columns: [{ column: "amount", label: "Amount paid" }],
+          },
+        }],
         layout: draft.layout,
       },
     });
@@ -210,6 +225,43 @@ describe("strict variable-only Composition bindings", () => {
       kind: "component",
       component: "component_1",
     }]);
+  });
+
+  it("attaches a Form table view and clears it when the component changes source", () => {
+    const view = {
+      columns: [{ column: "amount", label: "Amount paid" }],
+    };
+    const inserted = commitResolvedCompositionBinding(
+      createCompositionGraphDraft("Report"),
+      "table",
+      { variable: tableNode, tablePresentation: view },
+    );
+    expect(inserted?.components[0]).toMatchObject({
+      kind: "table",
+      variable: "rows",
+      presentation: view,
+    });
+
+    const withSecondSource = {
+      ...inserted!,
+      variables: [
+        ...inserted!.variables,
+        { ...tableNode, id: "other_rows" },
+      ],
+    };
+    const rebound = rebindResolvedCompositionComponent(
+      withSecondSource,
+      "component_1",
+      {
+        variable: { ...tableNode, id: "other_rows" },
+        reuse_variable_id: "other_rows",
+      },
+    );
+    expect(rebound?.components[0]).toEqual({
+      id: "component_1",
+      kind: "table",
+      variable: "other_rows",
+    });
   });
 
   it("changes one component reference without mutating its shared query", () => {
@@ -326,5 +378,60 @@ describe("strict variable-only Composition bindings", () => {
       "unplaced_component",
       "variable_type_mismatch",
     ]);
+  });
+
+  it("lets edited SQL resolve before a stale Table view is repaired", () => {
+    const draft = {
+      ...createCompositionGraphDraft(),
+      variables: [{
+        ...tableNode,
+        query: {
+          kind: "inline_sql" as const,
+          sql: "SELECT amount AS total FROM receipts",
+          arguments: [],
+          schema_fingerprint: "",
+        },
+      }],
+      components: [{
+        id: "table_1",
+        kind: "table" as const,
+        variable: "rows",
+        presentation: { columns: [{ column: "amount", label: "Amount" }] },
+      }],
+      layout: {
+        kind: "flow" as const,
+        rows: [{
+          id: "main",
+          items: [{ kind: "component" as const, component: "table_1" }],
+        }],
+      },
+    };
+    expect(compositionTablePresentationDiagnostics(draft)).toEqual([]);
+
+    const resolved = {
+      ...draft,
+      variables: [{
+        ...draft.variables[0],
+        returns: {
+          kind: "table" as const,
+          columns: [{
+            name: "total",
+            value_type: { scalar_type: "decimal" as const, nullable: false },
+          }],
+        },
+        query: { ...draft.variables[0].query, schema_fingerprint: "new" },
+      }],
+    };
+    expect(compositionTablePresentationDiagnostics(resolved)).toEqual([
+      "table_presentation_invalid",
+    ]);
+    const repaired = {
+      ...resolved,
+      components: [{
+        ...resolved.components[0],
+        presentation: { columns: [{ column: "total", label: "Total" }] },
+      }],
+    };
+    expect(compositionTablePresentationDiagnostics(repaired)).toEqual([]);
   });
 });

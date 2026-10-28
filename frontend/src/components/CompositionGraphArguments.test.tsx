@@ -47,7 +47,7 @@ describe("Composition shared SQL argument editing", () => {
         id: "threshold",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 3 },
+        value: { kind: "integer", value: "3" },
       },
       {
         id: "caption",
@@ -129,7 +129,7 @@ describe("Composition shared SQL argument editing", () => {
         id: "threshold",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 3 },
+        value: { kind: "integer", value: "3" },
       },
       {
         id: "rows",

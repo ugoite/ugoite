@@ -7,6 +7,7 @@ import {
   bindCompositionComponent,
   type BindingComponentKind,
   commitResolvedCompositionBinding,
+  CompositionBindingDiagnosticError,
   type CompositionBindingProvider,
   type CompositionBindingSession,
   type CompositionFormAggregate,
@@ -22,6 +23,7 @@ import {
   setCompositionComponentVariable,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 type PickerTab = "variables" | "forms" | "saved_sql";
 const aggregateKinds: CompositionFormAggregate[] = [
@@ -40,6 +42,35 @@ const aggregateFieldTypes = new Set([
   "date",
   "timestamp",
 ]);
+
+const bindingErrorKeys = {
+  FORM_NOT_FOUND: "composition.bindingSourceUnavailable",
+  FORBIDDEN: "composition.bindingSourceUnavailable",
+  FORM_DEFINITION_READ_FAILED: "composition.bindingRetry",
+  CHECKPOINT_UNAVAILABLE: "composition.bindingRetry",
+  STORAGE_CONNECTION_FAILED: "composition.bindingRetry",
+} as const;
+
+/** Only expose allowlisted causes; server details can contain SQL or IDs. */
+const bindingFailureMessage = (cause: unknown) => {
+  if (cause instanceof CompositionBindingDiagnosticError) {
+    return t(
+      cause.code === "query_schema_changed"
+        ? "composition.bindingSourceChanged"
+        : "composition.bindingSourceUnavailable",
+    );
+  }
+  if (cause instanceof UgoiteApiError) {
+    const key = cause.code &&
+        Object.prototype.hasOwnProperty.call(bindingErrorKeys, cause.code)
+      ? bindingErrorKeys[cause.code as keyof typeof bindingErrorKeys]
+      : cause.kind === "dependency_unavailable"
+      ? "composition.bindingRetry"
+      : undefined;
+    if (key) return t(key);
+  }
+  return t("composition.bindingRetry");
+};
 
 const formAggregateFields = (
   form: CompositionFormChoice,
@@ -220,8 +251,8 @@ export function CompositionVariableBindingPicker(
         return;
       }
       commitResolvedValue(resolved);
-    } catch {
-      setError(t("composition.bindingUnavailable"));
+    } catch (cause) {
+      setError(bindingFailureMessage(cause));
     } finally {
       setWorking(false);
     }
@@ -323,8 +354,8 @@ export function CompositionVariableBindingPicker(
       } else {
         setError(t("composition.savedSqlNoMetricValue"));
       }
-    } catch {
-      setError(t("composition.bindingUnavailable"));
+    } catch (cause) {
+      setError(bindingFailureMessage(cause));
     } finally {
       setWorking(false);
     }
@@ -349,8 +380,8 @@ export function CompositionVariableBindingPicker(
         return;
       }
       commitResolvedValue(choice.binding);
-    } catch {
-      setError(t("composition.bindingUnavailable"));
+    } catch (cause) {
+      setError(bindingFailureMessage(cause));
     } finally {
       setWorking(false);
     }
@@ -518,8 +549,12 @@ export function CompositionVariableBindingPicker(
                     main={props.kind === "table"
                       ? (
                         <RowListButton
-                          onActivate={() => void resolveForm(form)}
+                          onActivate={() => {
+                            setSelectedForm(form.id);
+                            void resolveForm(form);
+                          }}
                           disabled={working()}
+                          selected={selectedForm() === form.id}
                           primary={
                             <>
                               <UiIcon name="forms" />

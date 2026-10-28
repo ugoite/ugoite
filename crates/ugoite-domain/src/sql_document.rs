@@ -19,7 +19,7 @@ use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 20;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 21;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -1762,6 +1762,23 @@ pub enum SqlDocumentSemanticLiteral {
     Null,
     /// A named `$parameter` reference without the `$` prefix.
     NamedParameter { name: String },
+    /// A date, timestamp, or interval string literal with a Rust-owned type
+    /// keyword. Values are escaped and quoted by Rust.
+    TypedString {
+        data_type: SqlDocumentTypedLiteralType,
+        value: String,
+    },
+    /// A hexadecimal byte string. The value contains hexadecimal digits only.
+    HexString { value: String },
+}
+
+/// Closed type keywords supported by typed string literal construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlDocumentTypedLiteralType {
+    Date,
+    Timestamp,
+    Interval,
 }
 
 /// Typed templates for constructing supported SQL predicates from an existing
@@ -1786,6 +1803,24 @@ pub enum SqlDocumentPredicateTemplate {
     IsNull,
     /// `expression IS NOT NULL`.
     IsNotNull,
+    /// `expression IS TRUE`.
+    IsTrue,
+    /// `expression IS FALSE`.
+    IsFalse,
+    /// `expression IS UNKNOWN`.
+    IsUnknown,
+    /// `expression IS DISTINCT FROM NULL`.
+    IsDistinctFrom,
+    /// `expression IS NOT DISTINCT FROM NULL`.
+    IsNotDistinctFrom,
+    /// `expression ILIKE ''`.
+    ILike,
+    /// `expression NOT ILIKE ''`.
+    NotILike,
+    /// `expression SIMILAR TO ''`.
+    SimilarTo,
+    /// `expression NOT SIMILAR TO ''`.
+    NotSimilarTo,
 }
 
 /// Typed subquery predicate templates accepted by the SQL tree editor.
@@ -2833,17 +2868,39 @@ pub fn apply_sql_document_semantic_edit_transaction(
                 let current_text = document
                     .source_slice(range)
                     .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+                let mut replacement_range = range;
                 if let Some(SqlDocumentNodeData::Literal { literal_kind, .. }) =
                     node.semantic.as_ref()
                 {
                     validate_literal_fragment(current_text, *literal_kind)
                         .map_err(|_| SqlDocumentEditError::NodeRangeUnavailable)?;
+                } else if let Some(SqlDocumentNodeData::TypedLiteral { data_type, .. }) =
+                    node.semantic.as_ref()
+                {
+                    if !["DATE", "TIMESTAMP", "INTERVAL"]
+                        .iter()
+                        .any(|kind| data_type.eq_ignore_ascii_case(kind))
+                    {
+                        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                    };
+                    validate_literal_fragment(current_text, SqlDocumentLiteralKind::String)
+                        .map_err(|_| SqlDocumentEditError::NodeRangeUnavailable)?;
+                    replacement_range = typed_literal_source_range(&document, node, data_type)?;
                 }
 
                 let (replacement, expected_kind) = render_semantic_literal(literal)?;
-                validate_literal_fragment(&replacement, expected_kind)
-                    .map_err(|_| SqlDocumentEditError::InvalidSemanticReplacement)?;
-                (range, replacement)
+                if matches!(
+                    literal,
+                    SqlDocumentSemanticLiteral::TypedString { .. }
+                        | SqlDocumentSemanticLiteral::HexString { .. }
+                ) {
+                    validate_semantic_literal_fragment(&replacement, literal)
+                        .map_err(|_| SqlDocumentEditError::InvalidSemanticReplacement)?;
+                } else {
+                    validate_literal_fragment(&replacement, expected_kind)
+                        .map_err(|_| SqlDocumentEditError::InvalidSemanticReplacement)?;
+                }
+                (replacement_range, replacement)
             }
             SqlDocumentSemanticEdit::ReplaceBinaryOperator { operator, .. } => {
                 if node.kind != SqlDocumentNodeKind::BinaryExpression
@@ -3492,6 +3549,42 @@ fn validate_identifier_fragment(
     }
 }
 
+fn typed_literal_source_range(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    data_type: &str,
+) -> Result<SqlSourceRange, SqlDocumentEditError> {
+    let literal_range = node
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let prefix = document
+        .tokens
+        .iter()
+        .rfind(|token| {
+            token.range.end <= literal_range.start
+                && !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+        })
+        .filter(|token| {
+            token_text(&document.source, token)
+                .is_some_and(|text| text.eq_ignore_ascii_case(data_type))
+        })
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let gap = document
+        .source
+        .get(prefix.range.end..literal_range.start)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if !gap.chars().all(char::is_whitespace) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    Ok(SqlSourceRange {
+        start: prefix.range.start,
+        end: literal_range.end,
+    })
+}
+
 fn render_semantic_literal(
     literal: &SqlDocumentSemanticLiteral,
 ) -> Result<(String, SqlDocumentLiteralKind), SqlDocumentEditError> {
@@ -3527,6 +3620,81 @@ fn render_semantic_literal(
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
             Ok((format!("${name}"), SqlDocumentLiteralKind::Placeholder))
+        }
+        SqlDocumentSemanticLiteral::TypedString { data_type, value } => {
+            if value.len() > MAX_SQL_DOCUMENT_BYTES || value.contains('\0') {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let keyword = match data_type {
+                SqlDocumentTypedLiteralType::Date => "DATE",
+                SqlDocumentTypedLiteralType::Timestamp => "TIMESTAMP",
+                SqlDocumentTypedLiteralType::Interval => "INTERVAL",
+            };
+            let mut rendered = String::with_capacity(value.len().saturating_add(keyword.len() + 3));
+            rendered.push_str(keyword);
+            rendered.push_str(" '");
+            for character in value.chars() {
+                rendered.push(character);
+                if character == '\'' {
+                    rendered.push('\'');
+                }
+            }
+            rendered.push('\'');
+            Ok((rendered, SqlDocumentLiteralKind::String))
+        }
+        SqlDocumentSemanticLiteral::HexString { value } => {
+            if value.len() > MAX_SQL_DOCUMENT_BYTES
+                || value.is_empty()
+                || value.len() % 2 != 0
+                || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            Ok((format!("X'{value}'"), SqlDocumentLiteralKind::String))
+        }
+    }
+}
+
+fn validate_semantic_literal_fragment(
+    fragment: &str,
+    literal: &SqlDocumentSemanticLiteral,
+) -> Result<(), SqlDocumentEditError> {
+    match literal {
+        SqlDocumentSemanticLiteral::TypedString { data_type, .. } => {
+            let (document, fragment_range) = parsed_expression_fragment(fragment)?;
+            let expected = match data_type {
+                SqlDocumentTypedLiteralType::Date => "DATE",
+                SqlDocumentTypedLiteralType::Timestamp => "TIMESTAMP",
+                SqlDocumentTypedLiteralType::Interval => "INTERVAL",
+            };
+            let count = document.nodes.iter().filter(|node| {
+                node.range.is_some_and(|range| {
+                    range.start >= fragment_range.start && range.end <= fragment_range.end
+                })
+                    && matches!(node.semantic.as_ref(), Some(SqlDocumentNodeData::TypedLiteral { data_type, .. }) if data_type.eq_ignore_ascii_case(expected))
+            }).count();
+            if document.status == SqlDocumentStatus::Parsed && count == 1 {
+                Ok(())
+            } else {
+                Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            }
+        }
+        SqlDocumentSemanticLiteral::HexString { .. } => {
+            let (document, fragment_range) = parsed_expression_fragment(fragment)?;
+            let count = document.nodes.iter().filter(|node| {
+                node.kind == SqlDocumentNodeKind::Value
+                    && node.range == Some(fragment_range)
+                    && matches!(node.semantic.as_ref(), Some(SqlDocumentNodeData::Literal { literal_kind: SqlDocumentLiteralKind::String, raw: Some(raw) }) if raw.starts_with(['x', 'X']))
+            }).count();
+            if document.status == SqlDocumentStatus::Parsed && count == 1 {
+                Ok(())
+            } else {
+                Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            }
+        }
+        _ => {
+            let (_, expected_kind) = render_semantic_literal(literal)?;
+            validate_literal_fragment(fragment, expected_kind)
         }
     }
 }
@@ -3928,6 +4096,21 @@ fn wrap_expression_in_predicate(
         SqlDocumentPredicateTemplate::NotLike => format!("({operand}) NOT LIKE ''"),
         SqlDocumentPredicateTemplate::IsNull => format!("({operand}) IS NULL"),
         SqlDocumentPredicateTemplate::IsNotNull => format!("({operand}) IS NOT NULL"),
+        SqlDocumentPredicateTemplate::IsTrue => format!("({operand}) IS TRUE"),
+        SqlDocumentPredicateTemplate::IsFalse => format!("({operand}) IS FALSE"),
+        SqlDocumentPredicateTemplate::IsUnknown => format!("({operand}) IS UNKNOWN"),
+        SqlDocumentPredicateTemplate::IsDistinctFrom => {
+            format!("({operand}) IS DISTINCT FROM NULL")
+        }
+        SqlDocumentPredicateTemplate::IsNotDistinctFrom => {
+            format!("({operand}) IS NOT DISTINCT FROM NULL")
+        }
+        SqlDocumentPredicateTemplate::ILike => format!("({operand}) ILIKE ''"),
+        SqlDocumentPredicateTemplate::NotILike => format!("({operand}) NOT ILIKE ''"),
+        SqlDocumentPredicateTemplate::SimilarTo => format!("({operand}) SIMILAR TO ''"),
+        SqlDocumentPredicateTemplate::NotSimilarTo => {
+            format!("({operand}) NOT SIMILAR TO ''")
+        }
     };
     let expected_text = document
         .source_slice(range)
@@ -12070,6 +12253,10 @@ fn expression_data(
             data_type: typed_string.data_type.to_string(),
             raw: raw(),
         }),
+        Expr::Interval(_) => Some(SqlDocumentNodeData::TypedLiteral {
+            data_type: "INTERVAL".to_owned(),
+            raw: raw(),
+        }),
         Expr::BinaryOp { op, .. } => Some(SqlDocumentNodeData::BinaryOperator {
             operator: op.to_string(),
         }),
@@ -16501,6 +16688,162 @@ mod tests {
         let restored = apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
             .expect("the predicate template has an exact inverse");
         assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn semantic_postfix_and_pattern_predicate_templates_are_constructible_and_undoable() {
+        let cases = [
+            (SqlDocumentPredicateTemplate::IsTrue, "(active) IS TRUE"),
+            (SqlDocumentPredicateTemplate::IsFalse, "(active) IS FALSE"),
+            (
+                SqlDocumentPredicateTemplate::IsUnknown,
+                "(active) IS UNKNOWN",
+            ),
+            (
+                SqlDocumentPredicateTemplate::IsDistinctFrom,
+                "(active) IS DISTINCT FROM NULL",
+            ),
+            (
+                SqlDocumentPredicateTemplate::IsNotDistinctFrom,
+                "(active) IS NOT DISTINCT FROM NULL",
+            ),
+            (SqlDocumentPredicateTemplate::ILike, "(active) ILIKE ''"),
+            (
+                SqlDocumentPredicateTemplate::NotILike,
+                "(active) NOT ILIKE ''",
+            ),
+            (
+                SqlDocumentPredicateTemplate::SimilarTo,
+                "(active) SIMILAR TO ''",
+            ),
+            (
+                SqlDocumentPredicateTemplate::NotSimilarTo,
+                "(active) NOT SIMILAR TO ''",
+            ),
+        ];
+
+        for (template, expected_fragment) in cases {
+            let source = "SELECT active FROM \"G\"";
+            let document = parse_sql_document(source);
+            let expression = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::IdentifierExpression)
+                .expect("the selected expression is parsed");
+            let edited = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInPredicate {
+                        node_id: expression.id,
+                        expected_kind: expression.kind,
+                        template,
+                    }],
+                ),
+            )
+            .expect("predicate template produces a parsed typed predicate");
+            assert!(edited.document.source.contains(expected_fragment));
+            assert!(edited.document.nodes.iter().any(|node| {
+                node.kind == SqlDocumentNodeKind::PredicateExpression
+                    && matches!(node.semantic, Some(SqlDocumentNodeData::Predicate { .. }))
+            }));
+            let restored =
+                apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
+                    .expect("predicate template returns an exact inverse");
+            assert_eq!(restored.document.source, source);
+        }
+    }
+
+    #[test]
+    fn semantic_typed_temporal_and_hex_literals_are_editable_and_undoable() {
+        let cases = [
+            (
+                "SELECT DATE '2026-01-01'",
+                "DATE",
+                SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Date,
+                    value: "2026-02-03".into(),
+                },
+                "SELECT DATE '2026-02-03'",
+            ),
+            (
+                "SELECT DATE '2026-01-01'",
+                "DATE",
+                SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Timestamp,
+                    value: "2026-02-03 13:45:00".into(),
+                },
+                "SELECT TIMESTAMP '2026-02-03 13:45:00'",
+            ),
+            (
+                "SELECT TIMESTAMP '2026-01-01 12:30:00'",
+                "TIMESTAMP",
+                SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Timestamp,
+                    value: "2026-02-03 13:45:00".into(),
+                },
+                "SELECT TIMESTAMP '2026-02-03 13:45:00'",
+            ),
+            (
+                "SELECT INTERVAL '1' DAY",
+                "INTERVAL",
+                SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Interval,
+                    value: "2".into(),
+                },
+                "SELECT INTERVAL '2' DAY",
+            ),
+            (
+                "SELECT X'CAFE'",
+                "HEX",
+                SqlDocumentSemanticLiteral::HexString {
+                    value: "BEEF".into(),
+                },
+                "SELECT X'BEEF'",
+            ),
+            (
+                "SELECT DATE '2026-01-01'",
+                "DATE",
+                SqlDocumentSemanticLiteral::TypedString {
+                    data_type: SqlDocumentTypedLiteralType::Date,
+                    value: "x'; DROP TABLE tasks; --".into(),
+                },
+                "SELECT DATE 'x''; DROP TABLE tasks; --'",
+            ),
+        ];
+
+        for (source, expected_type, literal, expected_sql) in cases {
+            let document = parse_sql_document(source);
+            let expression = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    matches!(node.semantic.as_ref(),
+                        Some(SqlDocumentNodeData::TypedLiteral { data_type, .. }) if data_type.eq_ignore_ascii_case(expected_type))
+                        || (expected_type == "HEX" && matches!(node.semantic.as_ref(),
+                            Some(SqlDocumentNodeData::Literal { literal_kind: SqlDocumentLiteralKind::String, raw: Some(raw) }) if raw.starts_with(['x', 'X'])))
+                })
+                .expect("the typed literal has an editable parser node");
+            let edited = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::ReplaceLiteral {
+                        node_id: expression.id,
+                        expected_kind: expression.kind,
+                        literal,
+                    }],
+                ),
+            )
+            .unwrap_or_else(|error| {
+                panic!("typed literal replacement failed for {source:?}: {error:?}")
+            });
+            assert_eq!(edited.document.source, expected_sql);
+            let restored =
+                apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
+                    .expect("typed literal replacement has an exact inverse");
+            assert_eq!(restored.document.source, source);
+        }
     }
 
     #[test]

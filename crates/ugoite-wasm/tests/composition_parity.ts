@@ -116,6 +116,16 @@ async function invokeWasm(
   exports: WebAssembly.Exports,
   request: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  return JSON.parse(await invokeWasmRaw(exports, request)) as Record<
+    string,
+    unknown
+  >;
+}
+
+async function invokeWasmRaw(
+  exports: WebAssembly.Exports,
+  request: Record<string, unknown>,
+): Promise<string> {
   const memory = exports.memory as WebAssembly.Memory;
   const allocate = exports.ugoite_alloc as (length: number) => number;
   const deallocate = exports.ugoite_dealloc as (
@@ -140,10 +150,7 @@ async function invokeWasm(
   }
 
   const output = new Uint8Array(memory.buffer, resultPointer(), resultLength());
-  const response = JSON.parse(new TextDecoder().decode(output)) as Record<
-    string,
-    unknown
-  >;
+  const response = new TextDecoder().decode(output);
   clearResult();
   return response;
 }
@@ -629,6 +636,16 @@ async function main(): Promise<void> {
     {
       scalar_type: "integer",
       raw: "9007199254740992",
+      expected: { status: "valid", value: 9_007_199_254_740_992 },
+    },
+    {
+      scalar_type: "integer",
+      raw: "9223372036854775808",
+      expected: { status: "invalid" },
+    },
+    {
+      scalar_type: "integer",
+      raw: "-9223372036854775809",
       expected: { status: "invalid" },
     },
     { scalar_type: "float", raw: "1", expected: { status: "valid", value: 1 } },
@@ -674,6 +691,23 @@ async function main(): Promise<void> {
       expected,
       `${scalar_type} Input parser result for ${JSON.stringify(raw)}`,
     );
+  }
+
+  for (const raw of ["9223372036854775807", "-9223372036854775808"]) {
+    const output = await invokeWasmRaw(instance.exports, {
+      action: "domain.parse_variable_graph_input",
+      value: { value_type: { scalar_type: "integer", nullable: false }, raw },
+    });
+    let integerSource: string | undefined;
+    const response = JSON.parse(output, (key, value, context) => {
+      if (key === "value" && typeof value === "number") {
+        integerSource = context?.source;
+      }
+      return value;
+    }) as { ok: boolean; value: { status: string } };
+    assertEqual(response.ok, true, `i64 ${raw} envelope`);
+    assertEqual(response.value.status, "valid", `i64 ${raw} status`);
+    assertEqual(integerSource, raw, `i64 ${raw} exact numeric token`);
   }
 
   const malformedVariableInput = await invokeWasm(instance.exports, {

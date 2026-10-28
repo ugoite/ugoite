@@ -102,7 +102,7 @@ describe("Composition graph evaluation reuse", () => {
     const constantChanged = graph([
       {
         ...constant,
-        value: { kind: "integer", value: 2 },
+        value: { kind: "integer", value: "2" },
       },
       downstream,
       count,
@@ -153,15 +153,15 @@ describe("Composition graph evaluation reuse", () => {
     const previous = response({
       query_results: {
         rows: {
-          value: { kind: "scalar", value: { kind: "integer", value: 1 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "1" } },
           has_more: false,
         },
         count: {
-          value: { kind: "scalar", value: { kind: "integer", value: 2 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "2" } },
           has_more: false,
         },
         other: {
-          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
           has_more: false,
         },
       },
@@ -169,11 +169,11 @@ describe("Composition graph evaluation reuse", () => {
     const next = response({
       query_results: {
         rows: {
-          value: { kind: "scalar", value: { kind: "integer", value: 4 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "4" } },
           has_more: false,
         },
         count: {
-          value: { kind: "scalar", value: { kind: "integer", value: 5 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "5" } },
           has_more: false,
         },
       },
@@ -186,15 +186,15 @@ describe("Composition graph evaluation reuse", () => {
     ]);
     expect(merged.query_results.rows.value).toEqual({
       kind: "scalar",
-      value: { kind: "integer", value: 4 },
+      value: { kind: "integer", value: "4" },
     });
     expect(merged.query_results.count.value).toEqual({
       kind: "scalar",
-      value: { kind: "integer", value: 5 },
+      value: { kind: "integer", value: "5" },
     });
     expect(merged.query_results.other.value).toEqual({
       kind: "scalar",
-      value: { kind: "integer", value: 3 },
+      value: { kind: "integer", value: "3" },
     });
   });
 
@@ -228,7 +228,7 @@ describe("Composition graph evaluation reuse", () => {
     const previous = response({
       query_results: {
         other: {
-          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
           has_more: false,
         },
       },
@@ -236,7 +236,7 @@ describe("Composition graph evaluation reuse", () => {
     const next = response({
       query_results: {
         rows: {
-          value: { kind: "scalar", value: { kind: "integer", value: 4 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "4" } },
           has_more: false,
         },
       },
@@ -262,7 +262,7 @@ describe("Composition graph evaluation reuse", () => {
     const previous = response({
       query_results: {
         other: {
-          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
           has_more: false,
         },
       },
@@ -271,7 +271,7 @@ describe("Composition graph evaluation reuse", () => {
       ...identity,
       query_results: {
         rows: {
-          value: { kind: "scalar", value: { kind: "integer", value: 4 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "4" } },
           has_more: false,
         },
       },
@@ -285,16 +285,16 @@ describe("Composition graph evaluation reuse", () => {
     const previous = response({
       query_results: {
         rows: {
-          value: { kind: "scalar", value: { kind: "integer", value: 1 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "1" } },
           has_more: false,
           next: "old-rows-cursor",
         },
         count: {
-          value: { kind: "scalar", value: { kind: "integer", value: 2 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "2" } },
           has_more: false,
         },
         other: {
-          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
           has_more: false,
           next: "unrelated-cursor",
         },

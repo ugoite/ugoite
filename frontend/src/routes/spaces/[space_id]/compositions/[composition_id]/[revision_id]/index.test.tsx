@@ -116,7 +116,10 @@ const evaluation = (
   },
   query_results: Object.fromEntries(
     Object.entries(values).map(([id, value]) => [id, {
-      value: { kind: "scalar", value: { kind: "integer", value } },
+      value: {
+        kind: "scalar",
+        value: { kind: "integer", value: String(value) },
+      },
       has_more: false,
     }]),
   ),
@@ -1019,7 +1022,7 @@ describe("Composition saved revision graph evaluation", () => {
       kind: "input",
       value_type: { scalar_type: "integer", nullable: false },
       required: true,
-      default: { kind: "integer", value: 1 },
+      default: { kind: "integer", value: "1" },
     } as never;
     document.spec.variables.push(
       {
@@ -1027,7 +1030,7 @@ describe("Composition saved revision graph evaluation", () => {
         kind: "input",
         value_type: { scalar_type: "integer", nullable: false },
         required: true,
-        default: { kind: "integer", value: 3 },
+        default: { kind: "integer", value: "3" },
       } as never,
     );
     for (const [id, input] of [["rows", "day"], ["stable", "other"]]) {
@@ -1051,9 +1054,7 @@ describe("Composition saved revision graph evaluation", () => {
     });
     lintMock.mockResolvedValue({ ok: true, value: { document } });
     parseMock.mockImplementation(async (_type, raw) =>
-      raw === "bad"
-        ? { status: "invalid" }
-        : { status: "valid", value: Number(raw) }
+      raw === "bad" ? { status: "invalid" } : { status: "valid", value: raw }
     );
     evaluateMock.mockImplementation(async (_space, request) => {
       const ids = request.requested_queries ?? ["rows", "stable"];
@@ -1075,7 +1076,7 @@ describe("Composition saved revision graph evaluation", () => {
     await screen.findByText("7");
     expect(evaluateMock.mock.calls.at(-1)?.[1]).toMatchObject({
       requested_queries: ["stable"],
-      variables: { other: 7 },
+      variables: { other: "7" },
       unset_variables: ["day"],
     });
     expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");

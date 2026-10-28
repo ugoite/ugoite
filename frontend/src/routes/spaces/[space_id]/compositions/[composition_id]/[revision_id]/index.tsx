@@ -251,22 +251,32 @@ export default function CompositionRevisionRoute() {
     }));
     try {
       const request = (id: string, requested?: string[]) =>
-        compositionApi.evaluate(spaceId, {
-          evaluation_id: id,
-          target: {
-            kind: "saved_revision",
-            composition_id: compositionId,
-            revision_id: revisionId,
+        compositionApi.evaluate(
+          spaceId,
+          {
+            evaluation_id: id,
+            target: {
+              kind: "saved_revision",
+              composition_id: compositionId,
+              revision_id: revisionId,
+            },
+            variables: values.variables,
+            ...(values.unset.length ? { unset_variables: values.unset } : {}),
+            ...(page
+              ? { requested_queries: [page.variable_id] }
+              : requested
+              ? { requested_queries: requested }
+              : {}),
+            ...(page ? { page } : {}),
           },
-          variables: values.variables,
-          ...(values.unset.length ? { unset_variables: values.unset } : {}),
-          ...(page
-            ? { requested_queries: [page.variable_id] }
-            : requested
-            ? { requested_queries: requested }
-            : {}),
-          ...(page ? { page } : {}),
-        });
+          undefined,
+          draft.variables.flatMap((node) =>
+            node.kind === "input" &&
+              node.value_type.scalar_type === "integer"
+              ? [node.id]
+              : []
+          ),
+        );
       let response = await request(evaluationId, requestedQueries);
       if (
         routeScope !== routeKey() ||

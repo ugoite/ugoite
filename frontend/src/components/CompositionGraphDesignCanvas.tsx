@@ -15,6 +15,8 @@ import {
   compositionNodeReturnsTable,
   type CompositionSavedSqlChoice,
   type CompositionSavedSqlRevisionRef,
+  type CompositionTablePresentation,
+  type CompositionTablePresentationColumn,
   removeCompositionGraphComponent,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
@@ -74,6 +76,190 @@ type TextComponent = Extract<
   CompositionGraphDraft["components"][number],
   { kind: "text" }
 >;
+
+type TableComponent = Extract<
+  CompositionGraphDraft["components"][number],
+  { kind: "table" }
+>;
+
+function CompositionTableInspector(props: {
+  component: () => TableComponent;
+  columns: () => Array<{ name: string }>;
+  onPresentation: (presentation?: CompositionTablePresentation) => void;
+}) {
+  const selectedColumns = (): CompositionTablePresentationColumn[] =>
+    props.component().presentation?.columns ??
+      props.columns().map(({ name }) => ({
+        column: name,
+        label: name,
+      }));
+  const selectedLabel = (key: string) =>
+    selectedColumns().find((item) => item.column === key)?.label ?? key;
+  const selectedAccessibleLabel = (key: string, position: number) => {
+    const label = selectedLabel(key);
+    const sameLabelCount =
+      selectedColumns().filter((item) => selectedLabel(item.column) === label)
+        .length;
+    return sameLabelCount > 1
+      ? t("composition.studioColumnPosition", { label, position })
+      : label;
+  };
+  const selectColumn = (column: string, selected: boolean) => {
+    const current = selectedColumns();
+    if (selected) {
+      if (current.some((item) => item.column === column)) return;
+      props.onPresentation({
+        columns: [...current, { column, label: column }],
+      });
+      return;
+    }
+    if (
+      current.length <= 1 &&
+      props.columns().some((item) => item.name === column)
+    ) return;
+    props.onPresentation({
+      columns: current.filter((item) => item.column !== column),
+    });
+  };
+  const updateLabel = (column: string, label: string) => {
+    props.onPresentation({
+      columns: selectedColumns().map((item) =>
+        item.column === column ? { ...item, label } : item
+      ),
+    });
+  };
+  const moveColumn = (column: string, direction: -1 | 1) => {
+    const current = selectedColumns();
+    const index = current.findIndex((item) => item.column === column);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= current.length) return;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    props.onPresentation({ columns: next });
+  };
+  const needsShowEveryResultColumn = () => {
+    const presentation = props.component().presentation;
+    if (!presentation) return false;
+    const columns = props.columns();
+    const available = new Set(columns.map(({ name }) => name));
+    const selected = presentation.columns;
+    const selectedKeys = new Set(selected.map(({ column }) => column));
+    return available.size !== columns.length ||
+      selected.length !== selectedKeys.size ||
+      selected.some(({ column }) => !available.has(column)) ||
+      columns.some(({ name }) => !selectedKeys.has(name));
+  };
+  const showEveryResultColumn = () => {
+    const columns = props.columns();
+    const allKeys = new Set(columns.map(({ name }) => name));
+    if (columns.length === 0 || allKeys.size !== columns.length) {
+      props.onPresentation();
+      return;
+    }
+    const available = allKeys;
+    const seen = new Set<string>();
+    const existing = selectedColumns().filter(({ column }) => {
+      if (!available.has(column) || seen.has(column)) return false;
+      seen.add(column);
+      return true;
+    });
+    const next = [...existing];
+    for (const { name } of columns) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      next.push({ column: name, label: name });
+    }
+    props.onPresentation({
+      columns: next,
+    });
+  };
+
+  return (
+    <section class="compositionGraphTableInspector">
+      <h3>{t("composition.studioTableColumns")}</h3>
+      <For each={selectedColumns()}>
+        {(column, index) => (
+          <div class="compositionGraphTableColumnSettings">
+            <label>
+              <span class="ui-sr-only">
+                {t("composition.studioTableColumnLabel", {
+                  column: selectedAccessibleLabel(column.column, index() + 1),
+                })}
+              </span>
+              <input
+                class="ui-input"
+                value={column.label}
+                aria-label={t("composition.studioTableColumnLabel", {
+                  column: selectedAccessibleLabel(column.column, index() + 1),
+                })}
+                onInput={(event) =>
+                  updateLabel(column.column, event.currentTarget.value)}
+              />
+            </label>
+            <IconButton
+              icon="arrow-up"
+              label={t("composition.studioMoveColumnEarlier")}
+              disabled={index() === 0}
+              onClick={() => moveColumn(column.column, -1)}
+            />
+            <IconButton
+              icon="arrow-down"
+              label={t("composition.studioMoveColumnLater")}
+              disabled={index() === selectedColumns().length - 1}
+              onClick={() => moveColumn(column.column, 1)}
+            />
+            <IconButton
+              icon="close"
+              label={t("composition.studioRemoveTableColumn", {
+                column: selectedAccessibleLabel(column.column, index() + 1),
+              })}
+              disabled={selectedColumns().length <= 1 &&
+                props.columns().some((item) => item.name === column.column)}
+              onClick={() => selectColumn(column.column, false)}
+            />
+          </div>
+        )}
+      </For>
+      <Show
+        when={props.columns().some((column) =>
+          !selectedColumns().some((item) => item.column === column.name)
+        )}
+      >
+        <details class="compositionGraphTableOptionalColumns">
+          <summary>{t("composition.studioAddResultColumns")}</summary>
+          <For
+            each={props.columns().filter((column) =>
+              !selectedColumns().some((item) => item.column === column.name)
+            )}
+          >
+            {(column) => (
+              <label class="compositionGraphTableColumnChoice">
+                <input
+                  type="checkbox"
+                  aria-label={t("composition.studioAddResultColumn", {
+                    column: column.name,
+                  })}
+                  onChange={(event) =>
+                    selectColumn(column.name, event.currentTarget.checked)}
+                />
+                <span>{column.name}</span>
+              </label>
+            )}
+          </For>
+        </details>
+      </Show>
+      <Show when={needsShowEveryResultColumn()}>
+        <button
+          type="button"
+          class="compositionGraphVariableChange"
+          onClick={showEveryResultColumn}
+        >
+          {t("composition.studioShowAllColumns")}
+        </button>
+      </Show>
+    </section>
+  );
+}
 
 /** Keep the editor mounted while a live graph update replaces its definition. */
 function CompositionTextInspector(props: {
@@ -297,6 +483,24 @@ export function CompositionGraphDesignCanvas(
     });
   };
 
+  const updateTablePresentation = (
+    componentId: string,
+    presentation?: CompositionTablePresentation,
+  ) => {
+    props.onDraftChange({
+      ...props.draft,
+      components: props.draft.components.map((component) => {
+        if (component.id !== componentId || component.kind !== "table") {
+          return component;
+        }
+        const { presentation: _previous, ...withoutPresentation } = component;
+        return presentation
+          ? { ...withoutPresentation, presentation }
+          : withoutPresentation;
+      }),
+    });
+  };
+
   const updateTextStyle = (style: "title" | "heading" | "body" | "caption") => {
     const id = selectedId();
     if (!id) return;
@@ -493,6 +697,30 @@ export function CompositionGraphDesignCanvas(
                           <UiIcon name="chevron-right" />
                         </button>
                       </div>
+                    );
+                  })()}
+                </Show>
+                <Show when={component().kind === "table"}>
+                  {(() => {
+                    const table = () => component() as TableComponent;
+                    const variable = () =>
+                      props.draft.variables.find((node) =>
+                        node.id === table().variable
+                      );
+                    const columns = () => {
+                      const node = variable();
+                      return node?.kind === "query" &&
+                          node.returns.kind === "table"
+                        ? node.returns.columns
+                        : [];
+                    };
+                    return (
+                      <CompositionTableInspector
+                        component={table}
+                        columns={columns}
+                        onPresentation={(presentation) =>
+                          updateTablePresentation(table().id, presentation)}
+                      />
                     );
                   })()}
                 </Show>

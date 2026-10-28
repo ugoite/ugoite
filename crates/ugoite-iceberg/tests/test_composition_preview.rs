@@ -93,6 +93,7 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
                 variable: "source".to_string(),
+                presentation: None,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -163,6 +164,7 @@ async fn concurrent_empty_form_preview_and_draft_evaluation_keep_form_snapshot_c
             components: vec![CompositionComponent::Table {
                 id: "table".to_owned(),
                 variable: variable_id.to_owned(),
+                presentation: None,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -1841,7 +1843,7 @@ async fn authorized_saved_and_draft_query_selection_isolates_unrelated_missing_a
     for supplied in [
         BTreeMap::new(),
         BTreeMap::from([("other".to_owned(), json!("invalid"))]),
-        BTreeMap::from([("other".to_owned(), json!(9_007_199_254_740_992_i64))]),
+        BTreeMap::from([("other".to_owned(), json!(9_223_372_036_854_775_808_u64))]),
     ] {
         for target in [
             CompositionQueryEvaluationTarget::SavedRevision {

@@ -23,7 +23,7 @@ export interface CompositionScalarDescriptor {
 export type CompositionLiteral =
   | { kind: "string"; value: string }
   | { kind: "boolean"; value: boolean }
-  | { kind: "integer"; value: number }
+  | { kind: "integer"; value: string }
   | { kind: "float"; value: number }
   | { kind: "decimal"; value: string }
   | { kind: "date"; value: string }
@@ -82,7 +82,12 @@ export type CompositionVariableNode =
   };
 
 export type CompositionComponent =
-  | { id: string; kind: "table"; variable: string }
+  | {
+    id: string;
+    kind: "table";
+    variable: string;
+    presentation?: CompositionTablePresentation;
+  }
   | {
     id: string;
     kind: "metric";
@@ -129,6 +134,15 @@ export interface CompositionGraphDocumentDraft {
   kind: "dashboard";
   name: string;
   spec: CompositionGraphSpecDraft;
+}
+
+export interface CompositionTablePresentation {
+  columns: CompositionTablePresentationColumn[];
+}
+
+export interface CompositionTablePresentationColumn {
+  column: string;
+  label: string;
 }
 
 export const compositionGraphSpecDraft = (
@@ -213,6 +227,18 @@ export const compositionGraphDraftFromDocument = (
 
 export type BindingComponentKind = "table" | "metric";
 
+export type CompositionBindingDiagnosticCode =
+  | "query_unavailable"
+  | "query_schema_changed";
+
+/** Safe structured failure propagated from an unsuccessful graph preview. */
+export class CompositionBindingDiagnosticError extends Error {
+  constructor(readonly code: CompositionBindingDiagnosticCode) {
+    super(code);
+    this.name = "CompositionBindingDiagnosticError";
+  }
+}
+
 export interface CompositionFormChoice {
   id: string;
   name: string;
@@ -223,7 +249,8 @@ export interface CompositionFormChoice {
     name: string;
     /** Server-owned SQL column used only in the generated query. */
     column: string;
-    type: CompositionScalarType;
+    /** Field type as declared by the Form; unsupported types stay visible in Tables. */
+    type: string;
   }>;
 }
 
@@ -255,6 +282,8 @@ export interface CompositionResolvedBinding {
   variable: CompositionVariableNode & { kind: "query" };
   /** Existing node selected by the authoritative resolver for exact reuse. */
   reuse_variable_id?: string;
+  /** Optional Form-owned visible-column preset for a newly selected Table. */
+  tablePresentation?: CompositionTablePresentation;
 }
 
 export interface CompositionPreparedSavedSql {
@@ -401,15 +430,19 @@ export const bindCompositionComponent = (
   draft: CompositionGraphDraft,
   kind: BindingComponentKind,
   variableId: string,
+  tablePresentation?: CompositionTablePresentation,
 ): CompositionGraphDraft | undefined => {
   const node = draft.variables.find((item) => item.id === variableId);
   if (!node || !compositionVariableFitsComponent(node, kind)) return undefined;
   const componentId = nextComponentId(draft.components);
-  const component: CompositionComponent = {
-    id: componentId,
-    kind,
-    variable: variableId,
-  };
+  const component: CompositionComponent = kind === "table"
+    ? {
+      id: componentId,
+      kind,
+      variable: variableId,
+      ...(tablePresentation ? { presentation: tablePresentation } : {}),
+    }
+    : { id: componentId, kind, variable: variableId };
   return appendCompositionGraphComponent(draft, component);
 };
 
@@ -418,6 +451,7 @@ export const setCompositionComponentVariable = (
   draft: CompositionGraphDraft,
   componentId: string,
   variableId: string,
+  tablePresentation?: CompositionTablePresentation,
 ): CompositionGraphDraft | undefined => {
   const component = draft.components.find((entry) => entry.id === componentId);
   const node = draft.variables.find((entry) => entry.id === variableId);
@@ -428,11 +462,20 @@ export const setCompositionComponentVariable = (
   if (!compositionVariableFitsComponent(node, component.kind)) return undefined;
   return {
     ...draft,
-    components: draft.components.map((entry) =>
-      entry.id === componentId && entry.kind !== "text"
-        ? { ...entry, variable: variableId }
-        : entry
-    ),
+    components: draft.components.map((entry) => {
+      if (entry.id !== componentId || entry.kind === "text") return entry;
+      if (entry.kind !== "table") return { ...entry, variable: variableId };
+      if (tablePresentation) {
+        return {
+          ...entry,
+          variable: variableId,
+          presentation: tablePresentation,
+        };
+      }
+      if (variableId === entry.variable) return entry;
+      const { presentation: _oldPresentation, ...withoutPresentation } = entry;
+      return { ...withoutPresentation, variable: variableId };
+    }),
   };
 };
 
@@ -466,7 +509,12 @@ export const commitResolvedCompositionBinding = (
     ...draft,
     variables: [...draft.variables, resolved.variable],
   };
-  return bindCompositionComponent(withNode, kind, node.id);
+  return bindCompositionComponent(
+    withNode,
+    kind,
+    node.id,
+    resolved.tablePresentation,
+  );
 };
 
 /**
@@ -509,6 +557,7 @@ export const rebindResolvedCompositionComponent = (
     withVariable,
     componentId,
     variable.id,
+    resolved.tablePresentation,
   );
 };
 
@@ -608,6 +657,44 @@ export const compositionBindingDiagnostics = (
     ) {
       diagnostics.push("variable_type_mismatch");
     }
+  }
+  diagnostics.push(...compositionTablePresentationDiagnostics(draft));
+  return [...new Set(diagnostics)];
+};
+
+/** Validate display-only column views when the query schema is resolved. */
+export const compositionTablePresentationDiagnostics = (
+  draft: CompositionGraphDraft,
+): string[] => {
+  const diagnostics: string[] = [];
+  for (const component of draft.components) {
+    if (component.kind !== "table" || !component.presentation) continue;
+    const node = draft.variables.find((candidate) =>
+      candidate.id === component.variable
+    );
+    const selected = component.presentation.columns;
+    if (
+      selected.length === 0 ||
+      new Set(selected.map((column) => column.column)).size !==
+        selected.length ||
+      selected.some((column) => !column.label.trim())
+    ) {
+      diagnostics.push("table_presentation_invalid");
+      continue;
+    }
+    if (
+      node?.kind !== "query" || node.returns.kind !== "table" ||
+      !node.query.schema_fingerprint
+    ) continue;
+    if (
+      selected.some((column) =>
+        node.returns.kind === "table" &&
+        node.returns.columns.filter((candidate) =>
+            candidate.name === column.column
+          )
+            .length !== 1
+      )
+    ) diagnostics.push("table_presentation_invalid");
   }
   return [...new Set(diagnostics)];
 };

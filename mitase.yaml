@@ -301,6 +301,7 @@ inventory:
         - frontend/src/components/CompositionVariableList.tsx
         - frontend/src/components/CompositionVariableList.test.tsx
         - frontend/src/lib/composition-variable-name.ts
+        - frontend/src/lib/exact-integer.ts
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
         - frontend/src/components/CompositionStudio.tsx
@@ -317,6 +318,7 @@ inventory:
         - e2e/composition-golden-journey.test.ts
         - e2e/composition-stale-response.test.ts
         - e2e/composition-studio-journey.test.ts
+        - e2e/composition-table-inspector-mobile.test.ts
         - e2e/composition-scalar-state-journey.test.ts
         - e2e/composition-table-metric-pagination.test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx

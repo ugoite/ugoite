@@ -1029,6 +1029,180 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
+  test("Composition Studio creates a populated Form table from a fresh unnamed Composition and reopens it", async ({ browser, context, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const formName = `TableRecords${suffix}`;
+    const compositionName = `Form table ${suffix}`;
+    const formResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: formName,
+          version: 1,
+          template: `# ${formName}\n\n## Name\n\n## Quantity\n\n## Date\n`,
+          fields: {
+            Name: { type: "string", required: true },
+            Quantity: { type: "integer", required: true },
+            Date: { type: "date", required: true },
+          },
+        },
+      },
+    );
+    expect([200, 201]).toContain(formResponse.status());
+
+    const entryResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      {
+        data: {
+          form: formName,
+          fields: {
+            Name: "First populated row",
+            Quantity: 17,
+            Date: "2026-10-27",
+          },
+        },
+      },
+    );
+    expect(entryResponse.status()).toBe(201);
+
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsResponse.ok()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      id?: string;
+      name?: string;
+      sql_relation?: string;
+      fields?: Record<string, { sql_column?: string }>;
+    }>;
+    const form = forms.find((candidate) => candidate.name === formName);
+    expect(form?.id).toBeTruthy();
+    expect(form?.sql_relation).toBeTruthy();
+    for (const field of ["Name", "Quantity", "Date"]) {
+      expect(form?.fields?.[field]?.sql_column).toBeTruthy();
+    }
+    const formSlug = formName.normalize("NFKD").toLowerCase()
+      .replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    const ownerContext = await openOwnerContext(
+      browser,
+      await context.storageState(),
+    );
+    try {
+      const page = await ownerContext.newPage();
+      const apiSpacePrefix = new URL(
+        getBackendUrl(`/spaces/${spaceId}/`),
+      ).pathname;
+      const failingApiResponses: Array<{ path: string; status: number }> = [];
+      const successfulApiPaths: string[] = [];
+      page.on("response", (response) => {
+        const path = new URL(response.url()).pathname;
+        if (
+          path.startsWith(apiSpacePrefix) &&
+          /\/(?:compositions|forms|sql|entries)(?:\/|$)/.test(path)
+        ) {
+          if (!response.ok()) {
+            failingApiResponses.push({ path, status: response.status() });
+          } else {
+            successfulApiPaths.push(path);
+          }
+        }
+      });
+      await page.goto(
+        getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+        { waitUntil: "domcontentloaded" },
+      );
+      await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+      await expect(page.getByPlaceholder("Composition name")).toHaveValue("");
+      const palette = page.getByRole("group", { name: "Add to design" });
+      await palette.getByRole("button", { name: "Table", exact: true })
+        .click();
+      const picker = page.getByRole("dialog", { name: "Table", exact: true });
+      await picker.getByRole("tab", { name: "Forms", exact: true }).click();
+      await picker.getByRole("button", { name: formName, exact: true }).click();
+      await expect(picker).toHaveCount(0, { timeout: 30_000 });
+      const designTable = page.getByRole("table", {
+        name: `${formSlug}_rows results`,
+      });
+      await expect(designTable).toBeVisible({ timeout: 30_000 });
+      expect(failingApiResponses).toEqual([]);
+      expect(successfulApiPaths).toContain(
+        `${apiSpacePrefix}compositions/preview`,
+      );
+      expect(successfulApiPaths).toContain(
+        `${apiSpacePrefix}compositions/evaluate`,
+      );
+      await expect(designTable.locator("thead")).toContainText("Name");
+      await expect(designTable.locator("thead")).toContainText("Quantity");
+      await expect(designTable.locator("thead")).toContainText("Date");
+      await expect(designTable.locator("thead")).not.toContainText("_ugoite_");
+      await expect(designTable.locator("thead")).not.toContainText("field_");
+      const populatedRow = designTable.locator("tbody tr");
+      await expect(populatedRow).toHaveCount(1, { timeout: 30_000 });
+      await expect(populatedRow).toContainText("First populated row");
+      await expect(populatedRow).toContainText("17");
+      await expect(populatedRow).toContainText("2026-10-27");
+
+      await page.getByLabel("Name", { exact: true }).fill(compositionName);
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${spaceId}/compositions/[^/]+/[^/]+$`),
+        { timeout: 30_000 },
+      );
+      const saved = revisionFromUrl(page.url());
+      const revisionResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+        ),
+      );
+      expect(revisionResponse.ok()).toBe(true);
+      const revision = await revisionResponse.json() as StudioRawRevision;
+      const savedSpec = parseYaml(String(revision.fields["spec"])) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
+        };
+      };
+      const savedFormQuery = savedSpec.spec?.variables?.find((variable) =>
+        variable.id === `${formSlug}_rows` &&
+        variable.query?.kind === "inline_sql"
+      )?.query;
+      expect(savedFormQuery).toBeDefined();
+      expect(savedFormQuery?.sql).toBe(
+        `SELECT * FROM ${sqlIdentifier(formName)}`,
+      );
+      expect(savedFormQuery?.form_bindings).toEqual([{
+        relation: formName,
+        form_id: form!.id!,
+      }]);
+      expect(successfulApiPaths).toContain(
+        `${apiSpacePrefix}compositions`,
+      );
+      await page.reload({ waitUntil: "domcontentloaded" });
+      const reopenedTable = page.getByRole("table", {
+        name: `${formSlug}_rows results`,
+      });
+      await expect(reopenedTable).toBeVisible({ timeout: 30_000 });
+      const reopenedRow = reopenedTable.locator("tbody tr");
+      await expect(reopenedRow).toHaveCount(1, { timeout: 30_000 });
+      await expect(reopenedRow).toContainText("First populated row");
+      await expect(reopenedRow).toContainText("17");
+      await expect(reopenedRow).toContainText("2026-10-27");
+      expect(failingApiResponses).toEqual([]);
+    } finally {
+      await ownerContext.close();
+    }
+  });
+
   test("Composition Studio adds a no-entry Form table beside an existing query and reopens it", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
     const spaceId = await createSpace(request);

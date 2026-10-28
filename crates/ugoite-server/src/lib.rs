@@ -16214,6 +16214,7 @@ spec:
                     CompositionComponent::Table {
                         id: "rows_table".to_string(),
                         variable: "rows_query".to_string(),
+                        presentation: None,
                     },
                     CompositionComponent::Metric {
                         id: "empty_metric".to_string(),

@@ -30,6 +30,8 @@ import {
 import { testApiUrl } from "~/test/http-origin";
 import { server } from "~/test/mocks/server";
 import type { CompositionSaveResponse } from "../composition-api";
+import { compositionApi } from "../composition-api";
+import { exactIntegerJsonValue } from "../exact-integer";
 
 const validReference = {
   asset_id: "01900000-0000-7000-8000-000000000001",
@@ -199,6 +201,48 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("keeps exact i64 literals in Composition documents and leaves JSON payloads opaque", async () => {
+    const document = JSON.parse(JSON.stringify(typedCompositionDocument));
+    document.spec.variables.unshift({
+      id: "max_i64",
+      kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      required: false,
+      default: { kind: "integer", value: "9223372036854775807" },
+    });
+    document.spec.variables.push({
+      id: "json_payload",
+      kind: "input",
+      value_type: { scalar_type: "json", nullable: false },
+      required: false,
+      default: {
+        kind: "json",
+        value: { kind: "integer", value: "9223372036854775807" },
+      },
+    });
+    document.spec.components.push(
+      { id: "max_i64_input", kind: "input", variable: "max_i64" },
+      { id: "json_payload_input", kind: "input", variable: "json_payload" },
+    );
+    document.spec.layout.rows[0].items.push(
+      { kind: "component", component: "max_i64_input" },
+      { kind: "component", component: "json_payload_input" },
+    );
+
+    const canonical = await canonicalizeCompositionDocument(document);
+    const variables = (canonical.document as typeof document).spec.variables;
+    expect(variables[0].default.value).toBe("9223372036854775807");
+    expect(
+      variables.find((variable: { id: string }) =>
+        variable.id === "json_payload"
+      ).default.value,
+    ).toEqual({
+      kind: "integer",
+      value: "9223372036854775807",
+    });
+    expect(canonical.canonical_yaml).toContain("value: 9223372036854775807");
+  });
+
   it("rejects prerelease source-shaped Composition documents", async () => {
     await expect(
       canonicalizeCompositionDocument(
@@ -237,7 +281,7 @@ describe("portable Ugoite API protocol WASM", () => {
           id: "independent",
           kind: "constant",
           value_type: integer,
-          value: { kind: "integer", value: 1 },
+          value: { kind: "integer", value: "1" },
         },
       ],
     };
@@ -281,7 +325,7 @@ describe("portable Ugoite API protocol WASM", () => {
     const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
-      contract_version: 20,
+      contract_version: 21,
       source: sql,
       status: "parsed",
     });
@@ -1419,7 +1463,19 @@ describe("portable Ugoite API protocol WASM", () => {
       }],
       [{ scalar_type: "integer", nullable: false }, "9007199254740991", {
         status: "valid",
-        value: 9_007_199_254_740_991,
+        value: "9007199254740991",
+      }],
+      [{ scalar_type: "integer", nullable: false }, "9007199254740993", {
+        status: "valid",
+        value: "9007199254740993",
+      }],
+      [{ scalar_type: "integer", nullable: false }, "-9223372036854775808", {
+        status: "valid",
+        value: "-9223372036854775808",
+      }],
+      [{ scalar_type: "integer", nullable: false }, "9223372036854775807", {
+        status: "valid",
+        value: "9223372036854775807",
       }],
       [{ scalar_type: "integer", nullable: false }, "1.0", {
         status: "invalid",
@@ -1508,7 +1564,7 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
       ),
     ).toEqual({
       status: "valid",
-      value: 42,
+      value: "42",
     });
     expect(
       parseVariableGraphInputSync(
@@ -1526,6 +1582,160 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     ).toEqual({
       status: "unset",
     });
+  });
+
+  it("preserves typed Composition i64 values across real HTTP and WASM boundaries", async () => {
+    const responseBody =
+      '{"evaluation_id":"eval-1","ok":true,"computed_query_ids":[],"variable_values":{"max":{"kind":"integer","value":9223372036854775807},"min":{"kind":"integer","value":-9223372036854775808}},"queries":[],"component_bindings":[],"dependencies":{},"query_results":{"rows":{"value":{"kind":"table","columns":[{"name":"max","value_type":{"scalar_type":"integer","nullable":false}},{"name":"json","value_type":{"scalar_type":"json","nullable":false}}],"rows":[[{"kind":"integer","value":9223372036854775807},{"kind":"json","value":{"kind":"integer","value":7}}]]},"has_more":false}}}';
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions/evaluate"),
+        async ({ request }) => {
+          const body = await request.text();
+          expect(body).toContain('"max":9223372036854775807');
+          expect(body).toContain('"min":-9223372036854775808');
+          return new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          });
+        },
+      ),
+    );
+
+    const response = await compositionApi.evaluate(
+      "demo",
+      {
+        evaluation_id: "eval-1",
+        target: { kind: "draft", yaml: "format: ugoite.composition" },
+        variables: {
+          max: "9223372036854775807",
+          min: "-9223372036854775808",
+        },
+      },
+      undefined,
+      ["max", "min"],
+    );
+
+    expect(response.variable_values.max).toEqual({
+      kind: "integer",
+      value: "9223372036854775807",
+    });
+    expect(response.variable_values.min).toEqual({
+      kind: "integer",
+      value: "-9223372036854775808",
+    });
+    expect(response.query_results.rows.value.kind).toBe("table");
+    if (response.query_results.rows.value.kind === "table") {
+      expect(response.query_results.rows.value.rows[0][0]).toEqual({
+        kind: "integer",
+        value: "9223372036854775807",
+      });
+      expect(response.query_results.rows.value.rows[0][1]).toEqual({
+        kind: "json",
+        value: { kind: "integer", value: 7 },
+      });
+    }
+  });
+
+  it("reopens a canonical Composition integer from the raw lint response", async () => {
+    const responseBody =
+      '{"ok":true,"value":{"document":{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Report","spec":{"variables":[{"id":"limit","kind":"input","value_type":{"scalar_type":"integer","nullable":false},"required":false,"default":{"kind":"integer","value":9007199254740993}}],"components":[],"layout":{"kind":"flow","rows":[]}}},"canonical_yaml":"format: ugoite.composition","fingerprint":"fingerprint"}}';
+    server.use(
+      http.post(
+        testApiUrl("/compositions/lint"),
+        () =>
+          new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+    const reopened = await protocolFetch<{
+      ok: boolean;
+      value: {
+        document: {
+          spec: { variables: Array<{ default: { value: string } }> };
+        };
+      };
+    }>("composition.lint", {}, { yaml: "format: ugoite.composition" });
+
+    expect(reopened.value.document.spec.variables[0].default.value).toBe(
+      "9007199254740993",
+    );
+  });
+
+  it("decodes typed i64 defaults from Composition preview and leaves JSON defaults opaque", async () => {
+    const responseBody =
+      '{"ok":false,"draft_fingerprint":"draft","variable_definitions":[{"id":"max","value_type":{"scalar_type":"integer","nullable":false},"required":false,"default":{"kind":"integer","value":9223372036854775807}},{"id":"json_payload","value_type":{"scalar_type":"json","nullable":false},"required":false,"default":{"kind":"json","value":{"kind":"integer","value":9223372036854775807}}}],"plan":null,"diagnostics":[]}';
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions/preview"),
+        () =>
+          new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const preview = await protocolFetch<{
+      variable_definitions: Array<{
+        id: string;
+        default?: { kind: string; value: unknown };
+      }>;
+    }>("composition.preview", { space_id: "demo" }, {
+      yaml: "format: ugoite.composition",
+      variables: {},
+    });
+
+    expect(preview.variable_definitions[0].default?.value).toBe(
+      "9223372036854775807",
+    );
+    expect(preview.variable_definitions[1].default?.value).toEqual({
+      kind: "integer",
+      value: 9223372036854776000,
+    });
+  });
+
+  it("rejects out-of-range integer tokens in Composition preview defaults", async () => {
+    const responseBody =
+      '{"ok":false,"draft_fingerprint":"draft","variable_definitions":[{"id":"too_large","value_type":{"scalar_type":"integer","nullable":false},"required":false,"default":{"kind":"integer","value":9223372036854775808}}],"plan":null,"diagnostics":[]}';
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions/preview"),
+        () =>
+          new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    await expect(
+      protocolFetch("composition.preview", { space_id: "demo" }, {
+        yaml: "format: ugoite.composition",
+        variables: {},
+      }),
+    ).rejects.toThrow("Protocol integer is outside the supported i64 range");
+  });
+
+  it("does not treat a non-document lint value as a Composition document", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/compositions/lint"),
+        () =>
+          HttpResponse.json({
+            value: null,
+            canonical_yaml: "format: ugoite.composition",
+          }),
+      ),
+    );
+
+    await expect(
+      protocolFetch("composition.lint", {}, { yaml: "invalid" }),
+    ).resolves.toMatchObject({ value: null });
+  });
+
+  it("rejects unsafe JavaScript numbers instead of encoding their rounded value", () => {
+    expect(() => exactIntegerJsonValue(9_007_199_254_740_993)).toThrow(
+      "Unsafe integer number cannot be encoded exactly",
+    );
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {
@@ -1769,6 +1979,40 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
 
     expect(typeof response.receipt.snapshot_id).toBe("number");
     expect(response.receipt.snapshot_id).toBe(42);
+  });
+
+  it("sends signed 64-bit Composition save inputs as exact JSON integers", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions"),
+        async ({ request }) => {
+          const body = await request.text();
+          expect(body).toContain('"max":9223372036854775807');
+          expect(body).toContain('"min":-9223372036854775808');
+          return HttpResponse.json({
+            composition_id: "tool-1",
+            revision_id: "revision-2",
+            canonical_yaml: "canonical yaml",
+            receipt: {
+              command_id: "command-1",
+              catalog_generation: 4,
+              snapshot_id: 42,
+              committed_revision_ids: ["revision-2"],
+              committed_at_micros: 1,
+              data_file_count: 1,
+            },
+          });
+        },
+      ),
+    );
+
+    await compositionApi.save("demo", "canonical yaml", "attempt-1", {
+      variables: {
+        max: "9223372036854775807",
+        min: "-9223372036854775808",
+      },
+      integerVariableIds: ["max", "min"],
+    });
   });
 
   it("short-circuits fetch when a signal is aborted during WASM preparation", async () => {

@@ -105,7 +105,7 @@ const defaultLiteral = (type: CompositionScalarType): CompositionLiteral => {
     case "boolean":
       return { kind: "boolean", value: false };
     case "integer":
-      return { kind: "integer", value: 0 };
+      return { kind: "integer", value: "0" };
     case "float":
       return { kind: "float", value: 0 };
     case "decimal":

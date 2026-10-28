@@ -120,17 +120,27 @@ export function createCompositionDesignEvaluation(options: {
       if (!current()) return;
       const id = evaluationId;
       const base = options.base?.();
-      const response = await compositionApi.evaluate(options.spaceId(), {
-        evaluation_id: id,
-        target: { kind: "draft", yaml },
-        ...(base
-          ? { base_entry_id: base.entryId, base_revision_id: base.revisionId }
-          : {}),
-        variables: { ...values },
-        ...(unset.size ? { unset_variables: [...unset] } : {}),
-        ...(!page && requested ? { requested_queries: requested } : {}),
-        ...(page ? { page, requested_queries: [page.variable_id] } : {}),
-      }, signal);
+      const response = await compositionApi.evaluate(
+        options.spaceId(),
+        {
+          evaluation_id: id,
+          target: { kind: "draft", yaml },
+          ...(base
+            ? { base_entry_id: base.entryId, base_revision_id: base.revisionId }
+            : {}),
+          variables: { ...values },
+          ...(unset.size ? { unset_variables: [...unset] } : {}),
+          ...(!page && requested ? { requested_queries: requested } : {}),
+          ...(page ? { page, requested_queries: [page.variable_id] } : {}),
+        },
+        signal,
+        draft.variables.flatMap((node) =>
+          node.kind === "input" &&
+            node.value_type.scalar_type === "integer"
+            ? [node.id]
+            : []
+        ),
+      );
       if (!current() || response.evaluation_id !== id) return;
       if (options.principal && principal !== await options.principal()) {
         if (current()) {

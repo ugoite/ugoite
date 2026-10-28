@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import { ResultPagination } from "~/components/ResultPagination";
+import { SqlResultTable } from "~/components/SqlResultTable";
 import { UiIcon } from "~/components/UiIcon";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
 import type {
@@ -326,53 +327,36 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                           { kind: "table" }
                                         >
                                         : undefined;
+                                    const tableComponent = () =>
+                                      entry().kind === "table"
+                                        ? entry()
+                                        : undefined;
                                     return (
-                                      <div
-                                        class="result-table-viewport compositionGraphTableViewport"
-                                        role="region"
-                                        aria-label={`${variableId()} results`}
-                                        tabindex="0"
-                                      >
-                                        <table
-                                          class="result-table"
-                                          aria-label={`${variableId()} results`}
-                                        >
-                                          <thead>
-                                            <tr>
-                                              <For
-                                                each={table()?.columns ?? []}
-                                              >
-                                                {(column) => (
-                                                  <th scope="col">
-                                                    {column.name}
-                                                  </th>
-                                                )}
-                                              </For>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            <For each={table()?.rows ?? []}>
-                                              {(values) => (
-                                                <tr>
-                                                  <For each={values}>
-                                                    {(value) => (
-                                                      <td>
-                                                        {safeText(
-                                                          literalValue(value),
-                                                        )}
-                                                      </td>
-                                                    )}
-                                                  </For>
-                                                </tr>
-                                              )}
-                                            </For>
-                                          </tbody>
-                                        </table>
-                                        <Show when={table()?.rows.length === 0}>
-                                          <p role="status">
-                                            {t("sqlPage.noResults")}
-                                          </p>
-                                        </Show>
+                                      <>
+                                        <SqlResultTable
+                                          columns={table()?.columns.map((
+                                            column,
+                                          ) => column.name) ?? []}
+                                          columnTypes={table()?.columns.map((
+                                            column,
+                                          ) =>
+                                            column.value_type.scalar_type
+                                          )}
+                                          rows={table()?.rows.map((row) =>
+                                            row.map(literalValue)
+                                          ) ?? []}
+                                          displayColumns={tableComponent()
+                                            ?.presentation?.columns}
+                                          pageIdentity={props.evaluation
+                                            ?.evaluation_id ??
+                                            variableId() ?? "composition"}
+                                          tableLabel={`${variableId()} results`}
+                                          emptyMessage={t("sqlPage.noResults")}
+                                          invalidViewMessage={t(
+                                            "composition.tableViewUnavailable",
+                                          )}
+                                          viewportClassName="compositionGraphTableViewport"
+                                        />
                                         <ResultPagination
                                           class="compositionGraphPagination"
                                           canPrevious={Boolean(
@@ -400,7 +384,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                               queryResult()!.next!,
                                             )}
                                         />
-                                      </div>
+                                      </>
                                     );
                                   })()}
                                 </Show>

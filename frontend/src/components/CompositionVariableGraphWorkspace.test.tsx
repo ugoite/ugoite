@@ -23,6 +23,48 @@ vi.mock("~/lib/ugoite-client", () => ({
 }));
 
 describe("CompositionVariableGraphWorkspace", () => {
+  it("retains an i64 default as exact decimal text while editing", async () => {
+    setLocale("en");
+    const maximum = "9223372036854775807";
+    parseInputMock.mockReset().mockResolvedValue({
+      status: "valid",
+      value: maximum,
+    });
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "limit",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: false,
+      }],
+    });
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="limit"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: maximum },
+    });
+    await waitFor(() =>
+      expect(draft().variables[0]).toMatchObject({
+        kind: "input",
+        default: { kind: "integer", value: maximum },
+      })
+    );
+    expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue(
+      maximum,
+    );
+    parseInputMock.mockReset();
+  });
+
   it("adds typed graph nodes through the variable rail", () => {
     setLocale("en");
     const [draft, setDraft] = createSignal<CompositionGraphDraft>(
@@ -115,7 +157,7 @@ describe("CompositionVariableGraphWorkspace", () => {
       required: true,
     });
 
-    resolveParse({ status: "valid", value: 42 });
+    resolveParse({ status: "valid", value: "42" });
     await Promise.resolve();
 
     expect(draft().variables[0]?.default).toBeUndefined();
@@ -156,7 +198,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
       target: { value: "float" },
     });
-    resolveParse({ status: "valid", value: 42 });
+    resolveParse({ status: "valid", value: "42" });
     await Promise.resolve();
 
     expect(draft().variables[0]).toMatchObject({
@@ -205,7 +247,7 @@ describe("CompositionVariableGraphWorkspace", () => {
         id: "threshold",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 3 },
+        value: { kind: "integer", value: "3" },
       },
       {
         id: "caption",
@@ -272,13 +314,13 @@ describe("CompositionVariableGraphWorkspace", () => {
           id: "floor",
           kind: "constant",
           value_type: { scalar_type: "integer", nullable: false },
-          value: { kind: "integer", value: 1 },
+          value: { kind: "integer", value: "1" },
         },
         {
           id: "ceiling",
           kind: "constant",
           value_type: { scalar_type: "integer", nullable: false },
-          value: { kind: "integer", value: 10 },
+          value: { kind: "integer", value: "10" },
         },
         {
           id: "rows",
@@ -344,7 +386,7 @@ describe("CompositionVariableGraphWorkspace", () => {
         id: "next_floor",
         kind: "constant",
         value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: 2 },
+        value: { kind: "integer", value: "2" },
       }],
     }));
     expect(within(binding).getByRole("option", { name: "next_floor" }))

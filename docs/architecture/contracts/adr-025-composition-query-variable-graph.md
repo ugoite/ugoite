@@ -11,6 +11,9 @@ shared typed SQL Workspace and graph evaluator. Full executor-to-GUI construct
 coverage remains a separate open gate. This decision does not authorize release
 preparation or publication.
 
+For exact signed 64-bit integer values and Table column presentation in this
+model, see [ADR-026](adr-026-composition-exact-integers-and-table-view.md).
+
 ## Context
 
 ADR-024 gives Composition scalar variables and SQL sources separate identities.

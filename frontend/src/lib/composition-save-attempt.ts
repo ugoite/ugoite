@@ -13,6 +13,8 @@ export interface PendingCompositionSaveAttempt {
   yaml: string;
   /** Frozen typed Work paired with yaml for uncertain-outcome retries. */
   variables?: Record<string, unknown>;
+  /** Input ids whose values must remain exact signed i64 tokens on retry. */
+  integerVariableIds?: string[];
   unset_variables?: string[];
   idempotencyKey: string;
 }

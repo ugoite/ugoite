@@ -20,7 +20,9 @@ import {
   type CompositionEvaluationResponse,
   type CompositionGraphPreviewResponse,
 } from "~/lib/composition-api";
+import { stringifyCompositionDocument } from "~/lib/exact-integer";
 import {
+  CompositionBindingDiagnosticError,
   compositionBindingDiagnostics,
   type CompositionBindingProvider,
   type CompositionBindingSession,
@@ -36,6 +38,7 @@ import {
   type CompositionSavedSqlChoice,
   type CompositionSavedSqlRevisionRef,
   type CompositionScalarDescriptor,
+  compositionTablePresentationDiagnostics,
   type CompositionVariableNode,
   createCompositionGraphDraft,
   sameResolvedQueryMeaning,
@@ -157,15 +160,11 @@ const formChoice = (form: Form): CompositionFormChoice | undefined => {
     id: form.id,
     name: form.name,
     relation: form.sql_relation,
-    fields: Object.entries(form.fields ?? {}).flatMap(([name, field]) => {
-      const type = field.type ? formScalarType(field.type) : undefined;
-      if (!type) return [];
-      return [{
-        name,
-        column: field.sql_column?.trim() || name,
-        type,
-      }];
-    }),
+    fields: Object.entries(form.fields ?? {}).map(([name, field]) => ({
+      name: field.label?.trim() || name,
+      column: field.sql_column?.trim() || name,
+      type: field.type ? formScalarType(field.type) ?? field.type : "other",
+    })),
   };
 };
 
@@ -246,7 +245,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
   );
-  const editorValid = () => invalidEditorVariables().size === 0;
+  const editorValid = () =>
+    invalidEditorVariables().size === 0 &&
+    compositionTablePresentationDiagnostics(draft()).length === 0;
   const [saveGeneration, setSaveGeneration] = createSignal(0);
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
@@ -594,7 +595,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const document = compositionGraphAuthoringDocument(candidate);
     return await compositionApi.previewGraph(
       props.spaceId,
-      JSON.stringify(document),
+      stringifyCompositionDocument(document),
       Object.fromEntries(candidate.variables.flatMap((node) => {
         if (node.kind !== "input") return [];
         const value = inputDefaultValue(node);
@@ -607,6 +608,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
         }
         : undefined,
       signal,
+      candidate.variables.flatMap((node) =>
+        node.kind === "input" &&
+          node.value_type.scalar_type === "integer"
+          ? [node.id]
+          : []
+      ),
     );
   };
 
@@ -753,7 +760,20 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const planned = response.plan?.queries.find((query) =>
       query.variable_id === candidateNode.id
     );
-    if (!response.ok || !planned) throw new Error("query preview rejected");
+    if (!response.ok || !planned) {
+      const diagnostic = response.diagnostics?.find((candidate) =>
+        candidate.variable_id === candidateNode.id &&
+        (candidate.code === "query_unavailable" ||
+          candidate.code === "query_schema_changed")
+      );
+      if (
+        diagnostic?.code === "query_unavailable" ||
+        diagnostic?.code === "query_schema_changed"
+      ) {
+        throw new CompositionBindingDiagnosticError(diagnostic.code);
+      }
+      throw new Error("query preview rejected");
+    }
     if (expectedKind && planned.returns.kind !== expectedKind) {
       throw new Error("query result shape does not fit component");
     }
@@ -842,6 +862,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
         ...candidate,
         id: uniqueId(id),
       }, component === "table" ? "table" : "scalar");
+      if (component === "table") {
+        resolved.tablePresentation = {
+          columns: form.fields.length > 0
+            ? form.fields.map((field) => ({
+              column: field.column,
+              label: field.name,
+            }))
+            : [{
+              column: "_ugoite_id",
+              label: t("composition.studioEntryIdColumn"),
+            }],
+        };
+      }
       return resolved;
     },
     prepareSavedSql: async (
@@ -964,10 +997,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
             compositionId: attempt.saveTarget.compositionId,
             baseRevisionId: attempt.saveTarget.baseRevisionId,
             variables: attempt.variables ?? {},
+            ...(attempt.integerVariableIds?.length
+              ? { integerVariableIds: attempt.integerVariableIds }
+              : {}),
             unset_variables: attempt.unset_variables ?? [],
           }
           : {
             variables: attempt.variables ?? {},
+            ...(attempt.integerVariableIds?.length
+              ? { integerVariableIds: attempt.integerVariableIds }
+              : {}),
             unset_variables: attempt.unset_variables ?? [],
           },
       );
@@ -1039,6 +1078,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       name: current.name.trim(),
       yaml: "",
       variables: { ...inputSnapshot.variables },
+      integerVariableIds: current.variables.flatMap((node) =>
+        node.kind === "input" &&
+          node.value_type.scalar_type === "integer"
+          ? [node.id]
+          : []
+      ),
       unset_variables: [...inputSnapshot.unset_variables],
       idempotencyKey: crypto.randomUUID(),
     };
@@ -1070,6 +1115,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
           };
         }),
       };
+      if (compositionTablePresentationDiagnostics(verified).length > 0) {
+        setDraft(verified);
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        pendingSave = undefined;
+        setSaveRetryAvailable(false);
+        setSaveError(t("composition.studioTableViewChanged"));
+        return;
+      }
       const canonical = await compositionApi.canonicalizeDocument(
         compositionGraphDocumentDraft(verified),
       );
@@ -1267,6 +1320,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
                     query: {
                       ...node.query,
                       sql,
+                      schema_fingerprint: "",
                       ...(formBindings ? { form_bindings: formBindings } : {}),
                     },
                   }
