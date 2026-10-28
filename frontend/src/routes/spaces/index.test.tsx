@@ -62,8 +62,9 @@ describe("/spaces", () => {
       expect(screen.getByText("No spaces available.")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "New Space" }))
-      .toBeInTheDocument();
+    const newSpaceButton = screen.getByRole("button", { name: "New Space" });
+    expect(newSpaceButton).toBeInTheDocument();
+    expect(newSpaceButton).toHaveTextContent("New Space");
     expect(screen.getByRole("link", { name: "Join with invitation" }))
       .toHaveAttribute(
         "href",
@@ -267,6 +268,9 @@ describe("/spaces", () => {
       expect(screen.getByRole("link", { name: "default" }))
         .toBeInTheDocument();
     });
+
+    const newSpaceButton = screen.getByRole("button", { name: "New Space" });
+    expect(newSpaceButton).toHaveTextContent("New Space");
 
     expect(screen.queryByRole("heading", { name: "Authentication" })).not
       .toBeInTheDocument();

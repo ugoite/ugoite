@@ -39,4 +39,6 @@ components:
     tests: frontend/src/routes/spaces/index.test.tsx
     actions:
       - join: /spaces/join
-      - create: explicit-create-action
+      - create:
+          action: explicit-create-action
+          visible_label: spacesPage.newSpaceAria
