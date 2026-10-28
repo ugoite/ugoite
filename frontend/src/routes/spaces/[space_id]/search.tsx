@@ -77,6 +77,9 @@ export default function SpaceSearchRoute() {
   // `?q=` is an initialization/explicit-navigation input only; committed
   // query state never flows back into the draft.
   const [draftText, setDraftText] = createSignal(initialText());
+  const [hasExecutedSearch, setHasExecutedSearch] = createSignal(
+    Boolean(initialText()),
+  );
   // While an IME composition is active (e.g. Japanese input), the browser
   // owns the in-progress text; the controlled draft stays untouched until
   // compositionend adopts the confirmed value.
@@ -104,8 +107,16 @@ export default function SpaceSearchRoute() {
     if (urlText === lastUrlText) return;
     lastUrlText = urlText;
     setDraftText(urlText);
+    setHasExecutedSearch(true);
     const committed = untrack(() => controller.query().text ?? "");
     if (urlText !== committed) controller.setText(urlText);
+  });
+
+  createEffect(() => {
+    const query = controller.query();
+    if (query.text || query.filters.length > 0 || query.sort.length > 0) {
+      setHasExecutedSearch(true);
+    }
   });
 
   const commitDraft = () => {
@@ -124,6 +135,7 @@ export default function SpaceSearchRoute() {
       <EntryBrowser
         controller={controller}
         capabilities={capabilities()}
+        showEmptyState={hasExecutedSearch()}
         formLabels={formLabels()}
         formLabelsState={formLabelsState()}
         onSelect={(row) => navigate(spaceEntryPath(spaceId(), row.id))}
@@ -133,6 +145,7 @@ export default function SpaceSearchRoute() {
             role="search"
             onSubmit={(event) => {
               event.preventDefault();
+              setHasExecutedSearch(true);
               commitDraft();
             }}
           >

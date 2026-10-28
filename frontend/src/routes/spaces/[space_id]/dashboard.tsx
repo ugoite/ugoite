@@ -272,42 +272,32 @@ export default function SpaceDashboardRoute() {
         </Show>
       </section>
 
-      <section class="section">
-        <div class="sectionHead">
-          <h2>{t("dashboard.recent")}</h2>
-        </div>
-        <div class="rowStack">
-          <For
-            each={recentEntries()}
-            fallback={
-              <div class="rowBtn">
-                <span class="glyph">
-                  <UiIcon name="entry" />
-                </span>
-                <span>
-                  <b>{t("dashboard.noRecent")}</b>
-                </span>
-              </div>
-            }
-          >
-            {(entry) => (
-              <A
-                class="rowBtn"
-                href={spaceEntryPath(spaceId(), entry.id)}
-              >
-                <span class="glyph">
-                  <UiIcon name="entry" />
-                </span>
-                <span>
-                  <b>{entryDisplayLabel(entry)}</b>
-                  <small>{entry.form || "—"}</small>
-                </span>
-                <span>›</span>
-              </A>
-            )}
-          </For>
-        </div>
-      </section>
+      <Show when={recentEntries().length > 0}>
+        <section class="section">
+          <div class="sectionHead">
+            <h2>{t("dashboard.recent")}</h2>
+          </div>
+          <div class="rowStack">
+            <For each={recentEntries()}>
+              {(entry) => (
+                <A
+                  class="rowBtn"
+                  href={spaceEntryPath(spaceId(), entry.id)}
+                >
+                  <span class="glyph">
+                    <UiIcon name="entry" />
+                  </span>
+                  <span>
+                    <b>{entryDisplayLabel(entry)}</b>
+                    <small>{entry.form || "—"}</small>
+                  </span>
+                  <span>›</span>
+                </A>
+              )}
+            </For>
+          </div>
+        </section>
+      </Show>
 
       <CreateFormDialog
         open={showFormDialog()}

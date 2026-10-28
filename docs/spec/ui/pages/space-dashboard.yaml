@@ -64,6 +64,7 @@ components:
       route_identity: entry-id
     - id: recent-entries
       type: list
+      when: at-least-one-recent-entry-exists
       count:
         maximum: 4
         after: duplicate-label-suppression

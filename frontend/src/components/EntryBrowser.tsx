@@ -18,7 +18,7 @@ import {
   EntryBrowserDisplayDialog,
   type EntryBrowserDisplayMode,
 } from "./EntryBrowserDisplayDialog";
-import { EntryResultTable, type EntryResultColumn } from "./EntryResultTable";
+import { type EntryResultColumn, EntryResultTable } from "./EntryResultTable";
 import { LocalBusyIndicator } from "./LocalBusyIndicator";
 import { ResultPagination } from "./ResultPagination";
 import { UiIcon } from "./UiIcon";
@@ -36,6 +36,8 @@ export interface EntryBrowserProps {
   toolbarNavigation?: JSX.Element;
   /** Optional human-readable Form labels. UUIDs are never used as labels. */
   formLabels?: Record<string, string>;
+  /** Hide the empty-results message until a caller-owned search has run. */
+  showEmptyState?: boolean;
   /** State of the optional Space-scoped Form label metadata. */
   formLabelsState?: EntryBrowserFormLabelsState;
   onSelect?: (row: EntryQueryResult) => void;
@@ -234,9 +236,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
     visibleColumns().map((column) => ({
       key: column.key,
       label: column.label,
-      numeric: () => column.kind === "field" && numericFieldTypes.has(
-        capabilityForField(props, column.field)?.field_type ?? "",
-      ),
+      numeric: () =>
+        column.kind === "field" && numericFieldTypes.has(
+          capabilityForField(props, column.field)?.field_type ?? "",
+        ),
       // Keep the cell expression reactive to label metadata that arrives
       // after the query rows. Its value is display-only and must not change
       // the table's page identity or cause another EntryQuery.
@@ -446,7 +449,10 @@ export function EntryBrowser(props: EntryBrowserProps) {
           {t("common.retry")}
         </button>
       </Show>
-      <Show when={!loadingState() && !errorState() && rowsState().length === 0}>
+      <Show
+        when={props.showEmptyState !== false && !loadingState() &&
+          !errorState() && rowsState().length === 0}
+      >
         <p class="ui-muted">{t("entryBrowser.empty")}</p>
       </Show>
       <Show when={!errorState() && rowsState().length > 0}>

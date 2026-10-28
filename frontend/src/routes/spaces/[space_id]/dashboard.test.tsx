@@ -64,7 +64,7 @@ describe("v5 space Home", () => {
       has_more: false,
     } as never);
   });
-  it("renders Continue, Pinned and Recent without metric cards", async () => {
+  it("omits the empty Recent section and its duplicate call to action", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{
       name: "Notes",
       version: 1,
@@ -77,7 +77,11 @@ describe("v5 space Home", () => {
     expect(screen.getByRole("heading", { name: "Continue" }))
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Recent" })).not
+      .toBeInTheDocument();
+    expect(
+      screen.getAllByText("Create an entry to start building this Space."),
+    ).toHaveLength(1);
     expect(screen.queryByText(/forms available/i)).not.toBeInTheDocument();
     expect(document.querySelector(".continueGrid")).toBeInTheDocument();
     expect(document.querySelector(".continueGrid .card")).toBeNull();
