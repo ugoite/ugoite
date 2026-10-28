@@ -4329,13 +4329,14 @@ mod tests {
                 if qualifier.is_empty()
         )));
 
-        for (source, access, expected) in [(
-            "SELECT ARRAY[4, 9] /* keep */",
-            SqlDocumentValueAccess::ArrayIndex {
-                one_based_index: "2".to_owned(),
-            },
-            "SELECT (ARRAY[4, 9])[2] /* keep */",
-        )] {
+        {
+            let (source, access, expected) = (
+                "SELECT ARRAY[4, 9] /* keep */",
+                SqlDocumentValueAccess::ArrayIndex {
+                    one_based_index: "2".to_owned(),
+                },
+                "SELECT (ARRAY[4, 9])[2] /* keep */",
+            );
             let document = ugoite_domain::sql_document::parse_sql_document(source);
             let value = document
                 .nodes

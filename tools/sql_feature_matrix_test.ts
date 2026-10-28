@@ -19,9 +19,10 @@ const tsKinds = (source: string, name: string, next: string) => {
   const start = source.indexOf(`export type ${name} =`);
   const end = source.indexOf(`export type ${next} =`, start);
   if (start < 0 || end < 0) throw new Error(`missing TypeScript union ${name}`);
-  return [...source.slice(start, end).matchAll(/\bkind:\s*"([a-z_]+)"/g)].map((
-    [, name],
-  ) => name);
+  const body = source.slice(start, end);
+  return [...body.matchAll(/^[ ]{4}kind:\s*"([a-z_]+)"/gm)].map(
+    ([, name]) => name,
+  );
 };
 const sameSet = (actual: string[], expected: string[]) => {
   assertEquals(
