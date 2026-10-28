@@ -10521,10 +10521,16 @@ fn move_common_table_expression(
 }
 
 fn sql_identifiers_match(left: &SqlDocumentIdentifier, right: &SqlDocumentIdentifier) -> bool {
-    match (left.quote_style, right.quote_style) {
-        (None, None) => left.value.eq_ignore_ascii_case(&right.value),
-        _ => left.value == right.value,
-    }
+    // Match the GenericDialect name-folding rule used by relation resolution:
+    // unquoted names fold to ASCII lowercase; quoted names retain exact case.
+    let normalized = |identifier: &SqlDocumentIdentifier| {
+        if identifier.quote_style.is_some() {
+            identifier.value.clone()
+        } else {
+            identifier.value.to_ascii_lowercase()
+        }
+    };
+    normalized(left) == normalized(right)
 }
 
 fn is_expression_node_kind(kind: SqlDocumentNodeKind) -> bool {
@@ -19306,6 +19312,60 @@ mod tests {
 
     #[test]
     fn projection_alias_edits_are_typed_guarded_and_preserve_bindings() {
+        for source in [
+            "SELECT 1 AS TOTAL ORDER BY \"total\"",
+            "SELECT 1 AS \"total\" ORDER BY TOTAL",
+        ] {
+            let document = parse_sql_document(source);
+            let item = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .unwrap();
+            let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "renamed".into(),
+                    quote_style: Some('"'),
+                }),
+            };
+            let renamed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(source, vec![rename]),
+            )
+            .expect("mixed quoted and folded names resolve to the same SQL identifier");
+            assert_eq!(
+                renamed.document.source, "SELECT 1 AS \"renamed\" ORDER BY \"renamed\"",
+                "{source}"
+            );
+        }
+
+        let distinct_quoted_case = "SELECT 1 AS \"TOTAL\" ORDER BY total";
+        let document = parse_sql_document(distinct_quoted_case);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "renamed".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            distinct_quoted_case,
+            &semantic_transaction(distinct_quoted_case, vec![rename]),
+        )
+        .expect("a differently cased quoted name is not assumed to be an alias binding");
+        assert_eq!(
+            renamed.document.source,
+            "SELECT 1 AS \"renamed\" ORDER BY total"
+        );
+
         let order_source = "SELECT amount AS total FROM \"G\" ORDER BY total DESC";
         let order_document = parse_sql_document(order_source);
         let item = order_document
@@ -19414,6 +19474,29 @@ mod tests {
             apply_sql_document_semantic_edit_transaction(
                 capture_source,
                 &semantic_transaction(capture_source, vec![capture])
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+
+        let mixed_capture_source = "SELECT amount FROM \"G\" ORDER BY \"total\"";
+        let mixed_capture_document = parse_sql_document(mixed_capture_source);
+        let item = mixed_capture_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let mixed_capture = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "TOTAL".into(),
+                quote_style: None,
+            }),
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                mixed_capture_source,
+                &semantic_transaction(mixed_capture_source, vec![mixed_capture])
             ),
             Err(SqlDocumentEditError::ProjectionAliasConflict)
         );

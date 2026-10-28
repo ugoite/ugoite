@@ -31,11 +31,12 @@ and bitwise/shift operators have edit and WASM parity evidence, while their
 per-operator authorized runtime results remain unverified. Planner validity for
 type parameters remains authoritative. A source-backed `unmodeled_expression`
 proves source retention, not that the expression's semantic fields are editable.
-Projection aliases have a bounded typed authoring operation. Renaming updates a
-bare same-scope `ORDER BY` alias reference atomically; references in other
-clauses, expression-shaped sort items, and comment-bearing sort items fail
-closed. Full alias resolution coverage and complete constructibility of the
-admitted SQL grammar remain unverified.
+Projection aliases have a bounded typed authoring operation. Unquoted
+identifiers use ASCII lowercase folding, while quoted identifiers preserve
+case. Renaming updates a bare same-scope `ORDER BY` alias reference atomically;
+references in other clauses, expression-shaped sort items, and comment-bearing
+sort items fail closed. Full alias resolution coverage and complete
+constructibility of the admitted SQL grammar remain unverified.
 
 ## Admission stages
 

@@ -4654,40 +4654,49 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
     let context = workspace
         .authorized_query_context(policy(&tasks, &[513]))
         .await?;
-    let source = "SELECT field_100 AS total FROM tasks ORDER BY total";
-    let document = parse_sql_document(source);
-    let item = document
-        .nodes
-        .iter()
-        .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
-        .unwrap();
-    let edited = apply_sql_document_semantic_edit_transaction(
-        source,
-        &SqlDocumentSemanticEditTransaction {
-            contract_version: document.contract_version,
-            expected_source: source.to_owned(),
-            edits: vec![SqlDocumentSemanticEdit::SetProjectionAlias {
-                node_id: item.id,
-                expected_kind: item.kind,
-                alias: Some(SqlDocumentIdentifier {
-                    value: "task title".into(),
-                    quote_style: Some('"'),
-                }),
-            }],
-        },
-    )?;
-    let rows = context.execute(edited.document.to_sql()).await?;
-    assert_eq!(rows[0].schema().field(0).name(), "task title");
-    let values = rows[0]
-        .column(0)
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-    assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
-    assert_eq!(
-        edited.document.to_sql(),
-        "SELECT field_100 AS \"task title\" FROM tasks ORDER BY \"task title\""
-    );
+    for source in [
+        "SELECT field_100 AS TOTAL FROM tasks ORDER BY \"total\"",
+        "SELECT field_100 AS \"total\" FROM tasks ORDER BY TOTAL",
+    ] {
+        let document = parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::SetProjectionAlias {
+                    node_id: item.id,
+                    expected_kind: item.kind,
+                    alias: Some(SqlDocumentIdentifier {
+                        value: "task title".into(),
+                        quote_style: Some('"'),
+                    }),
+                }],
+            },
+        )?;
+        let rows = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(rows[0].schema().field(0).name(), "task title");
+        let values = rows[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
+        assert_eq!(
+            edited.document.to_sql(),
+            "SELECT field_100 AS \"task title\" FROM tasks ORDER BY \"task title\""
+        );
+    }
+
+    let case_distinct = context
+        .execute("SELECT field_100 AS \"TOTAL\" FROM tasks ORDER BY total")
+        .await;
+    assert!(case_distinct.is_err(), "quoted case remains significant");
     Ok(())
 }
 

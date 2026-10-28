@@ -2763,7 +2763,7 @@ mod tests {
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
             SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
         };
-        let source = "SELECT amount AS total FROM \"G\" ORDER BY total DESC";
+        let source = "SELECT amount AS TOTAL FROM \"G\" ORDER BY \"total\" DESC";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
         let item = document
             .nodes

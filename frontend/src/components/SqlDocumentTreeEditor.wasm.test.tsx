@@ -12,7 +12,7 @@ import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   it("renames an output alias and its resolved bare ORDER BY reference atomically", async () => {
-    const source = "SELECT 1 AS total ORDER BY total DESC";
+    const source = 'SELECT 1 AS "total" ORDER BY TOTAL DESC';
     const document = await parseSqlDocument(source);
     const item = document.nodes.find((node) => node.kind === "select_item");
     expect(item).toBeDefined();
