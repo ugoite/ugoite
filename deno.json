@@ -28,6 +28,7 @@
     "e2e:install:browsers:ci": "deno task --cwd e2e install:browsers:ci",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
     "e2e:composition-metric": "bash e2e/scripts/run-e2e-parity.sh composition-metric",
+    "e2e:composition-binding-rebind": "bash e2e/scripts/run-e2e-parity.sh composition-binding-rebind",
     "e2e:composition-source-acl-isolation": "bash e2e/scripts/run-e2e-parity.sh composition-source-acl-isolation",
     "e2e:late-query-response": "bash e2e/scripts/run-e2e.sh late-query-response",
     "e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned",

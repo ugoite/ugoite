@@ -270,6 +270,16 @@ pub struct SqlDocumentColumnReference {
     pub column: SqlDocumentIdentifier,
 }
 
+/// One bounded array access suffix constructed by the SQL Document editor.
+/// The index is one-based SQL syntax and is kept as decimal text so the
+/// browser never rounds it through JavaScript numbers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlDocumentValueAccess {
+    /// Select one array element using a positive integer literal.
+    ArrayIndex { one_based_index: String },
+}
+
 /// Broad lexical family for an expression literal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -860,6 +870,14 @@ pub enum SqlDocumentSemanticEdit {
         expected_kind: SqlDocumentNodeKind,
         /// Portable target type chosen from the closed SQL GUI type set.
         target_type: SqlDocumentCastType,
+    },
+    /// Wrap an expression in one typed array access suffix. The
+    /// source expression is retained verbatim inside parentheses; planning
+    /// remains responsible for checking its actual type and field/index.
+    WrapExpressionInValueAccess {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        access: SqlDocumentValueAccess,
     },
     /// Wrap one typed expression in an aggregate from the shared SQL registry.
     WrapExpressionInAggregate {
@@ -2631,6 +2649,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(wrap_expression_in_cast(&document, node, *target_type)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::WrapExpressionInValueAccess { access, .. } = semantic_edit {
+            edits.push(wrap_expression_in_value_access(&document, node, access)?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::WrapExpressionInAggregate {
             function, distinct, ..
         } = semantic_edit
@@ -3094,6 +3116,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::WrapExpressionInCast { .. } => {
                 unreachable!("CAST wrapper edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::WrapExpressionInValueAccess { .. } => {
+                unreachable!("value access edits are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::WrapExpressionInAggregate { .. } => {
                 unreachable!("aggregate wrapper edits are expanded before single-node edits")
             }
@@ -3293,6 +3318,11 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::WrapExpressionInCast {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::WrapExpressionInValueAccess {
                 node_id,
                 expected_kind,
                 ..
@@ -6211,6 +6241,55 @@ fn wrap_expression_in_cast(
         range,
         expected_text: operand.to_owned(),
         replacement,
+    })
+}
+
+fn wrap_expression_in_value_access(
+    document: &SqlDocument,
+    expression: &SqlDocumentNode,
+    access: &SqlDocumentValueAccess,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    let direct_projection_expression = expression.kind == SqlDocumentNodeKind::SelectItem
+        && expression.semantic.is_none()
+        && !document.nodes.iter().any(|node| {
+            node.parent == Some(expression.id)
+                && node.kind == SqlDocumentNodeKind::SubqueryExpression
+        });
+    if (!is_expression_node_kind(expression.kind)
+        || expression.kind == SqlDocumentNodeKind::SubqueryExpression)
+        && !direct_projection_expression
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let range = expression
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let operand = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if operand.trim().is_empty() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let suffix = match access {
+        SqlDocumentValueAccess::ArrayIndex { one_based_index } => {
+            let index = one_based_index
+                .parse::<i64>()
+                .ok()
+                .filter(|index| *index > 0)
+                .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+            format!("[{index}]")
+        }
+    };
+    let wrapped_expression = format!("({operand}){suffix}");
+    if parse_sql_document(&format!("SELECT {wrapped_expression}")).status
+        != SqlDocumentStatus::Parsed
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    Ok(SqlDocumentEdit {
+        range,
+        expected_text: operand.to_owned(),
+        replacement: wrapped_expression,
     })
 }
 
@@ -18446,6 +18525,126 @@ mod tests {
                 ),
             ),
             Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+    }
+
+    #[test]
+    fn semantic_value_access_constructs_one_based_array_access_losslessly() {
+        let source = "SELECT ARRAY[4, 9] /* keep outside */";
+        let document = parse_sql_document(source);
+        let array = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.range.and_then(|range| document.source_slice(range)) == Some("ARRAY[4, 9]")
+            })
+            .expect("the array expression has a source-backed syntax node");
+        assert_eq!(array.kind, SqlDocumentNodeKind::SelectItem);
+        let indexed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                    node_id: array.id,
+                    expected_kind: array.kind,
+                    access: SqlDocumentValueAccess::ArrayIndex {
+                        one_based_index: "2".to_owned(),
+                    },
+                }],
+            ),
+        )
+        .expect("a positive typed array index is constructed by Rust");
+        assert_eq!(
+            indexed.document.source,
+            "SELECT (ARRAY[4, 9])[2] /* keep outside */"
+        );
+        assert_eq!(indexed.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(
+            apply_sql_document_edit_transaction(&indexed.document.source, &indexed.undo)
+                .expect("the array access edit has guarded undo")
+                .document
+                .source,
+            source
+        );
+
+        for one_based_index in ["", "0", "-1", "9223372036854775808", "1 OR TRUE"] {
+            let document = parse_sql_document("SELECT value");
+            let value = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::IdentifierExpression)
+                .unwrap();
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    "SELECT value",
+                    &semantic_transaction(
+                        "SELECT value",
+                        vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                            node_id: value.id,
+                            expected_kind: value.kind,
+                            access: SqlDocumentValueAccess::ArrayIndex {
+                                one_based_index: one_based_index.to_owned()
+                            },
+                        }],
+                    ),
+                ),
+                Err(SqlDocumentEditError::InvalidSemanticReplacement),
+                "invalid array index {one_based_index:?} must be rejected"
+            );
+        }
+
+        let aliased_source = "SELECT array_concat([4], [9]) AS values_out";
+        let aliased_document = parse_sql_document(aliased_source);
+        let aliased_item = aliased_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .expect("the aliased projection item is represented");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                aliased_source,
+                &semantic_transaction(
+                    aliased_source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                        node_id: aliased_item.id,
+                        expected_kind: aliased_item.kind,
+                        access: SqlDocumentValueAccess::ArrayIndex {
+                            one_based_index: "1".to_owned(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+
+        let incomplete_node_source = "SELECT array_concat([4], [9])";
+        let incomplete_document = parse_sql_document(incomplete_node_source);
+        let truncated_function = incomplete_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::FunctionExpression
+                    && node
+                        .range
+                        .and_then(|range| incomplete_document.source_slice(range))
+                        .is_some_and(|source| source.starts_with("array_concat"))
+            })
+            .expect("the parser exposes a bounded range for the outer function");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                incomplete_node_source,
+                &semantic_transaction(
+                    incomplete_node_source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                        node_id: truncated_function.id,
+                        expected_kind: truncated_function.kind,
+                        access: SqlDocumentValueAccess::ArrayIndex {
+                            one_based_index: "1".to_owned(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
         );
     }
 

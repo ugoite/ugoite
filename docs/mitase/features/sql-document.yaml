@@ -55,6 +55,8 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
@@ -69,6 +71,8 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: sql-document-verification
         role: verification
         facet: verification
@@ -639,6 +643,8 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.array-element-indexing
       - id: projection-position-verification
         role: verification
         facet: verification

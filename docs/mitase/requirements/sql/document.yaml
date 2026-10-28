@@ -23,7 +23,10 @@ requirements:
           source-byte or syntax-token limits before AST construction, and
           distinguishes syntax or statement-shape diagnostics. A parsed syntax
           tree alone never means that the SQL executor admits the query.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: source-aware-parameter-rename
         kind: behavior
         statement: >-
@@ -33,7 +36,10 @@ requirements:
           names are rejected, no-match input remains unchanged, and edited
           drafts are reparsed so syntax diagnostics remain current; this edit
           does not authorize parameter binding or query execution.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: guarded-edit-transaction
         kind: behavior
         statement: >-
@@ -45,7 +51,10 @@ requirements:
           incomplete draft, and returns a guarded inverse transaction that
           restores the original source; editing does not authorize or execute
           SQL.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: projection-position-bindings
         kind: behavior
         statement: >-
@@ -55,7 +64,10 @@ requirements:
           width whose binding cannot be established, rejects the complete edit
           with a stable local diagnostic. Nested query positions remain
           unchanged, and guarded Undo restores every original source byte.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: projection-alias-binding-safety
         kind: behavior
         statement: >-
@@ -73,7 +85,10 @@ requirements:
           output expressions. The
           same guarded operation and inverse are exposed through the portable
           WASM protocol.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: typed-expression-attributes
         kind: behavior
         statement: >-
@@ -96,7 +111,30 @@ requirements:
           planning remains authoritative for physical type and operator
           validity. Parameter values remain exact decimal strings across the
           protocol.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: array-element-indexing
+        kind: behavior
+        statement: >-
+          The SQL Document tree can add one typed array element access using a
+          positive signed-64-bit-range, one-based integer literal to a
+          selected source-backed expression. Rust owns the operation, preserves
+          the expression source and all source outside its range, and returns
+          a guarded undo through the WASM and browser inspector. The inspector
+          offers this bounded single-suffix constructor and clears a pending
+          index when the SQL source or selected node changes. An aliased
+          projection row is not a target; a complete child expression can be
+          selected when its source range is exact, preserving the alias. The
+          operation does not infer or certify the expression's array type,
+          element bounds, or result type; authorized SQL planning and execution
+          remain authoritative. It does not promise full nested query or
+          collection-access-chain editing.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: relational-constructors
         kind: behavior
         statement: >-
@@ -112,7 +150,10 @@ requirements:
           source outside its selected ranges and provides a guarded inverse.
           These controls describe editable SQL syntax and do not promise that
           arbitrary drafts pass executor admission.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: portable-protocol
         kind: behavior
         statement: >-
@@ -125,4 +166,38 @@ requirements:
           unbounded JSON. Requests beyond each action's bounded envelope are
           rejected before JSON decoding. These actions do not grant executor
           admission or execute the SQL.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+    bindings:
+      - id: array-element-indexing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify native source preservation and guarded undo, WASM parity, authorized execution, and actual-WASM selection/source reset and alias handling for the bounded array-index constructor.
+        targets:
+          - id: native-edit-and-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_value_access_constructs_one_based_array_access_losslessly }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_value_access_constructs_one_based_array_access_losslessly } } }]
+          - id: wasm-native-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_document_array_index_edit_matches_native_and_undo }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_edit_matches_native_and_undo } } }]
+          - id: authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: typed_sql_document_array_index_executes_authorized_queries }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_array_index_executes_authorized_queries } } }]
+          - id: browser-selection-source-resets
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: authors one-based array access through actual WASM }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors one-based array access through actual WASM } } }]
+          - id: aliased-projection-child
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: indexes an aliased projection child without changing its alias }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: indexes an aliased projection child without changing its alias } } }]

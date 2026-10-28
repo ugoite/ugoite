@@ -218,7 +218,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 /** Keep exact integers confined to explicitly typed Composition protocol paths. */
-const encodeTypedIntegerCommand = (command: ProtocolCommand): ProtocolCommand => {
+const encodeTypedIntegerCommand = (
+  command: ProtocolCommand,
+): ProtocolCommand => {
   if (command.action === "domain.canonicalize_composition_document") {
     // This command shape is constructed only by
     // canonicalizeCompositionDocument below; malformed documents remain the
@@ -997,6 +999,12 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: SqlDocumentNodeKind;
     target_type: SqlDocumentCastType;
+  }
+  | {
+    kind: "wrap_expression_in_value_access";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    access: { kind: "array_index"; one_based_index: string };
   }
   | {
     kind: "wrap_expression_in_aggregate";

@@ -647,6 +647,8 @@
           ],
           "limits": [
             "Typed literals, identifiers, operators, registered aggregates, casts, CASE, predicates and subquery seeds.",
+            "A selected complete projection expression can receive one positive one-based Int64 array-index suffix through a typed Rust operation; DataFusion checks the actual source type and index during authorized planning/execution. The inspector clears a pending index on source/selection changes, excludes aliased projection rows, and preserves aliases when an exact child expression is edited. Struct-field access is not currently admitted by the SQL planner.",
+            "Array literal AST ranges that do not cover their full source can be edited only through an unaliased complete projection-item range; aliased incomplete ranges fail closed. Nested array/map access chains, slices, arbitrary access keys and general collection construction remain explicit gaps.",
             "Unmodeled expression source is preserved; unsupported semantic fields and arbitrary construction remain explicit gaps."
           ]
         }
@@ -665,6 +667,7 @@
         "replace_cast_target_type",
         "set_parameterized_cast_target",
         "wrap_expression_in_cast",
+        "wrap_expression_in_value_access",
         "wrap_expression_in_aggregate",
         "set_aggregate_function",
         "set_aggregate_distinct",
@@ -735,6 +738,7 @@
       "verification_gaps": [
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
+        "One-based array indexing has a typed authorized execution example over a Form ObjectList; struct-field access, nested access chains, array slices, map/dynamic keys, full array-literal range editing, and broader admitted collection expression construction remain unverified.",
         "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Planner validity for authored type parameters remains authoritative.",
         "Aggregate ordered argument clauses remain read-only and are outside the enabled aggregate registry.",
         "The active tree exposes LEFT/RIGHT SEMI and ANTI joins admitted by DataFusion; directionless SEMI/ANTI spellings are not offered. LIMIT accepts typed literals, named parameters, and same-query expressions. CTE and derived-table output aliases can be added or renamed with exact binding checks; nested CTE shadowing is respected and ambiguous unqualified references fail closed."
