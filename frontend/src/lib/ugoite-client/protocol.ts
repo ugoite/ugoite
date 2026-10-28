@@ -575,6 +575,7 @@ export type SqlDocumentNodeData =
     raw: string | null;
   }
   | { kind: "typed_literal"; data_type: string; raw: string | null }
+  | { kind: "array_literal" }
   | { kind: "binary_operator"; operator: string }
   | { kind: "unary_operator"; operator: string }
   | {

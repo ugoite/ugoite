@@ -1656,6 +1656,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     nodeById().get(binaryExpressionRightNodeId() ?? -1);
   const selectedCaseOperandNode = () =>
     nodeById().get(caseOperandNodeId() ?? -1);
+  const isArrayLiteralProjectionItem = (node: SqlDocumentNode) =>
+    node.kind === "select_item" &&
+    node.semantic?.kind !== "projection_alias" &&
+    (childrenByParent().get(node.id) ?? []).some((child) =>
+      child.semantic?.kind === "array_literal"
+    );
   const selectHasWhereClause = (node: SqlDocumentNode) =>
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.kind === "where_clause"
@@ -1911,8 +1917,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       (isExpressionKind(node.kind) || node.kind === "select_item")
     ) {
       if (node.kind === "select_item") {
-        return node.range !== null &&
-          node.semantic?.kind !== "projection_alias" &&
+        return node.range !== null && isArrayLiteralProjectionItem(node) &&
           semanticLiteralReady(literal());
       }
       return node.kind !== "subquery_expression" &&
@@ -2050,8 +2055,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     }
     if (node.kind === "select_item") {
       if (expressionLeafAction() === "array") {
-        return node.range !== null &&
-          node.semantic?.kind !== "projection_alias" &&
+        return node.range !== null && isArrayLiteralProjectionItem(node) &&
           semanticLiteralReady(literal());
       }
       const items = selectedProjectionItems();
@@ -3378,9 +3382,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                               {t("sqlPage.structure.documentLiteral")}
                             </option>
                           </Show>
-                          <option value="array">
-                            {t("sqlPage.structure.documentArrayLiteral")}
-                          </option>
+                          <Show
+                            when={node().kind === "select_item"
+                              ? isArrayLiteralProjectionItem(node())
+                              : node().kind !== "other_expression" &&
+                                node().kind !== "subquery_expression"}
+                          >
+                            <option value="array">
+                              {t("sqlPage.structure.documentArrayLiteral")}
+                            </option>
+                          </Show>
                         </select>
                       </label>
                     </Show>

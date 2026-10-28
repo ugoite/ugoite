@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 23;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 24;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -372,6 +372,9 @@ pub enum SqlDocumentNodeData {
         /// Exact literal expression text when its parser range is available.
         raw: Option<String>,
     },
+    /// Parser-classified ARRAY literal expression. Exact range coverage may
+    /// still be supplied by its containing projection item.
+    ArrayLiteral,
     /// A binary operator expression.
     BinaryOperator {
         /// sqlparser's canonical operator spelling.
@@ -6334,16 +6337,13 @@ fn append_array_literal_element(
     let source = document
         .source_slice(range)
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
-    let is_array_literal =
-        parse_generic_sql_statements(&format!("SELECT {source}")).is_ok_and(|statements| {
-            matches!(
-                statements.as_slice(),
-                [Statement::Query(query)]
-                    if matches!(query.body.as_ref(), SetExpr::Select(select)
-                        if matches!(select.projection.as_slice(),
-                            [SelectItem::UnnamedExpr(Expr::Array(_))]))
+    let is_array_literal = document.nodes.iter().any(|node| {
+        node.parent == Some(array.id)
+            && matches!(
+                node.semantic.as_ref(),
+                Some(SqlDocumentNodeData::ArrayLiteral)
             )
-        });
+    });
     if !is_array_literal {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
@@ -13797,6 +13797,7 @@ fn expression_data(
     };
 
     match expression {
+        Expr::Array(_) => Some(SqlDocumentNodeData::ArrayLiteral),
         Expr::Identifier(identifier) => Some(SqlDocumentNodeData::Identifier {
             value: identifier.value.clone(),
             quote_style: identifier.quote_style,
@@ -18787,6 +18788,13 @@ mod tests {
                         == Some("ARRAY[4]")
             })
             .expect("an unaliased array projection is selectable");
+        assert!(array_document.nodes.iter().any(|node| {
+            node.parent == Some(array_expression.id)
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::ArrayLiteral)
+                )
+        }));
         let appended = apply_sql_document_semantic_edit_transaction(
             array_source,
             &semantic_transaction(

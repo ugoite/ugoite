@@ -367,6 +367,21 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       initial.slice(node.range.start, node.range.end) === "4"
     );
     expect(value).toBeDefined();
+    const scalarProjection = firstDocument.nodes.find((node) =>
+      node.kind === "select_item" && node.range &&
+      initial.slice(node.range.start, node.range.end) === "4"
+    );
+    expect(scalarProjection).toBeDefined();
+    const scalarProjectionItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(scalarProjection!.id),
+    );
+    expect(scalarProjectionItem).toBeDefined();
+    fireEvent.click(scalarProjectionItem!);
+    expect(
+      (screen.getByLabelText("Expression value") as HTMLSelectElement)
+        .querySelector('option[value="array"]'),
+    ).toBeNull();
+
     const firstItem = (await screen.findAllByRole("treeitem")).find((node) =>
       node.dataset.sqlDocumentNode === String(value!.id)
     );
@@ -384,11 +399,21 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       sql().slice(node.range.start, node.range.end) === "ARRAY[4]"
     );
     expect(arrayExpression).toBeDefined();
+    expect(
+      arrayDocument.nodes.some((node) =>
+        node.parent === arrayExpression!.id &&
+        node.semantic?.kind === "array_literal"
+      ),
+    ).toBe(true);
     const arrayExpressionItem = (await screen.findAllByRole("treeitem")).find(
       (node) => node.dataset.sqlDocumentNode === String(arrayExpression!.id),
     );
     expect(arrayExpressionItem).toBeDefined();
     fireEvent.click(arrayExpressionItem!);
+    expect(
+      (screen.getByLabelText("Expression value") as HTMLSelectElement)
+        .querySelector('option[value="array"]'),
+    ).not.toBeNull();
     fireEvent.change(screen.getByLabelText("Expression value"), {
       target: { value: "array" },
     });

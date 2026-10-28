@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 23,
+        "version": 24,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -96,6 +96,7 @@
           "compound_identifier",
           "literal",
           "typed_literal",
+          "array_literal",
           "binary_operator",
           "unary_operator",
           "function",
