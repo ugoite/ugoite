@@ -621,29 +621,32 @@ export function CompositionGraphDesignCanvas(
               }}
               data-component-id={entry().id}
             >
-              <button
-                type="button"
-                class="compositionGraphSelect"
-                aria-label={`${entry().kind}, ${
-                  componentName(props.draft, entry())
-                }`}
-                aria-pressed={selectedId() === entry().id}
-                onClick={() => setSelectedId(entry().id)}
-              >
-                <UiIcon name="edit" />
-              </button>
               <Show
                 when={isEmptyLiteralText(entry())}
-                fallback={value}
+                fallback={
+                  <button
+                    type="button"
+                    class="compositionGraphSelect"
+                    aria-label={`${entry().kind}, ${
+                      componentName(props.draft, entry())
+                    }`}
+                    aria-pressed={selectedId() === entry().id}
+                    onClick={() => setSelectedId(entry().id)}
+                  >
+                    <UiIcon name="edit" />
+                  </button>
+                }
               >
                 <button
                   type="button"
                   class="compositionGraphEmptyText"
+                  aria-pressed={selectedId() === entry().id}
                   onClick={() => setSelectedId(entry().id)}
                 >
                   {t("composition.studioTextUseLiteral")}
                 </button>
               </Show>
+              {value}
             </div>
           )}
         />

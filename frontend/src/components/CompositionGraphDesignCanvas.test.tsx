@@ -240,6 +240,35 @@ describe("CompositionGraphDesignCanvas", () => {
       .toBeInTheDocument();
   });
 
+  it("keeps empty literal text visually empty and opens its editor from the visible prompt", () => {
+    const draft = createCompositionGraphDraft("Empty text");
+    draft.components = [{
+      id: "text_1",
+      kind: "text",
+      content: { kind: "literal", text: "" },
+      style: "body",
+    }];
+    draft.layout.rows[0].items = [{
+      kind: "component",
+      component: "text_1",
+    }];
+    renderCanvas(vi.fn(), draft);
+
+    const renderedText = document.querySelector(
+      ".compositionGraphText--body",
+    );
+    expect(renderedText).toBeInTheDocument();
+    expect(renderedText).toBeEmptyDOMElement();
+    const prompt = screen.getByRole("button", { name: "Edit text" });
+    expect(prompt).toBeVisible();
+
+    prompt.focus();
+    fireEvent.click(prompt);
+
+    expect(screen.getByRole("textbox", { name: "Text" })).toBeVisible();
+    expect(prompt).toHaveFocus();
+  });
+
   it("keeps the Text editor node, caret and focus while its content changes", () => {
     const initial = createCompositionGraphDraft("Draft");
     initial.components = [{
