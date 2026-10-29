@@ -2478,36 +2478,90 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     let legacy_yaml = r#"format: ugoite.composition
 format_version: 1
 kind: dashboard
-name: CLI legacy tool
+name: Monthly expenses
 tags: []
 spec:
-  variables: []
+  variables:
+    - id: month_start
+      type: date
+      required: true
+      format: year-month
+    - id: month_end
+      type: date
+      required: true
+      format: year-month
   sources:
-    - id: rows
-      kind: inline_sql
-      name: Rows
-      sql: SELECT 1 AS value
-      form_bindings: []
+    - id: expense_rows
+      kind: entry_query
+      form_id: "00000000-0000-7000-8000-000000000010"
+      field_schema:
+        - field_id: 100
+          field_type: date
+        - field_id: 101
+          field_type: string
+        - field_id: 102
+          field_type: double
+      query:
+        filters:
+          - field_id: 100
+            operator: gte
+            value:
+              variable: month_start
+          - field_id: 100
+            operator: lt
+            value:
+              variable: month_end
+        sort:
+          - field_id: 100
+            direction: desc
+        projection:
+          kind: fields
+          fields: [100, 101, 102]
+    - id: month_total
+      kind: saved_sql
+      entry_id: "00000000-0000-7000-8000-000000000020"
+      revision_id: "00000000-0000-7000-8000-000000000021"
       expected_result:
-        - name: value
-          type: integer
+        - name: total
+          type: float
+      variables:
+        month_start:
+          variable: month_start
+        month_end:
+          variable: month_end
   components:
-    - id: rows_table
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
+    - id: total
+      kind: metric
+      source: month_total
+      column: total
+    - id: transactions
       kind: table
-      source: rows
+      source: expense_rows
   layout:
     kind: flow
     rows:
       - id: main
         items:
           - kind: component
-            component: rows_table
+            component: month_start_input
+          - kind: component
+            component: month_end_input
+          - kind: component
+            component: total
+          - kind: component
+            component: transactions
 "#;
     let legacy = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),
         RawCompositionSeed {
-            name: "CLI legacy tool".to_string(),
+            name: "Monthly expenses".to_string(),
             kind: "dashboard".to_string(),
             tags: Vec::new(),
             format_version: 1,
@@ -2611,6 +2665,13 @@ spec:
     assert_eq!(
         core_rejected["diagnostics"],
         json!([{"code": "invalid_composition"}])
+    );
+    assert_eq!(
+        stdout_json(
+            &run_cli(&fixture.config_path, &legacy_history_args).await,
+            "Remote source-shaped Composition history after raw recovery",
+        ),
+        legacy_history
     );
     assert_eq!(
         stdout_json(
