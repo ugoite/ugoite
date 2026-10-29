@@ -251,7 +251,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063: empty SQL keeps shared structure actions reachable", async ({ page, request }) => {
+  test("REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
       waitUntil: "domcontentloaded",
