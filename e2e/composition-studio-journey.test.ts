@@ -946,14 +946,14 @@ test.describe("Composition Studio Journey", () => {
       )
         .toContainText("50");
       await page.getByRole("button", {
-        name: `metric, ${formSlug}_sum_amount`,
+        name: `table, ${formSlug}_rows`,
         exact: true,
       }).click();
-      const moveEarlier = page.getByRole("button", {
-        name: "Move earlier",
+      const moveLater = page.getByRole("button", {
+        name: "Move later",
         exact: true,
       });
-      await moveEarlier.focus();
+      await moveLater.focus();
       await page.keyboard.press("Enter");
       await expect(page.locator(".compositionGraphDesignValue").first())
         .toContainText("50");
@@ -1000,6 +1000,13 @@ test.describe("Composition Studio Journey", () => {
       )
         .toContainText("50");
       const saved = revisionFromUrl(page.url());
+      const runtimeBlocks = page.locator(
+        ".compositionGraphRender .compositionGraphCanvasRow .compositionGraphValue",
+      );
+      await expect(runtimeBlocks.first()).toContainText("50");
+      await expect(runtimeBlocks.nth(1).getByRole("table")).toContainText(
+        seed.purposes[0],
+      );
       const response = await request.get(
         getBackendUrl(
           `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
@@ -1009,6 +1016,36 @@ test.describe("Composition Studio Journey", () => {
       const revision = await response.json() as StudioRawRevision;
       const savedYaml = String(revision.fields["spec"]);
       expect(savedYaml).toContain(String(form?.id));
+      const savedDocument = parseYaml(savedYaml) as {
+        spec?: {
+          components?: Array<{
+            id?: string;
+            kind?: string;
+            variable?: string;
+          }>;
+          layout?: {
+            rows?: Array<{
+              items?: Array<{ component?: string }>;
+            }>;
+          };
+        };
+      };
+      const componentById = new Map(
+        (savedDocument.spec?.components ?? []).map((component) => [
+          component.id,
+          component,
+        ]),
+      );
+      const savedOrder = (savedDocument.spec?.layout?.rows ?? [])
+        .flatMap((row) => row.items ?? [])
+        .map((item) => componentById.get(item.component));
+      expect(savedOrder.map((component) => [
+        component?.kind,
+        component?.variable,
+      ])).toEqual([
+        ["metric", `${formSlug}_sum_amount`],
+        ["table", `${formSlug}_rows`],
+      ]);
       const components =
         savedYaml.split("components:")[1]?.split("layout:")[0] ??
           "";
@@ -1024,6 +1061,57 @@ test.describe("Composition Studio Journey", () => {
         `variable: ${formSlug}_sum_amount`,
       );
       expect(components).not.toMatch(/\b(?:form_id|source_id|source):/);
+
+      // Reopen the exact revision in the editor, verify the saved display
+      // order, explicitly run the Form-backed query, then return to its saved
+      // runtime view and confirm the same order and rows.
+      const editUrl =
+        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit`;
+      await page.goto(getFrontendUrl(editUrl), {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page).toHaveURL(new RegExp(
+        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit$`,
+      ));
+      const editedBlocks = page.locator(".compositionGraphDesignValue");
+      await expect(editedBlocks.first()).toContainText("50", {
+        timeout: 30_000,
+      });
+      await expect(editedBlocks.nth(1).getByRole("table")).toContainText(
+        seed.purposes[0],
+        { timeout: 30_000 },
+      );
+      await page.getByRole("tablist", { name: "Studio mode" })
+        .getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: "Show variables", exact: true })
+        .click();
+      await page.getByRole("button", {
+        name: `${formSlug}_rows`,
+        exact: true,
+      }).click();
+      await page.getByRole("button", { name: "Run Query", exact: true }).click();
+      const explicitQueryResult = page.getByRole("table");
+      await expect(explicitQueryResult).toContainText(seed.purposes[0], {
+        timeout: 30_000,
+      });
+      await expect(explicitQueryResult).toContainText(seed.purposes[1]);
+
+      await page.goto(getFrontendUrl(
+        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}`,
+      ), { waitUntil: "domcontentloaded" });
+      await expect(page).toHaveURL(new RegExp(
+        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}$`,
+      ));
+      const reopenedRuntimeBlocks = page.locator(
+        ".compositionGraphRender .compositionGraphCanvasRow .compositionGraphValue",
+      );
+      await expect(reopenedRuntimeBlocks.first()).toContainText("50", {
+        timeout: 30_000,
+      });
+      await expect(reopenedRuntimeBlocks.nth(1).getByRole("table"))
+        .toContainText(seed.purposes[0], { timeout: 30_000 });
+      await expect(reopenedRuntimeBlocks.nth(1).getByRole("table"))
+        .toContainText(seed.purposes[1]);
     } finally {
       await ownerContext.close();
     }
