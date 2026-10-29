@@ -1013,6 +1013,11 @@ export type SqlDocumentSemanticEdit =
     literal: SqlDocumentSemanticLiteral;
   }
   | {
+    kind: "remove_array_literal_element";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
     kind: "wrap_expression_in_value_access";
     node_id: number;
     expected_kind: SqlDocumentNodeKind;

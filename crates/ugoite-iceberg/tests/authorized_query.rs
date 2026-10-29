@@ -4939,5 +4939,22 @@ async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow:
     assert_eq!(values.value(0), 4);
     assert_eq!(values.value(1), 9);
 
+    let empty_array_batches = context
+        .execute("SELECT CAST(ARRAY[] AS BIGINT[]) AS empty")
+        .await?;
+    let empty_array = empty_array_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("a typed empty ARRAY returns an integer list");
+    assert_eq!(empty_array.value(0).len(), 0);
+    let inferred_empty_array_batches = context.execute("SELECT ARRAY[] AS empty").await?;
+    let inferred_empty_array = inferred_empty_array_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("an untyped empty ARRAY is accepted by the authorized executor");
+    assert_eq!(inferred_empty_array.value(0).len(), 0);
+
     Ok(())
 }

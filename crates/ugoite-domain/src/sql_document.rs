@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 24;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 25;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -886,6 +886,13 @@ pub enum SqlDocumentSemanticEdit {
         node_id: u32,
         expected_kind: SqlDocumentNodeKind,
         literal: SqlDocumentSemanticLiteral,
+    },
+    /// Remove the selected direct element from an ARRAY literal. The typed
+    /// ARRAY projection remains, including as an empty ARRAY when its only
+    /// element is removed. Comments in the array projection fail closed.
+    RemoveArrayLiteralElement {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
     },
     /// Wrap an expression in one typed array access suffix. The
     /// source expression is retained verbatim inside parentheses; planning
@@ -2675,6 +2682,13 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(append_array_literal_element(&document, node, literal)?);
             continue;
         }
+        if matches!(
+            semantic_edit,
+            SqlDocumentSemanticEdit::RemoveArrayLiteralElement { .. }
+        ) {
+            edits.push(remove_array_literal_element(&document, node)?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::WrapExpressionInValueAccess { access, .. } = semantic_edit {
             edits.push(wrap_expression_in_value_access(&document, node, access)?);
             continue;
@@ -3148,6 +3162,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::AppendArrayLiteralElement { .. } => {
                 unreachable!("ARRAY element edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::RemoveArrayLiteralElement { .. } => {
+                unreachable!("ARRAY element edits are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::WrapExpressionInValueAccess { .. } => {
                 unreachable!("value access edits are expanded before single-node edits")
             }
@@ -3362,6 +3379,10 @@ impl SqlDocumentSemanticEdit {
                 node_id,
                 expected_kind,
                 ..
+            }
+            | Self::RemoveArrayLiteralElement {
+                node_id,
+                expected_kind,
             }
             | Self::WrapExpressionInValueAccess {
                 node_id,
@@ -6362,6 +6383,104 @@ fn append_array_literal_element(
     Ok(SqlDocumentEdit {
         range,
         expected_text: source.to_owned(),
+        replacement,
+    })
+}
+
+fn remove_array_literal_element(
+    document: &SqlDocument,
+    element: &SqlDocumentNode,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    let array_id = element
+        .parent
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let array = document
+        .nodes
+        .get(array_id as usize)
+        .filter(|node| node.id == array_id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    if !matches!(
+        array.semantic.as_ref(),
+        Some(SqlDocumentNodeData::ArrayLiteral)
+    ) {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let projection_id = array
+        .parent
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let projection = document
+        .nodes
+        .get(projection_id as usize)
+        .filter(|node| node.id == projection_id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    if projection.kind != SqlDocumentNodeKind::SelectItem || projection.semantic.is_some() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let projection_range = projection
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if range_has_comment(document, projection_range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let projection_source = document
+        .source_slice(projection_range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let elements = document
+        .nodes
+        .iter()
+        .filter(|node| node.parent == Some(array.id) && node.range.is_some())
+        .collect::<Vec<_>>();
+    let selected_index = elements
+        .iter()
+        .position(|candidate| candidate.id == element.id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let selected_range = element
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if selected_range.start < projection_range.start || selected_range.end > projection_range.end {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+
+    let (range, replacement) = if elements.len() == 1 {
+        (projection_range, Some("ARRAY[]".to_owned()))
+    } else if selected_index == 0 {
+        let next_range = elements[1]
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        (
+            SqlSourceRange {
+                start: selected_range.start,
+                end: next_range.start,
+            },
+            None,
+        )
+    } else {
+        let previous_range = elements[selected_index - 1]
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let range = SqlSourceRange {
+            start: previous_range.end,
+            end: selected_range.end,
+        };
+        (range, None)
+    };
+    let expected_text = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+        .to_owned();
+    let replacement = replacement.unwrap_or_default();
+    let mut changed_projection = String::with_capacity(projection_source.len());
+    changed_projection.push_str(&projection_source[..range.start - projection_range.start]);
+    changed_projection.push_str(&replacement);
+    changed_projection.push_str(&projection_source[range.end - projection_range.start..]);
+    if parse_sql_document(&format!("SELECT {changed_projection}")).status
+        != SqlDocumentStatus::Parsed
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    Ok(SqlDocumentEdit {
+        range,
+        expected_text,
         replacement,
     })
 }
@@ -18923,6 +19042,87 @@ mod tests {
                     vec![SqlDocumentSemanticEdit::WrapExpressionInArray {
                         node_id: expression.id,
                         expected_kind: expression.kind,
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+    }
+
+    #[test]
+    fn semantic_array_element_removal_preserves_order_and_can_empty_array() {
+        let source = "SELECT ARRAY[4, 9, 16] /* outside */";
+        let document = parse_sql_document(source);
+        let second = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::LiteralExpression
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("9")
+            })
+            .expect("the selected array member is a typed expression");
+        let removed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                    node_id: second.id,
+                    expected_kind: second.kind,
+                }],
+            ),
+        )
+        .expect("one selected array member can be removed");
+        assert_eq!(removed.document.source, "SELECT ARRAY[4, 16] /* outside */");
+        assert_eq!(
+            apply_sql_document_edit_transaction(&removed.document.source, &removed.undo)
+                .expect("array element removal has an exact inverse")
+                .document
+                .source,
+            source
+        );
+
+        let only_array_source = "SELECT ARRAY[4]";
+        let only_array_document = parse_sql_document(only_array_source);
+        let only_element = only_array_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::LiteralExpression)
+            .expect("the single array member is typed");
+        let emptied = apply_sql_document_semantic_edit_transaction(
+            only_array_source,
+            &semantic_transaction(
+                only_array_source,
+                vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                    node_id: only_element.id,
+                    expected_kind: only_element.kind,
+                }],
+            ),
+        )
+        .expect("removing the last selected member preserves an empty ARRAY literal");
+        assert_eq!(emptied.document.source, "SELECT ARRAY[]");
+        assert_eq!(
+            apply_sql_document_edit_transaction(&emptied.document.source, &emptied.undo)
+                .expect("empty ARRAY creation has an exact inverse")
+                .document
+                .source,
+            only_array_source
+        );
+
+        let commented_source = "SELECT ARRAY[4 /* keep inside */]";
+        let commented_document = parse_sql_document(commented_source);
+        let commented_element = commented_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::LiteralExpression)
+            .expect("the comment-bearing array member is typed");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                commented_source,
+                &semantic_transaction(
+                    commented_source,
+                    vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                        node_id: commented_element.id,
+                        expected_kind: commented_element.kind,
                     }],
                 ),
             ),

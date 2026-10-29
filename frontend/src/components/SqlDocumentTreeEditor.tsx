@@ -88,6 +88,7 @@ type OrderByExpressionAction = "add" | "";
 type OrderDirection = "asc" | "desc";
 type NullsOrder = "first" | "last" | "";
 type ExpressionLeafAction = "identifier" | "literal" | "array" | "";
+type ArrayElementAction = "remove" | "";
 type RelationEditAction =
   | "replace"
   | "add_join"
@@ -1017,6 +1018,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const [expressionLeafAction, setExpressionLeafAction] = createSignal<
     ExpressionLeafAction
   >("");
+  const [arrayElementAction, setArrayElementAction] = createSignal<
+    ArrayElementAction
+  >("");
   const [operator, setOperator] = createSignal<
     SqlDocumentSemanticBinaryOperator | ""
   >("");
@@ -1662,6 +1666,24 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.semantic?.kind === "array_literal"
     );
+  const isArrayLiteralElement = (node: SqlDocumentNode) => {
+    const array = node.parent === null
+      ? undefined
+      : nodeById().get(node.parent);
+    const projection = array?.parent === null || array?.parent === undefined
+      ? undefined
+      : nodeById().get(array.parent);
+    const projectionRange = projection?.range;
+    return array?.semantic?.kind === "array_literal" &&
+      projection?.kind === "select_item" &&
+      projection.semantic === null && projectionRange !== null &&
+      projectionRange !== undefined &&
+      !document()?.tokens.some((token) =>
+        token.kind === "comment" &&
+        token.range.start < projectionRange.end &&
+        projectionRange.start < token.range.end
+      );
+  };
   const selectHasWhereClause = (node: SqlDocumentNode) =>
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.kind === "where_clause"
@@ -1755,6 +1777,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const editorCanApply = () => {
     const node = selectedNode();
     if (!node || props.disabled?.() || busy()) return false;
+    if (arrayElementAction() === "remove") {
+      return node.range !== null && isArrayLiteralElement(node);
+    }
     if (valueAccessKind()) {
       if (!isValueAccessTarget(node) || node.range === null) return false;
       if (valueAccessKind() === "array_index") {
@@ -2110,6 +2135,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const currentSemanticEdit = (): SqlDocumentSemanticEdit | undefined => {
     const node = selectedNode();
     if (!node) return undefined;
+    if (arrayElementAction() === "remove" && isArrayLiteralElement(node)) {
+      return {
+        kind: "remove_array_literal_element",
+        node_id: node.id,
+        expected_kind: node.kind,
+      };
+    }
     if (valueAccessKind() && isValueAccessTarget(node)) {
       return {
         kind: "wrap_expression_in_value_access",
@@ -2476,6 +2508,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       setValueAccessValue("");
     }
     setSelectedNodeId(node.id);
+    setArrayElementAction("");
     setParts(identifierParts(node));
     setLiteral(initialLiteralDraft(node));
     setExpressionLeafAction(
@@ -2807,6 +2840,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         return;
       }
       props.onSqlChange(result.document.source);
+      setArrayElementAction("");
       setValueAccessKind("");
       setValueAccessValue("");
       setDocument(result.document);
@@ -4060,6 +4094,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       </div>
                     </Show>
                     <Show when={isExpressionKind(node().kind)}>
+                      <Show when={isArrayLiteralElement(node())}>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={busy() || props.disabled?.() ||
+                            node().range === null}
+                          onClick={() => setArrayElementAction("remove")}
+                        >
+                          {t("sqlPage.structure.documentRemoveArrayElement")}
+                        </button>
+                      </Show>
                       <button
                         type="button"
                         class="ui-button ui-button-secondary"

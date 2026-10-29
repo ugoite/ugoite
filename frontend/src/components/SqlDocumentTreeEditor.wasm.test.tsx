@@ -381,6 +381,9 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       (screen.getByLabelText("Expression value") as HTMLSelectElement)
         .querySelector('option[value="array"]'),
     ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeNull();
 
     const firstItem = (await screen.findAllByRole("treeitem")).find((node) =>
       node.dataset.sqlDocumentNode === String(value!.id)
@@ -456,7 +459,63 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     await waitFor(() =>
       expect(sql()).toBe("SELECT ARRAY[5, 9] /* preserve */")
     );
+    const selectedFirstElementDocument = await parseSqlDocument(sql());
+    const selectedFirstElement = selectedFirstElementDocument.nodes.find(
+      (node) =>
+        node.kind === "literal_expression" && node.range &&
+        sql().slice(node.range.start, node.range.end) === "5",
+    );
+    expect(selectedFirstElement).toBeDefined();
+    const selectedFirstElementItem = (await screen.findAllByRole("treeitem"))
+      .find((node) =>
+        node.dataset.sqlDocumentNode === String(selectedFirstElement!.id)
+      );
+    expect(selectedFirstElementItem).toBeDefined();
+    fireEvent.click(selectedFirstElementItem!);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe("SELECT ARRAY[9] /* preserve */"));
+
+    const finalElementDocument = await parseSqlDocument(sql());
+    const finalElement = finalElementDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "9"
+    );
+    expect(finalElement).toBeDefined();
+    const finalElementItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(finalElement!.id),
+    );
+    expect(finalElementItem).toBeDefined();
+    fireEvent.click(finalElementItem!);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe("SELECT ARRAY[] /* preserve */"));
     view.unmount();
+  });
+
+  it("hides ARRAY element removal when comments make the edit unsafe", async () => {
+    const source = "SELECT ARRAY[4 /* keep inside */]";
+    const document = await parseSqlDocument(source);
+    const element = document.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      source.slice(node.range.start, node.range.end) === "4"
+    );
+    expect(element).toBeDefined();
+    render(() => (
+      <SqlDocumentTreeEditor sql={() => source} onSqlChange={() => {}} />
+    ));
+    const elementItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(element!.id),
+    );
+    expect(elementItem).toBeDefined();
+    fireEvent.click(elementItem!);
+    expect(
+      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeNull();
   });
 
   it("indexes an aliased projection child without changing its alias", async () => {
