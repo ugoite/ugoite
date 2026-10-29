@@ -12840,6 +12840,17 @@
           { "$ref": "#/components/parameters/EntryId" },
           { "$ref": "#/components/parameters/RevisionId" }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Current authority snapshot for the exact Composition revision",

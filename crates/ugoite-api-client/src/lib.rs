@@ -4441,12 +4441,18 @@ mod tests {
         }
         if matches!(
             operation,
-            "composition.get" | "composition.history" | "composition.restore"
+            "composition.get"
+                | "composition.history"
+                | "composition.snapshot_check"
+                | "composition.restore"
         ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
         }
         if matches!(operation, "composition.save" | "composition.restore") {
             arguments.insert("idempotency_key".into(), json!("operation-key-1"));
+        }
+        if operation == "composition.snapshot_check" {
+            arguments.insert("revision_id".into(), json!("revision-1"));
         }
         if matches!(
             operation,
