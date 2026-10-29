@@ -59,7 +59,7 @@
     "npm:iron-webcrypto@^1.2.1": "1.2.1",
     "npm:is-node-process@^1.2.0": "1.2.0",
     "npm:jsdom@^29.1.1": "29.1.1",
-    "npm:marked@16.4.2": "16.4.2",
+    "npm:marked@18.1.2": "18.1.2",
     "npm:merge-anything@^5.1.7": "5.1.7",
     "npm:msw@^2.14.6": "2.14.6_typescript@5.9.3",
     "npm:node-mock-http@^1.0.4": "1.0.4",
@@ -5833,8 +5833,8 @@
     "markdown-table@3.0.4": {
       "integrity": "sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw=="
     },
-    "marked@16.4.2": {
-      "integrity": "sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==",
+    "marked@18.1.2": {
+      "integrity": "sha512-DfOnvLAQ6WYeWxWO1u4RyFOeqyHup6dks5PPqnoFiooU7ipRvidO/2j8plhAHIiZg574E9ZlzSjUiPMLAzFkgg==",
       "bin": true
     },
     "math-intrinsics@1.1.0": {
@@ -9223,7 +9223,7 @@
           "npm:es-module-lexer@1.7.0",
           "npm:fontace@0.4.1",
           "npm:html-escaper@3.0.3",
-          "npm:marked@16.4.2",
+          "npm:marked@18.1.2",
           "npm:piccolore@0.1.3",
           "npm:prismjs@1.30.0",
           "npm:shiki@4.3.0",
