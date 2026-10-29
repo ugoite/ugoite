@@ -32,9 +32,18 @@ type CompositionSeed = {
 
 type EvaluationBody = {
   ok: boolean;
+  authorization_fingerprint?: string;
   query_results?: Record<string, unknown>;
   diagnostics?: Array<{ code?: string }>;
   query_diagnostics?: Array<{ variable_id: string; code?: string }>;
+};
+
+type AccessSnapshotBody = {
+  composition_revision: { entry_id: string; revision_id: string };
+  authorization_fingerprint: string;
+  publication_fingerprint: string;
+  valid_for_ms: number;
+  query_results?: Record<string, unknown>;
 };
 
 type SavedComposition = { composition_id?: string; revision_id?: string };
@@ -294,7 +303,29 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect(authorized.ok()).toBe(true);
       const authorizedBody = await authorized.json() as EvaluationBody;
       expect(authorizedBody.ok).toBe(true);
+      expect(authorizedBody.authorization_fingerprint).toBeTruthy();
       expect(JSON.stringify(authorizedBody)).toContain(seed.protectedValue);
+
+      const exactRevisionPath =
+        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
+      const browserEvaluation = page.waitForResponse((response) =>
+        response.url() ===
+          getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`) &&
+        response.request().method() === "POST"
+      );
+      await page.goto(getFrontendUrl(exactRevisionPath), {
+        waitUntil: "domcontentloaded",
+      });
+      const browserEvaluationResponse = await browserEvaluation;
+      expect(browserEvaluationResponse.ok()).toBe(true);
+      const browserEvaluationBody = await browserEvaluationResponse
+        .json() as EvaluationBody;
+      expect(browserEvaluationBody.ok).toBe(true);
+      expect(browserEvaluationBody.authorization_fingerprint).toBe(
+        authorizedBody.authorization_fingerprint,
+      );
+      const metric = page.locator(".compositionGraphMetric strong");
+      await expect(metric).toHaveText(seed.protectedValue);
 
       const compositionRead = await viewerContext.request.get(
         getBackendUrl(
@@ -335,6 +366,26 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         expect(rawBody).toContain(policyKind);
       };
 
+      const snapshotUrl = getBackendUrl(
+        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}/snapshot`,
+      );
+      // The browser polls at most every 25 seconds while active. Wait on real
+      // endpoint responses rather than sleeping, and skip any snapshot that
+      // raced ahead of the owner mutation. The bounded wait covers that poll
+      // cadence and transport/server time without claiming immediate expiry.
+      const changedSnapshotResponse = page.waitForResponse(async (response) => {
+        if (
+          response.url() !== snapshotUrl ||
+          response.request().method() !== "POST"
+        ) return false;
+        try {
+          const snapshot = await response.json() as AccessSnapshotBody;
+          return snapshot.authorization_fingerprint !==
+            authorizedBody.authorization_fingerprint;
+        } catch {
+          return false;
+        }
+      }, { timeout: 40_000 });
       const formPolicyResponse = await request.put(
         getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
         {
@@ -346,6 +397,29 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         },
       );
       expect(formPolicyResponse.status()).toBe(200);
+      const revokedAt = Date.now();
+      const snapshotResponse = await changedSnapshotResponse;
+      const detectionMs = Date.now() - revokedAt;
+      expect(detectionMs).toBeLessThanOrEqual(40_000);
+      console.log(`Snapshot revocation detected after ${detectionMs}ms`);
+      expect(snapshotResponse.ok()).toBe(true);
+      expect(snapshotResponse.request().postData()).toBeNull();
+      const changedSnapshot = await snapshotResponse
+        .json() as AccessSnapshotBody;
+      expect(changedSnapshot.authorization_fingerprint).not.toBe(
+        authorizedBody.authorization_fingerprint,
+      );
+      expect(changedSnapshot.composition_revision).toEqual({
+        entry_id: seed.compositionId,
+        revision_id: seed.compositionRevisionId,
+      });
+      expect(changedSnapshot.valid_for_ms).toBeGreaterThan(0);
+      expect(changedSnapshot.valid_for_ms).toBeLessThanOrEqual(30_000);
+      expect(changedSnapshot).not.toHaveProperty("query_results");
+      await expect(page.locator("body")).not.toContainText(
+        seed.protectedValue,
+        { timeout: 10_000 },
+      );
       await assertRevokedEvaluation("form", seed.formId);
 
       const restoreFormPolicy = await request.put(
