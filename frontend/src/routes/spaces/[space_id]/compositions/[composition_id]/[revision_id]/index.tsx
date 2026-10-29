@@ -173,6 +173,10 @@ export default function CompositionRevisionRoute() {
   let accessTimer: ReturnType<typeof setTimeout> | undefined;
   let accessExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   let accessCheckPending: AccessLease | undefined;
+  let accessCheckPendingGeneration = 0;
+  let accessCheckPendingForResume = false;
+  let accessResumeCheckStartedAt = 0;
+  let accessCheckAbort: AbortController | undefined;
   let parseEpoch = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let activeEvaluationId = "";
@@ -191,6 +195,10 @@ export default function CompositionRevisionRoute() {
     evaluationGeneration++;
     accessCheckGeneration++;
     accessCheckPending = undefined;
+    accessCheckAbort?.abort();
+    accessCheckAbort = undefined;
+    accessCheckPendingForResume = false;
+    accessResumeCheckStartedAt = 0;
     accessLease = undefined;
     clearAccessTimer();
     setTablePages({});
@@ -241,14 +249,34 @@ export default function CompositionRevisionRoute() {
     if (gateImmediately || startedAt >= expected.expiresAt) {
       setAccessSnapshotBlocked(true);
     }
-    if (accessCheckPending === expected) return;
+    if (gateImmediately && accessCheckPending === expected) {
+      if (
+        accessCheckPendingForResume &&
+        startedAt - accessResumeCheckStartedAt < 250
+      ) return;
+      // A response started before the page returned may already be stale.
+      // Invalidate it and require a request whose authority check starts now.
+      accessCheckGeneration++;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingForResume = false;
+    } else if (accessCheckPending === expected) {
+      return;
+    }
     accessCheckPending = expected;
     const checkGeneration = ++accessCheckGeneration;
+    accessCheckPendingGeneration = checkGeneration;
+    accessCheckPendingForResume = gateImmediately;
+    accessResumeCheckStartedAt = gateImmediately ? startedAt : 0;
+    const controller = new AbortController();
+    accessCheckAbort = controller;
     try {
       const snapshot = await compositionApi.checkAccessSnapshot(
         params.space_id,
         params.composition_id,
         params.revision_id,
+        controller.signal,
       );
       if (
         checkGeneration !== accessCheckGeneration ||
@@ -297,7 +325,16 @@ export default function CompositionRevisionRoute() {
         });
       }
     } finally {
-      if (accessCheckPending === expected) accessCheckPending = undefined;
+      if (
+        accessCheckPending === expected &&
+        accessCheckPendingGeneration === checkGeneration
+      ) {
+        accessCheckPending = undefined;
+        accessCheckPendingGeneration = 0;
+        accessCheckPendingForResume = false;
+        accessResumeCheckStartedAt = 0;
+        if (accessCheckAbort === controller) accessCheckAbort = undefined;
+      }
     }
   };
 
@@ -567,8 +604,13 @@ export default function CompositionRevisionRoute() {
         return;
       }
       setTablePages({});
+      accessCheckGeneration++;
       accessLease = undefined;
       accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingForResume = false;
+      accessResumeCheckStartedAt = 0;
       clearAccessTimer();
       setAccessSnapshotBlocked(true);
       lastEvaluatedInputs = undefined;
@@ -681,6 +723,11 @@ export default function CompositionRevisionRoute() {
       evaluationGeneration++;
       accessCheckGeneration++;
       accessLease = undefined;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingForResume = false;
+      accessResumeCheckStartedAt = 0;
       clearAccessTimer();
       setAccessSnapshotBlocked(true);
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -725,6 +772,10 @@ export default function CompositionRevisionRoute() {
     accessCheckGeneration++;
     accessLease = undefined;
     accessCheckPending = undefined;
+    accessCheckAbort?.abort();
+    accessCheckAbort = undefined;
+    accessCheckPendingForResume = false;
+    accessResumeCheckStartedAt = 0;
     clearAccessTimer();
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
