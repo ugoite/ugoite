@@ -7,10 +7,10 @@ title: Dependency audit exceptions
 | Domain | Authority file | Notes |
 | --- | --- | --- |
 | Rust crates | `Cargo.toml` / `Cargo.lock` | `cargo ... --locked` is the enforced mode in CI and release builds. |
-| Deno workspace | `deno.json` (root + `frontend` / `docsite` / `e2e` / `tools`) + shared `deno.lock` | Frozen install is the enforced mode; see toolchain consistency checks. |
-| Rust compiler | `rust-toolchain.toml` | Single compiler authority for dev, CI, WASM, and Docker source build. |
-| Deno runtime (dev/CI) | `mise.toml` (`tools.deno`) | Docker `denoland/deno:<version>` stays an explicit fixed tag and must match this authority while the same runtime is intended. |
-| Node (CI/release) | `.github/workflows/ci.yml`, `release-candidate.yml`, `release-publish.yml` | Canonical CI/release Node is 24; `packages/ugoite` `engines.node >= 20` is the distribution support floor, not the CI host version. |
+| Deno workspace | `deno.json` (root + `frontend` / `docsite` / `e2e` / `tools`) + shared `deno.lock` | Frozen install is the enforced mode once the B3 lockfile gate lands; until then `deno.lock` is committed and CI restores it via cache. |
+| Rust compiler | `rust-toolchain.toml` (planned in B2; currently `mise.toml` `rust = "1.95.0"`) | Single compiler authority for dev, CI, WASM, and Docker source build. |
+| Deno runtime (dev/CI) | `mise.toml` (`tools.deno`) | Docker `denoland/deno:<version>` stays an explicit fixed tag and must match this authority while the same runtime is intended (parity gate planned in B3). |
+| Node (CI/release) | `.github/workflows/ci.yml`, `release-candidate.yml`, `release-publish.yml` | CI runs Node 24; release packaging still runs Node 20 until the B3 Node-24 proof lands. `packages/ugoite` `engines.node >= 20` is the distribution support floor, not the CI host version. |
 
 `docs/architecture/security/dependency-audit.md` is the single record for
 exceptions. Scan reports are evidence, not a second authority.
@@ -27,8 +27,8 @@ updater, no workflow that pushes dependency changes.
 | `docker` | `/` | daily (`all-dependencies` group) |
 | `npm` | `/packages/ugoite` | daily (`all-dependencies` group) |
 | `devcontainers` | `/` | daily (`all-dependencies` group) |
-| `deno` | `/`, `/frontend`, `/docsite`, `/e2e`, `/tools` | weekly, independent frame |
-| `rust-toolchain` | `/` | monthly |
+| `deno` | `/`, `/frontend`, `/docsite`, `/e2e`, `/tools` | weekly, independent frame (planned in B1) |
+| `rust-toolchain` | `/` | monthly (planned in B2 with the `rust-toolchain.toml` migration) |
 
 ## Intentionally held outside Dependabot automation
 
@@ -68,7 +68,7 @@ Do not record this exception as resolved without re-running the audit.
 
 ## Monthly read-only check (no writes)
 
-The scheduled `dependency-review` workflow and the local commands below only
+The planned `dependency-review` workflow (B4) and the local commands below only
 report. They never create branches, PRs, issues, push, or edit dependency
 files.
 
