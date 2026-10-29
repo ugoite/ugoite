@@ -399,7 +399,7 @@ async function addStudioText(page: Page, variableId: string): Promise<void> {
   await page.getByRole("group", { name: "Add to design" })
     .getByRole("button", { name: "Text", exact: true }).click();
   const textBlock = page.getByRole("button", {
-    name: "text, Text",
+    name: "Edit text",
     exact: true,
   });
   await expect(textBlock).toBeVisible();

@@ -22,7 +22,7 @@ The feature matrix in ADR-025 is the acceptance boundary: every SQL construct ad
 
 ## Design canvas and binding picker
 
-The canvas keeps the four add actions Input, Text, Table, and Value visible together, including on an empty draft. The name field has a localized placeholder, and Save is separate from the two mode controls. An unselected canvas uses the full width; an Inspector appears only after explicit selection and can be closed. Empty literal Text offers an in-place edit action. Tables keep readable cells inside their own horizontal scroll region at narrow widths.
+The canvas keeps the four add actions Input, Text, Table, and Value visible together, including on an empty draft. The name field has a localized placeholder, and Save is separate from the two mode controls. An unselected canvas uses the full width; an Inspector appears only after explicit selection and can be closed. Empty literal Text remains visually empty in Design and runtime, and its edit control opens the in-place editor. Tables keep readable cells inside their own horizontal scroll region at narrow widths.
 
 The canvas offers Input, Text, Table, and Value. Input references one input variable. Text holds literal content or a string scalar reference. Table references a table result variable. Value references a compatible scalar variable. Display components do not store Form IDs, SQL text, Saved SQL revisions, SQL arguments, source IDs, or result schemas.
 
