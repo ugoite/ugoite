@@ -376,10 +376,28 @@ export default function CompositionRevisionRoute() {
 
   const onAccessResume = () => {
     if (!accessIsSuspended() && accessLease) {
+      const lease = accessLease;
+      if (lease.routeKey !== routeKey()) return;
+      setAccessSnapshotBlocked(true);
+      const current = evaluation();
+      if (current.evaluationId !== lease.evaluationId) {
+        // A focus event can arrive without a matching blur. Drop evaluation
+        // work newer than the visible lease before checking that lease again.
+        evaluationGeneration++;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+        activeEvaluationId = lease.evaluationId;
+        setEvaluation({
+          status: "ready",
+          evaluationId: lease.evaluationId,
+          response: current.response,
+        });
+      }
       void recheckAccess(accessLease, true);
     } else if (
       !accessIsSuspended() && accessSnapshotBlocked() &&
-      (evaluation().status === "error" || evaluation().status === "idle") &&
+      (evaluation().status === "error" || evaluation().status === "idle" ||
+        (evaluation().status === "loading" && !activeEvaluationId)) &&
       lastResumeEvaluationEpoch !== accessResumeEpoch
     ) {
       lastResumeEvaluationEpoch = accessResumeEpoch;
@@ -477,7 +495,12 @@ export default function CompositionRevisionRoute() {
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
     if (!currentRevision()) return;
-    if (accessIsSuspended()) return;
+    // Parsing or debounce continuations may finish after resume. While a prior
+    // lease is gated for its required authority check, they cannot start an
+    // evaluation that could race that check and reopen the result surface.
+    if (accessIsSuspended() || (accessLease && accessSnapshotBlocked())) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
     const draft = currentRevision()!.draft;
     const unavailable = new Set(
       unavailableCompositionQueryIds(

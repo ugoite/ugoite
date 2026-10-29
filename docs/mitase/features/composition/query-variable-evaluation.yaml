@@ -290,6 +290,24 @@ features:
                 anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: delayed-parse-waits-for-resume-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not evaluate a delayed input parse until the resumed authority check finishes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: initial-hidden-offline-load-resumes
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: starts the initial evaluation after an initially hidden offline page resumes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
           - id: expired-initial-evaluation-can-retry
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx

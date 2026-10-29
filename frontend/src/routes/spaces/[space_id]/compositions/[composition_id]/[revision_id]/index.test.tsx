@@ -520,6 +520,76 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
   });
 
+  it("does not evaluate a delayed input parse until the resumed authority check finishes", async () => {
+    vi.useFakeTimers();
+    let resolveParse!: (value: { status: "valid"; value: string }) => void;
+    let resolveFreshCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 11,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", { rows: 22 }, [
+            "rows",
+          ]),
+        })
+      );
+    parseMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFreshCheck = resolve;
+      }),
+    );
+
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-22" },
+    });
+    await waitFor(() => expect(parseMock).toHaveBeenCalledOnce());
+    fireEvent(window, new Event("blur"));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText("11")).not.toBeInTheDocument();
+
+    resolveParse({ status: "valid", value: "2026-10-22" });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(evaluateMock).toHaveBeenCalledOnce();
+    expect(screen.queryByText("11")).not.toBeInTheDocument();
+
+    resolveFreshCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    expect(evaluateMock.mock.calls[1][1].variables.day).toBe("2026-10-22");
+    await waitFor(() => expect(screen.getByText("22")).toBeInTheDocument());
+  });
+
   it("fences an initial evaluation across offline and online", async () => {
     let resolveOldEvaluation!: (value: ReturnType<typeof evaluation>) => void;
     let resolveFreshEvaluation!: (value: ReturnType<typeof evaluation>) => void;
@@ -556,6 +626,70 @@ describe("Composition saved revision graph evaluation", () => {
       evaluation("fresh", "auth-1", { rows: 2, stable: 20 }),
     );
     await waitFor(() => expect(screen.getByText("20")).toBeInTheDocument());
+  });
+
+  it("starts the initial evaluation after an initially hidden offline page resumes", async () => {
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      "visibilityState",
+    );
+    const onlineDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "onLine",
+    );
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    evaluateMock.mockImplementationOnce((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "auth-1", { rows: 2, stable: 20 }),
+      })
+    );
+
+    try {
+      render(() => <CompositionRevisionRoute />);
+      await Promise.resolve();
+      expect(evaluateMock).not.toHaveBeenCalled();
+
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "visible",
+      });
+      fireEvent(document, new Event("visibilitychange"));
+      expect(evaluateMock).not.toHaveBeenCalled();
+
+      Object.defineProperty(navigator, "onLine", {
+        configurable: true,
+        value: true,
+      });
+      fireEvent(window, new Event("online"));
+      await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+      await waitFor(() => expect(screen.getByText("20")).toBeInTheDocument());
+    } finally {
+      if (visibilityDescriptor) {
+        Object.defineProperty(
+          document,
+          "visibilityState",
+          visibilityDescriptor,
+        );
+      } else {
+        delete (document as { visibilityState?: DocumentVisibilityState })
+          .visibilityState;
+      }
+      if (onlineDescriptor) {
+        Object.defineProperty(navigator, "onLine", onlineDescriptor);
+      } else {
+        delete (navigator as { onLine?: boolean }).onLine;
+      }
+    }
   });
 
   it("offers a retry when the initial evaluation outlives its lease", async () => {
@@ -819,13 +953,12 @@ describe("Composition saved revision graph evaluation", () => {
     );
     render(() => <CompositionRevisionRoute />);
     await screen.findByText("10");
-    fireEvent(window, new Event("focus"));
-    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
-
     fireEvent.input(screen.getByLabelText("day"), {
       target: { value: "2026-10-20" },
     });
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
     rejectAccessCheck(new Error("offline"));
     await waitFor(() => {
       expect(screen.queryByText("10")).not.toBeInTheDocument();
@@ -1004,6 +1137,7 @@ describe("Composition saved revision graph evaluation", () => {
     const input = screen.getByLabelText("day");
     await screen.findByText("Enter a valid value.");
     expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveValue("bad");
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(evaluateMock).toHaveBeenCalledTimes(3);
