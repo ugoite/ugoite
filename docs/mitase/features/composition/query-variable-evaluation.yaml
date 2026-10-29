@@ -272,6 +272,33 @@ features:
                 anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: blur-cancels-pending-debounce-until-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not start a debounced leased evaluation during blur and waits for the fresh check }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: offline-fences-initial-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: fences an initial evaluation across offline and online }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: expired-initial-evaluation-can-retry
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: offers a retry when the initial evaluation outlives its lease }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
           - id: wasm-access-snapshot-route
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs

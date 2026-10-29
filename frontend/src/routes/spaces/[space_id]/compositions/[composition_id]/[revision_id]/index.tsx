@@ -167,7 +167,11 @@ export default function CompositionRevisionRoute() {
   const [evaluation, setEvaluation] = createSignal<EvaluationState>({
     status: "idle",
   });
-  const [accessSnapshotBlocked, setAccessSnapshotBlocked] = createSignal(false);
+  const [accessSnapshotBlocked, setAccessSnapshotBlocked] = createSignal(
+    (typeof document !== "undefined" &&
+      document.visibilityState === "hidden") ||
+      (typeof navigator !== "undefined" && !navigator.onLine),
+  );
   const parseGenerations = new Map<string, number>();
   let evaluationGeneration = 0;
   let accessCheckGeneration = 0;
@@ -179,6 +183,7 @@ export default function CompositionRevisionRoute() {
   let accessCheckPendingResumeEpoch: number | undefined;
   let accessResumeEpoch = 0;
   let lastResumeEvaluationEpoch: number | undefined;
+  const accessSuspensions = new Set<"blur" | "hidden" | "offline">();
   let accessCheckAbort: AbortController | undefined;
   let parseEpoch = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -186,6 +191,21 @@ export default function CompositionRevisionRoute() {
   let lastEvaluatedInputs:
     | { variables: Record<string, unknown>; unset: string[] }
     | undefined;
+
+  if (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  ) {
+    accessSuspensions.add("hidden");
+  }
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    accessSuspensions.add("offline");
+  }
+
+  const accessIsSuspended = () =>
+    accessSuspensions.size > 0 ||
+    (typeof document !== "undefined" &&
+      document.visibilityState === "hidden") ||
+    (typeof navigator !== "undefined" && !navigator.onLine);
 
   const clearAccessTimer = () => {
     if (accessTimer) clearTimeout(accessTimer);
@@ -214,7 +234,7 @@ export default function CompositionRevisionRoute() {
   // that epoch and invalidates both snapshot checks and evaluations.
   const isCurrentAsyncContext = (epoch: number, expectedRoute: string) =>
     epoch === accessResumeEpoch && expectedRoute === routeKey() &&
-    document.visibilityState !== "hidden";
+    !accessIsSuspended();
 
   const scheduleAccessCheck = (lease: AccessLease) => {
     clearAccessTimer();
@@ -243,7 +263,7 @@ export default function CompositionRevisionRoute() {
     if (
       expected.routeKey !== routeKey() ||
       expected.resumeEpoch !== accessResumeEpoch ||
-      document.visibilityState === "hidden"
+      accessIsSuspended()
     ) {
       return;
     }
@@ -355,11 +375,11 @@ export default function CompositionRevisionRoute() {
   };
 
   const onAccessResume = () => {
-    if (document.visibilityState !== "hidden" && accessLease) {
+    if (!accessIsSuspended() && accessLease) {
       void recheckAccess(accessLease, true);
     } else if (
-      document.visibilityState !== "hidden" && accessSnapshotBlocked() &&
-      evaluation().status === "error" &&
+      !accessIsSuspended() && accessSnapshotBlocked() &&
+      (evaluation().status === "error" || evaluation().status === "idle") &&
       lastResumeEvaluationEpoch !== accessResumeEpoch
     ) {
       lastResumeEvaluationEpoch = accessResumeEpoch;
@@ -367,9 +387,14 @@ export default function CompositionRevisionRoute() {
     }
   };
 
-  const onAccessSuspend = () => {
+  const onAccessSuspend = (reason: "blur" | "hidden" | "offline") => {
+    const wasSuspended = accessSuspensions.size > 0;
+    accessSuspensions.add(reason);
+    if (wasSuspended) return;
     accessResumeEpoch++;
     setAccessSnapshotBlocked(true);
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
     // Any evaluation that crosses a suspend is stale, even when it started
     // before the first lease existed. Keep a prior leased response only behind
     // the gate; the resumed authority check must authorize it again.
@@ -395,23 +420,32 @@ export default function CompositionRevisionRoute() {
     accessCheckAbort = undefined;
   };
 
+  const onAccessResumeReason = (reason: "blur" | "hidden" | "offline") => {
+    accessSuspensions.delete(reason);
+    if (!accessIsSuspended()) onAccessResume();
+  };
+
   const onVisibilityChange = () => {
-    if (document.visibilityState === "hidden") onAccessSuspend();
-    else onAccessResume();
+    if (document.visibilityState === "hidden") onAccessSuspend("hidden");
+    else onAccessResumeReason("hidden");
   };
 
   if (typeof document !== "undefined") {
+    const onWindowFocus = () => onAccessResumeReason("blur");
+    const onWindowBlur = () => onAccessSuspend("blur");
+    const onOffline = () => onAccessSuspend("offline");
+    const onOnline = () => onAccessResumeReason("offline");
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("focus", onAccessResume);
-    window.addEventListener("blur", onAccessSuspend);
-    window.addEventListener("offline", onAccessSuspend);
-    window.addEventListener("online", onAccessResume);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
     onCleanup(() => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("focus", onAccessResume);
-      window.removeEventListener("blur", onAccessSuspend);
-      window.removeEventListener("offline", onAccessSuspend);
-      window.removeEventListener("online", onAccessResume);
+      window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
     });
   }
 
@@ -443,6 +477,7 @@ export default function CompositionRevisionRoute() {
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
     if (!currentRevision()) return;
+    if (accessIsSuspended()) return;
     const draft = currentRevision()!.draft;
     const unavailable = new Set(
       unavailableCompositionQueryIds(
@@ -649,8 +684,13 @@ export default function CompositionRevisionRoute() {
           setAccessSnapshotBlocked(false);
           scheduleAccessCheck(lease);
         } else {
-          setAccessSnapshotBlocked(true);
-          clearAccessTimer();
+          // The response arrived after its server-issued lease elapsed. Keep
+          // the UI actionable, but do not poll or retry indefinitely.
+          clearVisibleResults();
+          setEvaluation({
+            status: "error",
+            error: t("composition.queryFailed"),
+          });
         }
       } else {
         // Missing coordinates cannot authorize query results. Preserve only
@@ -692,6 +732,15 @@ export default function CompositionRevisionRoute() {
         ),
       });
     }
+  };
+
+  const scheduleEvaluation = () => {
+    if (accessIsSuspended()) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      if (!accessIsSuspended()) void evaluate();
+    }, 250);
   };
 
   const handleInput = (variableId: string, raw: string) => {
@@ -776,11 +825,11 @@ export default function CompositionRevisionRoute() {
       } else {
         setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
       }
-      debounceTimer = setTimeout(() => void evaluate(), 250);
+      scheduleEvaluation();
     }).catch(() => {
       if (!isCurrent()) return;
       setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
-      debounceTimer = setTimeout(() => void evaluate(), 250);
+      scheduleEvaluation();
     });
   };
 
@@ -992,7 +1041,17 @@ export default function CompositionRevisionRoute() {
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
       <Show when={evaluation().error}>
-        <p class="ui-text-danger" role="alert">{evaluation().error}</p>
+        <section role="alert" class="section">
+          <p class="ui-text-danger">{evaluation().error}</p>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            disabled={accessIsSuspended()}
+            onClick={() => void evaluate()}
+          >
+            {t("composition.retry")}
+          </button>
+        </section>
       </Show>
       <Show when={accessSnapshotBlocked()}>
         <For each={evaluation().response?.diagnostics ?? []}>

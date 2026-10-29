@@ -456,6 +456,151 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
   });
 
+  it("does not start a debounced leased evaluation during blur and waits for the fresh check", async () => {
+    vi.useFakeTimers();
+    let resolveFreshCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    let resolveInputEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 11,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveInputEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      );
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFreshCheck = resolve;
+      }),
+    );
+
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-21" },
+    });
+    await waitFor(() => expect(parseMock).toHaveBeenCalled());
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(200);
+
+    fireEvent(window, new Event("blur"));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(evaluateMock).toHaveBeenCalledOnce();
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    expect(evaluateMock).toHaveBeenCalledOnce();
+
+    resolveFreshCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    expect(evaluateMock.mock.calls[1][1].variables.day).toBe("2026-10-21");
+    resolveInputEvaluation(evaluation("input", "auth-1", { rows: 2 }));
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+  });
+
+  it("fences an initial evaluation across offline and online", async () => {
+    let resolveOldEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    let resolveFreshEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveOldEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveFreshEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      );
+
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    fireEvent(window, new Event("offline"));
+    resolveOldEvaluation(evaluation("old", "auth-1", { rows: 1, stable: 10 }));
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    resolveFreshEvaluation(
+      evaluation("fresh", "auth-1", { rows: 2, stable: 20 }),
+    );
+    await waitFor(() => expect(screen.getByText("20")).toBeInTheDocument());
+  });
+
+  it("offers a retry when the initial evaluation outlives its lease", async () => {
+    vi.useFakeTimers();
+    let resolveExpiredEvaluation!: (
+      value: ReturnType<typeof evaluation>,
+    ) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveExpiredEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 2,
+            stable: 20,
+          }),
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(30_001);
+    resolveExpiredEvaluation(
+      evaluation("expired", "auth-1", { rows: 1, stable: 10 }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load results",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("20")).toBeInTheDocument());
+  });
+
   it("invalidates pending checks while offline and requires new online work", async () => {
     let resolveOldCheck!: (value: {
       composition_revision: { entry_id: string; revision_id: string };
