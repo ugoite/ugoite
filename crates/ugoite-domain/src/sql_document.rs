@@ -278,6 +278,11 @@ pub struct SqlDocumentColumnReference {
 pub enum SqlDocumentValueAccess {
     /// Select one array element using a positive integer literal.
     ArrayIndex { one_based_index: String },
+    /// Select a fully bounded array slice using positive, inclusive SQL bounds.
+    ArraySlice {
+        one_based_start: String,
+        one_based_end: String,
+    },
 }
 
 /// Broad lexical family for an expression literal.
@@ -6519,6 +6524,25 @@ fn wrap_expression_in_value_access(
                 .filter(|index| *index > 0)
                 .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
             format!("[{index}]")
+        }
+        SqlDocumentValueAccess::ArraySlice {
+            one_based_start,
+            one_based_end,
+        } => {
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let start = one_based_start
+                .parse::<i64>()
+                .ok()
+                .filter(|index| *index > 0)
+                .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+            let end = one_based_end
+                .parse::<i64>()
+                .ok()
+                .filter(|index| *index >= start)
+                .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+            format!("[{start}:{end}]")
         }
     };
     let wrapped_expression = format!("({operand}){suffix}");
@@ -19183,7 +19207,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_value_access_constructs_one_based_array_access_losslessly() {
+    fn semantic_value_access_constructs_array_index_and_bounded_slice_losslessly() {
         let source = "SELECT ARRAY[4, 9] /* keep outside */";
         let document = parse_sql_document(source);
         let array = document
@@ -19219,6 +19243,107 @@ mod tests {
                 .document
                 .source,
             source
+        );
+
+        let slice_source =
+            "SELECT ARRAY[4, 9] /* keep */, amount FROM tasks WHERE amount > 0 ORDER BY amount";
+        let slice_document = parse_sql_document(slice_source);
+        let slice_target = slice_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.range
+                    .and_then(|range| slice_document.source_slice(range))
+                    == Some("ARRAY[4, 9]")
+            })
+            .expect("the slice operand is source-backed");
+        let sliced = apply_sql_document_semantic_edit_transaction(
+            slice_source,
+            &semantic_transaction(
+                slice_source,
+                vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                    node_id: slice_target.id,
+                    expected_kind: slice_target.kind,
+                    access: SqlDocumentValueAccess::ArraySlice {
+                        one_based_start: "1".to_owned(),
+                        one_based_end: "2".to_owned(),
+                    },
+                }],
+            ),
+        )
+        .expect("a valid fixed-bound slice is constructed by Rust");
+        assert_eq!(
+            sliced.document.source,
+            "SELECT (ARRAY[4, 9])[1:2] /* keep */, amount FROM tasks WHERE amount > 0 ORDER BY amount"
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(&sliced.document.source, &sliced.undo)
+                .expect("the slice edit has guarded undo")
+                .document
+                .source,
+            slice_source
+        );
+
+        for (one_based_start, one_based_end) in [
+            ("", "1"),
+            ("1", ""),
+            ("0", "1"),
+            ("1", "0"),
+            ("2", "1"),
+            ("9223372036854775808", "9223372036854775808"),
+            ("1", "9223372036854775808"),
+            ("1 OR TRUE", "2"),
+        ] {
+            let document = parse_sql_document("SELECT value");
+            let value = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::IdentifierExpression)
+                .unwrap();
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    "SELECT value",
+                    &semantic_transaction(
+                        "SELECT value",
+                        vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                            node_id: value.id,
+                            expected_kind: value.kind,
+                            access: SqlDocumentValueAccess::ArraySlice {
+                                one_based_start: one_based_start.to_owned(),
+                                one_based_end: one_based_end.to_owned(),
+                            },
+                        }],
+                    ),
+                ),
+                Err(SqlDocumentEditError::InvalidSemanticReplacement),
+                "invalid array slice {one_based_start:?}:{one_based_end:?} must be rejected"
+            );
+        }
+
+        let commented_source = "SELECT amount /* keep inside */ + 1 FROM tasks";
+        let commented_document = parse_sql_document(commented_source);
+        let commented_expression = commented_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the commented expression is parsed");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                commented_source,
+                &semantic_transaction(
+                    commented_source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                        node_id: commented_expression.id,
+                        expected_kind: commented_expression.kind,
+                        access: SqlDocumentValueAccess::ArraySlice {
+                            one_based_start: "1".to_owned(),
+                            one_based_end: "2".to_owned(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement),
+            "comment-bearing operands fail closed"
         );
 
         for one_based_index in ["", "0", "-1", "9223372036854775808", "1 OR TRUE"] {
