@@ -69,7 +69,15 @@ Deno.test("REQ-OPS-023: public installer remains separate from repository develo
 Deno.test("Phase 1 workspace has one root toolchain and Deno lockfile", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   assertEquals(rootMise.includes('deno = "2.8.3"'), true);
-  assertEquals(rootMise.includes('rust = "1.95.0"'), true);
+  // Rust compiler authority lives in rust-toolchain.toml; mise must follow
+  // it via idiomatic version files instead of a duplicated `tools.rust` pin.
+  assertEquals(/^\s*rust\s*=/m.test(rootMise), false);
+  assertEquals(
+    rootMise.includes('idiomatic_version_file_enable_tools = ["rust"]'),
+    true,
+  );
+  const toolchain = await Deno.readTextFile("rust-toolchain.toml");
+  assertEquals(toolchain.includes('channel = "1.95.0"'), true);
   assertEquals(rootMise.includes("python ="), false);
   assertEquals(rootMise.includes("bun ="), false);
   assertEquals(rootMise.includes("node ="), false);
