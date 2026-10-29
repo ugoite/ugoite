@@ -6068,6 +6068,28 @@ mod tests {
     }
 
     #[test]
+    fn composition_snapshot_check_uses_the_portable_exact_revision_route() {
+        let request = serde_json::json!({
+            "action": "prepare",
+            "operation": "composition.snapshot_check",
+            "arguments": {
+                "space_id": "space-1",
+                "composition_id": "composition-1",
+                "revision_id": "revision-1",
+            },
+        })
+        .to_string();
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["method"], "POST");
+        assert_eq!(
+            response["value"]["path"],
+            "/spaces/space-1/compositions/composition-1/history/revision-1/snapshot"
+        );
+        assert_eq!(response["value"]["body_kind"], "none");
+    }
+
+    #[test]
     fn portable_form_validation_is_available_without_storage() {
         let response = super::invoke_json(
             r#"{"action":"domain.validate_form","value":{"id":"00000000-0000-0000-0000-000000000001","version":1,"name":"Task","fields":[],"allow_extra_attributes":false}}"#,

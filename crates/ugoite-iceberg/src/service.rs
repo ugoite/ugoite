@@ -169,8 +169,9 @@ mod composition_resolver;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
 pub use composition_query_evaluation::{
-    CompositionGraphEvaluationPlan, CompositionGraphQueryResult, CompositionQueryEvaluationPage,
-    CompositionQueryEvaluationResponse, CompositionQueryEvaluationTarget,
+    CompositionAccessSnapshot, CompositionGraphEvaluationPlan, CompositionGraphQueryResult,
+    CompositionQueryEvaluationPage, CompositionQueryEvaluationResponse,
+    CompositionQueryEvaluationTarget,
 };
 pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;

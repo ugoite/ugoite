@@ -61,6 +61,16 @@ interface GraphTablePageState {
   index: number;
 }
 
+interface AccessLease {
+  routeKey: string;
+  evaluationId: string;
+  entryId: string;
+  revisionId: string;
+  publicationFingerprint: string;
+  authorizationFingerprint: string;
+  expiresAt: number;
+}
+
 const literalRawValue = (value: CompositionLiteral | undefined) =>
   !value || value.kind === "null" ? "" : String(value.value ?? "");
 
@@ -155,14 +165,154 @@ export default function CompositionRevisionRoute() {
   const [evaluation, setEvaluation] = createSignal<EvaluationState>({
     status: "idle",
   });
+  const [accessSnapshotBlocked, setAccessSnapshotBlocked] = createSignal(false);
   const parseGenerations = new Map<string, number>();
   let evaluationGeneration = 0;
+  let accessCheckGeneration = 0;
+  let accessLease: AccessLease | undefined;
+  let accessTimer: ReturnType<typeof setTimeout> | undefined;
+  let accessExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+  let accessCheckPending: AccessLease | undefined;
   let parseEpoch = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let activeEvaluationId = "";
   let lastEvaluatedInputs:
     | { variables: Record<string, unknown>; unset: string[] }
     | undefined;
+
+  const clearAccessTimer = () => {
+    if (accessTimer) clearTimeout(accessTimer);
+    accessTimer = undefined;
+    if (accessExpiryTimer) clearTimeout(accessExpiryTimer);
+    accessExpiryTimer = undefined;
+  };
+
+  const clearVisibleResults = () => {
+    accessLease = undefined;
+    clearAccessTimer();
+    setTablePages({});
+    lastEvaluatedInputs = undefined;
+    setEvaluation({ status: "loading" });
+    setAccessSnapshotBlocked(true);
+  };
+
+  const scheduleAccessCheck = (lease: AccessLease) => {
+    clearAccessTimer();
+    // Check before the 30-second server lease expires. If a timer is delayed,
+    // the renderer still gates cached results at expiresAt.
+    const delay = Math.max(
+      0,
+      Math.min(25_000, lease.expiresAt - Date.now() - 5_000),
+    );
+    accessTimer = setTimeout(() => void recheckAccess(lease, false), delay);
+    accessExpiryTimer = setTimeout(() => {
+      if (accessLease === lease) setAccessSnapshotBlocked(true);
+    }, Math.max(0, lease.expiresAt - Date.now()));
+  };
+
+  const recheckAccess = async (
+    expected: AccessLease,
+    gateImmediately: boolean,
+  ) => {
+    if (
+      expected.routeKey !== routeKey() || document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+    const current = evaluation();
+    if (
+      accessLease !== expected ||
+      current.evaluationId !== expected.evaluationId ||
+      current.response?.authorization_fingerprint !==
+        expected.authorizationFingerprint ||
+      current.response?.publication_fingerprint !==
+        expected.publicationFingerprint
+    ) return;
+    if (accessCheckPending === expected) return;
+    accessCheckPending = expected;
+    const checkGeneration = ++accessCheckGeneration;
+    const startedAt = Date.now();
+    if (gateImmediately || startedAt >= expected.expiresAt) {
+      setAccessSnapshotBlocked(true);
+    }
+    try {
+      const snapshot = await compositionApi.checkAccessSnapshot(
+        params.space_id,
+        params.composition_id,
+        params.revision_id,
+      );
+      if (
+        checkGeneration !== accessCheckGeneration ||
+        expected.routeKey !== routeKey() ||
+        accessLease !== expected ||
+        evaluation().evaluationId !== expected.evaluationId
+      ) return;
+      const sameSnapshot =
+        snapshot.composition_revision.entry_id === expected.entryId &&
+        snapshot.composition_revision.revision_id === expected.revisionId &&
+        snapshot.authorization_fingerprint ===
+          expected.authorizationFingerprint &&
+        snapshot.publication_fingerprint === expected.publicationFingerprint &&
+        Number.isSafeInteger(snapshot.valid_for_ms) &&
+        snapshot.valid_for_ms > 0 &&
+        snapshot.valid_for_ms <= 30_000;
+      if (!sameSnapshot) {
+        clearVisibleResults();
+        void evaluate();
+        return;
+      }
+      // Use request start as the conservative TTL origin so network latency
+      // cannot extend the server-issued lease.
+      const renewed = {
+        ...expected,
+        expiresAt: startedAt + snapshot.valid_for_ms,
+      };
+      accessLease = renewed;
+      if (Date.now() >= renewed.expiresAt) {
+        clearVisibleResults();
+        void evaluate();
+        return;
+      }
+      setAccessSnapshotBlocked(false);
+      scheduleAccessCheck(renewed);
+    } catch {
+      if (
+        checkGeneration === accessCheckGeneration &&
+        expected.routeKey === routeKey() &&
+        accessLease === expected
+      ) {
+        clearVisibleResults();
+        setEvaluation({
+          status: "error",
+          error: t("composition.queryFailed"),
+        });
+      }
+    } finally {
+      if (accessCheckPending === expected) accessCheckPending = undefined;
+    }
+  };
+
+  const onAccessResume = () => {
+    if (document.visibilityState !== "hidden" && accessLease) {
+      void recheckAccess(accessLease, true);
+    } else if (
+      document.visibilityState !== "hidden" && accessSnapshotBlocked() &&
+      evaluation().status === "error"
+    ) {
+      void evaluate();
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onAccessResume);
+    window.addEventListener("focus", onAccessResume);
+    window.addEventListener("online", onAccessResume);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", onAccessResume);
+      window.removeEventListener("focus", onAccessResume);
+      window.removeEventListener("online", onAccessResume);
+    });
+  }
 
   const currentInputSnapshot = () => ({
     variables: { ...inputValues() },
@@ -218,6 +368,7 @@ export default function CompositionRevisionRoute() {
     const compositionId = params.composition_id;
     const revisionId = params.revision_id;
     const generation = ++evaluationGeneration;
+    let requestStartedAt = Date.now();
     let evaluationId = page ? activeEvaluationId : crypto.randomUUID();
     if (!page) activeEvaluationId = evaluationId;
     const values = currentInputSnapshot();
@@ -277,6 +428,7 @@ export default function CompositionRevisionRoute() {
               : []
           ),
         );
+      requestStartedAt = Date.now();
       let response = await request(evaluationId, requestedQueries);
       if (
         routeScope !== routeKey() ||
@@ -306,6 +458,7 @@ export default function CompositionRevisionRoute() {
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
         setEvaluation({ status: "loading", evaluationId });
+        requestStartedAt = Date.now();
         response = await request(evaluationId, requestedQueries);
         if (
           routeScope !== routeKey() ||
@@ -373,11 +526,42 @@ export default function CompositionRevisionRoute() {
           ? undefined
           : t("composition.queryFailed"),
       });
+      const revisionRef = response.composition_revision;
+      const authFingerprint = response.authorization_fingerprint;
+      const publicationFingerprint = response.publication_fingerprint;
+      if (
+        revisionRef && authFingerprint && publicationFingerprint
+      ) {
+        const lease: AccessLease = {
+          routeKey: routeScope,
+          evaluationId,
+          entryId: revisionRef.entry_id,
+          revisionId: revisionRef.revision_id,
+          authorizationFingerprint: authFingerprint,
+          publicationFingerprint,
+          expiresAt: requestStartedAt + 30_000,
+        };
+        accessLease = lease;
+        if (Date.now() < lease.expiresAt) {
+          setAccessSnapshotBlocked(false);
+          scheduleAccessCheck(lease);
+        } else {
+          setAccessSnapshotBlocked(true);
+          clearAccessTimer();
+        }
+      } else {
+        // Older or incomplete responses cannot authorize retaining data.
+        clearVisibleResults();
+      }
     } catch (error) {
       if (routeScope !== routeKey() || generation !== evaluationGeneration) {
         return;
       }
       setTablePages({});
+      accessLease = undefined;
+      accessCheckPending = undefined;
+      clearAccessTimer();
+      setAccessSnapshotBlocked(true);
       lastEvaluatedInputs = undefined;
       setEvaluation({
         status: "error",
@@ -486,6 +670,10 @@ export default function CompositionRevisionRoute() {
     const ready = currentRevision();
     if (!ready) {
       evaluationGeneration++;
+      accessCheckGeneration++;
+      accessLease = undefined;
+      clearAccessTimer();
+      setAccessSnapshotBlocked(true);
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = undefined;
       activeEvaluationId = "";
@@ -515,6 +703,7 @@ export default function CompositionRevisionRoute() {
     setUnsetInputs([]);
     setInputStates({});
     setBlockedQueryIds(new Set());
+    setAccessSnapshotBlocked(true);
     setTablePages({});
     parseEpoch++;
     parseGenerations.clear();
@@ -524,6 +713,10 @@ export default function CompositionRevisionRoute() {
   });
   onCleanup(() => {
     parseEpoch++;
+    accessCheckGeneration++;
+    accessLease = undefined;
+    accessCheckPending = undefined;
+    clearAccessTimer();
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
   });
@@ -682,7 +875,13 @@ export default function CompositionRevisionRoute() {
             evaluation={evaluation().response}
             rawInputs={rawInputs()}
             inputStates={inputStates()}
-            blockedQueryIds={blockedQueryIds()}
+            blockedQueryIds={accessSnapshotBlocked()
+              ? new Set(
+                document().draft.variables.filter((node) =>
+                  node.kind === "query"
+                ).map((node) => node.id),
+              )
+              : blockedQueryIds()}
             previousPageQueryIds={new Set(
               Object.entries(tablePages()).flatMap(([id, state]) =>
                 state.index > 0 ? [id] : []

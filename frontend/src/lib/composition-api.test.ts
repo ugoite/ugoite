@@ -59,6 +59,26 @@ describe("compositionApi", () => {
     );
   });
 
+  it("rechecks only the exact saved Composition authority snapshot", async () => {
+    const snapshot = {
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-fp",
+      authorization_fingerprint: "authorization-fp",
+      valid_for_ms: 30_000,
+    };
+    vi.mocked(protocolFetch).mockResolvedValue(snapshot);
+
+    await expect(
+      compositionApi.checkAccessSnapshot("space-1", "comp-1", "rev-1", signal),
+    ).resolves.toEqual(snapshot);
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.snapshot_check",
+      { space_id: "space-1", composition_id: "comp-1", revision_id: "rev-1" },
+      undefined,
+      { signal },
+    );
+  });
+
   it("saves and updates strict graph YAML with retry and base revision identity", async () => {
     const response = {
       composition_id: "tool-1",

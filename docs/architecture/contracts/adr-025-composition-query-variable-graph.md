@@ -162,6 +162,23 @@ within that snapshot. Generation and fingerprint checks discard stale responses.
 Every run rechecks current authorization and fails closed for deleted Forms,
 changed schemas, unavailable Saved SQL revisions, or revoked access.
 
+The saved-revision browser retains transient results only while it holds a
+server-issued authority snapshot lease with a maximum duration of 30 seconds.
+While the page is visible it rechecks before that deadline. It gates displayed
+results immediately on focus or visibility return, then requires a successful
+current check before showing them again. A changed authorization or Publication
+fingerprint clears retained results and starts a full evaluation; an unavailable
+or stale check fails closed. The check reads the exact saved Composition
+revision and current authority coordinates without resolving or executing SQL.
+The server remains the sole authority; fingerprints are comparison values, not
+capabilities or authorization tokens. The 30-second interval bounds detected
+revocation delay only for an active connected browser. It is not an immediate
+notification guarantee, timers may be suspended while a page is hidden, and
+previously observed data cannot be recalled. During that detection interval,
+previously displayed results may remain visible; this mitigation does not
+satisfy any acceptance condition that prohibits result reuse immediately after
+revocation.
+
 An explicit query selection validates the complete graph and the caller's input
 identities, then requires values only for inputs consumed by its server-derived
 query dependency closure. Missing or invalid unrelated inputs remain unset Work;

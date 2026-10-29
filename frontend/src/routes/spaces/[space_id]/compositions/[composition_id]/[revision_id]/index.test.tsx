@@ -16,6 +16,7 @@ const {
   lintMock,
   listMock,
   evaluateMock,
+  accessSnapshotMock,
   navigateMock,
   parseMock,
   routeParams,
@@ -30,6 +31,7 @@ const {
     lintMock: vi.fn(),
     listMock: vi.fn(),
     evaluateMock: vi.fn(),
+    accessSnapshotMock: vi.fn(),
     navigateMock: vi.fn(),
     parseMock: vi.fn(),
     routeParams: {
@@ -65,6 +67,7 @@ vi.mock("~/lib/composition-api", () => ({
     lint: (...args: unknown[]) => lintMock(...args),
     list: (...args: unknown[]) => listMock(...args),
     evaluate: (...args: unknown[]) => evaluateMock(...args),
+    checkAccessSnapshot: (...args: unknown[]) => accessSnapshotMock(...args),
   },
   compositionDisplayName: (name: string) => name,
 }));
@@ -280,11 +283,20 @@ describe("Composition saved revision graph evaluation", () => {
         revision_id: "rev-1",
       }],
     });
+    accessSnapshotMock.mockResolvedValue({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
     parseMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw ? { status: "valid", value: raw } : { status: "unset" }
     );
   });
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("requests only affected query variables after an input changes", async () => {
     evaluateMock
@@ -321,6 +333,148 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
     expect(evaluateMock.mock.calls[1][1]).not.toHaveProperty("query_results");
     expect(screen.getByLabelText("stable")).toHaveTextContent("10");
+  });
+
+  it("fails closed when a focus-return authority check is unavailable", async () => {
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
+      })
+    );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+
+    accessSnapshotMock.mockRejectedValueOnce(new Error("offline"));
+    fireEvent(window, new Event("focus"));
+
+    await waitFor(() => {
+      expect(accessSnapshotMock).toHaveBeenCalledOnce();
+      expect(screen.queryByText("10")).not.toBeInTheDocument();
+    });
+    expect(evaluateMock).toHaveBeenCalledOnce();
+  });
+
+  it("hides retained query values when the authority lease expires", async () => {
+    vi.useFakeTimers();
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
+      })
+    );
+    accessSnapshotMock.mockReturnValue(new Promise(() => {}));
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(accessSnapshotMock).toHaveBeenCalledOnce();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await waitFor(() => {
+      expect(screen.queryByText("10")).not.toBeInTheDocument();
+    });
+  });
+
+  it("discards cached results and reevaluates after the principal fingerprint changes", async () => {
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-2", {
+            rows: 2,
+            stable: 20,
+          }),
+        })
+      );
+    accessSnapshotMock.mockResolvedValueOnce({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-2",
+      valid_for_ms: 30_000,
+    });
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+
+    fireEvent(window, new Event("focus"));
+
+    await screen.findByText("20");
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores an authority response from a route that is no longer active", async () => {
+    let resolveOldCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: {
+        evaluation_id: string;
+        target: { revision_id: string };
+      },
+    ) =>
+      Promise.resolve({
+        ...evaluation(
+          request.evaluation_id,
+          "auth-1",
+          request.target.revision_id === "rev-1"
+            ? { rows: 1, stable: 10 }
+            : { rows: 2, stable: 20 },
+        ),
+        composition_revision: {
+          entry_id: "comp-1",
+          revision_id: request.target.revision_id,
+        },
+      })
+    );
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOldCheck = resolve;
+      }),
+    );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+
+    updateRouteParams({
+      space_id: "space-1",
+      composition_id: "comp-1",
+      revision_id: "rev-2",
+    });
+    await screen.findByText("20");
+    resolveOldCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+
+    expect(screen.getByText("20")).toBeInTheDocument();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
   });
 
   it("immediately hides stale results and never evaluates invalid raw input", async () => {

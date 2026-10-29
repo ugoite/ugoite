@@ -49,6 +49,13 @@ export interface CompositionHistoryPage {
   has_more: boolean;
 }
 
+export interface CompositionAccessSnapshot {
+  composition_revision: { entry_id: string; revision_id: string };
+  publication_fingerprint: string;
+  authorization_fingerprint: string;
+  valid_for_ms: number;
+}
+
 export interface CompositionPublicationReceipt {
   command_id: string;
   catalog_generation: number;
@@ -371,6 +378,25 @@ export const compositionApi = {
   ): Promise<CompositionRawRevision> {
     return await protocolFetch<CompositionRawRevision>(
       "composition.get",
+      {
+        space_id: spaceId,
+        composition_id: compositionId,
+        revision_id: revisionId,
+      },
+      undefined,
+      { signal },
+    );
+  },
+
+  /** Recheck a saved revision's authority coordinates without executing SQL. */
+  async checkAccessSnapshot(
+    spaceId: string,
+    compositionId: string,
+    revisionId: string,
+    signal?: AbortSignal,
+  ): Promise<CompositionAccessSnapshot> {
+    return await protocolFetch<CompositionAccessSnapshot>(
+      "composition.snapshot_check",
       {
         space_id: spaceId,
         composition_id: compositionId,

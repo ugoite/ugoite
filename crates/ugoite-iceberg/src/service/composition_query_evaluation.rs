@@ -94,7 +94,80 @@ pub struct CompositionQueryEvaluationResponse {
     pub query_diagnostics: Vec<VariableGraphQueryEvaluationDiagnostic>,
 }
 
+/// Current server-owned authority coordinates for a saved Composition
+/// revision. This check is read-only and never executes query SQL.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositionAccessSnapshot {
+    pub composition_entry_id: String,
+    pub composition_revision_id: String,
+    pub publication_fingerprint: String,
+    pub authorization_fingerprint: String,
+}
+
 impl UgoiteService {
+    /// Recheck the authority snapshot for an exact saved Composition without
+    /// resolving or executing its query variables. A caller may retain prior
+    /// transient results only while both returned fingerprints remain equal
+    /// to the fingerprints from the last successful full evaluation.
+    pub async fn check_composition_access_snapshot_for_principals(
+        &self,
+        space_id: &str,
+        composition_id: &str,
+        revision_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<CompositionAccessSnapshot> {
+        let before = self
+            .capture_graph_snapshot(
+                space_id,
+                Some(principal_ids),
+                Some(composition_id),
+                None,
+                None,
+            )
+            .await?;
+        let raw = self
+            .get_composition_raw_revision_authorized_for_principals(
+                space_id,
+                composition_id,
+                revision_id,
+                principal_ids,
+            )
+            .await?;
+        // The stored revision is immutable. Strictly parse it here so this
+        // operation cannot turn an old or malformed graph into an authorized
+        // current Composition snapshot.
+        let spec = raw
+            .fields
+            .get("spec")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Composition revision has no spec"))?;
+        ugoite_domain::composition::parse_composition_yaml(spec)
+            .map_err(|_| anyhow!("Composition revision is not a supported graph"))?;
+        if raw.revision.entry_id.to_string() != composition_id
+            || raw.revision.revision_id.to_string() != revision_id
+        {
+            return Err(anyhow!(
+                "Composition snapshot revision does not match the requested revision"
+            ));
+        }
+        let after = self
+            .capture_graph_snapshot(
+                space_id,
+                Some(principal_ids),
+                Some(composition_id),
+                None,
+                None,
+            )
+            .await?;
+        ensure_graph_snapshot_unchanged(&before.0, &before.1, &after.0, &after.1)?;
+        Ok(CompositionAccessSnapshot {
+            composition_entry_id: composition_id.to_owned(),
+            composition_revision_id: revision_id.to_owned(),
+            publication_fingerprint: fingerprint_serializable(&after.1)?,
+            authorization_fingerprint: after.0,
+        })
+    }
+
     pub(super) async fn preflight_composition_save_authorized(
         &self,
         space_id: &str,

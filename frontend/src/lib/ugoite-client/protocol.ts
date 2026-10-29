@@ -77,6 +77,7 @@ export const UGOITE_API_OPERATIONS = [
   "composition.list",
   "composition.get",
   "composition.history",
+  "composition.snapshot_check",
   "composition.preview",
   "composition.evaluate",
   "composition.save",
