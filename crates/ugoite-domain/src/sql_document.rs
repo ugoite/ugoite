@@ -8,10 +8,10 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg, FunctionArgExpr,
-    FunctionArguments, GroupByExpr, GroupByWithModifier, Ident, LimitClause, ObjectName,
-    ObjectNamePart, OrderByKind, OrderBySort, Query, Select, SelectItem, SetExpr, Spanned,
-    Statement, TableFactor, Value, ValueWithSpan, Visit, Visitor,
+    AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg,
+    FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Ident, LimitClause,
+    ObjectName, ObjectNamePart, OrderByKind, OrderBySort, Query, Select, SelectItem, SetExpr,
+    Spanned, Statement, Subscript, TableFactor, Value, ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 25;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 26;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -465,6 +465,19 @@ pub enum SqlDocumentNodeData {
         /// Qualified relation name parts.
         name: Vec<SqlDocumentIdentifier>,
     },
+    /// A fully bounded literal slice at the end of an array access chain.
+    /// The parser ranges identify only the literal bounds so an edit retains
+    /// brackets, colons, and comments around them exactly.
+    ArraySlice {
+        /// Exact source text of the current lower bound.
+        one_based_start: String,
+        /// Exact source text of the current upper bound.
+        one_based_end: String,
+        /// Parser-derived source range of the lower bound literal.
+        start_range: SqlSourceRange,
+        /// Parser-derived source range of the upper bound literal.
+        end_range: SqlSourceRange,
+    },
     /// A FROM table factor with its kind and optional alias.
     TableFactor {
         /// Parser AST category of the table factor.
@@ -906,6 +919,14 @@ pub enum SqlDocumentSemanticEdit {
         node_id: u32,
         expected_kind: SqlDocumentNodeKind,
         access: SqlDocumentValueAccess,
+    },
+    /// Replace both literal bounds on an existing fully bounded terminal
+    /// array slice while retaining its surrounding source text.
+    SetArraySliceBounds {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        one_based_start: String,
+        one_based_end: String,
     },
     /// Wrap one typed expression in an aggregate from the shared SQL registry.
     WrapExpressionInAggregate {
@@ -2698,6 +2719,20 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(wrap_expression_in_value_access(&document, node, access)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::SetArraySliceBounds {
+            one_based_start,
+            one_based_end,
+            ..
+        } = semantic_edit
+        {
+            edits.extend(set_array_slice_bounds(
+                &document,
+                node,
+                one_based_start,
+                one_based_end,
+            )?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::WrapExpressionInAggregate {
             function, distinct, ..
         } = semantic_edit
@@ -3173,6 +3208,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::WrapExpressionInValueAccess { .. } => {
                 unreachable!("value access edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::SetArraySliceBounds { .. } => {
+                unreachable!("array slice bound edits are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::WrapExpressionInAggregate { .. } => {
                 unreachable!("aggregate wrapper edits are expanded before single-node edits")
             }
@@ -3390,6 +3428,11 @@ impl SqlDocumentSemanticEdit {
                 expected_kind,
             }
             | Self::WrapExpressionInValueAccess {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::SetArraySliceBounds {
                 node_id,
                 expected_kind,
                 ..
@@ -6556,6 +6599,67 @@ fn wrap_expression_in_value_access(
         expected_text: operand.to_owned(),
         replacement: wrapped_expression,
     })
+}
+
+fn set_array_slice_bounds(
+    document: &SqlDocument,
+    slice_node: &SqlDocumentNode,
+    one_based_start: &str,
+    one_based_end: &str,
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
+    let Some(SqlDocumentNodeData::ArraySlice {
+        one_based_start: current_start,
+        one_based_end: current_end,
+        start_range,
+        end_range,
+    }) = slice_node.semantic.as_ref()
+    else {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    };
+    let start = one_based_start
+        .parse::<i64>()
+        .ok()
+        .filter(|bound| *bound > 0)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let end = one_based_end
+        .parse::<i64>()
+        .ok()
+        .filter(|bound| *bound >= start)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let node_range = slice_node
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if start_range.start < node_range.start
+        || start_range.end > node_range.end
+        || end_range.start < node_range.start
+        || end_range.end > node_range.end
+        || start_range.start >= start_range.end
+        || end_range.start >= end_range.end
+        || start_range.end > end_range.start
+        || document.source_slice(*start_range) != Some(current_start)
+        || document.source_slice(*end_range) != Some(current_end)
+    {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+
+    let mut edits = Vec::with_capacity(2);
+    for (range, previous, replacement) in [
+        (*start_range, current_start, start.to_string()),
+        (*end_range, current_end, end.to_string()),
+    ] {
+        if previous.parse::<i64>().ok() == replacement.parse::<i64>().ok() {
+            continue;
+        }
+        edits.push(SqlDocumentEdit {
+            range,
+            expected_text: previous.clone(),
+            replacement,
+        });
+    }
+    if edits.is_empty() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    Ok(edits)
 }
 
 fn wrap_expression_in_aggregate(
@@ -13938,8 +14042,52 @@ fn expression_data(
             negated,
         })
     };
+    let slice_bound = |bound: &Expr| -> Option<(String, SqlSourceRange)> {
+        match bound {
+            Expr::Value(ValueWithSpan {
+                value: Value::Number(..),
+                ..
+            }) => {}
+            _ => return None,
+        }
+        let range = SqlSourceRange::from_span(source, source_map, bound.span())?;
+        let raw = source.get(range.start..range.end)?;
+        raw.parse::<i64>().ok()?;
+        Some((raw.to_owned(), range))
+    };
 
     match expression {
+        Expr::CompoundFieldAccess { access_chain, .. } => {
+            let Some(AccessExpr::Subscript(Subscript::Slice {
+                lower_bound: Some(lower),
+                upper_bound: Some(upper),
+                stride: None,
+            })) = access_chain.last()
+            else {
+                return Some(SqlDocumentNodeData::UnmodeledExpression {
+                    node_kind: expression_kind(expression),
+                    reason: "This access chain has no fully bounded terminal slice.".to_owned(),
+                });
+            };
+            let Some((one_based_start, start_range)) = slice_bound(lower) else {
+                return Some(SqlDocumentNodeData::UnmodeledExpression {
+                    node_kind: expression_kind(expression),
+                    reason: "The lower bound is not one signed 64-bit integer literal.".to_owned(),
+                });
+            };
+            let Some((one_based_end, end_range)) = slice_bound(upper) else {
+                return Some(SqlDocumentNodeData::UnmodeledExpression {
+                    node_kind: expression_kind(expression),
+                    reason: "The upper bound is not one signed 64-bit integer literal.".to_owned(),
+                });
+            };
+            Some(SqlDocumentNodeData::ArraySlice {
+                one_based_start,
+                one_based_end,
+                start_range,
+                end_range,
+            })
+        }
         Expr::Array(_) => Some(SqlDocumentNodeData::ArrayLiteral),
         Expr::Identifier(identifier) => Some(SqlDocumentNodeData::Identifier {
             value: identifier.value.clone(),
@@ -19425,6 +19573,123 @@ mod tests {
             ),
             Err(SqlDocumentEditError::InvalidSemanticReplacement)
         );
+    }
+
+    #[test]
+    fn semantic_array_slice_bound_edit_preserves_comments_and_guarded_undo() {
+        let source = "SELECT values[ /* lower */ 1 /* after lower */ : /* upper */ 2 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount";
+        let document = parse_sql_document(source);
+        let slice = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.semantic.as_ref().is_some_and(|semantic| {
+                    matches!(semantic, SqlDocumentNodeData::ArraySlice { .. })
+                })
+            })
+            .expect("terminal literal slice has typed editable bounds");
+        let Some(SqlDocumentNodeData::ArraySlice {
+            one_based_start,
+            one_based_end,
+            start_range,
+            end_range,
+        }) = slice.semantic.as_ref()
+        else {
+            unreachable!();
+        };
+        assert_eq!(one_based_start, "1");
+        assert_eq!(one_based_end, "2");
+        assert_eq!(document.source_slice(*start_range), Some("1"));
+        assert_eq!(document.source_slice(*end_range), Some("2"));
+
+        let updated = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetArraySliceBounds {
+                    node_id: slice.id,
+                    expected_kind: slice.kind,
+                    one_based_start: "3".to_owned(),
+                    one_based_end: "4".to_owned(),
+                }],
+            ),
+        )
+        .expect("typed bounds update retains comments and surrounding query");
+        assert_eq!(
+            updated.document.source,
+            "SELECT values[ /* lower */ 3 /* after lower */ : /* upper */ 4 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount"
+        );
+        assert_eq!(updated.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(
+            apply_sql_document_edit_transaction(&updated.document.source, &updated.undo)
+                .expect("the two disjoint bound edits have guarded undo")
+                .document
+                .source,
+            source
+        );
+
+        let one_bound_source = updated.document.source.as_str();
+        let one_bound_document = parse_sql_document(one_bound_source);
+        let one_bound_slice = one_bound_document
+            .nodes
+            .iter()
+            .find(|node| matches!(node.semantic, Some(SqlDocumentNodeData::ArraySlice { .. })))
+            .expect("the edited slice still exposes its literal bounds");
+        let end_only = apply_sql_document_semantic_edit_transaction(
+            one_bound_source,
+            &semantic_transaction(
+                one_bound_source,
+                vec![SqlDocumentSemanticEdit::SetArraySliceBounds {
+                    node_id: one_bound_slice.id,
+                    expected_kind: one_bound_slice.kind,
+                    one_based_start: "3".to_owned(),
+                    one_based_end: "5".to_owned(),
+                }],
+            ),
+        )
+        .expect("one existing bound can be edited while retaining the other");
+        assert_eq!(
+            end_only.document.source,
+            "SELECT values[ /* lower */ 3 /* after lower */ : /* upper */ 5 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount"
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(&end_only.document.source, &end_only.undo)
+                .expect("the one-bound edit has guarded undo")
+                .document
+                .source,
+            one_bound_source
+        );
+
+        for (start, end) in [("0", "2"), ("3", "2"), ("1 OR TRUE", "2")] {
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(
+                        source,
+                        vec![SqlDocumentSemanticEdit::SetArraySliceBounds {
+                            node_id: slice.id,
+                            expected_kind: slice.kind,
+                            one_based_start: start.to_owned(),
+                            one_based_end: end.to_owned(),
+                        }],
+                    ),
+                ),
+                Err(SqlDocumentEditError::InvalidSemanticReplacement),
+                "invalid slice bounds {start:?}:{end:?} are rejected"
+            );
+        }
+
+        for unsupported_source in [
+            "SELECT values[lower:2]",
+            "SELECT values[1 + 0:2]",
+            "SELECT values[1:2][1]",
+        ] {
+            let unsupported = parse_sql_document(unsupported_source);
+            assert_eq!(unsupported.status, SqlDocumentStatus::Parsed);
+            assert!(!unsupported.nodes.iter().any(|node| {
+                matches!(node.semantic, Some(SqlDocumentNodeData::ArraySlice { .. }))
+            }));
+        }
     }
 
     #[test]

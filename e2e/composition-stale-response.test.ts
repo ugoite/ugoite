@@ -4,7 +4,12 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 
 const STALE_MERCHANT = "Stale-A";
@@ -21,18 +26,11 @@ type EvaluationRequest = {
   variables: Record<string, unknown>;
 };
 
-async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-stale-${suffix}`,
-      name: `Composition Stale ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+async function getFixtureSpace(request: APIRequestContext): Promise<string> {
+  // Space creation requires a recent passkey assertion. This long hosted E2E
+  // lane may reach this fixture after that assertion expires; UUID-suffixed
+  // Forms and Compositions keep its records isolated within the default Space.
+  return await getDefaultSpaceId(request);
 }
 
 function sqlIdentifier(value: string): string {
@@ -42,7 +40,7 @@ function sqlIdentifier(value: string): string {
 async function seedStaleComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
-  const spaceId = await createSpace(request);
+  const spaceId = await getFixtureSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
   const formName = `StaleWindow${suffix}`;
   const formResponse = await request.post(

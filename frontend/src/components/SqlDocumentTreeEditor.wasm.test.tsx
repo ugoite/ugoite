@@ -416,6 +416,41 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     view.unmount();
   });
 
+  it("edits existing literal slice bounds in place through actual WASM", async () => {
+    const initial = "SELECT values[ /* lower */ 1 /* after lower */ : /* upper */ 2 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount";
+    const document = await parseSqlDocument(initial);
+    const slice = document.nodes.find((node) =>
+      node.semantic?.kind === "array_slice"
+    );
+    expect(slice?.semantic).toMatchObject({
+      kind: "array_slice",
+      one_based_start: "1",
+      one_based_end: "2",
+    });
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const sliceItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(slice!.id),
+    );
+    expect(sliceItem).toBeDefined();
+    fireEvent.click(sliceItem!);
+    expect(screen.getByLabelText("Array access")).toHaveValue("array_slice");
+    expect(screen.getByLabelText("One-based start")).toHaveValue("1");
+    expect(screen.getByLabelText("One-based end")).toHaveValue("2");
+    fireEvent.input(screen.getByLabelText("One-based start"), {
+      target: { value: "3" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based end"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        "SELECT values[ /* lower */ 3 /* after lower */ : /* upper */ 4 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount",
+      )
+    );
+  });
+
   it("constructs and edits ARRAY elements through the expression inspector", async () => {
     const initial = "SELECT 4 /* preserve */";
     const [sql, setSql] = createSignal(initial);

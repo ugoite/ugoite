@@ -4434,7 +4434,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_document_array_index_and_slice_edits_match_native_and_undo() {
+    fn sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo() {
         use ugoite_domain::sql_document::{
             apply_sql_document_semantic_edit_transaction, parse_sql_document,
             SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
@@ -4527,6 +4527,65 @@ mod tests {
                 .expect("WASM returns guarded undo JSON");
         assert_eq!(undone_slice["ok"], true, "{undone_slice}");
         assert_eq!(undone_slice["value"]["document"]["source"], source);
+
+        let existing_slice_source = native_slice.document.source.as_str();
+        let existing_slice_document = parse_sql_document(existing_slice_source);
+        let existing_slice = existing_slice_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.semantic.as_ref().is_some_and(|semantic| {
+                    matches!(
+                        semantic,
+                        ugoite_domain::sql_document::SqlDocumentNodeData::ArraySlice { .. }
+                    )
+                })
+            })
+            .expect("constructed slice exposes typed existing bounds");
+        let bound_transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: existing_slice_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetArraySliceBounds {
+                node_id: existing_slice.id,
+                expected_kind: existing_slice.kind,
+                one_based_start: "2".to_owned(),
+                one_based_end: "2".to_owned(),
+            }],
+        };
+        let native_bound_edit =
+            apply_sql_document_semantic_edit_transaction(existing_slice_source, &bound_transaction)
+                .expect("native existing slice bounds edit succeeds");
+        let bound_request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": existing_slice_source, "transaction": &bound_transaction },
+        });
+        let bound_response: Value =
+            serde_json::from_str(&super::invoke_json(&bound_request.to_string()))
+                .expect("WASM returns typed existing slice bounds edit");
+        assert_eq!(bound_response["ok"], true, "{bound_response}");
+        assert_eq!(
+            bound_response["value"],
+            serde_json::to_value(&native_bound_edit).unwrap()
+        );
+        assert_eq!(
+            native_bound_edit.document.source,
+            "SELECT (ARRAY[4, 9])[2:2] /* keep */"
+        );
+        let bound_undo = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native_bound_edit.document.source,
+                "transaction": &native_bound_edit.undo,
+            },
+        });
+        let undone_bounds: Value =
+            serde_json::from_str(&super::invoke_json(&bound_undo.to_string()))
+                .expect("WASM returns guarded slice-bound undo");
+        assert_eq!(undone_bounds["ok"], true, "{undone_bounds}");
+        assert_eq!(
+            undone_bounds["value"]["document"]["source"],
+            existing_slice_source
+        );
     }
 
     #[test]
