@@ -167,8 +167,8 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         .save_composition_authorized_for_principals(
             &space_id,
             composition::CompositionSaveRequest {
-                entry_id: Some(saved.entry_id.clone()),
-                base_revision_id: Some(saved.revision_id.clone()),
+                entry_id: Some(saved.entry_id),
+                base_revision_id: Some(saved.revision_id),
                 document: invalid,
             },
             &owner.to_string(),
@@ -205,7 +205,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         .save_composition_authorized_for_principals(
             &space_id,
             composition::CompositionSaveRequest {
-                entry_id: Some(saved.entry_id.clone()),
+                entry_id: Some(saved.entry_id),
                 base_revision_id: Some(saved.revision_id),
                 document: repaired,
             },
