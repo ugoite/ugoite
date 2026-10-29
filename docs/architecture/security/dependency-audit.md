@@ -2,6 +2,11 @@
 title: Dependency audit exceptions
 ---
 
+This page records where each dependency and toolchain version is decided,
+which areas Dependabot monitors, which pins are held manually, and which
+security exceptions are accepted. Version meaning lives in the manifests
+listed below; this page is the record, not a second authority.
+
 ## Authority: version meaning lives in manifests
 
 | Domain | Authority file | Notes |
