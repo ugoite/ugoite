@@ -681,6 +681,26 @@ features:
                     test: "independent Composition results update while another Input is invalid in Design and runtime",
                   },
                 }
+          - id: design-dependent-query-browser
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: {
+              kind: test,
+              name: "Design preview recomputes only a dependent query and keeps unrelated results",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [
+                  FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler,
+                ]
+                runner: {
+                  runner: e2e-playwright,
+                  arguments: {
+                    file: e2e/composition-studio-journey.test.ts,
+                    test: "Design preview recomputes only a dependent query and keeps unrelated results",
+                  },
+                }
   - id: FEAT-COMP-012
     title: Exact signed 64-bit Composition integers
     summary: Preserve the complete signed 64-bit integer range across typed Composition documents, inputs, SQL arguments, query results, and browser protocol boundaries without assigning integer semantics to opaque JSON.
