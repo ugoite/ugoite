@@ -236,6 +236,42 @@ features:
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: does not restore results from an evaluation already in flight when the access check fails } }
+          - id: suspend-invalidates-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not publish an evaluation started before suspend and evaluates again after resume }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: suspended-input-evaluation-retries-after-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: reruns changed inputs after a fresh check invalidates an in-flight evaluation }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: offline-invalidates-pending-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: invalidates pending checks while offline and requires new online work }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: incomplete-coordinates-hide-results-with-diagnostics
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: shows diagnostics without query values when evaluation has no authority coordinates }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
           - id: wasm-access-snapshot-route
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs

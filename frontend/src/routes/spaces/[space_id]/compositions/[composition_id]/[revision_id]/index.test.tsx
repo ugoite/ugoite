@@ -357,6 +357,185 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock).toHaveBeenCalledOnce();
   });
 
+  it("does not publish an evaluation started before suspend and evaluates again after resume", async () => {
+    let resolveOldEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    let resolveFreshEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveOldEvaluation = (value) =>
+            resolve({
+              ...value,
+              evaluation_id: request.evaluation_id,
+            });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveFreshEvaluation = (value) =>
+            resolve({
+              ...value,
+              evaluation_id: request.evaluation_id,
+            });
+        })
+      );
+
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    fireEvent(window, new Event("blur"));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+
+    resolveOldEvaluation(evaluation("old", "auth-1", { rows: 1, stable: 10 }));
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveFreshEvaluation(
+      evaluation("fresh", "auth-1", { rows: 2, stable: 20 }),
+    );
+    await waitFor(() => expect(screen.getByText("20")).toBeInTheDocument());
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+  });
+
+  it("reruns changed inputs after a fresh check invalidates an in-flight evaluation", async () => {
+    let resolveChangedEvaluation!: (
+      value: ReturnType<typeof evaluation>,
+    ) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 11,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveChangedEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", { rows: 2 }, ["rows"]),
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-20" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+
+    fireEvent(window, new Event("blur"));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual(["rows"]);
+    expect(screen.queryByText("11")).not.toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+
+    resolveChangedEvaluation(evaluation("obsolete", "auth-1", { rows: 9 }));
+    await Promise.resolve();
+    expect(screen.queryByText("9")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+  });
+
+  it("invalidates pending checks while offline and requires new online work", async () => {
+    let resolveOldCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    let resolveFreshCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
+      })
+    );
+    accessSnapshotMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOldCheck = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFreshCheck = resolve;
+        }),
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    fireEvent(window, new Event("offline"));
+    fireEvent(window, new Event("online"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledTimes(2));
+
+    const snapshot = {
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    };
+    resolveOldCheck(snapshot);
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveFreshCheck(snapshot);
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+  });
+
+  it("shows diagnostics without query values when evaluation has no authority coordinates", async () => {
+    evaluateMock.mockImplementationOnce((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "", { rows: 1, stable: 10 }),
+        composition_revision: undefined,
+        authorization_fingerprint: undefined,
+        publication_fingerprint: undefined,
+        diagnostics: [{
+          code: "evaluation_unavailable",
+          message: "Evaluation unavailable",
+        }],
+      })
+    );
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load results",
+    );
+    expect(screen.getByText("Evaluation unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("hides retained query values when the authority lease expires", async () => {
     vi.useFakeTimers();
     let resolveExpiredCheck!: (value: {
