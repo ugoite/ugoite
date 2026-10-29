@@ -4764,7 +4764,8 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 }
 
 #[tokio::test]
-async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow::Result<()> {
+async fn typed_sql_document_array_index_and_slice_execute_authorized_queries() -> anyhow::Result<()>
+{
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
         SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
@@ -4795,14 +4796,24 @@ async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow:
     let mut revision = revision(&tasks, 927, 928, "one row");
     revision.values.insert(
         FieldId::new(101).unwrap(),
-        FieldValue::List(vec![FieldValue::Object(BTreeMap::from([
-            ("type".into(), FieldValue::String("person".into())),
-            ("name".into(), FieldValue::String("Ada".into())),
-            (
-                "description".into(),
-                FieldValue::String("researcher".into()),
-            ),
-        ]))]),
+        FieldValue::List(vec![
+            FieldValue::Object(BTreeMap::from([
+                ("type".into(), FieldValue::String("person".into())),
+                ("name".into(), FieldValue::String("Ada".into())),
+                (
+                    "description".into(),
+                    FieldValue::String("researcher".into()),
+                ),
+            ])),
+            FieldValue::Object(BTreeMap::from([
+                ("type".into(), FieldValue::String("person".into())),
+                ("name".into(), FieldValue::String("Grace".into())),
+                (
+                    "description".into(),
+                    FieldValue::String("mathematician".into()),
+                ),
+            ])),
+        ]),
     );
     workspace
         .commit(publication_context(
@@ -4868,6 +4879,46 @@ async fn typed_sql_document_array_index_executes_authorized_queries() -> anyhow:
             .value(0),
         "Ada"
     );
+
+    let slice_source = "SELECT field_101 FROM tasks";
+    let slice_document = parse_sql_document(slice_source);
+    let list_value = slice_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::IdentifierExpression
+                && node
+                    .range
+                    .and_then(|range| slice_document.source_slice(range))
+                    == Some("field_101")
+        })
+        .expect("the authorized Form list value is an editable source expression");
+    let sliced = apply_sql_document_semantic_edit_transaction(
+        slice_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: slice_document.contract_version,
+            expected_source: slice_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: list_value.id,
+                expected_kind: list_value.kind,
+                access: SqlDocumentValueAccess::ArraySlice {
+                    one_based_start: "1".to_owned(),
+                    one_based_end: "2".to_owned(),
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        sliced.document.to_sql(),
+        "SELECT (field_101)[1:2] FROM tasks"
+    );
+    let sliced_rows = context.execute(sliced.document.to_sql()).await?;
+    let sliced_list = sliced_rows[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("authorized fixed-bound array slicing returns a list");
+    assert_eq!(sliced_list.value(0).len(), 2);
 
     let scalar_source = "SELECT 4 FROM tasks";
     let scalar_document = parse_sql_document(scalar_source);

@@ -1022,7 +1022,13 @@ export type SqlDocumentSemanticEdit =
     kind: "wrap_expression_in_value_access";
     node_id: number;
     expected_kind: SqlDocumentNodeKind;
-    access: { kind: "array_index"; one_based_index: string };
+    access:
+      | { kind: "array_index"; one_based_index: string }
+      | {
+        kind: "array_slice";
+        one_based_start: string;
+        one_based_end: string;
+      };
   }
   | {
     kind: "wrap_expression_in_aggregate";

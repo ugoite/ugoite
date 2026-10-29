@@ -76,7 +76,7 @@ type LiteralDraft = {
 
 type CaseBranchAction = "add" | "remove" | "wrap" | "";
 type InListAction = "append" | "remove_last" | "";
-type ValueAccessKind = "array_index" | "";
+type ValueAccessKind = "array_index" | "array_slice" | "";
 type CommonTableExpressionAction = "add" | "remove" | "replace" | "move" | "";
 type SetOperationAddAction = "add" | "";
 type SetOperationKeepAction = SqlDocumentSetOperand | "swap" | "";
@@ -1051,6 +1051,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     "",
   );
   const [valueAccessValue, setValueAccessValue] = createSignal("");
+  const [valueAccessEnd, setValueAccessEnd] = createSignal("");
   const [wrapAggregateFunction, setWrapAggregateFunction] = createSignal<
     SqlDocumentAggregateFunction | ""
   >("");
@@ -1790,6 +1791,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           return false;
         }
       }
+      if (valueAccessKind() === "array_slice") {
+        try {
+          const start = BigInt(valueAccessValue());
+          const end = BigInt(valueAccessEnd());
+          return start > 0n && start <= end &&
+            end <= 9223372036854775807n;
+        } catch {
+          return false;
+        }
+      }
       return false;
     }
     if (columnAliasesAction()) {
@@ -2143,11 +2154,18 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       };
     }
     if (valueAccessKind() && isValueAccessTarget(node)) {
+      const access = valueAccessKind() === "array_index"
+        ? { kind: "array_index" as const, one_based_index: valueAccessValue() }
+        : {
+          kind: "array_slice" as const,
+          one_based_start: valueAccessValue(),
+          one_based_end: valueAccessEnd(),
+        };
       return {
         kind: "wrap_expression_in_value_access",
         node_id: node.id,
         expected_kind: node.kind,
-        access: { kind: "array_index", one_based_index: valueAccessValue() },
+        access,
       };
     }
     if (node.kind === "select_item" && expandWildcard()) {
@@ -2486,6 +2504,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     const currentGeneration = ++generation;
     setValueAccessKind("");
     setValueAccessValue("");
+    setValueAccessEnd("");
     setLoading(true);
     setBusy(false);
     setError(undefined);
@@ -2506,6 +2525,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (selectedNodeId() !== node.id) {
       setValueAccessKind("");
       setValueAccessValue("");
+      setValueAccessEnd("");
     }
     setSelectedNodeId(node.id);
     setArrayElementAction("");
@@ -2843,6 +2863,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       setArrayElementAction("");
       setValueAccessKind("");
       setValueAccessValue("");
+      setValueAccessEnd("");
       setDocument(result.document);
       setSelectedNodeId(undefined);
       setProjectionItemAction("");
@@ -3959,15 +3980,19 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                                 event.currentTarget.value as ValueAccessKind,
                               );
                               setValueAccessValue("");
+                              setValueAccessEnd("");
                             }}
                           >
                             <option value=""></option>
                             <option value="array_index">
                               {t("sqlPage.structure.documentArrayIndex")}
                             </option>
+                            <option value="array_slice">
+                              {t("sqlPage.structure.documentArraySlice")}
+                            </option>
                           </select>
                         </label>
-                        <Show when={valueAccessKind()}>
+                        <Show when={valueAccessKind() === "array_index"}>
                           <label class="ui-label">
                             {t("sqlPage.structure.documentArrayIndexValue")}
                             <input
@@ -3982,6 +4007,36 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                                 setValueAccessValue(
                                   event.currentTarget.value,
                                 )}
+                            />
+                          </label>
+                        </Show>
+                        <Show when={valueAccessKind() === "array_slice"}>
+                          <label class="ui-label">
+                            {t("sqlPage.structure.documentArraySliceStart")}
+                            <input
+                              class="ui-input"
+                              type="text"
+                              inputmode="numeric"
+                              pattern="[0-9]*"
+                              value={valueAccessValue()}
+                              disabled={busy() || props.disabled?.() ||
+                                node().range === null}
+                              onInput={(event) =>
+                                setValueAccessValue(event.currentTarget.value)}
+                            />
+                          </label>
+                          <label class="ui-label">
+                            {t("sqlPage.structure.documentArraySliceEnd")}
+                            <input
+                              class="ui-input"
+                              type="text"
+                              inputmode="numeric"
+                              pattern="[0-9]*"
+                              value={valueAccessEnd()}
+                              disabled={busy() || props.disabled?.() ||
+                                node().range === null}
+                              onInput={(event) =>
+                                setValueAccessEnd(event.currentTarget.value)}
                             />
                           </label>
                         </Show>

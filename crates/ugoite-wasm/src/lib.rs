@@ -4404,10 +4404,37 @@ mod tests {
             );
             assert_eq!(edited.document.source, expected);
         }
+        {
+            let (source, access, expected) = (
+                "SELECT ARRAY[4, 9] /* keep */",
+                SqlDocumentValueAccess::ArraySlice {
+                    one_based_start: "1".to_owned(),
+                    one_based_end: "2".to_owned(),
+                },
+                "SELECT (ARRAY[4, 9])[1:2] /* keep */",
+            );
+            let document = ugoite_domain::sql_document::parse_sql_document(source);
+            let value = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.range.and_then(|range| document.source_slice(range)) == Some("ARRAY[4, 9]")
+                })
+                .expect("the selected array expression has a node");
+            let edited = assert_parity(
+                source,
+                SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                    node_id: value.id,
+                    expected_kind: value.kind,
+                    access,
+                },
+            );
+            assert_eq!(edited.document.source, expected);
+        }
     }
 
     #[test]
-    fn sql_document_array_index_edit_matches_native_and_undo() {
+    fn sql_document_array_index_and_slice_edits_match_native_and_undo() {
         use ugoite_domain::sql_document::{
             apply_sql_document_semantic_edit_transaction, parse_sql_document,
             SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentValueAccess,
@@ -4457,6 +4484,49 @@ mod tests {
             .expect("WASM returns guarded undo JSON");
         assert_eq!(undone["ok"], true, "{undone}");
         assert_eq!(undone["value"]["document"]["source"], source);
+
+        let slice_transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: array.id,
+                expected_kind: array.kind,
+                access: SqlDocumentValueAccess::ArraySlice {
+                    one_based_start: "1".to_owned(),
+                    one_based_end: "2".to_owned(),
+                },
+            }],
+        };
+        let native_slice = apply_sql_document_semantic_edit_transaction(source, &slice_transaction)
+            .expect("native array-slice edit succeeds");
+        let slice_request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": &slice_transaction },
+        });
+        let slice_response: Value =
+            serde_json::from_str(&super::invoke_json(&slice_request.to_string()))
+                .expect("WASM returns JSON");
+        assert_eq!(slice_response["ok"], true, "{slice_response}");
+        assert_eq!(
+            slice_response["value"],
+            serde_json::to_value(&native_slice).unwrap()
+        );
+        assert_eq!(
+            native_slice.document.source,
+            "SELECT (ARRAY[4, 9])[1:2] /* keep */"
+        );
+        let slice_undo = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native_slice.document.source,
+                "transaction": &native_slice.undo,
+            },
+        });
+        let undone_slice: Value =
+            serde_json::from_str(&super::invoke_json(&slice_undo.to_string()))
+                .expect("WASM returns guarded undo JSON");
+        assert_eq!(undone_slice["ok"], true, "{undone_slice}");
+        assert_eq!(undone_slice["value"]["document"]["source"], source);
     }
 
     #[test]

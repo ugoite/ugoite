@@ -276,7 +276,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(restored.document.source).toBe(initial);
   });
 
-  it("authors one-based array access through actual WASM", async () => {
+  it("authors one-based array indexes and fixed-bound slices through actual WASM", async () => {
     const source = "SELECT ARRAY[4, 9], amount /* preserve */";
     const document = await parseSqlDocument(source);
     const array = document.nodes.find((node) =>
@@ -300,7 +300,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(treeItem(amount!.id)).toBeDefined();
 
     fireEvent.click(treeItem(array!.id)!);
-    fireEvent.change(screen.getByLabelText("Add array element index"), {
+    fireEvent.change(screen.getByLabelText("Array access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
@@ -312,14 +312,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(treeItem(amount!.id)!);
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Add array element index") as HTMLSelectElement)
+        (screen.getByLabelText("Array access") as HTMLSelectElement)
           .value,
       ).toBe("");
       expect(screen.queryByLabelText("One-based index")).toBeNull();
     });
 
     fireEvent.click(treeItem(array!.id)!);
-    fireEvent.change(screen.getByLabelText("Add array element index"), {
+    fireEvent.change(screen.getByLabelText("Array access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
@@ -332,7 +332,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     const updated = await parseSqlDocument(sql());
     expect(updated.status).toBe("parsed");
     await waitFor(() => {
-      expect(screen.queryByLabelText("Add array element index")).toBeNull();
+      expect(screen.queryByLabelText("Array access")).toBeNull();
       expect(screen.queryByLabelText("One-based index")).toBeNull();
     });
     const updatedAmount = updated.nodes.find((node) =>
@@ -347,11 +347,56 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(updatedTreeItem!);
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Add array element index") as HTMLSelectElement)
+        (screen.getByLabelText("Array access") as HTMLSelectElement)
           .value,
       ).toBe("");
       expect(screen.queryByLabelText("One-based index")).toBeNull();
     });
+
+    const updatedArrayItem = updated.nodes.find((node) =>
+      node.kind === "select_item" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "(ARRAY[4, 9])[2]"
+    );
+    expect(updatedArrayItem).toBeDefined();
+    const updatedArrayTreeItem = (await screen.findAllByRole("treeitem")).find(
+      (node) => node.dataset.sqlDocumentNode === String(updatedArrayItem!.id),
+    );
+    expect(updatedArrayTreeItem).toBeDefined();
+    fireEvent.click(updatedArrayTreeItem!);
+    fireEvent.change(screen.getByLabelText("Array access"), {
+      target: { value: "array_slice" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based start"), {
+      target: { value: "2" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based end"), {
+      target: { value: "1" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.click(updatedTreeItem!);
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText("Array access") as HTMLSelectElement).value,
+      ).toBe("");
+      expect(screen.queryByLabelText("One-based start")).toBeNull();
+      expect(screen.queryByLabelText("One-based end")).toBeNull();
+    });
+    fireEvent.click(updatedArrayTreeItem!);
+    fireEvent.change(screen.getByLabelText("Array access"), {
+      target: { value: "array_slice" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based start"), {
+      target: { value: "1" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based end"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        "SELECT ((ARRAY[4, 9])[2])[1:2], amount /* preserve */",
+      )
+    );
     view.unmount();
   });
 
@@ -545,10 +590,10 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(itemControl).toBeDefined();
     expect(expressionControl).toBeDefined();
     fireEvent.click(itemControl!);
-    expect(screen.queryByLabelText("Add array element index")).toBeNull();
+    expect(screen.queryByLabelText("Array access")).toBeNull();
 
     fireEvent.click(expressionControl!);
-    fireEvent.change(screen.getByLabelText("Add array element index"), {
+    fireEvent.change(screen.getByLabelText("Array access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
