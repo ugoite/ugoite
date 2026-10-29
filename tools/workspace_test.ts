@@ -66,18 +66,60 @@ Deno.test("REQ-OPS-023: public installer remains separate from repository develo
   }
 });
 
-Deno.test("Phase 1 workspace has one root toolchain and Deno lockfile", async () => {
+Deno.test("toolchain authorities stay consistent across manifests", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
-  assertEquals(rootMise.includes('deno = "2.8.3"'), true);
-  // Rust compiler authority lives in rust-toolchain.toml; mise must follow
-  // it via idiomatic version files instead of a duplicated `tools.rust` pin.
+  const dockerfile = await Deno.readTextFile("Dockerfile");
+
+  // Deno runtime authority is mise.toml; the Docker image tag must name the
+  // same version instead of carrying a second hardcode.
+  const denoVersion = rootMise.match(/^\s*deno\s*=\s*"([^"]+)"/m)?.[1];
+  assertEquals(typeof denoVersion, "string");
+  assertEquals(
+    dockerfile.includes(`denoland/deno:${denoVersion}`),
+    true,
+    "Docker Deno image must match the mise Deno authority",
+  );
+
+  // Rust compiler authority is rust-toolchain.toml; mise must follow it via
+  // idiomatic version files instead of a duplicated `tools.rust` pin, and
+  // the Docker bootstrap must read the channel from the file.
   assertEquals(/^\s*rust\s*=/m.test(rootMise), false);
   assertEquals(
     rootMise.includes('idiomatic_version_file_enable_tools = ["rust"]'),
     true,
   );
   const toolchain = await Deno.readTextFile("rust-toolchain.toml");
-  assertEquals(toolchain.includes('channel = "1.95.0"'), true);
+  const channel = toolchain.match(/^channel\s*=\s*"([^"]+)"/m)?.[1];
+  assertEquals(typeof channel, "string");
+  assertEquals(dockerfile.includes("rust-toolchain.toml"), true);
+  assertEquals(
+    /--default-toolchain \d+\.\d+/.test(dockerfile),
+    false,
+    "Docker rustup bootstrap must not hardcode a second toolchain version",
+  );
+
+  // Dependency installs must stay frozen against the committed lockfiles.
+  assertEquals(rootMise.includes("deno install --frozen"), true);
+  assertEquals(dockerfile.includes("deno install --frozen"), true);
+
+  // CI and release lanes share one Node major; the installer package keeps
+  // `engines.node >= 20` as the distribution support floor, not the CI host.
+  for (
+    const workflow of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release-candidate.yml",
+      ".github/workflows/release-publish.yml",
+    ]
+  ) {
+    const contents = await Deno.readTextFile(workflow);
+    assertEquals(contents.includes("node-version: 24"), true, workflow);
+    assertEquals(contents.includes("node-version: 20"), false, workflow);
+  }
+  const installer = JSON.parse(
+    await Deno.readTextFile("packages/ugoite/package.json"),
+  ) as { engines?: { node?: string } };
+  assertEquals(installer.engines?.node, ">=20");
+
   assertEquals(rootMise.includes("python ="), false);
   assertEquals(rootMise.includes("bun ="), false);
   assertEquals(rootMise.includes("node ="), false);
