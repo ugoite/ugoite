@@ -474,8 +474,14 @@ fn validate_openapi_contract(spec: &Value) -> Result<()> {
         };
         for (method, operation) in methods {
             let operation_name = format!("{} {}", method.to_uppercase(), path);
+            let bodyless_post = method == "post"
+                && matches!(
+                    path.as_str(),
+                    "/auth/logout"
+                        | "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot"
+                );
             if matches!(method.as_str(), "post" | "put" | "patch")
-                && path != "/auth/logout"
+                && !bodyless_post
                 && operation.get("requestBody").is_none()
             {
                 violations.push(format!("{operation_name} missing requestBody schema"));
@@ -2148,6 +2154,31 @@ fn parse_string_list_const(source: &str, name: &str, violations: &mut Vec<String
 #[cfg(test)]
 mod gate_contract_tests {
     use super::*;
+
+    #[test]
+    fn openapi_validator_allows_only_declared_bodyless_posts() {
+        let source = include_str!("../../ugoite-server/src/openapi.json");
+        let mut spec: Value = serde_json::from_str(source).expect("OpenAPI snapshot parses");
+        let snapshot_path =
+            "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot";
+        assert!(spec
+            .pointer(&format!(
+                "/paths/{}/post/requestBody",
+                snapshot_path.replace('/', "~1")
+            ))
+            .is_none());
+        validate_openapi_contract(&spec).expect("bodyless snapshot POST is valid");
+
+        spec.pointer_mut("/paths/~1spaces~1{space_id}~1compositions~1evaluate/post")
+            .and_then(Value::as_object_mut)
+            .expect("Composition evaluate POST exists")
+            .remove("requestBody");
+        let error = validate_openapi_contract(&spec)
+            .expect_err("other POST operations still require request bodies");
+        assert!(error
+            .to_string()
+            .contains("POST /spaces/{space_id}/compositions/evaluate missing requestBody schema"));
+    }
 
     #[test]
     fn physical_operator_guard_matches_complete_identifiers() {
