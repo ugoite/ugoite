@@ -19081,6 +19081,58 @@ mod tests {
             source
         );
 
+        let last_source = "SELECT ARRAY[4, 9, 16]";
+        let last_document = parse_sql_document(last_source);
+        let last_element = last_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::LiteralExpression
+                    && node
+                        .range
+                        .and_then(|range| last_document.source_slice(range))
+                        == Some("16")
+            })
+            .expect("the last array member has an exact source range");
+        let last_removed = apply_sql_document_semantic_edit_transaction(
+            last_source,
+            &semantic_transaction(
+                last_source,
+                vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                    node_id: last_element.id,
+                    expected_kind: last_element.kind,
+                }],
+            ),
+        )
+        .expect("the last member of a multi-element array can be removed");
+        assert_eq!(last_removed.document.source, "SELECT ARRAY[4, 9]");
+
+        let quoted_source = "SELECT ARRAY[4, 'quoted, value', 16]";
+        let quoted_document = parse_sql_document(quoted_source);
+        let quoted_element = quoted_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::LiteralExpression
+                    && node
+                        .range
+                        .and_then(|range| quoted_document.source_slice(range))
+                        == Some("'quoted, value'")
+            })
+            .expect("the quoted literal is an independently selectable array member");
+        let quoted_removed = apply_sql_document_semantic_edit_transaction(
+            quoted_source,
+            &semantic_transaction(
+                quoted_source,
+                vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                    node_id: quoted_element.id,
+                    expected_kind: quoted_element.kind,
+                }],
+            ),
+        )
+        .expect("a quoted literal member is removed by its parsed source range");
+        assert_eq!(quoted_removed.document.source, "SELECT ARRAY[4, 16]");
+
         let only_array_source = "SELECT ARRAY[4]";
         let only_array_document = parse_sql_document(only_array_source);
         let only_element = only_array_document
