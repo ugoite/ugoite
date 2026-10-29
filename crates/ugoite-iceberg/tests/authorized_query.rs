@@ -4932,7 +4932,7 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
     assert_eq!(sliced_names.value(1), "Grace");
 
     let existing_slice_source = sliced.document.to_sql();
-    let existing_slice_document = parse_sql_document(&existing_slice_source);
+    let existing_slice_document = parse_sql_document(existing_slice_source);
     let existing_slice = existing_slice_document
         .nodes
         .iter()
@@ -4946,7 +4946,7 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
         })
         .expect("the parsed SQL exposes typed existing slice bounds");
     let changed_slice = apply_sql_document_semantic_edit_transaction(
-        &existing_slice_source,
+        existing_slice_source,
         &SqlDocumentSemanticEditTransaction {
             contract_version: existing_slice_document.contract_version,
             expected_source: existing_slice_source.to_owned(),

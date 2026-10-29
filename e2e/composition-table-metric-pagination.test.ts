@@ -232,8 +232,11 @@ test.describe("Composition Table and Metric pagination", () => {
   test.beforeAll(async ({ request }) => {
     // The fixture publishes 102 Entry revisions over the direct API before
     // it can exercise the 100-row SQL page boundary. Hosted filesystem
-    // latency can make this seed exceed five minutes.
-    test.setTimeout(420_000);
+    // latency can make this seed exceed seven minutes. CI evidence showed
+    // twelve parallel batches had started but two writes were still pending
+    // at the seven-minute bound; allow the final batches to complete within
+    // the job's 45-minute limit.
+    test.setTimeout(540_000);
     await waitForServers(request);
     seed = await seedComposition(request);
   });
