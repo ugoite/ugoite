@@ -146,6 +146,23 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
     };
     *sql = "SELECT 1 AS total UNION ALL SELECT 2 AS total".to_owned();
 
+    let history_before_rejected_update = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history_before_rejected_update.total, 1);
+    assert_eq!(
+        history_before_rejected_update.revisions[0]
+            .revision
+            .revision_id,
+        saved.revision_id
+    );
+
     let rejected = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -160,7 +177,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         .await;
     assert!(rejected.is_err(), "multirow scalar update must be rejected");
 
-    let history = service
+    let history_after_rejected_update = service
         .composition_history_authorized_for_principals_page(
             &space_id,
             &saved.entry_id.to_string(),
@@ -170,10 +187,9 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         )
         .await?;
     assert_eq!(
-        history.total, 1,
-        "a rejected update must append no revision"
+        history_after_rejected_update, history_before_rejected_update,
+        "a rejected update must leave the complete raw history unchanged"
     );
-    assert_eq!(history.revisions[0].revision.revision_id, saved.revision_id);
 
     let mut repaired = saved.document;
     let VariableGraphNodeKind::Query { query, .. } = &mut repaired.spec.variables[0].kind else {
@@ -209,9 +225,28 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         .await?;
     assert_eq!(history.total, 2, "repair must append one revision");
     assert_eq!(
+        history.revisions[0], history_before_rejected_update.revisions[0],
+        "repair must preserve the original raw revision"
+    );
+    assert_eq!(
         history.revisions[1].revision.revision_id,
         repaired_save.revision_id
     );
+    let stored_document = parse_composition_yaml(
+        history.revisions[1].fields["spec"]
+            .as_str()
+            .expect("stored Composition spec is text"),
+    )
+    .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let VariableGraphNodeKind::Query { query, .. } = &stored_document.spec.variables[0].kind else {
+        anyhow::bail!("repaired stored document lost its scalar query")
+    };
+    let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+        &query.definition
+    else {
+        anyhow::bail!("repaired stored query is no longer inline SQL")
+    };
+    assert_eq!(sql, "SELECT 2 AS total");
     Ok(())
 }
 
