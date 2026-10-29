@@ -317,6 +317,15 @@ features:
                 anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: focus-recovers-identity-change-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: recovers when focus interrupts a full reevaluation after authority changes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
           - id: expired-initial-evaluation-can-retry
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx

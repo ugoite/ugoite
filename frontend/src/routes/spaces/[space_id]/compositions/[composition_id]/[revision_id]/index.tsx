@@ -619,9 +619,12 @@ export default function CompositionRevisionRoute() {
           ).map((node) => node.id)
           : undefined;
         setTablePages({});
+        // Keep the prior leased response available for a focus-time authority
+        // check, but hide it while the new authority snapshot is evaluated.
+        setAccessSnapshotBlocked(true);
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
-        setEvaluation({ status: "loading", evaluationId });
+        setEvaluation({ status: "loading", evaluationId, response: previous });
         requestStartedAt = Date.now();
         response = await request(evaluationId, requestedQueries);
         if (

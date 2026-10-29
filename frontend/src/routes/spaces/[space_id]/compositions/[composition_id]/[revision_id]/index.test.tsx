@@ -1564,6 +1564,92 @@ describe("Composition saved revision graph evaluation", () => {
     );
   });
 
+  it("recovers when focus interrupts a full reevaluation after authority changes", async () => {
+    let resolveSecondFullEvaluation!: (
+      value: ReturnType<typeof evaluation>,
+    ) => void;
+    let resolveFreshSnapshot!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-2", {
+            rows: 2,
+            stable: 20,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveSecondFullEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-2", {
+            rows: 3,
+            stable: 30,
+          }),
+        })
+      );
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFreshSnapshot = resolve;
+      }),
+    );
+
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-24" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(screen.queryByText("20")).not.toBeInTheDocument();
+
+    resolveSecondFullEvaluation(
+      evaluation("obsolete", "auth-2", { rows: 22, stable: 22 }),
+    );
+    await Promise.resolve();
+    expect(screen.queryByText("22")).not.toBeInTheDocument();
+
+    resolveFreshSnapshot({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-2",
+      valid_for_ms: 30_000,
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.getByText("30")).toBeInTheDocument());
+  });
+
   it("keeps an unrelated table continuation after an input changes", async () => {
     lintMock.mockResolvedValue({
       ok: true,
