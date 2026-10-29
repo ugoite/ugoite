@@ -148,13 +148,33 @@ requirements:
           selected expression range, preserving all source outside it and
           returning a guarded undo through the WASM and browser inspector.
           Empty, reversed, overflowing, injected, or comment-bearing slice
-          edits fail closed. The inspector clears both pending bounds when the
+          construction fails closed. The inspector clears pending construction
+          bounds when the
           SQL source or selected node changes. The operation does not infer or
           certify the expression's array type, element bounds, or result type;
           authorized SQL planning and execution remain authoritative. This is
-          a constructor: the inspector does not read or replace bounds on an
-          existing slice. Omitted bounds, dynamic bounds, and complete
-          collection-access-chain editing are outside this bounded constructor.
+          a constructor: it creates a slice around a selected expression.
+          Omitted bounds, dynamic bounds, strides, and complete
+          collection-access-chain support are outside this bounded constructor.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: array-slice-bound-editing
+        kind: behavior
+        statement: >-
+          When the selected SQL Document node is a terminal fully bounded slice
+          whose two bounds are simple decimal integer tokens parseable as Rust
+          `i64` and have no stride, the tree editor prepopulates both bounds and can replace
+          either or both directly. Rust derives the bound ranges from its AST,
+          validates the requested positive one-based range, and atomically
+          replaces only changed bound literals; comments and all source around
+          the literals remain exact. The transaction returns guarded undo.
+          Empty, reversed, overflowing, non-decimal, injected, dynamic,
+          omitted-bound, strided, expression-bound, or non-terminal-chain edits
+          fail closed or remain unavailable. This criterion covers direct editing of these
+          bounded existing slices, not the full admitted slice grammar; runtime
+          planning and execution remain authoritative.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
@@ -208,18 +228,28 @@ requirements:
           - id: wasm-native-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: test, name: tests::sql_document_array_index_and_slice_edits_match_native_and_undo }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_and_slice_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_and_slice_edits_match_native_and_undo } } }]
+            selector: { kind: test, name: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }]
           - id: authorized-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
-            selector: { kind: test, name: typed_sql_document_array_index_and_slice_execute_authorized_queries }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_array_index_and_slice_execute_authorized_queries } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_array_index_and_slice_execute_authorized_queries } } }]
+            selector: { kind: test, name: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }]
           - id: browser-selection-source-resets
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
             selector: { kind: test, name: authors one-based array indexes and fixed-bound slices through actual WASM }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors one-based array indexes and fixed-bound slices through actual WASM } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors one-based array indexes and fixed-bound slices through actual WASM } } }]
+          - id: native-slice-bound-edit
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_array_slice_bound_edit_preserves_comments_and_guarded_undo }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_array_slice_bound_edit_preserves_comments_and_guarded_undo } } }]
+          - id: browser-slice-bound-edit
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: edits existing literal slice bounds in place through actual WASM }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: edits existing literal slice bounds in place through actual WASM } } }]
           - id: aliased-projection-child
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx

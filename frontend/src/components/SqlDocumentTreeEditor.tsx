@@ -1804,8 +1804,15 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       if (valueAccessKind() === "array_slice") {
         const start = decimalI64Input(valueAccessValue());
         const end = decimalI64Input(valueAccessEnd());
-        return start !== undefined && end !== undefined && start > 0n &&
-          start <= end && end > 0n;
+        if (start === undefined || end === undefined || start <= 0n ||
+          start > end || end <= 0n) return false;
+        if (node.semantic?.kind === "array_slice") {
+          const currentStart = decimalI64Input(node.semantic.one_based_start);
+          const currentEnd = decimalI64Input(node.semantic.one_based_end);
+          return currentStart !== undefined && currentEnd !== undefined &&
+            (start !== currentStart || end !== currentEnd);
+        }
+        return true;
       }
       return false;
     }
@@ -2160,6 +2167,18 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       };
     }
     if (valueAccessKind() && isValueAccessTarget(node)) {
+      if (
+        valueAccessKind() === "array_slice" &&
+        node.semantic?.kind === "array_slice"
+      ) {
+        return {
+          kind: "set_array_slice_bounds",
+          node_id: node.id,
+          expected_kind: node.kind,
+          one_based_start: valueAccessValue(),
+          one_based_end: valueAccessEnd(),
+        };
+      }
       const access = valueAccessKind() === "array_index"
         ? { kind: "array_index" as const, one_based_index: valueAccessValue() }
         : {
@@ -2528,11 +2547,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   });
 
   const selectNode = (node: SqlDocumentNode) => {
-    if (selectedNodeId() !== node.id) {
-      setValueAccessKind("");
-      setValueAccessValue("");
-      setValueAccessEnd("");
-    }
+    const currentSlice = node.semantic?.kind === "array_slice"
+      ? node.semantic
+      : undefined;
+    setValueAccessKind(currentSlice ? "array_slice" : "");
+    setValueAccessValue(currentSlice?.one_based_start ?? "");
+    setValueAccessEnd(currentSlice?.one_based_end ?? "");
     setSelectedNodeId(node.id);
     setArrayElementAction("");
     setParts(identifierParts(node));

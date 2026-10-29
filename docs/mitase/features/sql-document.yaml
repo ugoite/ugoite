@@ -30,7 +30,7 @@ features:
       - id: typed-expression-attributes-contract
         role: contract-source
         facet: domain
-        responsibility: Define the typed semantic edit requests for expression, predicate, grouping, relation, LIMIT, output-alias, and bounded array-access edits shared by Rust editing, WASM dispatch, and the browser tree editor.
+        responsibility: Define typed semantic requests and parser-derived node data for bounded array access and terminal slice-bound editing shared by Rust, WASM, and the browser tree editor.
         targets:
           - id: semantic-edit-request
             adapter: rust
@@ -43,10 +43,11 @@ features:
                 criterion: REQ-SQL-001#criterion.relational-constructors
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, and new one-based array slices with fixed positive literal bounds while retaining untouched source and guarded undo; existing slice bounds are not editable, and composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
+        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, and fixed-bound one-based slice construction or terminal literal-bound updates while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
         targets:
           - id: semantic-expression-edits
             adapter: rust
@@ -61,10 +62,11 @@ features:
                 criterion: REQ-SQL-001#criterion.array-element-indexing
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, and controls to construct fixed-bound one-based array slices in the SQL document tree editor.
+        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, and controls to construct fixed-bound one-based slices or edit prepopulated terminal literal slice bounds in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -79,6 +81,7 @@ features:
                 criterion: REQ-SQL-001#criterion.array-element-indexing
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: sql-document-verification
         role: verification
         facet: verification
@@ -636,7 +639,7 @@ features:
       - id: projection-position-protocol
         role: implementation
         facet: wasm
-        responsibility: Dispatch bounded guarded SQL Document semantic edits, including projection-position, predicate, grouping, relational, LIMIT, output-alias, and fixed-bound array-slice construction operations, through the portable Rust/WASM protocol.
+        responsibility: Dispatch bounded guarded SQL Document semantic edits, including projection-position, predicate, grouping, relational, LIMIT, output-alias, and fixed-bound array-slice construction or bound-update operations, through the portable Rust/WASM protocol.
         targets:
           - id: semantic-edit-action
             adapter: rust
@@ -653,6 +656,7 @@ features:
                 criterion: REQ-SQL-001#criterion.array-element-indexing
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: projection-position-verification
         role: verification
         facet: verification

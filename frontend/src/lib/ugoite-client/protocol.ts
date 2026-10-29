@@ -609,6 +609,13 @@ export type SqlDocumentNodeData =
   }
   | { kind: "relation"; name: SqlDocumentIdentifier[] }
   | {
+    kind: "array_slice";
+    one_based_start: string;
+    one_based_end: string;
+    start_range: SqlDocumentSourceRange;
+    end_range: SqlDocumentSourceRange;
+  }
+  | {
     kind: "table_factor";
     factor_kind: string;
     alias: SqlDocumentIdentifier | null;
@@ -1029,6 +1036,13 @@ export type SqlDocumentSemanticEdit =
         one_based_start: string;
         one_based_end: string;
       };
+  }
+  | {
+    kind: "set_array_slice_bounds";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    one_based_start: string;
+    one_based_end: string;
   }
   | {
     kind: "wrap_expression_in_aggregate";

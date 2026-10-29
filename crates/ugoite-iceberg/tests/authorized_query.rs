@@ -4764,8 +4764,8 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 }
 
 #[tokio::test]
-async fn typed_sql_document_array_index_and_slice_execute_authorized_queries() -> anyhow::Result<()>
-{
+async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query(
+) -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
         SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
@@ -4930,6 +4930,55 @@ async fn typed_sql_document_array_index_and_slice_execute_authorized_queries() -
         .expect("the slice retains its named field");
     assert_eq!(sliced_names.value(0), "Ada");
     assert_eq!(sliced_names.value(1), "Grace");
+
+    let existing_slice_source = sliced.document.to_sql();
+    let existing_slice_document = parse_sql_document(&existing_slice_source);
+    let existing_slice = existing_slice_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.semantic.as_ref().is_some_and(|semantic| {
+                matches!(
+                    semantic,
+                    ugoite_domain::sql_document::SqlDocumentNodeData::ArraySlice { .. }
+                )
+            })
+        })
+        .expect("the parsed SQL exposes typed existing slice bounds");
+    let changed_slice = apply_sql_document_semantic_edit_transaction(
+        &existing_slice_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: existing_slice_document.contract_version,
+            expected_source: existing_slice_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetArraySliceBounds {
+                node_id: existing_slice.id,
+                expected_kind: existing_slice.kind,
+                one_based_start: "2".to_owned(),
+                one_based_end: "2".to_owned(),
+            }],
+        },
+    )?;
+    assert_eq!(
+        changed_slice.document.to_sql(),
+        "SELECT (field_101)[2:2] FROM tasks"
+    );
+    let changed_rows = context.execute(changed_slice.document.to_sql()).await?;
+    let changed_list = changed_rows[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("the edited authorized slice returns a list");
+    let changed_item = changed_list.value(0);
+    assert_eq!(changed_item.len(), 1);
+    let changed_values = changed_item
+        .as_any()
+        .downcast_ref::<arrow_array::StructArray>()
+        .expect("the selected slice element retains its struct");
+    let changed_names = changed_values
+        .column_by_name("name")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+        .expect("the selected slice element retains its named field");
+    assert_eq!(changed_names.value(0), "Grace");
 
     let scalar_source = "SELECT 4 FROM tasks";
     let scalar_document = parse_sql_document(scalar_source);

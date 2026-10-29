@@ -119,16 +119,19 @@ metadata, which the inspector uses to offer append and removal actions only for
 the matching ARRAY projection or element. Array elements remain normal typed
 expressions and can be edited with the existing literal or expression
 operations. The same value-access inspector can add one-based indexes or a
-fully bounded one-based slice with positive literal bounds; empty, reversed,
-overflowing, injected, or comment-bearing slice edits fail closed. Native, WASM,
-DOM, and authorized-executor tests cover constructing and executing
+fully bounded one-based slice with positive literal bounds; it also opens and
+updates both bounds on an existing terminal slice when both are simple decimal
+integer tokens. New slice construction rejects empty, reversed, overflowing,
+injected, or comment-bearing operand spans. Existing-bound edits replace only
+the bound literals, retaining comments and surrounding SQL. Native, WASM, DOM,
+and authorized-executor tests cover constructing and executing
 `ARRAY[4, 9]`, editing it to an empty ARRAY, and executing
 `(field_101)[1:2]` over a two-element authorized ObjectList. Editing aliased or
 comment-bearing array spans fails closed. Omitted-bound slices, dynamic slice
 bounds, Struct-field access, reordering elements, editing array literals whose
 parser range is incomplete, and other collection constructors remain gaps
-under #4565. The slice control constructs an additional access around the
-selected expression; it does not reopen or replace bounds on an existing slice.
+under #4565. Direct bound editing does not yet cover omitted or dynamic bounds,
+strides, or a slice followed by another access in the same expression chain.
 
 ## Planner diagnostics and persistence
 
