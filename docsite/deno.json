@@ -17,7 +17,7 @@
     "@tailwindcss/node": "npm:@tailwindcss/node@4.3.0",
     "@tailwindcss/node/require-cache": "npm:@tailwindcss/node@4.3.0/require-cache",
     "@tailwindcss/oxide": "npm:@tailwindcss/oxide@4.3.0",
-    "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.0",
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.3",
     "@vitest/coverage-v8": "npm:@vitest/coverage-v8@4.1.8",
     "astro": "npm:astro@7.0.2",
     "astro/": "npm:astro@7.0.2/",
