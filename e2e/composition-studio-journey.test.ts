@@ -1598,6 +1598,161 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
+  test("Design preview recomputes only a dependent query and keeps unrelated results", async ({ page, request }) => {
+    test.setTimeout(60_000);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const spaceId = seed.spaceId;
+    const formName = `DesignDependency${suffix}`;
+    const dependentSqlName = `Design dependent count ${suffix}`;
+    const independentSqlName = `Design independent rows ${suffix}`;
+    const formResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: formName,
+          version: 1,
+          template: `# ${formName}\n\n## Merchant\n\n## Amount\n`,
+          fields: {
+            Merchant: { type: "string", required: true },
+            Amount: { type: "double", required: true },
+          },
+        },
+      },
+    );
+    const formBody = await formResponse.text();
+    expect([200, 201], formBody).toContain(formResponse.status());
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsResponse.ok()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      id?: string;
+      name?: string;
+      sql_relation?: string;
+      fields?: Record<string, { sql_column?: string }>;
+    }>;
+    const form = forms.find((candidate) => candidate.name === formName);
+    const sqlRelation = form?.sql_relation;
+    expect(sqlRelation).toBeTruthy();
+    const nameColumn = form?.fields?.Merchant?.sql_column;
+    const amountColumn = form?.fields?.Amount?.sql_column;
+    expect(nameColumn).toBeTruthy();
+    expect(amountColumn).toBeTruthy();
+
+    for (const row of [
+      { amount: 0, merchant: "Independent row 000" },
+      { amount: 1, merchant: "Independent row 001" },
+    ]) {
+      const entry = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/entries`),
+        {
+          data: {
+            form: formName,
+            fields: { Merchant: row.merchant, Amount: row.amount },
+          },
+        },
+      );
+      expect(entry.status()).toBe(201);
+    }
+
+    const dependentSql = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name: dependentSqlName,
+          kind: "user-query",
+          sql: `SELECT COUNT(*) AS matching_count, MAX(${sqlIdentifier(amountColumn!)}) AS maximum_amount FROM ${
+            sqlIdentifier(sqlRelation!)
+          } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`,
+          variables: [{
+            type: "integer",
+            name: "minimum",
+            description: "Minimum amount included in the count.",
+          }],
+        },
+      },
+    );
+    expect([200, 201]).toContain(dependentSql.status());
+    const independentSql = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name: independentSqlName,
+          kind: "user-query",
+          sql: `SELECT ${sqlIdentifier(nameColumn!)} AS merchant FROM ${
+            sqlIdentifier(sqlRelation!)
+          } ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
+          variables: [],
+        },
+      },
+    );
+    expect([200, 201]).toContain(independentSql.status());
+
+    const evaluationRequests: Array<Record<string, unknown>> = [];
+    page.on("request", (outgoing) => {
+      if (
+        new URL(outgoing.url()).pathname.endsWith("/compositions/evaluate")
+      ) {
+        try {
+          evaluationRequests.push(
+            outgoing.postDataJSON() as Record<string, unknown>,
+          );
+        } catch {
+          evaluationRequests.push({});
+        }
+      }
+    });
+
+    await page.goto(
+      getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+      { waitUntil: "domcontentloaded" },
+    );
+    await page.getByLabel("Name", { exact: true }).fill(
+      `Design dependency preview ${suffix}`,
+    );
+    await addStudioTypedInput(page, "minimum", "integer", "0");
+    await addStudioInput(page, "minimum");
+    await addMetricDisplay(page, dependentSqlName, "matching_count", {
+      minimum: "minimum",
+    });
+    await addCanvasDisplay(page, "Table", independentSqlName);
+
+    const dependentVariableId = `${
+      savedSqlVariablePrefix(dependentSqlName)
+    }_matching_count`;
+    const independentVariableId = savedSqlVariablePrefix(independentSqlName);
+    const independentTableVariableId = `${independentVariableId}_table`;
+    const dependentMetric = page.locator(
+      `.compositionGraphMetric[aria-label="${dependentVariableId}"] strong`,
+    );
+    const independentTable = page.getByRole("table", {
+      name: `${independentTableVariableId} results`,
+    });
+    await expect(dependentMetric).toHaveText("2", { timeout: 30_000 });
+    await expect(independentTable).toContainText("Independent row 000");
+    const firstPageRequest = evaluationRequests.at(-1);
+    expect(firstPageRequest?.requested_queries).toEqual(
+      expect.arrayContaining([dependentVariableId, independentTableVariableId]),
+    );
+
+    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
+    await expect(independentTable).toContainText("Independent row 001");
+    const beforeInputChange = evaluationRequests.length;
+
+    await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
+    await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
+    await expect.poll(() => evaluationRequests.length).toBe(
+      beforeInputChange + 1,
+    );
+    expect(evaluationRequests.at(-1)?.requested_queries).toEqual([
+      dependentVariableId,
+    ]);
+    expect(evaluationRequests.at(-1)).not.toHaveProperty("page");
+    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
+    await expect(independentTable).toContainText("Independent row 000");
+    await expect(independentTable).toContainText("Independent row 001");
+  });
+
   test("Pinned Saved SQL source supports an explicit inline copy and explicit counts", async ({ page, request }) => {
     test.setTimeout(120_000);
     const suffix = crypto.randomUUID().slice(0, 8);
