@@ -1760,6 +1760,75 @@ test.describe("Composition Studio Journey", () => {
   });
 });
 
+test("Composition Studio text remains readable when the system color mode changes", async ({ browser, context, request }) => {
+  await waitForServers(request);
+  const spaceId = await getDefaultSpaceId(request);
+  const storageState = await context.storageState();
+  const themeContext = await browser.newContext({
+    storageState,
+    viewport: { width: 390, height: 844 },
+    colorScheme: "light",
+  });
+  try {
+    const page = await themeContext.newPage();
+    await page.goto(
+      getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+      { waitUntil: "domcontentloaded" },
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-color-mode",
+      "light",
+    );
+
+    const palette = page.getByRole("group", { name: "Add to design" });
+    await palette.getByRole("button", { name: "Text", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Edit text", exact: true })
+      .click();
+    const text = page.getByRole("textbox", { name: "Text", exact: true });
+    await expect(text).toBeVisible();
+    await text.fill("Daily report");
+
+    for (const colorScheme of ["light", "dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-color-mode",
+        colorScheme,
+      );
+      await expect(text).toBeVisible();
+      await expect(text).toHaveValue("Daily report");
+
+      const contrastRatio = await text.evaluate((element) => {
+        const parseRgb = (color: string): [number, number, number] => {
+          const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+          if (!channels || channels.length !== 3) {
+            throw new Error(`Expected a computed RGB color, got ${color}`);
+          }
+          return channels as [number, number, number];
+        };
+        const luminance = (color: string): number => {
+          const channels = parseRgb(color).map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045
+              ? value / 12.92
+              : ((value + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * channels[0] + 0.7152 * channels[1] +
+            0.0722 * channels[2];
+        };
+        const style = getComputedStyle(element);
+        const foreground = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        return (Math.max(foreground, background) + 0.05) /
+          (Math.min(foreground, background) + 0.05);
+      });
+      expect(contrastRatio).toBeGreaterThanOrEqual(4.5);
+    }
+  } finally {
+    await themeContext.close();
+  }
+});
+
 test("Composition shared Arguments rename and type editing persist explicit bindings", async ({ page, request }) => {
   test.setTimeout(120_000);
   await waitForServers(request);
