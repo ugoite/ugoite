@@ -5,7 +5,7 @@ category: SQL projection alias authoring
 features:
   - id: FEAT-SQL-005
     title: Safe SQL projection alias authoring
-    summary: Allow users to add, edit and remove output aliases through the Rust-owned SQL Document while preserving source and same-scope bindings; unresolved expression scopes fail closed.
+    summary: Allow users to add, edit and remove output aliases through the Rust-owned SQL Document while preserving source and same-scope bindings; function-scoped ORDER BY references are currently unsupported and fail closed.
     status: implemented
     bindings:
       - id: alias-domain

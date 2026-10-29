@@ -79,12 +79,9 @@ requirements:
           preserves that reference's meaning. Same-scope ORDER BY alias
           references include unqualified identifier leaves in expression-shaped
           sort items when no other same-scope reference makes the binding
-          ambiguous; qualified source references remain unchanged. The current
-          implementation only rewrites leaves in explicitly supported operator
-          expressions; identifiers under function expressions, including
-          window clauses and aggregate FILTER clauses, fail closed because
-          their binding is not established. ORDER BY clauses containing
-          comments and ambiguous same-scope references also fail closed. Adding or renaming an alias also
+          ambiguous; qualified source references remain unchanged. ORDER BY
+          clauses containing comments and ambiguous same-scope references fail
+          closed. Adding or renaming an alias also
           rejects a same-scope reference capture or duplicate output name when
           the sibling output name is an explicit alias or a simple unqualified
           or qualified column reference, using the final identifier part for
