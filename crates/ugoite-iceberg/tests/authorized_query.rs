@@ -1465,6 +1465,32 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
     let context = workspace
         .authorized_query_context(authorized_policy)
         .await?;
+    let binding_probe = "SELECT source.total * -1 AS total, source.total AS src FROM (SELECT 2 AS total UNION ALL SELECT -2 AS total) AS source ORDER BY total + 1";
+    let binding_probe_result = context.execute(binding_probe).await?;
+    let mut binding_probe_source_values = Vec::new();
+    for batch in &binding_probe_result {
+        let values = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the source projection remains Int64");
+        binding_probe_source_values.extend(values.values().iter().copied());
+    }
+    assert_eq!(binding_probe_source_values, vec![2, -2]);
+
+    let renamed_binding_probe = "SELECT source.total * -1 AS renamed, source.total AS src FROM (SELECT 2 AS total UNION ALL SELECT -2 AS total) AS source ORDER BY renamed + 1";
+    let renamed_binding_probe_result = context.execute(renamed_binding_probe).await?;
+    let mut renamed_binding_probe_source_values = Vec::new();
+    for batch in &renamed_binding_probe_result {
+        let values = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the source projection remains Int64");
+        renamed_binding_probe_source_values.extend(values.values().iter().copied());
+    }
+    assert_eq!(renamed_binding_probe_source_values, vec![2, -2]);
+
     let alias_source =
         "SELECT 1 AS total FROM (SELECT 'source' AS total) AS source ORDER BY total + 1";
     let alias_document = ugoite_domain::sql_document::parse_sql_document(alias_source);
