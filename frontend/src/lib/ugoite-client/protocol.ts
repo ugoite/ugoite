@@ -575,6 +575,7 @@ export type SqlDocumentNodeData =
     raw: string | null;
   }
   | { kind: "typed_literal"; data_type: string; raw: string | null }
+  | { kind: "array_literal" }
   | { kind: "binary_operator"; operator: string }
   | { kind: "unary_operator"; operator: string }
   | {
@@ -999,6 +1000,22 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: SqlDocumentNodeKind;
     target_type: SqlDocumentCastType;
+  }
+  | {
+    kind: "wrap_expression_in_array";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "append_array_literal_element";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    literal: SqlDocumentSemanticLiteral;
+  }
+  | {
+    kind: "remove_array_literal_element";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
   }
   | {
     kind: "wrap_expression_in_value_access";

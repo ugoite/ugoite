@@ -110,6 +110,16 @@ mod tests {
     };
 
     const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
+    const REMOVED_SOURCE_GRAMMAR: &str =
+        include_str!("../../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
+
+    #[test]
+    fn rejects_the_removed_prerelease_source_document_without_migration() {
+        assert_eq!(
+            parse_composition_yaml(REMOVED_SOURCE_GRAMMAR),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
 
     #[test]
     fn parses_strict_variable_graph_and_shared_query_descriptors() {

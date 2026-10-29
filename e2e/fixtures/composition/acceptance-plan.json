@@ -246,6 +246,11 @@
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
           "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio text remains readable when the system color mode changes"
         }
       ],
       "manual_evidence_gaps": [

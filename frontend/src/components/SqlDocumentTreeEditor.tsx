@@ -87,7 +87,8 @@ type GroupByExpressionAction = "add" | "";
 type OrderByExpressionAction = "add" | "";
 type OrderDirection = "asc" | "desc";
 type NullsOrder = "first" | "last" | "";
-type ExpressionLeafAction = "identifier" | "literal" | "";
+type ExpressionLeafAction = "identifier" | "literal" | "array" | "";
+type ArrayElementAction = "remove" | "";
 type RelationEditAction =
   | "replace"
   | "add_join"
@@ -431,6 +432,40 @@ function parseSimpleColumnAliases(
   return values.map((value) => ({ value, quote_style: null }));
 }
 
+function semanticLiteral(
+  literal: LiteralDraft,
+): SqlDocumentSemanticLiteral | undefined {
+  switch (literal.kind) {
+    case "number":
+      return { kind: "number", value: literal.value };
+    case "string":
+      return { kind: "string", value: literal.value };
+    case "boolean":
+      return { kind: "boolean", value: literal.value === "true" };
+    case "null":
+      return { kind: "null" };
+    case "named_parameter":
+      return { kind: "named_parameter", name: literal.value };
+    case "date":
+    case "timestamp":
+    case "interval":
+      return {
+        kind: "typed_string",
+        data_type: literal.kind,
+        value: literal.value,
+      };
+    case "hex_string":
+      return { kind: "hex_string", value: literal.value };
+    default:
+      return undefined;
+  }
+}
+
+function semanticLiteralReady(literal: LiteralDraft): boolean {
+  if (literal.kind === "null" || literal.kind === "boolean") return true;
+  return Boolean(literal.kind && literal.value.trim());
+}
+
 function semanticEdit(
   node: SqlDocumentNode,
   expressionLeafAction: ExpressionLeafAction,
@@ -589,6 +624,29 @@ function semanticEdit(
         literal: value,
       };
     }
+  }
+  if (
+    expressionLeafAction === "array" &&
+    (expressionNodeKinds.has(node.kind) || node.kind === "select_item")
+  ) {
+    if (node.kind === "select_item") {
+      const element = semanticLiteral(literal);
+      if (!element) return undefined;
+      return {
+        kind: "append_array_literal_element",
+        node_id: node.id,
+        expected_kind: node.kind,
+        literal: element,
+      };
+    }
+    if (node.kind === "other_expression") {
+      return undefined;
+    }
+    return {
+      kind: "wrap_expression_in_array",
+      node_id: node.id,
+      expected_kind: node.kind,
+    };
   }
   if (
     node.kind === "query" && orderByExpressionAction === "add" &&
@@ -959,6 +1017,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   });
   const [expressionLeafAction, setExpressionLeafAction] = createSignal<
     ExpressionLeafAction
+  >("");
+  const [arrayElementAction, setArrayElementAction] = createSignal<
+    ArrayElementAction
   >("");
   const [operator, setOperator] = createSignal<
     SqlDocumentSemanticBinaryOperator | ""
@@ -1599,6 +1660,30 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     nodeById().get(binaryExpressionRightNodeId() ?? -1);
   const selectedCaseOperandNode = () =>
     nodeById().get(caseOperandNodeId() ?? -1);
+  const isArrayLiteralProjectionItem = (node: SqlDocumentNode) =>
+    node.kind === "select_item" &&
+    node.semantic?.kind !== "projection_alias" &&
+    (childrenByParent().get(node.id) ?? []).some((child) =>
+      child.semantic?.kind === "array_literal"
+    );
+  const isArrayLiteralElement = (node: SqlDocumentNode) => {
+    const array = node.parent === null
+      ? undefined
+      : nodeById().get(node.parent);
+    const projection = array?.parent === null || array?.parent === undefined
+      ? undefined
+      : nodeById().get(array.parent);
+    const projectionRange = projection?.range;
+    return array?.semantic?.kind === "array_literal" &&
+      projection?.kind === "select_item" &&
+      projection.semantic === null && projectionRange !== null &&
+      projectionRange !== undefined &&
+      !document()?.tokens.some((token) =>
+        token.kind === "comment" &&
+        token.range.start < projectionRange.end &&
+        projectionRange.start < token.range.end
+      );
+  };
   const selectHasWhereClause = (node: SqlDocumentNode) =>
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.kind === "where_clause"
@@ -1692,6 +1777,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const editorCanApply = () => {
     const node = selectedNode();
     if (!node || props.disabled?.() || busy()) return false;
+    if (arrayElementAction() === "remove") {
+      return node.range !== null && isArrayLiteralElement(node);
+    }
     if (valueAccessKind()) {
       if (!isValueAccessTarget(node) || node.range === null) return false;
       if (valueAccessKind() === "array_index") {
@@ -1850,6 +1938,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         node.kind !== "subquery_expression" && node.range !== null;
     }
     if (
+      expressionLeafAction() === "array" &&
+      (isExpressionKind(node.kind) || node.kind === "select_item")
+    ) {
+      if (node.kind === "select_item") {
+        return node.range !== null && isArrayLiteralProjectionItem(node) &&
+          semanticLiteralReady(literal());
+      }
+      return node.kind !== "subquery_expression" &&
+        node.kind !== "other_expression" && node.range !== null;
+    }
+    if (
       expressionLeafAction() === "identifier" &&
       isExpressionKind(node.kind)
     ) {
@@ -1980,6 +2079,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         caseHasElse() !== node.semantic.has_else;
     }
     if (node.kind === "select_item") {
+      if (expressionLeafAction() === "array") {
+        return node.range !== null && isArrayLiteralProjectionItem(node) &&
+          semanticLiteralReady(literal());
+      }
       const items = selectedProjectionItems();
       const index = selectedProjectionItemIndex();
       if (projectionItemAction() === "remove") return items.length > 1;
@@ -2032,6 +2135,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const currentSemanticEdit = (): SqlDocumentSemanticEdit | undefined => {
     const node = selectedNode();
     if (!node) return undefined;
+    if (arrayElementAction() === "remove" && isArrayLiteralElement(node)) {
+      return {
+        kind: "remove_array_literal_element",
+        node_id: node.id,
+        expected_kind: node.kind,
+      };
+    }
     if (valueAccessKind() && isValueAccessTarget(node)) {
       return {
         kind: "wrap_expression_in_value_access",
@@ -2398,6 +2508,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       setValueAccessValue("");
     }
     setSelectedNodeId(node.id);
+    setArrayElementAction("");
     setParts(identifierParts(node));
     setLiteral(initialLiteralDraft(node));
     setExpressionLeafAction(
@@ -2729,6 +2840,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         return;
       }
       props.onSqlChange(result.document.source);
+      setArrayElementAction("");
       setValueAccessKind("");
       setValueAccessValue("");
       setDocument(result.document);
@@ -3266,7 +3378,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     </Show>
 
                     <Show
-                      when={isExpressionKind(node().kind)}
+                      when={isExpressionKind(node().kind) ||
+                        node().kind === "select_item"}
                       fallback={null}
                     >
                       <label class="ui-label">
@@ -3287,17 +3400,32 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             if (action === "literal") {
                               setLiteral({ kind: "", value: "" });
                             }
+                            if (action === "array") {
+                              setLiteral({ kind: "", value: "" });
+                            }
                           }}
                         >
                           <option value="">
                             {t("sqlPage.structure.documentChooseKind")}
                           </option>
-                          <option value="identifier">
-                            {t("sqlPage.structure.documentIdentifier")}
-                          </option>
-                          <option value="literal">
-                            {t("sqlPage.structure.documentLiteral")}
-                          </option>
+                          <Show when={node().kind !== "select_item"}>
+                            <option value="identifier">
+                              {t("sqlPage.structure.documentIdentifier")}
+                            </option>
+                            <option value="literal">
+                              {t("sqlPage.structure.documentLiteral")}
+                            </option>
+                          </Show>
+                          <Show
+                            when={node().kind === "select_item"
+                              ? isArrayLiteralProjectionItem(node())
+                              : node().kind !== "other_expression" &&
+                                node().kind !== "subquery_expression"}
+                          >
+                            <option value="array">
+                              {t("sqlPage.structure.documentArrayLiteral")}
+                            </option>
+                          </Show>
                         </select>
                       </label>
                     </Show>
@@ -3383,7 +3511,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     <Show
                       when={node().semantic?.kind === "literal" ||
                         node().semantic?.kind === "typed_literal" ||
-                        expressionLeafAction() === "literal"}
+                        expressionLeafAction() === "literal" ||
+                        (expressionLeafAction() === "array" &&
+                          node().kind === "select_item")}
                       fallback={null}
                     >
                       <div class="sql-document-tree__fields">
@@ -3964,6 +4094,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       </div>
                     </Show>
                     <Show when={isExpressionKind(node().kind)}>
+                      <Show when={isArrayLiteralElement(node())}>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={busy() || props.disabled?.() ||
+                            node().range === null}
+                          onClick={() => setArrayElementAction("remove")}
+                        >
+                          {t("sqlPage.structure.documentRemoveArrayElement")}
+                        </button>
+                      </Show>
                       <button
                         type="button"
                         class="ui-button ui-button-secondary"

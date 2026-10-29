@@ -31,9 +31,12 @@ and bitwise/shift operators have edit and WASM parity evidence, while their
 per-operator authorized runtime results remain unverified. Planner validity for
 type parameters remains authoritative. A source-backed `unmodeled_expression`
 proves source retention, not that the expression's semantic fields are editable.
-Projection aliases have a bounded typed authoring operation with fail-closed
-same-scope reference checks. Complete constructibility of the admitted SQL
-grammar remains unverified.
+Projection aliases have a bounded typed authoring operation. Unquoted
+identifiers use ASCII lowercase folding, while quoted identifiers preserve
+case. Renaming updates a bare same-scope `ORDER BY` alias reference atomically;
+references in other clauses, expression-shaped sort items, and comment-bearing
+sort items fail closed. Full alias resolution coverage and complete
+constructibility of the admitted SQL grammar remain unverified.
 
 ## Admission stages
 
@@ -106,6 +109,20 @@ and LIMIT expression/parameter forms. Alias edits are parser-backed and
 source-safe; their verification does not claim executor admission for every
 result shape. Directionless SEMI/ANTI spellings are not offered because
 DataFusion's SQL planner does not admit them.
+
+The expression inspector can wrap a typed expression in a one-element
+`ARRAY[...]` literal, append typed literal elements in order, and remove a
+selected direct element from an unaliased complete projection item. Removing the
+sole element retains `ARRAY[]`, which the authorized executor returns as a
+zero-element list. Rust marks parsed ARRAY nodes with typed `array_literal`
+metadata, which the inspector uses to offer append and removal actions only for
+the matching ARRAY projection or element. Array elements remain normal typed
+expressions and can be edited with the existing literal or expression
+operations. Native, WASM, DOM, and authorized-executor tests cover constructing
+and executing `ARRAY[4, 9]` and editing it to an empty ARRAY. Editing aliased or
+comment-bearing array spans fails closed. Reordering elements, editing array
+literals whose parser range is incomplete, and other collection constructors
+remain gaps under #4565.
 
 ## Planner diagnostics and persistence
 
