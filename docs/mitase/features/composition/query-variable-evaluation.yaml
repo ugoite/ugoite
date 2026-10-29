@@ -212,12 +212,12 @@ features:
           - id: focus-pending-check-gates-results
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
-            selector: { kind: test, name: hides values on focus while a scheduled authority check is still pending }
+            selector: { kind: test, name: requires a fresh authority check after each focus return }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: hides values on focus while a scheduled authority check is still pending } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: requires a fresh authority check after each focus return } }
           - id: expired-check-cannot-restore-results
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx

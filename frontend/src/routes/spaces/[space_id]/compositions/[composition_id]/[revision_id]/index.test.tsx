@@ -399,20 +399,17 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.queryByText("10")).not.toBeInTheDocument();
   });
 
-  it("hides values on focus while a scheduled authority check is still pending", async () => {
+  it("requires a fresh authority check after each focus return", async () => {
     vi.useFakeTimers();
-    let resolveOldAccessCheck!: (value: {
-      composition_revision: { entry_id: string; revision_id: string };
-      publication_fingerprint: string;
-      authorization_fingerprint: string;
-      valid_for_ms: number;
-    }) => void;
-    let resolveResumedAccessCheck!: (value: {
-      composition_revision: { entry_id: string; revision_id: string };
-      publication_fingerprint: string;
-      authorization_fingerprint: string;
-      valid_for_ms: number;
-    }) => void;
+    const sameSnapshot = {
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    };
+    let resolveScheduledAccessCheck!: (value: typeof sameSnapshot) => void;
+    let resolveFirstResumeCheck!: (value: typeof sameSnapshot) => void;
+    let resolveSecondResumeCheck!: (value: typeof sameSnapshot) => void;
     evaluateMock.mockImplementation((
       _spaceId: string,
       request: { evaluation_id: string },
@@ -424,12 +421,17 @@ describe("Composition saved revision graph evaluation", () => {
     accessSnapshotMock
       .mockReturnValueOnce(
         new Promise((resolve) => {
-          resolveOldAccessCheck = resolve;
+          resolveScheduledAccessCheck = resolve;
         }),
       )
       .mockReturnValueOnce(
         new Promise((resolve) => {
-          resolveResumedAccessCheck = resolve;
+          resolveFirstResumeCheck = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecondResumeCheck = resolve;
         }),
       );
     render(() => <CompositionRevisionRoute />);
@@ -438,28 +440,28 @@ describe("Composition saved revision graph evaluation", () => {
     expect(accessSnapshotMock).toHaveBeenCalledOnce();
     expect(screen.getByText("10")).toBeInTheDocument();
 
+    fireEvent(window, new Event("blur"));
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    fireEvent(window, new Event("blur"));
     fireEvent(window, new Event("focus"));
     fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledTimes(3));
     expect(screen.queryByText("10")).not.toBeInTheDocument();
-    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledTimes(2));
 
-    resolveOldAccessCheck({
-      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
-      publication_fingerprint: "publication-1",
-      authorization_fingerprint: "auth-1",
-      valid_for_ms: 30_000,
-    });
+    resolveScheduledAccessCheck(sameSnapshot);
     await Promise.resolve();
     expect(screen.queryByText("10")).not.toBeInTheDocument();
 
-    resolveResumedAccessCheck({
-      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
-      publication_fingerprint: "publication-1",
-      authorization_fingerprint: "auth-1",
-      valid_for_ms: 30_000,
-    });
+    resolveFirstResumeCheck(sameSnapshot);
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveSecondResumeCheck(sameSnapshot);
     await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
-    expect(accessSnapshotMock).toHaveBeenCalledTimes(2);
+    expect(accessSnapshotMock).toHaveBeenCalledTimes(3);
   });
 
   it("does not restore results from an evaluation already in flight when the access check fails", async () => {
