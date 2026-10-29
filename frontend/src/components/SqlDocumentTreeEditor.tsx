@@ -1775,6 +1775,20 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   };
   const currentOperatorSupported = () =>
     Boolean(operatorKind(selectedOperator()));
+  // Keep the inspector's lexical check aligned with Rust's `parse::<i64>()`;
+  // BigInt alone also accepts whitespace and non-decimal prefixes.
+  const decimalI64Input = (value: string): bigint | undefined => {
+    if (!/^[+-]?[0-9]+$/.test(value)) return undefined;
+    try {
+      const parsed = BigInt(value);
+      return parsed >= -9223372036854775808n &&
+          parsed <= 9223372036854775807n
+        ? parsed
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const editorCanApply = () => {
     const node = selectedNode();
     if (!node || props.disabled?.() || busy()) return false;
@@ -1784,22 +1798,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (valueAccessKind()) {
       if (!isValueAccessTarget(node) || node.range === null) return false;
       if (valueAccessKind() === "array_index") {
-        try {
-          const index = BigInt(valueAccessValue());
-          return index > 0n && index <= 9223372036854775807n;
-        } catch {
-          return false;
-        }
+        const index = decimalI64Input(valueAccessValue());
+        return index !== undefined && index > 0n;
       }
       if (valueAccessKind() === "array_slice") {
-        try {
-          const start = BigInt(valueAccessValue());
-          const end = BigInt(valueAccessEnd());
-          return start > 0n && start <= end &&
-            end <= 9223372036854775807n;
-        } catch {
-          return false;
-        }
+        const start = decimalI64Input(valueAccessValue());
+        const end = decimalI64Input(valueAccessEnd());
+        return start !== undefined && end !== undefined && start > 0n &&
+          start <= end && end > 0n;
       }
       return false;
     }
@@ -3999,7 +4005,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                               class="ui-input"
                               type="text"
                               inputmode="numeric"
-                              pattern="[0-9]*"
+                              pattern="[+-]?[0-9]*"
                               value={valueAccessValue()}
                               disabled={busy() || props.disabled?.() ||
                                 node().range === null}
@@ -4017,7 +4023,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                               class="ui-input"
                               type="text"
                               inputmode="numeric"
-                              pattern="[0-9]*"
+                              pattern="[+-]?[0-9]*"
                               value={valueAccessValue()}
                               disabled={busy() || props.disabled?.() ||
                                 node().range === null}
@@ -4031,7 +4037,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                               class="ui-input"
                               type="text"
                               inputmode="numeric"
-                              pattern="[0-9]*"
+                              pattern="[+-]?[0-9]*"
                               value={valueAccessEnd()}
                               disabled={busy() || props.disabled?.() ||
                                 node().range === null}

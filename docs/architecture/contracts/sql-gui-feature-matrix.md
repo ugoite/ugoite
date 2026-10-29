@@ -127,7 +127,8 @@ DOM, and authorized-executor tests cover constructing and executing
 comment-bearing array spans fails closed. Omitted-bound slices, dynamic slice
 bounds, Struct-field access, reordering elements, editing array literals whose
 parser range is incomplete, and other collection constructors remain gaps
-under #4565.
+under #4565. The slice control constructs an additional access around the
+selected expression; it does not reopen or replace bounds on an existing slice.
 
 ## Planner diagnostics and persistence
 

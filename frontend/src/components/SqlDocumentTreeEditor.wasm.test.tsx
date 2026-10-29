@@ -304,10 +304,19 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
-      target: { value: "2" },
+      target: { value: "0x10" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.input(screen.getByLabelText("One-based index"), {
+      target: { value: " 2" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.input(screen.getByLabelText("One-based index"), {
+      target: { value: "+2" },
     });
     expect((screen.getByLabelText("One-based index") as HTMLInputElement).value)
-      .toBe("2");
+      .toBe("+2");
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
 
     fireEvent.click(treeItem(amount!.id)!);
     await waitFor(() => {
@@ -323,7 +332,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
-      target: { value: "2" },
+      target: { value: "+2" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>
@@ -367,10 +376,17 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       target: { value: "array_slice" },
     });
     fireEvent.input(screen.getByLabelText("One-based start"), {
-      target: { value: "2" },
+      target: { value: " 1" },
     });
     fireEvent.input(screen.getByLabelText("One-based end"), {
+      target: { value: "2" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.input(screen.getByLabelText("One-based start"), {
       target: { value: "1" },
+    });
+    fireEvent.input(screen.getByLabelText("One-based end"), {
+      target: { value: "0x10" },
     });
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
     fireEvent.click(updatedTreeItem!);

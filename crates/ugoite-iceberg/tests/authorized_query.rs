@@ -4918,7 +4918,18 @@ async fn typed_sql_document_array_index_and_slice_execute_authorized_queries() -
         .as_any()
         .downcast_ref::<ListArray>()
         .expect("authorized fixed-bound array slicing returns a list");
-    assert_eq!(sliced_list.value(0).len(), 2);
+    let sliced_item = sliced_list.value(0);
+    assert_eq!(sliced_item.len(), 2);
+    let sliced_values = sliced_item
+        .as_any()
+        .downcast_ref::<arrow_array::StructArray>()
+        .expect("the slice retains the list's struct values");
+    let sliced_names = sliced_values
+        .column_by_name("name")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+        .expect("the slice retains its named field");
+    assert_eq!(sliced_names.value(0), "Ada");
+    assert_eq!(sliced_names.value(1), "Grace");
 
     let scalar_source = "SELECT 4 FROM tasks";
     let scalar_document = parse_sql_document(scalar_source);

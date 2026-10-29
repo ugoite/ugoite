@@ -140,17 +140,21 @@ requirements:
         statement: >-
           The SQL Document tree can add one fully bounded array slice
           `[start:end]` to a selected source-backed expression using positive
-          signed-64-bit-range, one-based integer literals where start is no
-          greater than end. Rust owns the typed operation and changes only the
+          one-based literals within signed 64-bit range, where start is no
+          greater than end. The inspector accepts Rust `i64` decimal-string
+          syntax only (optional sign and ASCII digits; no whitespace or radix
+          prefixes); Rust remains authoritative for semantic validation. Rust
+          owns the typed operation and changes only the
           selected expression range, preserving all source outside it and
           returning a guarded undo through the WASM and browser inspector.
           Empty, reversed, overflowing, injected, or comment-bearing slice
           edits fail closed. The inspector clears both pending bounds when the
           SQL source or selected node changes. The operation does not infer or
           certify the expression's array type, element bounds, or result type;
-          authorized SQL planning and execution remain authoritative. Omitted
-          bounds, dynamic bounds, and complete collection-access-chain editing
-          are outside this bounded constructor.
+          authorized SQL planning and execution remain authoritative. This is
+          a constructor: the inspector does not read or replace bounds on an
+          existing slice. Omitted bounds, dynamic bounds, and complete
+          collection-access-chain editing are outside this bounded constructor.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
