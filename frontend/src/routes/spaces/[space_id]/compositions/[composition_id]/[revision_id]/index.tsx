@@ -188,6 +188,9 @@ export default function CompositionRevisionRoute() {
   };
 
   const clearVisibleResults = () => {
+    evaluationGeneration++;
+    accessCheckGeneration++;
+    accessCheckPending = undefined;
     accessLease = undefined;
     clearAccessTimer();
     setTablePages({});
@@ -206,7 +209,13 @@ export default function CompositionRevisionRoute() {
     );
     accessTimer = setTimeout(() => void recheckAccess(lease, false), delay);
     accessExpiryTimer = setTimeout(() => {
-      if (accessLease === lease) setAccessSnapshotBlocked(true);
+      if (accessLease === lease) {
+        clearVisibleResults();
+        setEvaluation({
+          status: "error",
+          error: t("composition.queryFailed"),
+        });
+      }
     }, Math.max(0, lease.expiresAt - Date.now()));
   };
 
@@ -228,13 +237,13 @@ export default function CompositionRevisionRoute() {
       current.response?.publication_fingerprint !==
         expected.publicationFingerprint
     ) return;
-    if (accessCheckPending === expected) return;
-    accessCheckPending = expected;
-    const checkGeneration = ++accessCheckGeneration;
     const startedAt = Date.now();
     if (gateImmediately || startedAt >= expected.expiresAt) {
       setAccessSnapshotBlocked(true);
     }
+    if (accessCheckPending === expected) return;
+    accessCheckPending = expected;
+    const checkGeneration = ++accessCheckGeneration;
     try {
       const snapshot = await compositionApi.checkAccessSnapshot(
         params.space_id,

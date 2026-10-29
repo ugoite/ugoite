@@ -359,6 +359,12 @@ describe("Composition saved revision graph evaluation", () => {
 
   it("hides retained query values when the authority lease expires", async () => {
     vi.useFakeTimers();
+    let resolveExpiredCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
     evaluateMock.mockImplementation((
       _spaceId: string,
       request: { evaluation_id: string },
@@ -367,7 +373,11 @@ describe("Composition saved revision graph evaluation", () => {
         ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
       })
     );
-    accessSnapshotMock.mockReturnValue(new Promise(() => {}));
+    accessSnapshotMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveExpiredCheck = resolve;
+      }),
+    );
     render(() => <CompositionRevisionRoute />);
     await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
 
@@ -379,6 +389,107 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => {
       expect(screen.queryByText("10")).not.toBeInTheDocument();
     });
+    resolveExpiredCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+  });
+
+  it("hides values on focus while a scheduled authority check is still pending", async () => {
+    vi.useFakeTimers();
+    let resolveAccessCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve({
+        ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
+      })
+    );
+    accessSnapshotMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccessCheck = resolve;
+      }),
+    );
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(accessSnapshotMock).toHaveBeenCalledOnce();
+    expect(screen.getByText("10")).toBeInTheDocument();
+
+    fireEvent(window, new Event("focus"));
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveAccessCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+    await waitFor(() => expect(screen.getByText("10")).toBeInTheDocument());
+    expect(accessSnapshotMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not restore results from an evaluation already in flight when the access check fails", async () => {
+    let rejectAccessCheck!: (error: Error) => void;
+    let resolveInputEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveInputEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      );
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectAccessCheck = reject;
+      }),
+    );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-20" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    rejectAccessCheck(new Error("offline"));
+    await waitFor(() => {
+      expect(screen.queryByText("10")).not.toBeInTheDocument();
+    });
+    resolveInputEvaluation(evaluation("late", "auth-1", {
+      rows: 99,
+      stable: 99,
+    }, ["rows", "stable"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText("99")).not.toBeInTheDocument();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
   });
 
   it("discards cached results and reevaluates after the principal fingerprint changes", async () => {

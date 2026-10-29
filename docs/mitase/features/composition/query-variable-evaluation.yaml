@@ -151,7 +151,7 @@ features:
       - id: composition-access-snapshot-verification
         role: verification
         facet: verification
-        responsibility: Verify exact authorized revision reads, bodyless protocol routing, DTO exclusion of result payloads, server route authority response, and browser fail-closed behavior.
+        responsibility: Verify the implemented snapshot-check behavior as evidence for this criterion, including invalidating in-flight work after failures. These tests do not establish that result reuse is prohibited immediately after revocation.
         targets:
           - id: service-access-snapshot
             adapter: rust
@@ -209,6 +209,33 @@ features:
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: fails closed when a focus-return authority check is unavailable } }
+          - id: focus-pending-check-gates-results
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: hides values on focus while a scheduled authority check is still pending }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: hides values on focus while a scheduled authority check is still pending } }
+          - id: expired-check-cannot-restore-results
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: hides retained query values when the authority lease expires }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: hides retained query values when the authority lease expires } }
+          - id: authority-failure-invalidates-query-work
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not restore results from an evaluation already in flight when the access check fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: does not restore results from an evaluation already in flight when the access check fails } }
           - id: wasm-access-snapshot-route
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
