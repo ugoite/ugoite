@@ -944,6 +944,83 @@ async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Re
     Ok(())
 }
 
+#[cfg(debug_assertions)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check(
+) -> Result<()> {
+    use ugoite_domain::identity::AccessPolicy;
+    use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+
+    let (service, space_id, document, form_id) = setup_preview_space().await?;
+    let owner = Uuid::from_u128(3_434_001);
+    let yaml = canonicalize_composition(&document)
+        .map_err(|code| anyhow::anyhow!(code.as_str()))?
+        .yaml;
+    let gate =
+        ugoite_iceberg::service::TestCompositionFinalAuthorizationGate::new(space_id.clone());
+    ugoite_iceberg::service::install_test_composition_final_authorization_gate(gate.clone());
+
+    let evaluating_service = service.clone();
+    let evaluating_space = space_id.clone();
+    let evaluation = tokio::spawn(async move {
+        evaluating_service
+            .evaluate_composition_graph_authorized_for_principals(
+                &evaluating_space,
+                &[owner],
+                CompositionQueryEvaluationTarget::Draft { yaml },
+                Uuid::now_v7(),
+                None,
+                None,
+                &BTreeMap::new(),
+                &[],
+                None,
+                None,
+            )
+            .await
+    });
+
+    gate.wait_until_entered().await;
+    let authorizer = Authorizer::new(service.operator().clone());
+    let resource = ResourceRef {
+        kind: ResourceKind::Form,
+        id: form_id.to_string(),
+        parent: None,
+    };
+    let authorization_before = authorizer.state(&space_id).await?;
+    let revoke = authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &resource,
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await;
+    gate.release();
+    ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
+    revoke?;
+
+    let error = evaluation
+        .await?
+        .expect_err("revoked evaluation must not return query results");
+    assert_eq!(
+        error
+            .downcast_ref::<AppError>()
+            .expect("final authorization check returns a typed AppError")
+            .kind(),
+        ugoite_core::error::ErrorKind::Forbidden
+    );
+    let authorization_after = authorizer.state(&space_id).await?;
+    assert_eq!(
+        authorization_after.revision,
+        authorization_before.revision + 1
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
