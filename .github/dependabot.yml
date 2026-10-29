@@ -90,3 +90,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+  # Rust compiler updates arrive as normal PRs against the single
+  # rust-toolchain.toml authority (monthly cadence).
+  - package-ecosystem: "rust-toolchain"
+    directory: "/"
+    schedule:
+      interval: "monthly"

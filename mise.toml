@@ -10,7 +10,11 @@ DENO_NO_UPDATE_CHECK = "1"
 [tools]
 deno = "2.8.3"
 helm = "3.19.0"
-rust = "1.95.0"
+
+[settings]
+# Follow rust-toolchain.toml as the single Rust compiler authority instead of
+# a duplicated `tools.rust` pin (mise idiomatic version files).
+idiomatic_version_file_enable_tools = ["rust"]
 
 [tools."github:nextest-rs/nextest"]
 version = "cargo-nextest-0.9.143"

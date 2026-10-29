@@ -8,7 +8,12 @@ ENV CARGO_TARGET_DIR=target/rust
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl build-essential nodejs \
   && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.95.0
+# Rust compiler authority is rust-toolchain.toml; read the channel instead of
+# hardcoding a second version here so drift is visible as a diff.
+COPY rust-toolchain.toml ./
+RUN channel="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)" \
+  && test -n "$channel" \
+  && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "$channel"
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup target add wasm32-unknown-unknown
 COPY deno.json deno.lock ./
