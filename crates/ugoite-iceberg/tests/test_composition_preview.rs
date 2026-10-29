@@ -945,6 +945,23 @@ async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Re
 }
 
 #[cfg(debug_assertions)]
+struct CompositionFinalAuthorizationGateCleanup {
+    gate: std::sync::Arc<ugoite_iceberg::service::TestCompositionFinalAuthorizationGate>,
+    evaluation_abort: Option<tokio::task::AbortHandle>,
+}
+
+#[cfg(debug_assertions)]
+impl Drop for CompositionFinalAuthorizationGateCleanup {
+    fn drop(&mut self) {
+        self.gate.release();
+        ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
+        if let Some(abort) = &self.evaluation_abort {
+            abort.abort();
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check(
 ) -> Result<()> {
@@ -956,10 +973,11 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
     let yaml = canonicalize_composition(&document)
         .map_err(|code| anyhow::anyhow!(code.as_str()))?
         .yaml;
-    let gate =
-        ugoite_iceberg::service::TestCompositionFinalAuthorizationGate::new(space_id.clone());
+    let gate = ugoite_iceberg::service::TestCompositionFinalAuthorizationGate::new(
+        space_id.clone(),
+        "source",
+    );
     ugoite_iceberg::service::install_test_composition_final_authorization_gate(gate.clone());
-
     let evaluating_service = service.clone();
     let evaluating_space = space_id.clone();
     let mut evaluation = tokio::spawn(async move {
@@ -978,67 +996,80 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
             )
             .await
     });
-
-    if let Err(error) = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        gate.wait_until_entered(),
-    )
-    .await
-    {
-        ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
-        gate.release();
-        evaluation.abort();
-        let _ = evaluation.await;
-        return Err(error.into());
-    }
-    let authorizer = Authorizer::new(service.operator().clone());
-    let resource = ResourceRef {
-        kind: ResourceKind::Form,
-        id: form_id.to_string(),
-        parent: None,
+    let mut cleanup = CompositionFinalAuthorizationGateCleanup {
+        gate: gate.clone(),
+        evaluation_abort: Some(evaluation.abort_handle()),
     };
-    let authorization_before = authorizer.state(&space_id).await?;
-    let revoke = authorizer
-        .set_policy(
-            &space_id,
-            owner,
-            &resource,
-            AccessPolicy {
-                policy_id: Uuid::now_v7(),
-                inherit_space_role: false,
-                grants: Vec::new(),
-            },
-        )
-        .await;
-    gate.release();
-    ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
-    revoke?;
 
-    let joined_evaluation =
-        match tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await {
-            Ok(result) => result?,
-            Err(error) => {
-                ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
-                gate.release();
-                evaluation.abort();
-                let _ = evaluation.await;
-                return Err(error.into());
-            }
+    let result: Result<()> = async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            gate.wait_until_entered(),
+        )
+        .await?;
+        assert!(
+            gate.staged_row_count() > 0,
+            "the gate must be reached only after a nonempty source table result is staged"
+        );
+        let authorizer = Authorizer::new(service.operator().clone());
+        let resource = ResourceRef {
+            kind: ResourceKind::Form,
+            id: form_id.to_string(),
+            parent: None,
         };
-    let error = joined_evaluation.expect_err("revoked evaluation must not return query results");
-    assert_eq!(
-        error
-            .downcast_ref::<AppError>()
-            .expect("final authorization check returns a typed AppError")
-            .kind(),
-        ugoite_core::error::ErrorKind::Forbidden
-    );
-    let authorization_after = authorizer.state(&space_id).await?;
-    assert_eq!(
-        authorization_after.revision,
-        authorization_before.revision + 1
-    );
-    Ok(())
+        let authorization_before = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.state(&space_id),
+        )
+        .await??;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.set_policy(
+                &space_id,
+                owner,
+                &resource,
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            ),
+        )
+        .await??;
+        gate.release();
+
+        let joined_evaluation =
+            tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await??;
+        let error =
+            joined_evaluation.expect_err("revoked evaluation must not return query results");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("final authorization check returns a typed AppError")
+                .kind(),
+            ugoite_core::error::ErrorKind::Forbidden
+        );
+        let authorization_after = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.state(&space_id),
+        )
+        .await??;
+        assert_eq!(
+            authorization_after.revision,
+            authorization_before.revision + 1
+        );
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        evaluation.abort();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await;
+    }
+    if evaluation.is_finished() {
+        cleanup.evaluation_abort = None;
+    }
+    result
 }
 
 #[tokio::test]

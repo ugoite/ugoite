@@ -21,7 +21,7 @@ use ugoite_core::composition::{
 };
 use ugoite_core::composition_query::{
     VariableGraphQueryEvaluation, VariableGraphQueryEvaluationDiagnostic,
-    VariableGraphQueryEvaluationDiagnosticCode,
+    VariableGraphQueryEvaluationDiagnosticCode, VariableGraphQueryPreviewValue,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::sql_query::{SqlContinuation, SqlQueryPage, SqlQueryRequest};
@@ -50,15 +50,19 @@ use crate::iceberg_store;
 #[derive(Debug)]
 pub struct TestCompositionFinalAuthorizationGate {
     space_id: String,
+    variable_id: String,
+    staged_row_count: std::sync::atomic::AtomicUsize,
     entered: Notify,
     release: Notify,
 }
 
 #[cfg(debug_assertions)]
 impl TestCompositionFinalAuthorizationGate {
-    pub fn new(space_id: impl Into<String>) -> Arc<Self> {
+    pub fn new(space_id: impl Into<String>, variable_id: impl Into<String>) -> Arc<Self> {
         Arc::new(Self {
             space_id: space_id.into(),
+            variable_id: variable_id.into(),
+            staged_row_count: std::sync::atomic::AtomicUsize::new(0),
             entered: Notify::new(),
             release: Notify::new(),
         })
@@ -72,7 +76,26 @@ impl TestCompositionFinalAuthorizationGate {
         self.release.notify_one();
     }
 
-    async fn pause(&self) {
+    pub fn staged_row_count(&self) -> usize {
+        self.staged_row_count
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    async fn pause_after_nonempty_table(
+        &self,
+        query_results: &BTreeMap<String, VariableGraphQueryPreviewValue>,
+    ) {
+        let Some(VariableGraphValidatedResult::Table { rows, .. }) = query_results
+            .get(&self.variable_id)
+            .map(|value| &value.result)
+        else {
+            return;
+        };
+        if rows.is_empty() {
+            return;
+        }
+        self.staged_row_count
+            .store(rows.len(), std::sync::atomic::Ordering::Release);
         self.entered.notify_one();
         self.release.notified().await;
     }
@@ -102,13 +125,16 @@ pub fn clear_test_composition_final_authorization_gate() {
 }
 
 #[cfg(debug_assertions)]
-async fn wait_at_test_composition_final_authorization_gate(space_id: &str) {
+async fn wait_at_test_composition_final_authorization_gate(
+    space_id: &str,
+    query_results: &BTreeMap<String, VariableGraphQueryPreviewValue>,
+) {
     let gate = TEST_FINAL_AUTHORIZATION_GATE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
     if let Some(gate) = gate.filter(|gate| gate.space_id == space_id) {
-        gate.pause().await;
+        gate.pause_after_nonempty_table(query_results).await;
     }
 }
 
@@ -1137,8 +1163,9 @@ impl UgoiteService {
         query_diagnostics.sort();
         query_diagnostics.dedup();
         #[cfg(debug_assertions)]
-        if preview.is_some() {
-            wait_at_test_composition_final_authorization_gate(space_id).await;
+        if let Some(preview) = &preview {
+            wait_at_test_composition_final_authorization_gate(space_id, &preview.query_results)
+                .await;
         }
         let (current_authorization_fingerprint, _) = self
             .capture_graph_snapshot(
