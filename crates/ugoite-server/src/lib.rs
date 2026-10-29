@@ -45,6 +45,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_api_client::{
+    CompositionAccessSnapshotResponse as ApiCompositionAccessSnapshotResponse,
     CompositionComponentBinding, CompositionComponentKind, CompositionDeferredArgument,
     CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnostic as ApiCompositionDiagnostic,
@@ -1812,6 +1813,10 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route(
             "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
             get(composition_revision),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot",
+            post(composition_snapshot_check_handler),
         )
         .route(
             "/spaces/{space_id}/compositions/preview",
@@ -11465,6 +11470,9 @@ async fn composition_history(
 
 const COMPOSITION_PREVIEW_MAX_REQUEST_BYTES: usize = 256 * 1024;
 const COMPOSITION_EVALUATION_MAX_REQUEST_BYTES: usize = 256 * 1024;
+/// Runtime result freshness is checked at least once per 30-second lease.
+/// This bounds detected revocation delay; it is not an immediate push guarantee.
+const COMPOSITION_ACCESS_SNAPSHOT_VALID_FOR_MS: u64 = 30_000;
 
 async fn preview_composition_handler(
     State(state): State<AppState>,
@@ -11668,6 +11676,39 @@ async fn composition_evaluation_handler(
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(api_composition_evaluation_response(result)?))
+}
+
+async fn composition_snapshot_check_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, composition_id, revision_id)): Path<(String, String, String)>,
+) -> ApiResult<Json<ApiCompositionAccessSnapshotResponse>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&composition_id, "composition_id")?;
+    validate_id(&revision_id, "revision_id")?;
+    validate_composition_uuid(&composition_id, "Composition ID")?;
+    validate_composition_uuid(&revision_id, "Composition revision ID")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principal_ids = authorization_principal_ids(&identity, principal_id);
+    let snapshot = state
+        .service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &composition_id,
+            &revision_id,
+            &principal_ids,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(ApiCompositionAccessSnapshotResponse {
+        composition_revision: ugoite_api_client::CompositionRevisionReference {
+            entry_id: snapshot.composition_entry_id,
+            revision_id: snapshot.composition_revision_id,
+        },
+        publication_fingerprint: snapshot.publication_fingerprint,
+        authorization_fingerprint: snapshot.authorization_fingerprint,
+        valid_for_ms: COMPOSITION_ACCESS_SNAPSHOT_VALID_FOR_MS,
+    }))
 }
 
 fn validate_composition_uuid(value: &str, label: &str) -> ApiResult<()> {
@@ -14740,6 +14781,10 @@ mod authentication_regression_tests {
                 get(composition_revision),
             )
             .route(
+                "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot",
+                post(composition_snapshot_check_handler),
+            )
+            .route(
                 "/spaces/{space_id}/compositions/preview",
                 post(preview_composition_handler)
                     .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
@@ -16349,7 +16394,7 @@ spec:
                     "revision_id": saved.revision_id.to_string() },
                 "requested_queries": ["total_query", "rows_query"]
             }).to_string()))?;
-        let (status, body) = route_json(route, request).await?;
+        let (status, body) = route_json(route.clone(), request).await?;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["ok"], true, "{body}");
         assert_eq!(
@@ -16366,6 +16411,32 @@ spec:
         assert_eq!(
             body["query_results"]["rows_query"]["exact_integer_rows"],
             json!([["9007199254740991"]])
+        );
+
+        let snapshot_request = Request::post(format!(
+            "/spaces/{space_id}/compositions/{}/history/{}/snapshot",
+            saved.entry_id, saved.revision_id
+        ))
+        .body(Body::empty())?;
+        let (snapshot_status, snapshot_body) = route_json(route, snapshot_request).await?;
+        assert_eq!(snapshot_status, StatusCode::OK, "{snapshot_body}");
+        assert_eq!(
+            snapshot_body["composition_revision"],
+            json!({
+                "entry_id": saved.entry_id.to_string(),
+                "revision_id": saved.revision_id.to_string()
+            })
+        );
+        assert_eq!(snapshot_body["valid_for_ms"], 30_000);
+        assert!(snapshot_body.get("query_results").is_none());
+        let snapshot_path =
+            "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot";
+        let snapshot_operation = openapi_snapshot()["paths"][&snapshot_path]["post"].clone();
+        assert!(!snapshot_operation.is_null());
+        assert_eq!(
+            snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]
+                ["properties"]["valid_for_ms"]["const"],
+            30_000
         );
         Ok(())
     }

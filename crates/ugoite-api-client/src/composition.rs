@@ -454,6 +454,18 @@ pub struct CompositionEvaluationResponse {
     pub query_diagnostics: Vec<CompositionEvaluationQueryDiagnostic>,
 }
 
+/// Transient authority coordinates for an exact saved Composition revision.
+/// The validity duration is a client-side recheck deadline, never a bearer
+/// credential or a promise of immediate revocation notification.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionAccessSnapshotResponse {
+    pub composition_revision: CompositionRevisionReference,
+    pub publication_fingerprint: String,
+    pub authorization_fingerprint: String,
+    pub valid_for_ms: u64,
+}
+
 /// Side-effect-free preview plan keyed by draft fingerprint instead of a
 /// stored revision reference. Query descriptors and component references are
 /// derived from the strict variable graph and current authorized metadata.

@@ -13,10 +13,10 @@ use url::Url;
 pub mod composition;
 
 pub use composition::{
-    CompositionComponentBinding, CompositionComponentKind, CompositionDeferredArgument,
-    CompositionDependencyIndex, CompositionDiagnostic, CompositionDiagnosticCode,
-    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionEvaluationPage,
-    CompositionEvaluationQueryDiagnostic, CompositionEvaluationRequest,
+    CompositionAccessSnapshotResponse, CompositionComponentBinding, CompositionComponentKind,
+    CompositionDeferredArgument, CompositionDependencyIndex, CompositionDiagnostic,
+    CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
+    CompositionEvaluationPage, CompositionEvaluationQueryDiagnostic, CompositionEvaluationRequest,
     CompositionEvaluationRequestDiagnostic, CompositionEvaluationResponse,
     CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
     CompositionEvaluationTarget, CompositionFormBinding, CompositionGraphQueryResult,
@@ -96,6 +96,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.list",
     "composition.get",
     "composition.history",
+    "composition.snapshot_check",
     "composition.preview",
     "composition.evaluate",
     "composition.save",
@@ -1161,6 +1162,31 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "composition.snapshot_check" => {
+                let path = vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    required_string(operation, args, "composition_id")?,
+                    "history".into(),
+                    required_string(operation, args, "revision_id")?,
+                    "snapshot".into(),
+                ];
+                if path.iter().any(String::is_empty) {
+                    return Err(ApiProtocolError::invalid_arguments(
+                        operation,
+                        "Composition snapshot coordinates must not be empty",
+                    ));
+                }
+                (
+                    OperationSpec::no_body(
+                        HttpMethod::Post,
+                        "Failed to recheck Composition snapshot",
+                    ),
+                    path,
+                    vec![],
+                )
+            }
             "composition.preview" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to preview Composition"),
                 vec![
@@ -2124,6 +2150,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get Composition history",
             RequestBodyKind::None,
         ),
+        "composition.snapshot_check" => (
+            HttpMethod::Post,
+            "Failed to recheck Composition snapshot",
+            RequestBodyKind::None,
+        ),
         "composition.preview" => (
             HttpMethod::Post,
             "Failed to preview Composition",
@@ -2423,6 +2454,7 @@ mod tests {
                 "composition.list",
                 "composition.get",
                 "composition.history",
+                "composition.snapshot_check",
                 "composition.preview",
                 "composition.evaluate",
                 "composition.save",
@@ -2470,6 +2502,48 @@ mod tests {
         let request: CompositionEvaluationRequest =
             serde_json::from_value(body.clone()).expect("evaluation request DTO");
         assert_eq!(serde_json::to_value(request).expect("serialized DTO"), body);
+    }
+
+    #[test]
+    fn composition_snapshot_check_prepares_a_bodyless_exact_revision_post() {
+        let prepared = prepare_request(
+            "composition.snapshot_check",
+            &json!({
+                "space_id": "01900000-0000-7000-8000-000000000010",
+                "composition_id": "01900000-0000-7000-8000-000000000011",
+                "revision_id": "01900000-0000-7000-8000-000000000012",
+            }),
+            None,
+        )
+        .expect("snapshot check is a portable read-only operation");
+        assert_eq!(prepared.method, HttpMethod::Post);
+        assert_eq!(
+            prepared.path,
+            "/spaces/01900000-0000-7000-8000-000000000010/compositions/01900000-0000-7000-8000-000000000011/history/01900000-0000-7000-8000-000000000012/snapshot"
+        );
+        assert_eq!(prepared.body, None);
+    }
+
+    #[test]
+    fn composition_access_snapshot_response_has_no_query_result_payload() {
+        let response = CompositionAccessSnapshotResponse {
+            composition_revision: CompositionRevisionReference {
+                entry_id: "composition".into(),
+                revision_id: "revision".into(),
+            },
+            publication_fingerprint: "publication".into(),
+            authorization_fingerprint: "authorization".into(),
+            valid_for_ms: 30_000,
+        };
+        let encoded = serde_json::to_value(&response).expect("response encodes");
+        assert_eq!(encoded["valid_for_ms"], 30_000);
+        assert!(encoded.get("query_results").is_none());
+        let decoded: CompositionAccessSnapshotResponse =
+            serde_json::from_value(encoded.clone()).expect("response decodes");
+        assert_eq!(decoded, response);
+        let mut with_values = encoded;
+        with_values["query_results"] = json!({"rows": []});
+        assert!(serde_json::from_value::<CompositionAccessSnapshotResponse>(with_values).is_err());
     }
 
     #[test]
@@ -4367,12 +4441,18 @@ mod tests {
         }
         if matches!(
             operation,
-            "composition.get" | "composition.history" | "composition.restore"
+            "composition.get"
+                | "composition.history"
+                | "composition.snapshot_check"
+                | "composition.restore"
         ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
         }
         if matches!(operation, "composition.save" | "composition.restore") {
             arguments.insert("idempotency_key".into(), json!("operation-key-1"));
+        }
+        if operation == "composition.snapshot_check" {
+            arguments.insert("revision_id".into(), json!("revision-1"));
         }
         if matches!(
             operation,

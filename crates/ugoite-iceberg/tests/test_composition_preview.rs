@@ -282,6 +282,193 @@ async fn save_local_composition_with_work(
         .await
 }
 
+#[tokio::test]
+async fn access_snapshot_reads_exact_revision_without_publishing_or_returning_results() -> Result<()>
+{
+    use ugoite_domain::identity::AccessPolicy;
+    use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+
+    let (service, space_id, document, form_id) = setup_preview_space().await?;
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let owner = Uuid::from_u128(3_434_001);
+    let changes_before = service.list_changes(&space_id).await?;
+
+    let snapshot = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    assert_eq!(snapshot.composition_entry_id, saved.entry_id.to_string());
+    assert_eq!(
+        snapshot.composition_revision_id,
+        saved.revision_id.to_string()
+    );
+    assert_eq!(snapshot.publication_fingerprint.len(), 64);
+    assert!(snapshot.authorization_fingerprint.starts_with("sha256:"));
+    assert_eq!(service.list_changes(&space_id).await?, changes_before);
+
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": "Composition-Preview",
+                "fields": {
+                    "title": {"id": 100, "type": "string", "required": false},
+                    "note": {"type": "string", "required": false}
+                }
+            }),
+        )
+        .await?;
+    let changed_form = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_ne!(
+        changed_form.publication_fingerprint,
+        snapshot.publication_fingerprint
+    );
+    assert_eq!(
+        changed_form.authorization_fingerprint,
+        snapshot.authorization_fingerprint
+    );
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    let form_resource = ResourceRef {
+        kind: ResourceKind::Form,
+        id: form_id.to_string(),
+        parent: None,
+    };
+    let authorization_before = authorizer.state(&space_id).await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &form_resource,
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    let authorization_after = authorizer.state(&space_id).await?;
+    assert_eq!(
+        authorization_after.revision,
+        authorization_before.revision + 1
+    );
+    let changed_acl = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_ne!(
+        changed_acl.authorization_fingerprint,
+        changed_form.authorization_fingerprint
+    );
+    assert_eq!(
+        changed_acl.publication_fingerprint,
+        changed_form.publication_fingerprint
+    );
+
+    let sql_id = Uuid::from_u128(3_434_003);
+    let created_sql = service
+        .create_saved_sql(
+            &space_id,
+            Some(&sql_id.to_string()),
+            &SqlPayload {
+                name: Some("Lease snapshot SQL".to_owned()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT 1 AS value".to_owned(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    let created_revision_id = created_sql["revision_id"]
+        .as_str()
+        .context("Saved SQL create revision ID")?;
+    let created_sql_snapshot = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_ne!(
+        created_sql_snapshot.publication_fingerprint,
+        changed_acl.publication_fingerprint
+    );
+
+    let updated_sql = service
+        .update_saved_sql(
+            &space_id,
+            &sql_id.to_string(),
+            &SqlPayload {
+                name: Some("Renamed lease snapshot SQL".to_owned()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT 2 AS value".to_owned(),
+                variables: json!([]),
+            },
+            created_revision_id,
+            "owner",
+        )
+        .await?;
+    assert!(updated_sql["revision_id"].is_string());
+    let updated_sql_snapshot = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_ne!(
+        updated_sql_snapshot.publication_fingerprint,
+        created_sql_snapshot.publication_fingerprint
+    );
+    service
+        .delete_saved_sql(&space_id, &sql_id.to_string(), "owner")
+        .await?;
+    let deleted_sql_snapshot = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_ne!(
+        deleted_sql_snapshot.publication_fingerprint,
+        updated_sql_snapshot.publication_fingerprint
+    );
+
+    let denied = service
+        .check_composition_access_snapshot_for_principals(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &[Uuid::now_v7()],
+        )
+        .await
+        .expect_err("a different principal must not read the snapshot");
+    assert!(denied.downcast_ref::<AppError>().is_some());
+    Ok(())
+}
+
 async fn apply_preview_query_descriptors(
     service: &UgoiteService,
     space_id: &str,

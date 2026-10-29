@@ -83,6 +83,268 @@ features:
               - kind: documents
                 anchor: REQ-COMP-009#criterion.exact-query-identities
 
+      - id: composition-access-snapshot-service
+        role: evidence
+        facet: service
+        responsibility: Provide evidence for bounded authority-snapshot rechecking by reading the exact authorized Composition revision and current authorization/Publication coordinates without resolving or executing SQL. The detection interval does not prohibit reuse immediately after revocation.
+        targets:
+          - id: access-snapshot-read
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_query_evaluation.rs
+            selector: { kind: symbol, name: check_composition_access_snapshot_for_principals }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: portable-access-snapshot-operation
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: symbol, name: prepare_request }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: composition-access-snapshot-rest
+        role: evidence
+        facet: backend
+        responsibility: Derive the principal from authenticated request context and return only current exact-revision authority fingerprints with a bounded transient lease; this does not provide immediate revocation notification.
+        targets:
+          - id: access-snapshot-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_snapshot_check_handler }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: composition-access-snapshot-contract
+        role: contract-source
+        facet: api
+        responsibility: Define the bodyless exact-revision snapshot check and its transient 30-second lease response.
+        targets:
+          - id: access-snapshot-operation
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: /spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: composition-access-snapshot-browser
+        role: evidence
+        facet: frontend
+        responsibility: Keep runtime query results transient under the server snapshot lease and fail closed on expiry, focus return, changed authority, unavailable checks, or stale responses. This is bounded detection mitigation and does not establish immediate no-reuse after revocation.
+        targets:
+          - id: access-snapshot-api
+            adapter: typescript
+            path: frontend/src/lib/composition-api.ts
+            selector: { kind: symbol, name: checkAccessSnapshot }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: saved-runtime-lease
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector: { kind: symbol, name: CompositionRevisionRoute }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: composition-access-snapshot-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the implemented snapshot-check behavior as evidence for this criterion, including invalidating in-flight work after failures. These tests do not establish that result reuse is prohibited immediately after revocation.
+        targets:
+          - id: service-access-snapshot
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: access_snapshot_reads_exact_revision_without_publishing_or_returning_results }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-service/target.access-snapshot-read]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: access_snapshot_reads_exact_revision_without_publishing_or_returning_results } }
+          - id: portable-request-shape
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: test, name: composition_snapshot_check_prepares_a_bodyless_exact_revision_post }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers:
+                  - FEAT-COMP-011#binding.composition-access-snapshot-service/target.portable-access-snapshot-operation
+                  - FEAT-COMP-011#binding.composition-access-snapshot-contract/target.access-snapshot-operation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-api-client, test: composition_snapshot_check_prepares_a_bodyless_exact_revision_post } }
+          - id: response-excludes-query-results
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: test, name: composition_access_snapshot_response_has_no_query_result_payload }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-contract/target.access-snapshot-operation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-api-client, test: composition_access_snapshot_response_has_no_query_result_payload } }
+          - id: server-access-snapshot
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-rest/target.access-snapshot-handler]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph } }
+          - id: browser-access-snapshot-api
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: rechecks only the exact saved Composition authority snapshot }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.access-snapshot-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: rechecks only the exact saved Composition authority snapshot } }
+          - id: browser-fails-closed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: fails closed when a focus-return authority check is unavailable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: fails closed when a focus-return authority check is unavailable } }
+          - id: focus-pending-check-gates-results
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: requires a fresh authority check after each focus return }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: requires a fresh authority check after each focus return } }
+          - id: expired-check-cannot-restore-results
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: hides retained query values when the authority lease expires }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: hides retained query values when the authority lease expires } }
+          - id: authority-failure-invalidates-query-work
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not restore results from an evaluation already in flight when the access check fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-browser/target.saved-runtime-lease]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: does not restore results from an evaluation already in flight when the access check fails } }
+          - id: suspend-invalidates-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not publish an evaluation started before suspend and evaluates again after resume }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: suspended-input-evaluation-retries-after-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: reruns changed inputs after a fresh check invalidates an in-flight evaluation }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: offline-invalidates-pending-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: invalidates pending checks while offline and requires new online work }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: incomplete-coordinates-hide-results-with-diagnostics
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: shows diagnostics without query values when evaluation has no authority coordinates }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: blur-cancels-pending-debounce-until-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not start a debounced leased evaluation during blur and waits for the fresh check }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: offline-fences-initial-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: fences an initial evaluation across offline and online }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: delayed-parse-waits-for-resume-check
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: does not evaluate a delayed input parse until the resumed authority check finishes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: initial-hidden-offline-load-resumes
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: starts the initial evaluation after an initially hidden offline page resumes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: focus-fences-pending-page
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: fences a pending page on focus without blur and leaves paging retryable }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: focus-recovers-identity-change-evaluation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: recovers when focus interrupts a full reevaluation after authority changes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: expired-initial-evaluation-can-retry
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: offers a retry when the initial evaluation outlives its lease }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: wasm-access-snapshot-route
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: composition_snapshot_check_uses_the_portable_exact_revision_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-access-snapshot-service/target.portable-access-snapshot-operation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: composition_snapshot_check_uses_the_portable_exact_revision_route } }
+
       - id: dependency-scoped-browser
         role: implementation
         facet: frontend

@@ -12830,6 +12830,46 @@
         },
         "description": "Returns only the requested stored Composition revision; it never falls back to the latest revision or requires the current Composition format parser."
       }
+    },
+    "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot": {
+      "post": {
+        "summary": "Recheck exact Composition access snapshot",
+        "description": "Read-only check of the exact saved Composition revision and the current server-owned authorization and Publication fingerprints. It does not resolve or execute query SQL. The 30000 ms lease bounds active-client detection delay; it does not provide immediate revocation notification. The fingerprints are transient comparison values, not credentials.",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" },
+          { "$ref": "#/components/parameters/EntryId" },
+          { "$ref": "#/components/parameters/RevisionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current authority snapshot for the exact Composition revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["composition_revision", "publication_fingerprint", "authorization_fingerprint", "valid_for_ms"],
+                  "properties": {
+                    "composition_revision": { "$ref": "#/components/schemas/CompositionRevisionReference" },
+                    "publication_fingerprint": { "type": "string", "minLength": 1 },
+                    "authorization_fingerprint": { "type": "string", "minLength": 1 },
+                    "valid_for_ms": { "type": "integer", "const": 30000 }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Composition revision not found" },
+          "500": { "description": "Internal server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
     }
   },
   "components": {

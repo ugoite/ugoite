@@ -208,6 +208,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/compositions/{entry_id}",
   "/spaces/{space_id}/compositions/{entry_id}/history",
   "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
+  "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot",
   "/spaces/{space_id}/compositions/{entry_id}/restore",
   "/spaces/{space_id}/entries",
   "/spaces/{space_id}/entries/query",

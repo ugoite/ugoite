@@ -2,6 +2,7 @@ import {
   createEffect,
   createResource,
   createSignal,
+  For,
   onCleanup,
   Show,
   untrack,
@@ -59,6 +60,17 @@ type GraphTablePage = CompositionEvaluationResponse["query_results"][string];
 interface GraphTablePageState {
   pages: GraphTablePage[];
   index: number;
+}
+
+interface AccessLease {
+  routeKey: string;
+  resumeEpoch: number;
+  evaluationId: string;
+  entryId: string;
+  revisionId: string;
+  publicationFingerprint: string;
+  authorizationFingerprint: string;
+  expiresAt: number;
 }
 
 const literalRawValue = (value: CompositionLiteral | undefined) =>
@@ -155,14 +167,309 @@ export default function CompositionRevisionRoute() {
   const [evaluation, setEvaluation] = createSignal<EvaluationState>({
     status: "idle",
   });
+  const [accessSnapshotBlocked, setAccessSnapshotBlocked] = createSignal(
+    (typeof document !== "undefined" &&
+      document.visibilityState === "hidden") ||
+      (typeof navigator !== "undefined" && !navigator.onLine),
+  );
   const parseGenerations = new Map<string, number>();
   let evaluationGeneration = 0;
+  let accessCheckGeneration = 0;
+  let accessLease: AccessLease | undefined;
+  let accessTimer: ReturnType<typeof setTimeout> | undefined;
+  let accessExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+  let accessCheckPending: AccessLease | undefined;
+  let accessCheckPendingGeneration = 0;
+  let accessCheckPendingResumeEpoch: number | undefined;
+  let accessResumeEpoch = 0;
+  let lastResumeEvaluationEpoch: number | undefined;
+  const accessSuspensions = new Set<"blur" | "hidden" | "offline">();
+  let accessCheckAbort: AbortController | undefined;
   let parseEpoch = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let activeEvaluationId = "";
   let lastEvaluatedInputs:
     | { variables: Record<string, unknown>; unset: string[] }
     | undefined;
+
+  if (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  ) {
+    accessSuspensions.add("hidden");
+  }
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    accessSuspensions.add("offline");
+  }
+
+  const accessIsSuspended = () =>
+    accessSuspensions.size > 0 ||
+    (typeof document !== "undefined" &&
+      document.visibilityState === "hidden") ||
+    (typeof navigator !== "undefined" && !navigator.onLine);
+
+  const clearAccessTimer = () => {
+    if (accessTimer) clearTimeout(accessTimer);
+    accessTimer = undefined;
+    if (accessExpiryTimer) clearTimeout(accessExpiryTimer);
+    accessExpiryTimer = undefined;
+  };
+
+  const clearVisibleResults = () => {
+    evaluationGeneration++;
+    accessCheckGeneration++;
+    accessCheckPending = undefined;
+    accessCheckAbort?.abort();
+    accessCheckAbort = undefined;
+    accessCheckPendingResumeEpoch = undefined;
+    accessLease = undefined;
+    clearAccessTimer();
+    setTablePages({});
+    lastEvaluatedInputs = undefined;
+    setEvaluation({ status: "error", error: t("composition.queryFailed") });
+    setAccessSnapshotBlocked(true);
+  };
+
+  // Every async success may publish only into the same visible authorization
+  // epoch in which it started. A focus/visibility/network suspension advances
+  // that epoch and invalidates both snapshot checks and evaluations.
+  const isCurrentAsyncContext = (epoch: number, expectedRoute: string) =>
+    epoch === accessResumeEpoch && expectedRoute === routeKey() &&
+    !accessIsSuspended();
+
+  const scheduleAccessCheck = (lease: AccessLease) => {
+    clearAccessTimer();
+    // Check before the 30-second server lease expires. If a timer is delayed,
+    // the renderer still gates cached results at expiresAt.
+    const delay = Math.max(
+      0,
+      Math.min(25_000, lease.expiresAt - Date.now() - 5_000),
+    );
+    accessTimer = setTimeout(() => void recheckAccess(lease, false), delay);
+    accessExpiryTimer = setTimeout(() => {
+      if (accessLease === lease) {
+        clearVisibleResults();
+        setEvaluation({
+          status: "error",
+          error: t("composition.queryFailed"),
+        });
+      }
+    }, Math.max(0, lease.expiresAt - Date.now()));
+  };
+
+  const recheckAccess = async (
+    expected: AccessLease,
+    gateImmediately: boolean,
+  ) => {
+    if (
+      expected.routeKey !== routeKey() ||
+      expected.resumeEpoch !== accessResumeEpoch ||
+      accessIsSuspended()
+    ) {
+      return;
+    }
+    const current = evaluation();
+    if (
+      accessLease !== expected ||
+      current.evaluationId !== expected.evaluationId ||
+      current.response?.authorization_fingerprint !==
+        expected.authorizationFingerprint ||
+      current.response?.publication_fingerprint !==
+        expected.publicationFingerprint
+    ) return;
+    const startedAt = Date.now();
+    const checkResumeEpoch = accessResumeEpoch;
+    if (gateImmediately || startedAt >= expected.expiresAt) {
+      setAccessSnapshotBlocked(true);
+    }
+    if (gateImmediately && accessCheckPending === expected) {
+      if (accessCheckPendingResumeEpoch === accessResumeEpoch) return;
+      // A response started before the page returned may already be stale.
+      // Invalidate it and require a request whose authority check starts now.
+      accessCheckGeneration++;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingResumeEpoch = undefined;
+    } else if (accessCheckPending === expected) {
+      return;
+    }
+    accessCheckPending = expected;
+    const checkGeneration = ++accessCheckGeneration;
+    accessCheckPendingGeneration = checkGeneration;
+    accessCheckPendingResumeEpoch = gateImmediately
+      ? accessResumeEpoch
+      : undefined;
+    const controller = new AbortController();
+    accessCheckAbort = controller;
+    try {
+      const snapshot = await compositionApi.checkAccessSnapshot(
+        params.space_id,
+        params.composition_id,
+        params.revision_id,
+        controller.signal,
+      );
+      if (
+        checkGeneration !== accessCheckGeneration ||
+        !isCurrentAsyncContext(checkResumeEpoch, expected.routeKey) ||
+        accessLease !== expected ||
+        evaluation().evaluationId !== expected.evaluationId
+      ) return;
+      const sameSnapshot =
+        snapshot.composition_revision.entry_id === expected.entryId &&
+        snapshot.composition_revision.revision_id === expected.revisionId &&
+        snapshot.authorization_fingerprint ===
+          expected.authorizationFingerprint &&
+        snapshot.publication_fingerprint === expected.publicationFingerprint &&
+        Number.isSafeInteger(snapshot.valid_for_ms) &&
+        snapshot.valid_for_ms > 0 &&
+        snapshot.valid_for_ms <= 30_000;
+      if (!sameSnapshot) {
+        clearVisibleResults();
+        void evaluate();
+        return;
+      }
+      // Use request start as the conservative TTL origin so network latency
+      // cannot extend the server-issued lease.
+      const renewed = {
+        ...expected,
+        resumeEpoch: checkResumeEpoch,
+        expiresAt: startedAt + snapshot.valid_for_ms,
+      };
+      accessLease = renewed;
+      if (Date.now() >= renewed.expiresAt) {
+        clearVisibleResults();
+        void evaluate();
+        return;
+      }
+      setAccessSnapshotBlocked(false);
+      scheduleAccessCheck(renewed);
+      // A suspend can invalidate an input evaluation while the prior leased
+      // response remains gated. Once authority is freshly confirmed, rerun
+      // only when the inputs differ from that response's evaluated snapshot.
+      if (changedInputs(lastEvaluatedInputs, currentInputSnapshot()).size > 0) {
+        void evaluate();
+      }
+    } catch {
+      if (
+        checkGeneration === accessCheckGeneration &&
+        isCurrentAsyncContext(checkResumeEpoch, expected.routeKey) &&
+        accessLease === expected
+      ) {
+        clearVisibleResults();
+        setEvaluation({
+          status: "error",
+          error: t("composition.queryFailed"),
+        });
+      }
+    } finally {
+      if (
+        accessCheckPending === expected &&
+        accessCheckPendingGeneration === checkGeneration
+      ) {
+        accessCheckPending = undefined;
+        accessCheckPendingGeneration = 0;
+        accessCheckPendingResumeEpoch = undefined;
+        if (accessCheckAbort === controller) accessCheckAbort = undefined;
+      }
+    }
+  };
+
+  const onAccessResume = () => {
+    if (!accessIsSuspended() && accessLease) {
+      const lease = accessLease;
+      if (lease.routeKey !== routeKey()) return;
+      setAccessSnapshotBlocked(true);
+      const current = evaluation();
+      if (
+        current.status === "loading" ||
+        current.evaluationId !== lease.evaluationId
+      ) {
+        // A focus event can arrive without a matching blur. Drop any work
+        // newer than the visible lease (including paging with its same ID)
+        // before checking that lease again.
+        evaluationGeneration++;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+        activeEvaluationId = lease.evaluationId;
+        setEvaluation({
+          status: "ready",
+          evaluationId: lease.evaluationId,
+          response: current.response,
+        });
+      }
+      void recheckAccess(accessLease, true);
+    } else if (
+      !accessIsSuspended() && accessSnapshotBlocked() &&
+      (evaluation().status === "error" || evaluation().status === "idle" ||
+        (evaluation().status === "loading" && !activeEvaluationId)) &&
+      lastResumeEvaluationEpoch !== accessResumeEpoch
+    ) {
+      lastResumeEvaluationEpoch = accessResumeEpoch;
+      void evaluate();
+    }
+  };
+
+  const onAccessSuspend = (reason: "blur" | "hidden" | "offline") => {
+    const wasSuspended = accessSuspensions.size > 0;
+    accessSuspensions.add(reason);
+    if (wasSuspended) return;
+    accessResumeEpoch++;
+    setAccessSnapshotBlocked(true);
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
+    // Any evaluation that crosses a suspend is stale, even when it started
+    // before the first lease existed. Keep a prior leased response only behind
+    // the gate; the resumed authority check must authorize it again.
+    evaluationGeneration++;
+    if (accessLease) {
+      accessLease = { ...accessLease, resumeEpoch: accessResumeEpoch };
+      const current = evaluation();
+      setEvaluation({
+        status: "ready",
+        evaluationId: accessLease.evaluationId,
+        response: current.response,
+      });
+    } else {
+      clearVisibleResults();
+    }
+    if (accessTimer) clearTimeout(accessTimer);
+    accessTimer = undefined;
+    accessCheckGeneration++;
+    accessCheckPending = undefined;
+    accessCheckPendingGeneration = 0;
+    accessCheckPendingResumeEpoch = undefined;
+    accessCheckAbort?.abort();
+    accessCheckAbort = undefined;
+  };
+
+  const onAccessResumeReason = (reason: "blur" | "hidden" | "offline") => {
+    accessSuspensions.delete(reason);
+    if (!accessIsSuspended()) onAccessResume();
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === "hidden") onAccessSuspend("hidden");
+    else onAccessResumeReason("hidden");
+  };
+
+  if (typeof document !== "undefined") {
+    const onWindowFocus = () => onAccessResumeReason("blur");
+    const onWindowBlur = () => onAccessSuspend("blur");
+    const onOffline = () => onAccessSuspend("offline");
+    const onOnline = () => onAccessResumeReason("offline");
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    });
+  }
 
   const currentInputSnapshot = () => ({
     variables: { ...inputValues() },
@@ -192,6 +499,12 @@ export default function CompositionRevisionRoute() {
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
     if (!currentRevision()) return;
+    // Parsing or debounce continuations may finish after resume. While a prior
+    // lease is gated for its required authority check, they cannot start an
+    // evaluation that could race that check and reopen the result surface.
+    if (accessIsSuspended() || (accessLease && accessSnapshotBlocked())) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
     const draft = currentRevision()!.draft;
     const unavailable = new Set(
       unavailableCompositionQueryIds(
@@ -218,6 +531,8 @@ export default function CompositionRevisionRoute() {
     const compositionId = params.composition_id;
     const revisionId = params.revision_id;
     const generation = ++evaluationGeneration;
+    const evaluationResumeEpoch = accessResumeEpoch;
+    let requestStartedAt = Date.now();
     let evaluationId = page ? activeEvaluationId : crypto.randomUUID();
     if (!page) activeEvaluationId = evaluationId;
     const values = currentInputSnapshot();
@@ -277,9 +592,10 @@ export default function CompositionRevisionRoute() {
               : []
           ),
         );
+      requestStartedAt = Date.now();
       let response = await request(evaluationId, requestedQueries);
       if (
-        routeScope !== routeKey() ||
+        !isCurrentAsyncContext(evaluationResumeEpoch, routeScope) ||
         generation !== evaluationGeneration ||
         response.evaluation_id !== evaluationId
       ) return;
@@ -303,12 +619,16 @@ export default function CompositionRevisionRoute() {
           ).map((node) => node.id)
           : undefined;
         setTablePages({});
+        // Keep the prior leased response available for a focus-time authority
+        // check, but hide it while the new authority snapshot is evaluated.
+        setAccessSnapshotBlocked(true);
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
-        setEvaluation({ status: "loading", evaluationId });
+        setEvaluation({ status: "loading", evaluationId, response: previous });
+        requestStartedAt = Date.now();
         response = await request(evaluationId, requestedQueries);
         if (
-          routeScope !== routeKey() ||
+          !isCurrentAsyncContext(evaluationResumeEpoch, routeScope) ||
           generation !== evaluationGeneration ||
           response.evaluation_id !== evaluationId
         ) return;
@@ -373,11 +693,64 @@ export default function CompositionRevisionRoute() {
           ? undefined
           : t("composition.queryFailed"),
       });
+      const revisionRef = response.composition_revision;
+      const authFingerprint = response.authorization_fingerprint;
+      const publicationFingerprint = response.publication_fingerprint;
+      if (
+        revisionRef && authFingerprint && publicationFingerprint
+      ) {
+        const lease: AccessLease = {
+          routeKey: routeScope,
+          resumeEpoch: evaluationResumeEpoch,
+          evaluationId,
+          entryId: revisionRef.entry_id,
+          revisionId: revisionRef.revision_id,
+          authorizationFingerprint: authFingerprint,
+          publicationFingerprint,
+          expiresAt: requestStartedAt + 30_000,
+        };
+        accessLease = lease;
+        if (Date.now() < lease.expiresAt) {
+          setAccessSnapshotBlocked(false);
+          scheduleAccessCheck(lease);
+        } else {
+          // The response arrived after its server-issued lease elapsed. Keep
+          // the UI actionable, but do not poll or retry indefinitely.
+          clearVisibleResults();
+          setEvaluation({
+            status: "error",
+            error: t("composition.queryFailed"),
+          });
+        }
+      } else {
+        // Missing coordinates cannot authorize query results. Preserve only
+        // the response's actionable diagnostics and show a stable error state.
+        clearVisibleResults();
+        setEvaluation({
+          status: "error",
+          error: t("composition.queryFailed"),
+          response: {
+            ...responseToShow,
+            query_results: {},
+          },
+        });
+      }
     } catch (error) {
-      if (routeScope !== routeKey() || generation !== evaluationGeneration) {
+      if (
+        !isCurrentAsyncContext(evaluationResumeEpoch, routeScope) ||
+        generation !== evaluationGeneration
+      ) {
         return;
       }
       setTablePages({});
+      accessCheckGeneration++;
+      accessLease = undefined;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingResumeEpoch = undefined;
+      clearAccessTimer();
+      setAccessSnapshotBlocked(true);
       lastEvaluatedInputs = undefined;
       setEvaluation({
         status: "error",
@@ -389,6 +762,15 @@ export default function CompositionRevisionRoute() {
         ),
       });
     }
+  };
+
+  const scheduleEvaluation = () => {
+    if (accessIsSuspended()) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      if (!accessIsSuspended()) void evaluate();
+    }, 250);
   };
 
   const handleInput = (variableId: string, raw: string) => {
@@ -473,11 +855,11 @@ export default function CompositionRevisionRoute() {
       } else {
         setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
       }
-      debounceTimer = setTimeout(() => void evaluate(), 250);
+      scheduleEvaluation();
     }).catch(() => {
       if (!isCurrent()) return;
       setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
-      debounceTimer = setTimeout(() => void evaluate(), 250);
+      scheduleEvaluation();
     });
   };
 
@@ -486,6 +868,14 @@ export default function CompositionRevisionRoute() {
     const ready = currentRevision();
     if (!ready) {
       evaluationGeneration++;
+      accessCheckGeneration++;
+      accessLease = undefined;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingResumeEpoch = undefined;
+      clearAccessTimer();
+      setAccessSnapshotBlocked(true);
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = undefined;
       activeEvaluationId = "";
@@ -515,6 +905,7 @@ export default function CompositionRevisionRoute() {
     setUnsetInputs([]);
     setInputStates({});
     setBlockedQueryIds(new Set());
+    setAccessSnapshotBlocked(true);
     setTablePages({});
     parseEpoch++;
     parseGenerations.clear();
@@ -524,6 +915,13 @@ export default function CompositionRevisionRoute() {
   });
   onCleanup(() => {
     parseEpoch++;
+    accessCheckGeneration++;
+    accessLease = undefined;
+    accessCheckPending = undefined;
+    accessCheckAbort?.abort();
+    accessCheckAbort = undefined;
+    accessCheckPendingResumeEpoch = undefined;
+    clearAccessTimer();
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
   });
@@ -673,7 +1071,25 @@ export default function CompositionRevisionRoute() {
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
       <Show when={evaluation().error}>
-        <p class="ui-text-danger" role="alert">{evaluation().error}</p>
+        <section role="alert" class="section">
+          <p class="ui-text-danger">{evaluation().error}</p>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            disabled={accessIsSuspended()}
+            onClick={() => void evaluate()}
+          >
+            {t("composition.retry")}
+          </button>
+        </section>
+      </Show>
+      <Show when={accessSnapshotBlocked()}>
+        <For each={evaluation().response?.diagnostics ?? []}>
+          {(diagnostic) =>
+            diagnostic.message
+              ? <p class="ui-text-danger" role="status">{diagnostic.message}</p>
+              : null}
+        </For>
       </Show>
       <Show when={currentRevision()}>
         {(document) => (
@@ -682,7 +1098,13 @@ export default function CompositionRevisionRoute() {
             evaluation={evaluation().response}
             rawInputs={rawInputs()}
             inputStates={inputStates()}
-            blockedQueryIds={blockedQueryIds()}
+            blockedQueryIds={accessSnapshotBlocked()
+              ? new Set(
+                document().draft.variables.filter((node) =>
+                  node.kind === "query"
+                ).map((node) => node.id),
+              )
+              : blockedQueryIds()}
             previousPageQueryIds={new Set(
               Object.entries(tablePages()).flatMap(([id, state]) =>
                 state.index > 0 ? [id] : []
