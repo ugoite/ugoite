@@ -16429,9 +16429,8 @@ spec:
         );
         assert_eq!(snapshot_body["valid_for_ms"], 30_000);
         assert!(snapshot_body.get("query_results").is_none());
-        let snapshot_path = format!(
-            "/spaces/{{space_id}}/compositions/{{entry_id}}/history/{{revision_id}}/snapshot"
-        );
+        let snapshot_path =
+            "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}/snapshot";
         let snapshot_operation = openapi_snapshot()["paths"][&snapshot_path]["post"].clone();
         assert!(!snapshot_operation.is_null());
         assert_eq!(
