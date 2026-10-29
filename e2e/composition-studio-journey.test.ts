@@ -1632,7 +1632,8 @@ test.describe("Composition Studio Journey", () => {
       fields?: Record<string, { sql_column?: string }>;
     }>;
     const form = forms.find((candidate) => candidate.name === formName);
-    expect(form?.sql_relation).toBeTruthy();
+    const sqlRelation = form?.sql_relation;
+    expect(sqlRelation).toBeTruthy();
     const nameColumn = form?.fields?.Merchant?.sql_column;
     const amountColumn = form?.fields?.Amount?.sql_column;
     expect(nameColumn).toBeTruthy();
@@ -1661,7 +1662,7 @@ test.describe("Composition Studio Journey", () => {
           name: dependentSqlName,
           kind: "user-query",
           sql: `SELECT COUNT(*) AS matching_count, MAX(${sqlIdentifier(amountColumn!)}) AS maximum_amount FROM ${
-            sqlIdentifier(form.sql_relation!)
+            sqlIdentifier(sqlRelation!)
           } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`,
           variables: [{
             type: "integer",
@@ -1679,7 +1680,7 @@ test.describe("Composition Studio Journey", () => {
           name: independentSqlName,
           kind: "user-query",
           sql: `SELECT ${sqlIdentifier(nameColumn!)} AS merchant FROM ${
-            sqlIdentifier(form.sql_relation!)
+            sqlIdentifier(sqlRelation!)
           } ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
           variables: [],
         },
