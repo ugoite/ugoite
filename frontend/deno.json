@@ -26,7 +26,7 @@
     "@tanstack/server-functions-plugin": "npm:@tanstack/server-functions-plugin@1.121.21",
     "@tailwindcss/node": "npm:@tailwindcss/node@4.3.0",
     "@tailwindcss/oxide": "npm:@tailwindcss/oxide@4.3.0",
-    "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.0",
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.3",
     "@testing-library/dom": "npm:@testing-library/dom@^10.4.0",
     "@testing-library/jest-dom": "npm:@testing-library/jest-dom@^6.6.3",
     "@testing-library/jest-dom/vitest": "npm:@testing-library/jest-dom@^6.6.3/vitest",
