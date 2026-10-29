@@ -2,7 +2,7 @@
 title: "Dependency Maintenance"
 description: Run the same read-only dependency checks locally that the monthly review runs in CI.
 sidebar:
-  order: 4
+  order: 6
 ---
 
 Dependabot is the only automated update-PR generator. The monthly
@@ -13,7 +13,7 @@ passes. The single record for held pins and accepted exceptions is the
 [dependency audit](../architecture/security/dependency-audit.md).
 
 ```bash
-mise outdated
+mise outdated --bump
 deno outdated --recursive
 cargo audit --locked --json
 deno audit

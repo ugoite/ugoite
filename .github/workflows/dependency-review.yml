@@ -1,8 +1,9 @@
 # Monthly read-only dependency review.
 #
 # This workflow only REPORTS. It never creates branches, PRs, or issues,
-# never pushes, and never edits dependency files. `mise outdated` runs
-# without `--bump` for exactly this reason: `--bump` would rewrite pins.
+# never pushes, and never edits dependency files. `mise outdated --bump`
+# is read-only: it only widens the comparison to the newest release
+# overall (only `mise upgrade` writes pins).
 # Keep every scan step non-blocking so the mere existence of update
 # candidates never fails this job or any other CI lane.
 name: Dependency Review
@@ -31,12 +32,12 @@ jobs:
           install: true
           cache: true
 
-      - name: mise outdated (read-only, no --bump)
+      - name: mise outdated --bump (read-only, confirmation only)
         id: mise-outdated
         continue-on-error: true
         run: |
           set -o pipefail
-          mise outdated 2>&1 | tee mise-outdated.txt
+          mise outdated --bump 2>&1 | tee mise-outdated.txt
 
       - name: deno outdated --recursive (read-only)
         id: deno-outdated
@@ -45,13 +46,13 @@ jobs:
           set -o pipefail
           deno outdated --recursive 2>&1 | tee deno-outdated.txt
 
-      - name: cargo audit --locked (if available, read-only)
+      - name: cargo audit --locked --json (if available, read-only)
         id: cargo-audit
         continue-on-error: true
         run: |
           set -o pipefail
           if command -v cargo-audit >/dev/null 2>&1; then
-            cargo audit --locked 2>&1 | tee cargo-audit.txt
+            cargo audit --locked --json 2>&1 | tee cargo-audit.txt
           else
             echo "cargo-audit is not installed; skipping (no install attempted)." | tee cargo-audit.txt
           fi
@@ -77,7 +78,7 @@ jobs:
             echo "Promote candidates only through normal change PRs after their minimum gate passes."
             echo "Exceptions live in docs/architecture/security/dependency-audit.md."
             echo ""
-            echo "<details><summary><code>mise outdated</code> (${{ steps.mise-outdated.outcome }})</summary>"
+            echo "<details><summary><code>mise outdated --bump</code> (${{ steps.mise-outdated.outcome }})</summary>"
             echo ""
             echo '```'
             cat mise-outdated.txt 2>/dev/null || echo "(no output)"
@@ -91,7 +92,7 @@ jobs:
             echo '```'
             echo "</details>"
             echo ""
-            echo "<details><summary><code>cargo audit --locked</code> (${{ steps.cargo-audit.outcome }})</summary>"
+            echo "<details><summary><code>cargo audit --locked --json</code> (${{ steps.cargo-audit.outcome }})</summary>"
             echo ""
             echo '```'
             cat cargo-audit.txt 2>/dev/null || echo "(no output)"
