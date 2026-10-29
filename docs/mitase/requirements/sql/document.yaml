@@ -190,9 +190,11 @@ requirements:
           original comma and whitespace between them and every source byte
           outside that span, and returns a guarded undo. Boundary moves,
           comment-bearing projection items, unsupported source ranges, and
-          unrecognized separators fail closed. The WASM operation returns the
-          same native result, and the browser disables unavailable moves while
-          giving the reason in the control's accessible name and title. For
+          unrecognized separators fail closed; comment-bearing projection
+          items do not expose the move controls. The WASM operation returns
+          the same native result. For eligible rows that expose the controls,
+          boundary moves are disabled and the reason is given in the control's
+          accessible name and title. For
           executor-admitted SQL, reordering preserves the corresponding array
           value order; authorized planning and execution remain authoritative
           for admission and result types.
