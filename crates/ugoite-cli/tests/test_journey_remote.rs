@@ -2475,7 +2475,34 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     // A prereplacement source-shaped Composition is still a raw Entry. Keep
     // its exact carrier available through history and export while the typed
     // query path rejects it; this is deliberately not a legacy reader.
-    let legacy_yaml = "format: ugoite.composition\nformat_version: 1\nname: CLI legacy tool\nkind: dashboard\nspec:\n  sources: []\n  components: []\n";
+    let legacy_yaml = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: CLI legacy tool
+tags: []
+spec:
+  variables: []
+  sources:
+    - id: rows
+      kind: inline_sql
+      name: Rows
+      sql: SELECT 1 AS value
+      form_bindings: []
+      expected_result:
+        - name: value
+          type: integer
+  components:
+    - id: rows_table
+      kind: table
+      source: rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: rows_table
+"#;
     let legacy = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),
@@ -2571,13 +2598,18 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
         "--revision",
         legacy_revision.as_str(),
     ];
-    let rejected = stdout_json(
+    let core_rejected = stdout_json(
         &run_cli(&core_config_path, &legacy_query_args).await,
-        "typed query rejection of source-shaped Composition",
+        "Core typed query rejection of source-shaped Composition",
     );
-    assert_eq!(rejected["ok"], false);
+    let remote_rejected = stdout_json(
+        &run_cli(&fixture.config_path, &legacy_query_args).await,
+        "Remote typed query rejection of source-shaped Composition",
+    );
+    assert_composition_query_semantics_match(&core_rejected, &remote_rejected);
+    assert_eq!(core_rejected["ok"], false);
     assert_eq!(
-        rejected["diagnostics"],
+        core_rejected["diagnostics"],
         json!([{"code": "invalid_composition"}])
     );
     assert_eq!(
