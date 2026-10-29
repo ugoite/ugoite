@@ -308,6 +308,15 @@ features:
                 anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.transient-query-results
+          - id: focus-fences-pending-page
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: fences a pending page on focus without blur and leaves paging retryable }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.transient-query-results
           - id: expired-initial-evaluation-can-retry
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx

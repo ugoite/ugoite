@@ -1435,6 +1435,135 @@ describe("Composition saved revision graph evaluation", () => {
     expect(table).not.toHaveTextContent("alpha row");
   });
 
+  it("fences a pending page on focus without blur and leaves paging retryable", async () => {
+    lintMock.mockResolvedValue({
+      ok: true,
+      value: { document: tableGraphDocument },
+    });
+    const tableResponse = (
+      request: { evaluation_id: string; page?: { variable_id: string } },
+      label: string,
+    ) => ({
+      evaluation_id: request.evaluation_id,
+      ok: true,
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      computed_query_ids: ["rows"],
+      variable_values: {},
+      queries: [{
+        variable_id: "rows",
+        deferred_arguments: [],
+        returns: {
+          kind: "table" as const,
+          columns: [{
+            name: "label",
+            value_type: { scalar_type: "string" as const, nullable: true },
+          }],
+        },
+        result_columns: [{
+          name: "label",
+          value_type: { scalar_type: "string" as const, nullable: true },
+        }],
+        form_bindings: [{ relation: "G", form_id: "form-1" }],
+        schema_fingerprint: "schema-1",
+        query_semantic_fingerprint: "semantic-rows",
+      }],
+      component_bindings: [{
+        component_id: "rows-table",
+        kind: "table",
+        variable_id: "rows",
+      }],
+      dependencies: { variable_consumers: {} },
+      query_results: {
+        rows: {
+          value: {
+            kind: "table" as const,
+            columns: [{
+              name: "label",
+              value_type: { scalar_type: "string" as const, nullable: true },
+            }],
+            rows: [[{ kind: "string" as const, value: label }]],
+          },
+          has_more: !request.page,
+          ...(!request.page ? { next: "rows-cursor-1" } : {}),
+        },
+      },
+    });
+    let resolveOldPage!: (value: ReturnType<typeof tableResponse>) => void;
+    let resolveFreshCheck!: (value: {
+      composition_revision: { entry_id: string; revision_id: string };
+      publication_fingerprint: string;
+      authorization_fingerprint: string;
+      valid_for_ms: number;
+    }) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) => Promise.resolve(tableResponse(request, "alpha row")))
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string; page?: { variable_id: string } },
+      ) =>
+        new Promise((resolve) => {
+          resolveOldPage = (value) =>
+            resolve({
+              ...value,
+              evaluation_id: request.evaluation_id,
+            });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) => Promise.resolve(tableResponse(request, "next row")));
+    accessSnapshotMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFreshCheck = resolve;
+      }),
+    );
+
+    render(() => <CompositionRevisionRoute />);
+    const table = await screen.findByRole("table", { name: "rows results" });
+    expect(table).toHaveTextContent("alpha row");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+
+    // A focus event can arrive even when no blur was observed.
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText("alpha row")).not.toBeInTheDocument();
+    resolveOldPage(
+      tableResponse(
+        { evaluation_id: "old", page: { variable_id: "rows" } },
+        "late row",
+      ),
+    );
+    await Promise.resolve();
+    expect(screen.queryByText("late row")).not.toBeInTheDocument();
+
+    resolveFreshCheck({
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    });
+    await waitFor(() =>
+      expect(screen.getByText("alpha row")).toBeInTheDocument()
+    );
+    expect(screen.queryByText("late row")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    expect(evaluateMock.mock.calls[2][1].page).toEqual({
+      variable_id: "rows",
+      cursor: "rows-cursor-1",
+    });
+    await waitFor(() =>
+      expect(screen.getByText("next row")).toBeInTheDocument()
+    );
+  });
+
   it("keeps an unrelated table continuation after an input changes", async () => {
     lintMock.mockResolvedValue({
       ok: true,

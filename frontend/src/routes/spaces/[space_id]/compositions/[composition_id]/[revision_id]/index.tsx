@@ -380,9 +380,13 @@ export default function CompositionRevisionRoute() {
       if (lease.routeKey !== routeKey()) return;
       setAccessSnapshotBlocked(true);
       const current = evaluation();
-      if (current.evaluationId !== lease.evaluationId) {
-        // A focus event can arrive without a matching blur. Drop evaluation
-        // work newer than the visible lease before checking that lease again.
+      if (
+        current.status === "loading" ||
+        current.evaluationId !== lease.evaluationId
+      ) {
+        // A focus event can arrive without a matching blur. Drop any work
+        // newer than the visible lease (including paging with its same ID)
+        // before checking that lease again.
         evaluationGeneration++;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = undefined;
