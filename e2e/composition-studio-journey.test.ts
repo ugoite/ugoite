@@ -51,6 +51,20 @@ type StudioRawRevision = {
   fields: Record<string, unknown>;
 };
 
+type ListedStudioEntry = { id?: string; form?: string };
+
+async function snapshotStudioEntryIds(
+  request: APIRequestContext,
+  spaceId: string,
+): Promise<string[]> {
+  const response = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/entries?limit=1000&offset=0`),
+  );
+  expect(response.ok()).toBe(true);
+  const entries = await response.json() as ListedStudioEntry[];
+  return entries.map(({ id, form }) => `${form ?? ""}:${id ?? ""}`).sort();
+}
+
 function savedSqlVariablePrefix(name: string): string {
   const slug = name.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, "")
     .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -1517,12 +1531,45 @@ test.describe("Composition Studio Journey", () => {
       expect(exactResponse.ok()).toBe(true);
       const exactRevision = await exactResponse.json() as StudioRawRevision;
       expect(exactRevision.revision.revision_id).toBe(revisionId);
-      expect(String(exactRevision.fields["spec"])).toContain(
+      const savedYaml = String(exactRevision.fields["spec"]);
+      expect(savedYaml).toContain(
         `revision_id: ${seed.savedSqlRevisionId}`,
       );
-      expect(String(exactRevision.fields["spec"])).not.toMatch(
+      expect(savedYaml).not.toMatch(
         /\bsource_id\b|\bsource:/,
       );
+      const savedDocument = parseYaml(savedYaml) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            kind?: string;
+            default?: { kind?: string; value?: unknown };
+          }>;
+          components?: Array<Record<string, unknown> & {
+            id?: string;
+            kind?: string;
+            variable?: string;
+          }>;
+        };
+      };
+      const savedVariables = savedDocument.spec?.variables ?? [];
+      const savedComponents = savedDocument.spec?.components ?? [];
+      const variableIds = new Set(savedVariables.map(({ id }) => id));
+      expect(savedVariables.find(({ id }) => id === "minimum")).toMatchObject({
+        kind: "input",
+        default: { kind: "integer", value: 0 },
+      });
+      expect(savedComponents).toHaveLength(3);
+      for (const component of savedComponents) {
+        expect(Object.keys(component).sort()).toEqual(
+          ["id", "kind", "variable"],
+        );
+        expect(component.variable).toBeTruthy();
+        expect(variableIds.has(component.variable)).toBe(true);
+      }
+      expect(savedDocument.spec).not.toHaveProperty("input_values");
+      expect(savedDocument.spec).not.toHaveProperty("results");
+      expect(savedDocument.spec).not.toHaveProperty("preview");
     } finally {
       await buildContext.close();
     }
@@ -1530,6 +1577,10 @@ test.describe("Composition Studio Journey", () => {
     const journeyContext = await openOwnerContext(browser, storageState);
     try {
       const page = await journeyContext.newPage();
+      const entryIdsBeforeEvaluation = await snapshotStudioEntryIds(
+        request,
+        seed.spaceId,
+      );
       const evaluatePayloads: Array<Record<string, unknown>> = [];
       page.on("request", (request) => {
         if (
@@ -1593,6 +1644,9 @@ test.describe("Composition Studio Journey", () => {
         "60",
       ]);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
+      expect(await snapshotStudioEntryIds(request, seed.spaceId)).toEqual(
+        entryIdsBeforeEvaluation,
+      );
     } finally {
       await journeyContext.close();
     }

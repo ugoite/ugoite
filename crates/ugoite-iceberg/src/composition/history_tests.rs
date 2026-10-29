@@ -76,6 +76,36 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
         );
         assert_eq!(service.list_changes(&space_id).await?, changes_before);
     }
+
+    // A rejected first save leaves the author able to correct the document
+    // and publish one ordinary revision afterward.
+    let repaired = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: parse_composition_yaml(SQL_FIRST_COMPOSITION)
+                    .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &repaired.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 1);
+    assert_eq!(
+        history.revisions[0].revision.revision_id,
+        repaired.revision_id
+    );
     Ok(())
 }
 
