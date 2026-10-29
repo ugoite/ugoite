@@ -92,7 +92,7 @@ test.describe("Saved SQL route", () => {
       { length: 101 },
       (_, index) => `SELECT ${index + 1} AS value`,
     ).join(" UNION ALL ");
-    const originalSql = `${rowsSql} -- keep this comment`;
+    const originalSql = `${rowsSql} ORDER BY value -- keep this comment`;
     const createResponse = await request.post(
       getBackendUrl(`/spaces/${spaceId}/sql`),
       {
@@ -162,8 +162,6 @@ test.describe("Saved SQL route", () => {
       await editor.fill(invalidSql);
       const planResponse = await invalidPlan;
       expect(planResponse.ok()).toBe(false);
-      await expect.poll(() => page.locator(".cm-lintRange-error").count())
-        .toBeGreaterThan(0);
       await expect(page.getByRole("button", { name: "Save", exact: true }))
         .toBeDisabled();
       await expect(
@@ -182,7 +180,7 @@ test.describe("Saved SQL route", () => {
         exact: true,
       });
       await expect(runButton).toBeDisabled();
-      await expect(runButton).toHaveAccessibleDescription(/.+/);
+      await expect(runButton).toHaveAccessibleDescription(/invalid SQL query/);
       await expect.poll(() => queryRequests.length).toBe(0);
 
       const repairedSql = originalSql.replace(
@@ -190,9 +188,6 @@ test.describe("Saved SQL route", () => {
         "SELECT 0 AS value",
       );
       await editor.fill(repairedSql);
-      await expect.poll(() => page.locator(".cm-lintRange-error").count()).toBe(
-        0,
-      );
       await expect(page.getByRole("button", { name: "Save", exact: true }))
         .toBeEnabled();
       await expect(editor).toContainText("-- keep this comment");

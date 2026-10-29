@@ -70,6 +70,7 @@ describe("Composition shared SQL argument editing", () => {
       },
     ];
     const [draft, setDraft] = createSignal(initial);
+    const run = vi.fn();
     const validity = vi.fn();
     render(() => (
       <CompositionGraphStudio
@@ -263,6 +264,7 @@ describe("Composition shared SQL argument editing", () => {
       exact: true,
     });
     expect(runButton).toBeEnabled();
+    expect(runButton).not.toHaveAttribute("aria-describedby");
     fireEvent.click(runButton);
     expect(run).toHaveBeenCalledWith("rows");
     fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
