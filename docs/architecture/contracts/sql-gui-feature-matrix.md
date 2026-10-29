@@ -35,11 +35,13 @@ Projection aliases have a bounded typed authoring operation. Unquoted
 identifiers use ASCII lowercase folding, while quoted identifiers preserve
 case. Renaming updates same-scope `ORDER BY` alias references atomically,
 including unqualified identifier leaves inside `ORDER BY` expressions when no
-other same-scope reference makes the binding ambiguous. Qualified source
-references remain unchanged. References in other clauses, comment-bearing
-`ORDER BY` clauses, and ambiguous same-scope references fail closed. Full alias
-resolution coverage and complete constructibility of the admitted SQL grammar
-remain unverified.
+other same-scope reference makes the binding ambiguous. The evidenced supported
+shape is an explicit operator expression: function expressions and their
+internal scopes, including window clauses and aggregate `FILTER`, are
+unresolved and fail closed. Qualified source references remain unchanged.
+References in other clauses, comment-bearing `ORDER BY` clauses, and ambiguous
+same-scope references fail closed. Full alias resolution coverage and complete
+constructibility of the admitted SQL grammar remain unverified.
 
 ## Admission stages
 
