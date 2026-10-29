@@ -88,7 +88,7 @@ type OrderByExpressionAction = "add" | "";
 type OrderDirection = "asc" | "desc";
 type NullsOrder = "first" | "last" | "";
 type ExpressionLeafAction = "identifier" | "literal" | "array" | "";
-type ArrayElementAction = "remove" | "";
+type ArrayElementAction = "remove" | "move_up" | "move_down" | "";
 type RelationEditAction =
   | "replace"
   | "add_join"
@@ -1685,6 +1685,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         projectionRange.start < token.range.end
       );
   };
+  const arrayElementCanMove = (node: SqlDocumentNode, moveUp: boolean) => {
+    if (!isArrayLiteralElement(node) || node.range === null) return false;
+    const siblings = (childrenByParent().get(node.parent ?? -1) ?? [])
+      .filter((child) => child.range !== null);
+    const index = siblings.findIndex((child) => child.id === node.id);
+    return moveUp ? index > 0 : index >= 0 && index < siblings.length - 1;
+  };
   const selectHasWhereClause = (node: SqlDocumentNode) =>
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.kind === "where_clause"
@@ -1795,6 +1802,11 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (arrayElementAction() === "remove") {
       return node.range !== null && isArrayLiteralElement(node);
     }
+    if (
+      arrayElementAction() === "move_up" || arrayElementAction() === "move_down"
+    ) {
+      return arrayElementCanMove(node, arrayElementAction() === "move_up");
+    }
     if (valueAccessKind()) {
       if (!isValueAccessTarget(node) || node.range === null) return false;
       if (valueAccessKind() === "array_index") {
@@ -1804,8 +1816,10 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       if (valueAccessKind() === "array_slice") {
         const start = decimalI64Input(valueAccessValue());
         const end = decimalI64Input(valueAccessEnd());
-        if (start === undefined || end === undefined || start <= 0n ||
-          start > end || end <= 0n) return false;
+        if (
+          start === undefined || end === undefined || start <= 0n ||
+          start > end || end <= 0n
+        ) return false;
         if (node.semantic?.kind === "array_slice") {
           const currentStart = decimalI64Input(node.semantic.one_based_start);
           const currentEnd = decimalI64Input(node.semantic.one_based_end);
@@ -2159,6 +2173,16 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const currentSemanticEdit = (): SqlDocumentSemanticEdit | undefined => {
     const node = selectedNode();
     if (!node) return undefined;
+    if (
+      arrayElementAction() === "move_up" || arrayElementAction() === "move_down"
+    ) {
+      return {
+        kind: "move_array_literal_element",
+        node_id: node.id,
+        expected_kind: node.kind,
+        move_up: arrayElementAction() === "move_up",
+      };
+    }
     if (arrayElementAction() === "remove" && isArrayLiteralElement(node)) {
       return {
         kind: "remove_array_literal_element",
@@ -4176,6 +4200,52 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     </Show>
                     <Show when={isExpressionKind(node().kind)}>
                       <Show when={isArrayLiteralElement(node())}>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={busy() || props.disabled?.() ||
+                            !arrayElementCanMove(node(), true)}
+                          aria-label={arrayElementCanMove(node(), true)
+                            ? t("sqlPage.structure.documentMoveArrayElementUp")
+                            : `${
+                              t("sqlPage.structure.documentMoveArrayElementUp")
+                            }: ${
+                              t("sqlPage.structure.documentMoveArrayElementAlreadyFirst")
+                            }`}
+                          title={arrayElementCanMove(node(), true)
+                            ? t("sqlPage.structure.documentMoveArrayElementUp")
+                            : t(
+                              "sqlPage.structure.documentMoveArrayElementAlreadyFirst",
+                            )}
+                          onClick={() => setArrayElementAction("move_up")}
+                        >
+                          {t("sqlPage.structure.documentMoveArrayElementUp")}
+                        </button>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={busy() || props.disabled?.() ||
+                            !arrayElementCanMove(node(), false)}
+                          aria-label={arrayElementCanMove(node(), false)
+                            ? t(
+                              "sqlPage.structure.documentMoveArrayElementDown",
+                            )
+                            : `${
+                              t("sqlPage.structure.documentMoveArrayElementDown")
+                            }: ${
+                              t("sqlPage.structure.documentMoveArrayElementAlreadyLast")
+                            }`}
+                          title={arrayElementCanMove(node(), false)
+                            ? t(
+                              "sqlPage.structure.documentMoveArrayElementDown",
+                            )
+                            : t(
+                              "sqlPage.structure.documentMoveArrayElementAlreadyLast",
+                            )}
+                          onClick={() => setArrayElementAction("move_down")}
+                        >
+                          {t("sqlPage.structure.documentMoveArrayElementDown")}
+                        </button>
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"

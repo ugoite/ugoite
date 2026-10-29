@@ -672,6 +672,7 @@
         "wrap_expression_in_array",
         "append_array_literal_element",
         "remove_array_literal_element",
+        "move_array_literal_element",
         "wrap_expression_in_value_access",
         "set_array_slice_bounds",
         "wrap_expression_in_aggregate",
@@ -787,16 +788,24 @@
               "fn semantic_array_element_removal_preserves_order_and_can_empty_array"
             ],
             [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_array_element_move_preserves_separator_and_undo"
+            ],
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_array_element_move_rejects_boundaries_and_comments"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
+            ],
+            [
               "crates/ugoite-wasm/src/lib.rs",
               "fn sql_document_common_toolbar_semantic_operations_have_wasm_parity"
             ],
             [
               "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
               "constructs and edits ARRAY elements through the expression inspector"
-            ],
-            [
-              "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
             ]
           ]
         },

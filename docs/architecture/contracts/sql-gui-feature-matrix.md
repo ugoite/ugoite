@@ -111,11 +111,14 @@ result shape. Directionless SEMI/ANTI spellings are not offered because
 DataFusion's SQL planner does not admit them.
 
 The expression inspector can wrap a typed expression in a one-element
-`ARRAY[...]` literal, append typed literal elements in order, and remove a
-selected direct element from an unaliased complete projection item. Removing the
+`ARRAY[...]` literal, append typed literal elements in order, move a selected
+direct element one position up or down, and remove a selected direct element
+from an unaliased complete projection item. Moving preserves the exact comma
+separator trivia between the two expressions; comment-bearing projections and
+unrecognized separators fail closed. Removing the
 sole element retains `ARRAY[]`, which the authorized executor returns as a
 zero-element list. Rust marks parsed ARRAY nodes with typed `array_literal`
-metadata, which the inspector uses to offer append and removal actions only for
+metadata, which the inspector uses to offer append, reorder, and removal actions only for
 the matching ARRAY projection or element. Array elements remain normal typed
 expressions and can be edited with the existing literal or expression
 operations. The same value-access inspector can add one-based indexes or a
@@ -128,7 +131,7 @@ and authorized-executor tests cover constructing and executing
 `ARRAY[4, 9]`, editing it to an empty ARRAY, and executing
 `(field_101)[1:2]` over a two-element authorized ObjectList. Editing aliased or
 comment-bearing array spans fails closed. Omitted-bound slices, dynamic slice
-bounds, Struct-field access, reordering elements, editing array literals whose
+bounds, Struct-field access, editing array literals whose
 parser range is incomplete, and other collection constructors remain gaps
 under #4565. Direct bound editing does not yet cover omitted or dynamic bounds,
 strides, or a slice followed by another access in the same expression chain.
