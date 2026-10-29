@@ -1,0 +1,108 @@
+# Monthly read-only dependency review.
+#
+# This workflow only REPORTS. It never creates branches, PRs, or issues,
+# never pushes, and never edits dependency files. `mise outdated --bump`
+# is read-only: it only widens the comparison to the newest release
+# overall (only `mise upgrade` writes pins).
+# Keep every scan step non-blocking so the mere existence of update
+# candidates never fails this job or any other CI lane.
+name: Dependency Review
+
+on:
+  schedule:
+    # 09:00 UTC on the first day of each month.
+    - cron: "0 9 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          persist_github_token: true
+          install: true
+          cache: true
+
+      - name: mise outdated --bump (read-only, confirmation only)
+        id: mise-outdated
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mise outdated --bump 2>&1 | tee mise-outdated.txt
+
+      - name: deno outdated --recursive (read-only)
+        id: deno-outdated
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          deno outdated --recursive 2>&1 | tee deno-outdated.txt
+
+      - name: cargo audit --locked --json (if available, read-only)
+        id: cargo-audit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          if command -v cargo-audit >/dev/null 2>&1; then
+            cargo audit --locked --json 2>&1 | tee cargo-audit.txt
+          else
+            echo "cargo-audit is not installed; skipping (no install attempted)." | tee cargo-audit.txt
+          fi
+
+      - name: deno audit (if supported, read-only)
+        id: deno-audit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          if deno audit --help >/dev/null 2>&1; then
+            deno audit 2>&1 | tee deno-audit.txt
+          else
+            echo "deno audit is not supported by this Deno release; skipping." | tee deno-audit.txt
+          fi
+
+      - name: Publish review summary
+        if: always()
+        run: |
+          {
+            echo "## Monthly dependency review (read-only)"
+            echo ""
+            echo "No branches, PRs, issues, pushes, or dependency-file edits were made."
+            echo "Promote candidates only through normal change PRs after their minimum gate passes."
+            echo "Exceptions live in docs/architecture/security/dependency-audit.md."
+            echo ""
+            echo "<details><summary><code>mise outdated --bump</code> (${{ steps.mise-outdated.outcome }})</summary>"
+            echo ""
+            echo '```'
+            cat mise-outdated.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary><code>deno outdated --recursive</code> (${{ steps.deno-outdated.outcome }})</summary>"
+            echo ""
+            echo '```'
+            cat deno-outdated.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary><code>cargo audit --locked --json</code> (${{ steps.cargo-audit.outcome }})</summary>"
+            echo ""
+            echo '```'
+            cat cargo-audit.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary><code>deno audit</code> (${{ steps.deno-audit.outcome }})</summary>"
+            echo ""
+            echo '```'
+            cat deno-audit.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+          } >>"${GITHUB_STEP_SUMMARY}"
