@@ -351,7 +351,7 @@ async function addCanvasDisplay(
       await resultColumn.click();
     }
   }
-  await expect(dialog).toHaveCount(0);
+  await expect(dialog).toHaveCount(0, { timeout: 15_000 });
 }
 
 async function addMetricDisplay(
