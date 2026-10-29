@@ -4433,6 +4433,126 @@ async fn predicate_and_typed_literal_constructors_execute_in_authorized_queries(
 }
 
 #[tokio::test]
+async fn typed_not_bitwise_and_shift_edits_execute_authorized_results() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document,
+        SqlDocumentBinaryOperator, SqlDocumentNodeData, SqlDocumentNodeKind,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentUnarySign,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(9_910)),
+        "memory://authorized-query-typed-operators",
+    )
+    .await?;
+    let tasks = aggregate_form(9_911);
+    create_form(&workspace, &tasks).await?;
+    append_aggregate(
+        &workspace,
+        aggregate_revision(&tasks, 9_912, 9_913, "alpha", 10, FieldValue::Null),
+    )
+    .await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[9_912]))
+        .await?;
+
+    let apply = |source: &str, edit: SqlDocumentSemanticEdit| {
+        let document = parse_sql_document(source);
+        apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![edit],
+            },
+        )
+    };
+
+    let source = "SELECT - TRUE FROM tasks";
+    let document = parse_sql_document(source);
+    let unary = document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::UnaryExpression
+                && matches!(
+                    node.semantic,
+                    Some(SqlDocumentNodeData::UnaryOperator { .. })
+                )
+        })
+        .expect("typed unary operation is present");
+    let edited = apply(
+        source,
+        SqlDocumentSemanticEdit::ReplaceUnarySign {
+            node_id: unary.id,
+            expected_kind: SqlDocumentNodeKind::UnaryExpression,
+            sign: SqlDocumentUnarySign::Not,
+        },
+    )?;
+    assert_eq!(edited.document.to_sql(), "SELECT NOT TRUE FROM tasks");
+    let result = context.execute(edited.document.to_sql()).await?;
+    assert!(!result[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("boolean NOT returns a Boolean")
+        .value(0));
+
+    for (operator, expected_sql, expected) in [
+        (
+            SqlDocumentBinaryOperator::BitwiseAnd,
+            "SELECT 5 & 1 FROM tasks",
+            1,
+        ),
+        (
+            SqlDocumentBinaryOperator::BitwiseOr,
+            "SELECT 5 | 1 FROM tasks",
+            5,
+        ),
+        (
+            SqlDocumentBinaryOperator::ShiftLeft,
+            "SELECT 5 << 1 FROM tasks",
+            10,
+        ),
+        (
+            SqlDocumentBinaryOperator::ShiftRight,
+            "SELECT 5 >> 1 FROM tasks",
+            2,
+        ),
+    ] {
+        let source = "SELECT 5 + 1 FROM tasks";
+        let document = parse_sql_document(source);
+        let binary = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("typed binary operation is present");
+        let edited = apply(
+            source,
+            SqlDocumentSemanticEdit::ReplaceBinaryOperator {
+                node_id: binary.id,
+                expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                operator,
+            },
+        )?;
+        assert_eq!(edited.document.to_sql(), expected_sql);
+        let result = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(
+            result[0]
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("bitwise and shift operators return Int64")
+                .value(0),
+            expected,
+            "{} has the authorized result",
+            expected_sql,
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn semi_and_anti_join_constructors_execute_in_authorized_queries() -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentIdentifier,
