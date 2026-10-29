@@ -76,7 +76,7 @@ type LiteralDraft = {
 
 type CaseBranchAction = "add" | "remove" | "wrap" | "";
 type InListAction = "append" | "remove_last" | "";
-type ValueAccessKind = "array_index" | "array_slice" | "";
+type ValueAccessKind = "struct_field" | "array_index" | "array_slice" | "";
 type CommonTableExpressionAction = "add" | "remove" | "replace" | "move" | "";
 type SetOperationAddAction = "add" | "";
 type SetOperationKeepAction = SqlDocumentSetOperand | "swap" | "";
@@ -1809,6 +1809,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     }
     if (valueAccessKind()) {
       if (!isValueAccessTarget(node) || node.range === null) return false;
+      if (valueAccessKind() === "struct_field") {
+        return valueAccessValue().length > 0;
+      }
       if (valueAccessKind() === "array_index") {
         const index = decimalI64Input(valueAccessValue());
         return index !== undefined && index > 0n;
@@ -2203,7 +2206,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           one_based_end: valueAccessEnd(),
         };
       }
-      const access = valueAccessKind() === "array_index"
+      const access = valueAccessKind() === "struct_field"
+        ? { kind: "struct_field" as const, name: valueAccessValue() }
+        : valueAccessKind() === "array_index"
         ? { kind: "array_index" as const, one_based_index: valueAccessValue() }
         : {
           kind: "array_slice" as const,
@@ -4034,6 +4039,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             }}
                           >
                             <option value=""></option>
+                            <option value="struct_field">
+                              {t("sqlPage.structure.documentStructField")}
+                            </option>
                             <option value="array_index">
                               {t("sqlPage.structure.documentArrayIndex")}
                             </option>
@@ -4042,6 +4050,20 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                             </option>
                           </select>
                         </label>
+                        <Show when={valueAccessKind() === "struct_field"}>
+                          <label class="ui-label">
+                            {t("sqlPage.structure.documentStructFieldName")}
+                            <input
+                              class="ui-input"
+                              type="text"
+                              value={valueAccessValue()}
+                              disabled={busy() || props.disabled?.() ||
+                                node().range === null}
+                              onInput={(event) =>
+                                setValueAccessValue(event.currentTarget.value)}
+                            />
+                          </label>
+                        </Show>
                         <Show when={valueAccessKind() === "array_index"}>
                           <label class="ui-label">
                             {t("sqlPage.structure.documentArrayIndexValue")}

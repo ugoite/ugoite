@@ -4485,6 +4485,48 @@ mod tests {
         assert_eq!(undone["ok"], true, "{undone}");
         assert_eq!(undone["value"]["document"]["source"], source);
 
+        let field_transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: array.id,
+                expected_kind: array.kind,
+                access: SqlDocumentValueAccess::StructField {
+                    name: "display'name".to_owned(),
+                },
+            }],
+        };
+        let native_field = apply_sql_document_semantic_edit_transaction(source, &field_transaction)
+            .expect("native named Struct-field edit succeeds");
+        let field_request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": &field_transaction },
+        });
+        let field_response: Value =
+            serde_json::from_str(&super::invoke_json(&field_request.to_string()))
+                .expect("WASM returns named Struct-field edit JSON");
+        assert_eq!(field_response["ok"], true, "{field_response}");
+        assert_eq!(
+            field_response["value"],
+            serde_json::to_value(&native_field).unwrap()
+        );
+        assert_eq!(
+            native_field.document.source,
+            "SELECT (ARRAY[4, 9])['display''name'] /* keep */"
+        );
+        let field_undo = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native_field.document.source,
+                "transaction": &native_field.undo,
+            },
+        });
+        let undone_field: Value =
+            serde_json::from_str(&super::invoke_json(&field_undo.to_string()))
+                .expect("WASM returns guarded Struct-field undo JSON");
+        assert_eq!(undone_field["ok"], true, "{undone_field}");
+        assert_eq!(undone_field["value"]["document"]["source"], source);
+
         let slice_transaction = SqlDocumentSemanticEditTransaction {
             contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
             expected_source: source.to_owned(),

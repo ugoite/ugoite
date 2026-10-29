@@ -335,7 +335,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(treeItem(amount!.id)).toBeDefined();
 
     fireEvent.click(treeItem(array!.id)!);
-    fireEvent.change(screen.getByLabelText("Array access"), {
+    fireEvent.change(screen.getByLabelText("Collection access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
@@ -356,14 +356,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(treeItem(amount!.id)!);
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Array access") as HTMLSelectElement)
+        (screen.getByLabelText("Collection access") as HTMLSelectElement)
           .value,
       ).toBe("");
       expect(screen.queryByLabelText("One-based index")).toBeNull();
     });
 
     fireEvent.click(treeItem(array!.id)!);
-    fireEvent.change(screen.getByLabelText("Array access"), {
+    fireEvent.change(screen.getByLabelText("Collection access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {
@@ -376,7 +376,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     const updated = await parseSqlDocument(sql());
     expect(updated.status).toBe("parsed");
     await waitFor(() => {
-      expect(screen.queryByLabelText("Array access")).toBeNull();
+      expect(screen.queryByLabelText("Collection access")).toBeNull();
       expect(screen.queryByLabelText("One-based index")).toBeNull();
     });
     const updatedAmount = updated.nodes.find((node) =>
@@ -391,7 +391,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(updatedTreeItem!);
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Array access") as HTMLSelectElement)
+        (screen.getByLabelText("Collection access") as HTMLSelectElement)
           .value,
       ).toBe("");
       expect(screen.queryByLabelText("One-based index")).toBeNull();
@@ -407,7 +407,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
     expect(updatedArrayTreeItem).toBeDefined();
     fireEvent.click(updatedArrayTreeItem!);
-    fireEvent.change(screen.getByLabelText("Array access"), {
+    fireEvent.change(screen.getByLabelText("Collection access"), {
       target: { value: "array_slice" },
     });
     fireEvent.input(screen.getByLabelText("One-based start"), {
@@ -427,13 +427,13 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(updatedTreeItem!);
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Array access") as HTMLSelectElement).value,
+        (screen.getByLabelText("Collection access") as HTMLSelectElement).value,
       ).toBe("");
       expect(screen.queryByLabelText("One-based start")).toBeNull();
       expect(screen.queryByLabelText("One-based end")).toBeNull();
     });
     fireEvent.click(updatedArrayTreeItem!);
-    fireEvent.change(screen.getByLabelText("Array access"), {
+    fireEvent.change(screen.getByLabelText("Collection access"), {
       target: { value: "array_slice" },
     });
     fireEvent.input(screen.getByLabelText("One-based start"), {
@@ -470,7 +470,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
     expect(sliceItem).toBeDefined();
     fireEvent.click(sliceItem!);
-    expect(screen.getByLabelText("Array access")).toHaveValue("array_slice");
+    expect(screen.getByLabelText("Collection access")).toHaveValue("array_slice");
     expect(screen.getByLabelText("One-based start")).toHaveValue("1");
     expect(screen.getByLabelText("One-based end")).toHaveValue("2");
     fireEvent.input(screen.getByLabelText("One-based start"), {
@@ -484,6 +484,34 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       expect(sql()).toBe(
         "SELECT values[ /* lower */ 3 /* after lower */ : /* upper */ 4 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount",
       )
+    );
+  });
+
+  it("adds a named Struct field through the actual WASM tree editor", async () => {
+    const initial = "SELECT field_101[1] FROM tasks";
+    const document = await parseSqlDocument(initial);
+    const target = document.nodes.find((node) =>
+      node.range !== null &&
+      initial.slice(node.range.start, node.range.end) === "field_101[1]"
+    );
+    expect(target).toBeDefined();
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const item = (await screen.findAllByRole("treeitem")).find(
+      (candidate) => candidate.dataset.sqlDocumentNode === String(target!.id),
+    );
+    expect(item).toBeDefined();
+    fireEvent.click(item!);
+    fireEvent.change(screen.getByLabelText("Collection access"), {
+      target: { value: "struct_field" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.input(screen.getByLabelText("Field name"), {
+      target: { value: "display'name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT (field_101[1])['display''name'] FROM tasks")
     );
   });
 
@@ -746,10 +774,10 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(itemControl).toBeDefined();
     expect(expressionControl).toBeDefined();
     fireEvent.click(itemControl!);
-    expect(screen.queryByLabelText("Array access")).toBeNull();
+    expect(screen.queryByLabelText("Collection access")).toBeNull();
 
     fireEvent.click(expressionControl!);
-    fireEvent.change(screen.getByLabelText("Array access"), {
+    fireEvent.change(screen.getByLabelText("Collection access"), {
       target: { value: "array_index" },
     });
     fireEvent.input(screen.getByLabelText("One-based index"), {

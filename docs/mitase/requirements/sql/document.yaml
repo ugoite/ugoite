@@ -179,6 +179,24 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: struct-field-access-construction
+        kind: behavior
+        statement: >-
+          The SQL Document tree can add one named Struct field access to a
+          selected source-backed expression by emitting the field name as a
+          SQL string-literal subscript. Rust rejects an empty field name,
+          escapes embedded single quotes, changes only the selected expression
+          range, and returns a guarded undo through the WASM and browser
+          inspector. The inspector offers only one field-access suffix and
+          clears a pending name when the SQL source or selected node changes.
+          The operation does not infer or certify the selected value's Struct
+          type or field existence; authorized SQL planning and execution
+          remain authoritative. It does not claim complete collection access
+          chains or support for other Struct construction forms.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: array-literal-element-reordering
         kind: behavior
         statement: >-
@@ -252,12 +270,12 @@ requirements:
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: test, name: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.struct-field-access-construction, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo } } }]
           - id: authorized-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
             selector: { kind: test, name: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.struct-field-access-construction, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }]
           - id: browser-selection-source-resets
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx

@@ -270,12 +270,14 @@ pub struct SqlDocumentColumnReference {
     pub column: SqlDocumentIdentifier,
 }
 
-/// One bounded array access suffix constructed by the SQL Document editor.
+/// One bounded collection access suffix constructed by the SQL Document editor.
 /// The index is one-based SQL syntax and is kept as decimal text so the
 /// browser never rounds it through JavaScript numbers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlDocumentValueAccess {
+    /// Select a named Struct field using a SQL string-literal subscript.
+    StructField { name: String },
     /// Select one array element using a positive integer literal.
     ArrayIndex { one_based_index: String },
     /// Select a fully bounded array slice using positive, inclusive SQL bounds.
@@ -6680,6 +6682,12 @@ fn wrap_expression_in_value_access(
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
     let suffix = match access {
+        SqlDocumentValueAccess::StructField { name } => {
+            if name.is_empty() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            format!("['{}']", name.replace('\'', "''"))
+        }
         SqlDocumentValueAccess::ArrayIndex { one_based_index } => {
             let index = one_based_index
                 .parse::<i64>()
@@ -19907,6 +19915,60 @@ mod tests {
                 matches!(node.semantic, Some(SqlDocumentNodeData::ArraySlice { .. }))
             }));
         }
+    }
+
+    #[test]
+    fn semantic_struct_field_access_escapes_literals_and_guards_undo() {
+        let source = "SELECT value /* keep outside */";
+        let document = parse_sql_document(source);
+        let value = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::IdentifierExpression)
+            .expect("the field access operand is source-backed");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                    node_id: value.id,
+                    expected_kind: value.kind,
+                    access: SqlDocumentValueAccess::StructField {
+                        name: "O'Brien".to_owned(),
+                    },
+                }],
+            ),
+        )
+        .expect("field access uses an escaped SQL string literal");
+        assert_eq!(
+            edited.document.source,
+            "SELECT (value)['O''Brien'] /* keep outside */"
+        );
+        assert_eq!(edited.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(
+            apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
+                .expect("the edit has guarded undo")
+                .document
+                .source,
+            source
+        );
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                        node_id: value.id,
+                        expected_kind: value.kind,
+                        access: SqlDocumentValueAccess::StructField {
+                            name: String::new(),
+                        },
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement),
+            "empty field names fail closed"
+        );
     }
 
     #[test]

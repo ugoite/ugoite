@@ -121,7 +121,8 @@ zero-element list. Rust marks parsed ARRAY nodes with typed `array_literal`
 metadata, which the inspector uses to offer append, reorder, and removal actions only for
 the matching ARRAY projection or element. Array elements remain normal typed
 expressions and can be edited with the existing literal or expression
-operations. The same value-access inspector can add one-based indexes or a
+operations. The collection-access inspector can add escaped named Struct-field
+subscripts, one-based indexes, or a
 fully bounded one-based slice with positive literal bounds; it also opens and
 updates both bounds on an existing terminal slice when both are simple decimal
 integer tokens. New slice construction rejects empty, reversed, overflowing,
@@ -129,9 +130,11 @@ injected, or comment-bearing operand spans. Existing-bound edits replace only
 the bound literals, retaining comments and surrounding SQL. Native, WASM, DOM,
 and authorized-executor tests cover constructing and executing
 `ARRAY[4, 9]`, editing it to an empty ARRAY, and executing
-`(field_101)[1:2]` over a two-element authorized ObjectList. Editing aliased or
-comment-bearing array spans fails closed. Omitted-bound slices, dynamic slice
-bounds, Struct-field access, editing array literals whose
+`(field_101)[1:2]` over a two-element authorized ObjectList. It also constructs
+`(field_101[1])['name']`, which returns the authorized Struct's `name` value;
+field names containing single quotes are escaped as SQL string literals.
+Editing aliased or comment-bearing array spans fails closed. Omitted-bound
+slices, dynamic slice bounds, dot-style Struct access, editing array literals whose
 parser range is incomplete, and other collection constructors remain gaps
 under #4565. Direct bound editing does not yet cover omitted or dynamic bounds,
 strides, or a slice followed by another access in the same expression chain.
