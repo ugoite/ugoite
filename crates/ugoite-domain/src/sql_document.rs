@@ -9021,7 +9021,9 @@ fn projection_alias_reference_edits(
             .range
             .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
         if document.tokens.iter().any(|token| {
-            token.kind == SqlDocumentTokenKind::Comment && token.range.start >= order_range.start
+            token.kind == SqlDocumentTokenKind::Comment
+                && order_range.start <= token.range.start
+                && token.range.end <= order_range.end
         }) {
             return Err(SqlDocumentEditError::NodeRangeUnavailable);
         }
@@ -20731,6 +20733,70 @@ mod tests {
         let restored = apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
             .expect("expression alias and reference edits undo atomically");
         assert_eq!(restored.document.source, expression_source);
+
+        for suffix in [" /* trailing */", " -- trailing\n"] {
+            let source = format!(
+                "WITH input AS (SELECT 'source' AS total) SELECT 1 AS total FROM input ORDER BY total DESC, 2 ASC{suffix}"
+            );
+            let document = parse_sql_document(&source);
+            let item = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::SelectItem
+                        && node.range.and_then(|range| document.source_slice(range))
+                            == Some("1 AS total")
+                })
+                .expect("the outer projection alias has a source range");
+            let edit = SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: item.kind,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "renamed".into(),
+                    quote_style: Some('"'),
+                }),
+            };
+            let renamed = apply_sql_document_semantic_edit_transaction(
+                &source,
+                &semantic_transaction(&source, vec![edit]),
+            )
+            .expect("trailing comments are outside the ORDER BY source range");
+            let expected = source
+                .replace("1 AS total", "1 AS \"renamed\"")
+                .replace("ORDER BY total", "ORDER BY \"renamed\"");
+            assert_eq!(renamed.document.source, expected);
+            assert_eq!(renamed.document.source.ends_with(suffix), true);
+            let restored =
+                apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
+                    .expect("alias and sort references undo atomically");
+            assert_eq!(restored.document.source, source);
+        }
+
+        let ambiguous_order = "SELECT 1 AS total ORDER BY total, total + 1 /* trailing */";
+        let document = parse_sql_document(ambiguous_order);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                ambiguous_order,
+                &semantic_transaction(
+                    ambiguous_order,
+                    vec![SqlDocumentSemanticEdit::SetProjectionAlias {
+                        node_id: item.id,
+                        expected_kind: item.kind,
+                        alias: Some(SqlDocumentIdentifier {
+                            value: "renamed".into(),
+                            quote_style: Some('"'),
+                        }),
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict),
+            "repeated references across sort keys remain conservatively rejected"
+        );
 
         for source in [
             "SELECT amount AS total FROM \"G\" ORDER BY ROW_NUMBER() OVER (ORDER BY total)",
