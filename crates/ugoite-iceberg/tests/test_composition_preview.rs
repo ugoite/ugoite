@@ -696,7 +696,22 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
     query.definition = VariableGraphQueryDefinition::InlineSql {
         sql: "SELECT * FROM \"Composition-Preview\"".to_owned(),
     };
-    let saved = save_local_composition(&service, &space_id, document).await?;
+    let original_schema_fingerprint = service
+        .preview_composition_local(
+            &space_id,
+            &canonicalize_composition(&document)
+                .map_err(|code| anyhow::anyhow!(code.as_str()))?
+                .yaml,
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?
+        .plan
+        .context("original schema preview")?
+        .queries[0]
+        .schema_fingerprint
+        .clone();
+    let saved = save_local_composition(&service, &space_id, document.clone()).await?;
 
     // Adding a field changes the stored SELECT * result descriptor. A saved
     // graph must not silently adopt that new schema during evaluation.
@@ -737,6 +752,110 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         diagnostic.variable_id.as_deref() == Some("source")
             && diagnostic.code == CompositionDiagnosticCode::QuerySchemaChanged
     }));
+
+    // Authoring preview resolves the current schema so the graph can be
+    // repaired. Saving that server-derived descriptor creates a new
+    // Composition revision that runtime can evaluate without exposing the old
+    // result under the changed schema.
+    let draft_preview = service
+        .preview_composition_local(
+            &space_id,
+            &canonicalize_composition(&document)
+                .map_err(|code| anyhow::anyhow!(code.as_str()))?
+                .yaml,
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    let current_schema_fingerprint = draft_preview
+        .plan
+        .as_ref()
+        .context("current schema preview")?
+        .queries[0]
+        .schema_fingerprint
+        .clone();
+    assert_ne!(current_schema_fingerprint, original_schema_fingerprint);
+    let repaired = apply_preview_query_descriptors(&service, &space_id, document).await?;
+    let repaired = service
+        .save_composition_local(
+            &space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: Some(saved.entry_id),
+                base_revision_id: Some(saved.revision_id),
+                document: repaired,
+            },
+            "preview-test",
+        )
+        .await?;
+    assert_eq!(repaired.entry_id, saved.entry_id);
+    assert_ne!(repaired.revision_id, saved.revision_id);
+
+    // The prior immutable revision remains stale after the repaired revision
+    // is appended.
+    let old_revision = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+    assert!(!old_revision.ok);
+    assert!(old_revision.query_results.is_empty());
+
+    let repaired_plan = service
+        .resolve_composition_local(
+            &space_id,
+            &repaired.entry_id.to_string(),
+            &repaired.revision_id.to_string(),
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    assert_eq!(
+        repaired_plan
+            .plan
+            .context("repaired revision plan")?
+            .queries[0]
+            .schema_fingerprint,
+        current_schema_fingerprint
+    );
+    let repaired_evaluation = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &[Uuid::from_u128(3_434_001)],
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: repaired.entry_id.to_string(),
+                revision_id: repaired.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+    assert!(
+        repaired_evaluation.ok,
+        "repaired schema should evaluate: {repaired_evaluation:?}"
+    );
+    assert!(matches!(
+        repaired_evaluation
+            .query_results
+            .get("source")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Table { columns, .. }) if columns.len() > 1
+    ));
     Ok(())
 }
 

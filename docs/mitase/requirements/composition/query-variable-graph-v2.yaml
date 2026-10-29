@@ -39,9 +39,12 @@ requirements:
           Saved SQL query node pins one exact Entry and revision. Resolution
           rechecks current ACL, Publication, schema, and query revision; an
           unavailable identity fails closed without creating a partial query
-          variable or display component. Authorized query metadata may expose
-          Saved SQL source text only from that exact pinned revision; it never
-          substitutes the latest revision.
+          variable or display component. When a Form schema changes, the old
+          Composition revision remains non-executable until an authoring
+          preview derives the current query descriptor and an explicit save
+          appends a repaired Composition revision. Authorized query metadata
+          may expose Saved SQL source text only from that exact pinned
+          revision; it never substitutes the latest revision.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
