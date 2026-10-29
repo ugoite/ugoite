@@ -11,13 +11,17 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(debug_assertions)]
+use std::sync::{Arc, LazyLock, Mutex};
+#[cfg(debug_assertions)]
+use tokio::sync::Notify;
 use ugoite_core::composition::{
     CompositionDependencyIndex, CompositionDiagnostic, CompositionRevisionRef,
     ResolvedComponentBinding, ResolvedQueryRequest,
 };
 use ugoite_core::composition_query::{
     VariableGraphQueryEvaluation, VariableGraphQueryEvaluationDiagnostic,
-    VariableGraphQueryEvaluationDiagnosticCode,
+    VariableGraphQueryEvaluationDiagnosticCode, VariableGraphQueryPreviewValue,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::sql_query::{SqlContinuation, SqlQueryPage, SqlQueryRequest};
@@ -37,6 +41,102 @@ use super::{
 };
 use crate::authorization::AuthorizationState;
 use crate::iceberg_store;
+
+/// Debug-only rendezvous after graph query execution and immediately before
+/// the final authorization reread. This lets service tests deterministically
+/// commit an ACL change in the exact interval being checked.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestCompositionFinalAuthorizationGate {
+    space_id: String,
+    variable_id: String,
+    staged_row_count: std::sync::atomic::AtomicUsize,
+    entered: Notify,
+    release: Notify,
+}
+
+#[cfg(debug_assertions)]
+impl TestCompositionFinalAuthorizationGate {
+    pub fn new(space_id: impl Into<String>, variable_id: impl Into<String>) -> Arc<Self> {
+        Arc::new(Self {
+            space_id: space_id.into(),
+            variable_id: variable_id.into(),
+            staged_row_count: std::sync::atomic::AtomicUsize::new(0),
+            entered: Notify::new(),
+            release: Notify::new(),
+        })
+    }
+
+    pub async fn wait_until_entered(&self) {
+        self.entered.notified().await;
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    pub fn staged_row_count(&self) -> usize {
+        self.staged_row_count
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    async fn pause_after_nonempty_table(
+        &self,
+        query_results: &BTreeMap<String, VariableGraphQueryPreviewValue>,
+    ) {
+        let Some(VariableGraphValidatedResult::Table { rows, .. }) = query_results
+            .get(&self.variable_id)
+            .map(|value| &value.result)
+        else {
+            return;
+        };
+        if rows.is_empty() {
+            return;
+        }
+        self.staged_row_count
+            .store(rows.len(), std::sync::atomic::Ordering::Release);
+        self.entered.notify_one();
+        self.release.notified().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_FINAL_AUTHORIZATION_GATE: LazyLock<
+    Mutex<Option<Arc<TestCompositionFinalAuthorizationGate>>>,
+> = LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_composition_final_authorization_gate(
+    gate: Arc<TestCompositionFinalAuthorizationGate>,
+) {
+    *TEST_FINAL_AUTHORIZATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_composition_final_authorization_gate() {
+    *TEST_FINAL_AUTHORIZATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+async fn wait_at_test_composition_final_authorization_gate(
+    space_id: &str,
+    query_results: &BTreeMap<String, VariableGraphQueryPreviewValue>,
+) {
+    let gate = TEST_FINAL_AUTHORIZATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(gate) = gate.filter(|gate| gate.space_id == space_id) {
+        gate.pause_after_nonempty_table(query_results).await;
+    }
+}
 
 /// Stored revision or unsaved draft evaluated by the graph executor.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1062,6 +1162,11 @@ impl UgoiteService {
         }
         query_diagnostics.sort();
         query_diagnostics.dedup();
+        #[cfg(debug_assertions)]
+        if let Some(preview) = &preview {
+            wait_at_test_composition_final_authorization_gate(space_id, &preview.query_results)
+                .await;
+        }
         let (current_authorization_fingerprint, _) = self
             .capture_graph_snapshot(
                 space_id,

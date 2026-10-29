@@ -168,6 +168,12 @@ mod composition_query_evaluation;
 mod composition_resolver;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use composition_query_evaluation::{
+    clear_test_composition_final_authorization_gate,
+    install_test_composition_final_authorization_gate, TestCompositionFinalAuthorizationGate,
+};
 pub use composition_query_evaluation::{
     CompositionAccessSnapshot, CompositionGraphEvaluationPlan, CompositionGraphQueryResult,
     CompositionQueryEvaluationPage, CompositionQueryEvaluationResponse,

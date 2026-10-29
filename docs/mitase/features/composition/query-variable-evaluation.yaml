@@ -151,8 +151,17 @@ features:
       - id: composition-access-snapshot-verification
         role: verification
         facet: verification
-        responsibility: Verify the implemented snapshot-check behavior as evidence for this criterion, including invalidating in-flight work after failures. These tests do not establish that result reuse is prohibited immediately after revocation.
+        responsibility: Verify snapshot-check behavior and that the final service authorization reread rejects an ACL revoked during evaluation. These tests do not establish that result reuse is prohibited immediately after revocation or before an HTTP response is received.
         targets:
+          - id: evaluation-revocation-fence
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check } }
           - id: service-access-snapshot
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
