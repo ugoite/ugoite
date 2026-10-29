@@ -28,6 +28,7 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
         .to_string();
     let changes_before = service.list_changes(&space_id).await?;
     for (invalid_sql, fingerprinted_descriptor) in [
+        ("SELECT FROM", false),
         ("SELECT 1 AS total WHERE false", false),
         ("SELECT 1 AS total UNION ALL SELECT 2 AS total", false),
         ("SELECT 'wrong-type' AS total", true),
@@ -105,6 +106,111 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
     assert_eq!(
         history.revisions[0].revision.revision_id,
         repaired.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-invalid-scalar-update-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-invalid-scalar-update", owner, "Owner")
+        .await?
+        .to_string();
+    let saved = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: parse_composition_yaml(SQL_FIRST_COMPOSITION)
+                    .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let mut invalid = saved.document.clone();
+    let VariableGraphNodeKind::Query { query, .. } = &mut invalid.spec.variables[0].kind else {
+        anyhow::bail!("expected scalar query variable")
+    };
+    let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+        &mut query.definition
+    else {
+        anyhow::bail!("expected inline SQL")
+    };
+    *sql = "SELECT 1 AS total UNION ALL SELECT 2 AS total".to_owned();
+
+    let rejected = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(saved.entry_id.clone()),
+                base_revision_id: Some(saved.revision_id.clone()),
+                document: invalid,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await;
+    assert!(rejected.is_err(), "multirow scalar update must be rejected");
+
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(
+        history.total, 1,
+        "a rejected update must append no revision"
+    );
+    assert_eq!(history.revisions[0].revision.revision_id, saved.revision_id);
+
+    let mut repaired = saved.document;
+    let VariableGraphNodeKind::Query { query, .. } = &mut repaired.spec.variables[0].kind else {
+        anyhow::bail!("expected scalar query variable")
+    };
+    let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+        &mut query.definition
+    else {
+        anyhow::bail!("expected inline SQL")
+    };
+    *sql = "SELECT 2 AS total".to_owned();
+    let repaired_save = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(saved.entry_id.clone()),
+                base_revision_id: Some(saved.revision_id),
+                document: repaired,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 2, "repair must append one revision");
+    assert_eq!(
+        history.revisions[1].revision.revision_id,
+        repaired_save.revision_id
     );
     Ok(())
 }
