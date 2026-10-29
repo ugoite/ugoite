@@ -689,7 +689,7 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
 
 #[tokio::test]
 async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
-    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
         anyhow::bail!("fixture should use an inline SQL query variable");
     };
@@ -715,7 +715,7 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
 
     // Adding a field changes the stored SELECT * result descriptor. A saved
     // graph must not silently adopt that new schema during evaluation.
-    service
+    let evolved_form = service
         .upsert_form_result(
             &space_id,
             &json!({
@@ -725,6 +725,21 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
                     "note": {"id": 101, "type": "string", "required": false}
                 }
             }),
+        )
+        .await?;
+    assert_eq!(evolved_form.form_id, form_id);
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "composition-preview-schema-repair",
+            "Composition-Preview".to_owned(),
+            Vec::new(),
+            BTreeMap::from([
+                ("title".to_owned(), Value::String("repair-row".to_owned())),
+                ("note".to_owned(), Value::String("repaired-note".to_owned())),
+            ]),
+            BTreeMap::new(),
+            "preview-test",
         )
         .await?;
 
@@ -774,6 +789,19 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         .queries[0]
         .schema_fingerprint
         .clone();
+    let note_descriptor = draft_preview
+        .plan
+        .as_ref()
+        .context("current schema preview")?
+        .queries[0]
+        .result_columns
+        .iter()
+        .find(|column| column.name == "field_101")
+        .context("added Form field must be present in the planner descriptor")?;
+    assert_eq!(
+        note_descriptor.value_type.scalar_type,
+        VariableGraphScalarType::String
+    );
     assert_ne!(current_schema_fingerprint, original_schema_fingerprint);
     let repaired = apply_preview_query_descriptors(&service, &space_id, document).await?;
     let repaired = service
@@ -820,14 +848,18 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             &[],
         )
         .await?;
+    let repaired_query = &repaired_plan
+        .plan
+        .context("repaired revision plan")?
+        .queries[0];
     assert_eq!(
-        repaired_plan
-            .plan
-            .context("repaired revision plan")?
-            .queries[0]
-            .schema_fingerprint,
+        repaired_query.schema_fingerprint,
         current_schema_fingerprint
     );
+    assert!(repaired_query
+        .result_columns
+        .iter()
+        .any(|column| column.name == "field_101"));
     let repaired_evaluation = service
         .evaluate_composition_graph_authorized_for_principals(
             &space_id,
@@ -849,13 +881,25 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         repaired_evaluation.ok,
         "repaired schema should evaluate: {repaired_evaluation:?}"
     );
-    assert!(matches!(
-        repaired_evaluation
-            .query_results
-            .get("source")
-            .map(|result| &result.result),
-        Some(VariableGraphValidatedResult::Table { columns, .. }) if columns.len() > 1
-    ));
+    let repaired_table = match repaired_evaluation
+        .query_results
+        .get("source")
+        .map(|result| &result.result)
+    {
+        Some(VariableGraphValidatedResult::Table { columns, rows }) => (columns, rows),
+        other => anyhow::bail!("expected repaired table result, got {other:?}"),
+    };
+    let note_index = repaired_table
+        .0
+        .iter()
+        .position(|column| column.name == "field_101")
+        .context("new Form field must be in the authorized runtime result")?;
+    assert!(repaired_table.1.iter().any(|row| {
+        row.get(note_index)
+            == Some(&ugoite_domain::composition::VariableGraphLiteral::String(
+                "repaired-note".to_owned(),
+            ))
+    }));
     Ok(())
 }
 
