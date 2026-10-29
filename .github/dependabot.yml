@@ -73,3 +73,20 @@ updates:
     multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
+
+  # Deno is monitored in an independent weekly frame so Deno PRs stay
+  # reviewable on their own. The five manifests share one deno.lock; keep
+  # updates in that single lockfile and do not introduce a custom updater.
+  # If multi-directory detection misbehaves for the shared lock, fall back
+  # to monitoring only "/" and rely on `deno outdated --recursive` for
+  # full-workspace coverage.
+  - package-ecosystem: "deno"
+    directories:
+      - "/"
+      - "/frontend"
+      - "/docsite"
+      - "/e2e"
+      - "/tools"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
