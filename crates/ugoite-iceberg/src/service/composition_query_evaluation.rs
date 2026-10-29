@@ -1137,7 +1137,9 @@ impl UgoiteService {
         query_diagnostics.sort();
         query_diagnostics.dedup();
         #[cfg(debug_assertions)]
-        wait_at_test_composition_final_authorization_gate(space_id).await;
+        if preview.is_some() {
+            wait_at_test_composition_final_authorization_gate(space_id).await;
+        }
         let (current_authorization_fingerprint, _) = self
             .capture_graph_snapshot(
                 space_id,

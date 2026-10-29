@@ -962,7 +962,7 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
 
     let evaluating_service = service.clone();
     let evaluating_space = space_id.clone();
-    let evaluation = tokio::spawn(async move {
+    let mut evaluation = tokio::spawn(async move {
         evaluating_service
             .evaluate_composition_graph_authorized_for_principals(
                 &evaluating_space,
@@ -979,7 +979,18 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
             .await
     });
 
-    gate.wait_until_entered().await;
+    if let Err(error) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered(),
+    )
+    .await
+    {
+        ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
+        gate.release();
+        evaluation.abort();
+        let _ = evaluation.await;
+        return Err(error.into());
+    }
     let authorizer = Authorizer::new(service.operator().clone());
     let resource = ResourceRef {
         kind: ResourceKind::Form,
@@ -1003,9 +1014,18 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
     ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
     revoke?;
 
-    let error = evaluation
-        .await?
-        .expect_err("revoked evaluation must not return query results");
+    let joined_evaluation =
+        match tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await {
+            Ok(result) => result?,
+            Err(error) => {
+                ugoite_iceberg::service::clear_test_composition_final_authorization_gate();
+                gate.release();
+                evaluation.abort();
+                let _ = evaluation.await;
+                return Err(error.into());
+            }
+        };
+    let error = joined_evaluation.expect_err("revoked evaluation must not return query results");
     assert_eq!(
         error
             .downcast_ref::<AppError>()
