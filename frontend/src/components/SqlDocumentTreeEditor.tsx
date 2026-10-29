@@ -107,6 +107,27 @@ type QueryClauseAction =
   | "";
 type JoinConstraintChoice = "none" | "on" | "using";
 
+/** Build the bounded typed edit requested by the tree's projection alias field. */
+export function projectionAliasEdit(
+  node: SqlDocumentNode,
+  rawValue: string,
+): SqlDocumentSemanticEdit | undefined {
+  if (node.kind !== "select_item" || node.semantic?.kind === "wildcard") {
+    return undefined;
+  }
+  const current = node.semantic?.kind === "projection_alias"
+    ? node.semantic.alias.value
+    : "";
+  const value = rawValue.trim();
+  if (current === value) return undefined;
+  return {
+    kind: "set_projection_alias",
+    node_id: node.id,
+    expected_kind: "select_item",
+    alias: value ? { value, quote_style: '"' } : null,
+  };
+}
+
 const joinOperators: { kind: SqlDocumentJoinOperator; label: string }[] = [
   { kind: "inner", label: "INNER JOIN" },
   { kind: "left", label: "LEFT JOIN" },
@@ -5327,18 +5348,11 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           disabled={busy() || props.disabled?.() ||
                             node().semantic?.kind === "wildcard"}
                           onBlur={(event) => {
-                            const current =
-                              node().semantic?.kind === "projection_alias"
-                                ? node().semantic.alias.value
-                                : "";
-                            const value = event.currentTarget.value.trim();
-                            if (current === value) return;
-                            void applyEdit({
-                              kind: "set_projection_alias",
-                              node_id: node().id,
-                              expected_kind: "select_item",
-                              alias: value ? { value, quote_style: '"' } : null,
-                            });
+                            const edit = projectionAliasEdit(
+                              node(),
+                              event.currentTarget.value,
+                            );
+                            if (edit) void applyEdit(edit);
                           }}
                         />
                       </label>

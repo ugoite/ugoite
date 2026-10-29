@@ -76,7 +76,12 @@ requirements:
           outside the alias, including comments. Renaming or removing an alias
           referenced by ORDER BY, GROUP BY, or HAVING in the same SELECT scope
           rejects the complete edit with a local diagnostic unless the edit
-          preserves that reference's meaning. Adding or renaming an alias also
+          preserves that reference's meaning. Same-scope ORDER BY alias
+          references include unqualified identifier leaves in expression-shaped
+          sort items when no other same-scope reference makes the binding
+          ambiguous; qualified source references remain unchanged. ORDER BY
+          clauses containing comments and ambiguous same-scope references fail
+          closed. Adding or renaming an alias also
           rejects a same-scope reference capture or duplicate output name when
           the sibling output name is an explicit alias or a simple unqualified
           or qualified column reference, using the final identifier part for

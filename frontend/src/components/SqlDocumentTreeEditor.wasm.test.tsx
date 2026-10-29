@@ -66,6 +66,28 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
   });
 
+  it("renames an output alias inside an ORDER BY expression through actual WASM", async () => {
+    const source = 'SELECT field_100 AS total FROM "G" ORDER BY total + 1';
+    const document = await parseSqlDocument(source);
+    const item = document.nodes.find((node) => node.kind === "select_item");
+    expect(item).toBeDefined();
+    const [sql, setSql] = createSignal(source);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const treeItem = (await screen.findAllByRole("treeitem")).find((node) =>
+      node.dataset.sqlDocumentNode === String(item!.id)
+    );
+    expect(treeItem).toBeDefined();
+    fireEvent.click(treeItem!);
+    const alias = screen.getByLabelText("Output name");
+    fireEvent.input(alias, { target: { value: "renamed" } });
+    fireEvent.blur(alias);
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT field_100 AS "renamed" FROM "G" ORDER BY "renamed" + 1',
+      )
+    );
+  });
+
   it("keeps composite ROLLUP and CUBE forms read-only without rewriting them", async () => {
     for (
       const [mode, initial] of [
@@ -470,7 +492,9 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
     expect(sliceItem).toBeDefined();
     fireEvent.click(sliceItem!);
-    expect(screen.getByLabelText("Collection access")).toHaveValue("array_slice");
+    expect(screen.getByLabelText("Collection access")).toHaveValue(
+      "array_slice",
+    );
     expect(screen.getByLabelText("One-based start")).toHaveValue("1");
     expect(screen.getByLabelText("One-based end")).toHaveValue("2");
     fireEvent.input(screen.getByLabelText("One-based start"), {

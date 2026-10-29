@@ -23,11 +23,18 @@ features:
       - id: alias-editor
         role: implementation
         facet: frontend
-        responsibility: Provide inline output-alias authoring in the shared projection fields editor through the typed operation.
+        responsibility: Provide inline output-alias authoring in the shared projection fields editor and SQL document tree through the typed operation.
         targets:
           - id: result-field-alias
             adapter: typescript
             path: frontend/src/components/SqlColumnsEditor.tsx
+            selector: { kind: symbol, name: projectionAliasEdit }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+          - id: tree-output-alias
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.tsx
             selector: { kind: symbol, name: projectionAliasEdit }
             claims:
               - kind: satisfies
@@ -55,6 +62,24 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
                 covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: projection_alias_semantic_edit_protocol_matches_native } }
+          - id: order-expression-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::projection_alias_order_expression_protocol_matches_native_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: projection_alias_order_expression_protocol_matches_native_and_undo } }
+          - id: order-expression-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: typed_sql_document_edits_execute_through_authorized_query_context }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_edits_execute_through_authorized_query_context } }
           - id: editor-interaction
             adapter: typescript
             path: frontend/src/components/SqlColumnsEditor.test.tsx
@@ -64,6 +89,15 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
                 covers: [FEAT-SQL-005#binding.alias-editor/target.result-field-alias]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: authors quoted output aliases and keeps SQL outside the alias intact } }
+          - id: tree-editor-order-expression
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: renames an output alias inside an ORDER BY expression through actual WASM }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-editor/target.tree-output-alias]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: renames an output alias inside an ORDER BY expression through actual WASM } }
     contracts:
       - id: projection-alias-portable-edit
         kind: custom
@@ -75,4 +109,6 @@ features:
             role: rust-wasm
           - target: FEAT-SQL-005#binding.alias-editor/target.result-field-alias
             role: frontend-client
+          - target: FEAT-SQL-005#binding.alias-editor/target.tree-output-alias
+            role: sql-document-tree-editor
         guarantees: [REQ-SQL-001#criterion.projection-alias-binding-safety]
