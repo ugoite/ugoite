@@ -66,6 +66,48 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
   });
 
+  it("keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo", async () => {
+    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source /* tail */";
+    const document = await parseSqlDocument(source);
+    expect(document.diagnostics).toEqual([]);
+    const item = document.nodes.find((node) =>
+      node.kind === "select_item" && node.range &&
+      source.slice(node.range.start, node.range.end) === 'gross AS "total"'
+    );
+    expect(item).toBeDefined();
+    const expected = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: document.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "set_projection_alias",
+        node_id: item!.id,
+        expected_kind: "select_item",
+        alias: { value: "net total", quote_style: '"' },
+      }],
+    });
+    expect(expected.document.diagnostics).toEqual(document.diagnostics);
+
+    const [sql, setSql] = createSignal(source);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const treeItem = (await screen.findAllByRole("treeitem")).find((node) =>
+      node.dataset.sqlDocumentNode === String(item!.id)
+    );
+    expect(treeItem).toBeDefined();
+    fireEvent.click(treeItem!);
+    const alias = screen.getByLabelText("Output name");
+    fireEvent.input(alias, { target: { value: "net total" } });
+    fireEvent.blur(alias);
+    await waitFor(() => expect(sql()).toBe(expected.document.source));
+    expect(sql()).toBe(
+      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source /* tail */",
+    );
+    const edited = await parseSqlDocument(sql());
+    expect(edited.diagnostics).toEqual(document.diagnostics);
+    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    expect(restored.document.source).toBe(source);
+    expect(restored.document.diagnostics).toEqual(document.diagnostics);
+  });
+
   it("renames an output alias inside an ORDER BY expression through actual WASM", async () => {
     const source = 'SELECT field_100 AS total FROM "G" ORDER BY total + 1';
     const document = await parseSqlDocument(source);

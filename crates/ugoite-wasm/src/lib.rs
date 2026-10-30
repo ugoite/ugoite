@@ -4484,6 +4484,84 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_nested_comment_alias_edit_matches_native_and_undoes_exactly() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source /* tail */";
+        let native_document = ugoite_domain::sql_document::parse_sql_document(source);
+        let parsed_request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": { "sql": source },
+        });
+        let parsed_response: Value =
+            serde_json::from_str(&super::invoke_json(&parsed_request.to_string())).unwrap();
+        assert_eq!(parsed_response["ok"], true, "{parsed_response}");
+        assert_eq!(
+            parsed_response["value"],
+            serde_json::to_value(&native_document).unwrap()
+        );
+        assert!(native_document.diagnostics.is_empty());
+
+        let item = native_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem
+                    && node
+                        .range
+                        .and_then(|range| native_document.source_slice(range))
+                        == Some("gross AS \"total\"")
+            })
+            .expect("the outer aliased projection has an exact source range");
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: item.kind,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "net total".to_owned(),
+                    quote_style: Some('"'),
+                }),
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .expect("the outer alias can be edited while CTE source remains untouched");
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": &transaction },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            native.document.source,
+            "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source /* tail */"
+        );
+        assert_eq!(native.document.diagnostics, native_document.diagnostics);
+
+        let undo_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": { "current_source": native.document.source, "transaction": &native.undo },
+        });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], source);
+        assert_eq!(
+            undo_response["value"]["document"]["diagnostics"],
+            parsed_response["value"]["diagnostics"]
+        );
+    }
+
+    #[test]
     fn sql_document_array_index_slice_construction_and_bound_edits_match_native_and_undo() {
         use ugoite_domain::sql_document::{
             apply_sql_document_semantic_edit_transaction, parse_sql_document,
