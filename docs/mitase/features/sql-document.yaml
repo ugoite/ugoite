@@ -744,6 +744,7 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_group_and_aggregate_edits_execute_authorized_queries } }
+          - { id: unary-bitwise-shift-authorized-execution, adapter: rust, path: crates/ugoite-iceberg/tests/authorized_query.rs, selector: { kind: test, name: typed_not_bitwise_and_shift_edits_execute_authorized_results }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_not_bitwise_and_shift_edits_execute_authorized_results } } }] }
           - id: group-by-mode-dom-wasm
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx

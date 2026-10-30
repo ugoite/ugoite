@@ -27,9 +27,9 @@ evidence gaps describe the current implementation; they must not be converted to
 a completion claim merely because an AST node exists. Parameterized CAST
 attributes and CASE operand switching are typed, lossless edits; a focused
 simple-CASE edit is exercised through authorized query execution. Boolean NOT
-and bitwise/shift operators have edit and WASM parity evidence, while their
-per-operator authorized runtime results remain unverified. Planner validity for
-type parameters remains authoritative. A source-backed `unmodeled_expression`
+and bitwise/shift operators have edit and WASM parity evidence, and each
+authorized result is exercised from its typed edit. Planner validity for type
+parameters remains authoritative. A source-backed `unmodeled_expression`
 proves source retention, not that the expression's semantic fields are editable.
 Projection aliases have a bounded typed authoring operation. Unquoted
 identifiers use ASCII lowercase folding, while quoted identifiers preserve
