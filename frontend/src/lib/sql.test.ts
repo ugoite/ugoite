@@ -11,6 +11,7 @@ import {
   sqlLintDiagnostics,
   sqlSchemaFormLabelsFor,
 } from "./sql";
+import { normalizeSqlTemplate } from "./ugoite-client";
 import type { Form } from "./types";
 
 describe("sql helpers", () => {
@@ -236,6 +237,9 @@ describe("sql helpers", () => {
     expect(result.variables.map(({ name }) => name)).toEqual(["label"]);
     expect(result.replacements).toHaveLength(2);
     expect(result.replacements[0].start).toBe(`SELECT 'café 🧪', `.length);
+    expect(result.replacements[1].start).toBe(
+      result.source.indexOf("{{label}}", result.replacements[0].end),
+    );
     expect(result.document.source).toBe(result.sql);
   });
 
@@ -245,10 +249,64 @@ describe("sql helpers", () => {
     expect(incomplete.variables.map(({ name }) => name)).toEqual(["minimum"]);
     expect(incomplete.document.status).toBe("invalid_sql");
 
-    const malformed = await normalizeSqlDocument("SELECT {{bad-name}}");
-    expect(malformed.sql).toBe("SELECT {{bad-name}}");
+    const malformed = await normalizeSqlDocument(
+      "SELECT $one, {{bad-name}}, {{two}}, {{also-bad}}, $tail",
+    );
+    expect(malformed.sql).toBe(
+      "SELECT $one, {{bad-name}}, $two, {{also-bad}}, $tail",
+    );
+    expect(malformed.variables.map(({ name }) => name)).toEqual([
+      "one",
+      "two",
+      "tail",
+    ]);
     expect(malformed.document.status).toBe("invalid_sql");
     expect(malformed.document.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the documented SQL Document size limit explicit in the browser protocol", async () => {
+    const sql = `SELECT {{name}}${" ".repeat(256 * 1024)}`;
+    const normalized = await normalizeSqlDocument(sql);
+    expect(normalized.sql).toBe(sql);
+    expect(normalized.variables).toEqual([]);
+    expect(normalized.document.status).toBe("too_large");
+  });
+
+  it("keeps dense template edit metadata below the actual WASM response limit", async () => {
+    const count = 10_000;
+    const normalized = await normalizeSqlTemplate("{{a}},".repeat(count));
+    expect(normalized.sql).toBe("$a,".repeat(count));
+    expect(normalized.parameters).toEqual(["a"]);
+    expect(normalized.replacements).toHaveLength(count);
+  });
+
+  it("keeps maximum-size dense template edits below the actual WASM response limit", async () => {
+    const count = Math.floor((256 * 1024) / "{{a}}".length);
+    const sql = "{{a}}".repeat(count);
+    const normalized = await normalizeSqlTemplate(sql);
+    expect(new TextEncoder().encode(sql).length).toBeLessThanOrEqual(256 * 1024);
+    expect(normalized.replacements).toHaveLength(count);
+    expect(normalized.sql).toBe("$a".repeat(count));
+  });
+
+  it("keeps maximum-size unique parameter metadata below the actual WASM response limit", async () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+    const count = Math.floor((256 * 1024) / 7);
+    const nameAt = (index: number): string => {
+      const name = ["a", "a", "a"];
+      for (let position = 2; position >= 0; position -= 1) {
+        name[position] = alphabet[index % alphabet.length];
+        index = Math.floor(index / alphabet.length);
+      }
+      return name.join("");
+    };
+    const names = Array.from({ length: count }, (_, index) => nameAt(index));
+    const sql = names.map((name) => `{{${name}}}`).join("");
+    const normalized = await normalizeSqlTemplate(sql);
+    expect(new TextEncoder().encode(sql).length).toBeLessThanOrEqual(256 * 1024);
+    expect(normalized.parameters).toEqual(names);
+    expect(normalized.replacements).toHaveLength(count);
+    expect(normalized.sql).toBe(names.map((name) => `$${name}`).join(""));
   });
 
   it("should expose no SQL schema without backend Form metadata", () => {

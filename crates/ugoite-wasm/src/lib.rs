@@ -649,20 +649,25 @@ fn invoke_sql_template_normalization(request: serde_json::Value) -> String {
             "error": {"kind": "domain_validation", "message": "sql must be a string"},
         })
         .to_string(),
-        Some(sql) => match ugoite_domain::sql_document::normalize_sql_template(sql) {
-            Ok(normalized) => serialize_sql_template_normalization_response(&normalized)
-                .unwrap_or_else(|()| sql_document_response_too_large()),
-            Err(error) => serde_json::json!({
+        Some(sql) if sql.len() > ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES => {
+            serde_json::json!({
                 "ok": false,
                 "error": {
                     "kind": "sql_template_normalization",
-                    "code": error.code(),
-                    "message": error.to_string(),
-                    "detail": {"range": error.range()},
+                    "code": "source_too_large",
+                    "message": format!(
+                        "SQL exceeds the {}-byte SQL Document limit",
+                        ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES
+                    ),
                 },
             })
-            .to_string(),
-        },
+            .to_string()
+        }
+        Some(sql) => {
+            let normalized = ugoite_domain::sql_document::normalize_sql_template(sql);
+            serialize_sql_template_normalization_response(&normalized)
+                .unwrap_or_else(|()| sql_document_response_too_large())
+        }
     }
 }
 
@@ -5082,7 +5087,7 @@ mod tests {
     #[test]
     fn sql_template_normalization_protocol_matches_native_and_reports_marker_errors() {
         let source = "SELECT café, {{name}}, $$ {{literal}} $$, $existing";
-        let native = ugoite_domain::sql_document::normalize_sql_template(source).unwrap();
+        let native = ugoite_domain::sql_document::normalize_sql_template(source);
         let request = serde_json::json!({
             "action": "domain.normalize_sql_template",
             "value": { "sql": source },
@@ -5098,13 +5103,91 @@ mod tests {
         });
         let response: Value =
             serde_json::from_str(&super::invoke_json(&malformed.to_string())).unwrap();
-        assert_eq!(response["ok"], false);
-        assert_eq!(response["error"]["kind"], "sql_template_normalization");
-        assert_eq!(response["error"]["code"], "invalid_parameter_name");
+        assert_eq!(response["ok"], true, "{response}");
         assert_eq!(
-            response["error"]["detail"]["range"],
+            response["value"],
+            serde_json::to_value(ugoite_domain::sql_document::normalize_sql_template(
+                "SELECT {{bad-name}}"
+            ))
+            .unwrap()
+        );
+        assert_eq!(response["value"]["error"]["code"], "invalid_parameter_name");
+        assert_eq!(
+            response["value"]["error"]["range"],
             serde_json::json!({"start": 7, "end": 19})
         );
+
+        let source = "{{a}},".repeat(10_000);
+        let request = serde_json::json!({
+            "action": "domain.normalize_sql_template",
+            "value": { "sql": source },
+        });
+        let response_text = super::invoke_json(&request.to_string());
+        assert!(response_text.len() < super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        let native = ugoite_domain::sql_document::normalize_sql_template(&source);
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+
+        let dense =
+            "{{a}}".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES / "{{a}}".len());
+        let request = serde_json::json!({
+            "action": "domain.normalize_sql_template",
+            "value": { "sql": dense },
+        });
+        let response_text = super::invoke_json(&request.to_string());
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["replacements"].as_array().unwrap().len(),
+            ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES / "{{a}}".len()
+        );
+
+        const NAME_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+        let unique_count = ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES / 7;
+        let mut dense = String::with_capacity(unique_count * 7);
+        for mut index in 0..unique_count {
+            let mut name = [b'a'; 3];
+            for position in (0..3).rev() {
+                name[position] = NAME_ALPHABET[index % NAME_ALPHABET.len()];
+                index /= NAME_ALPHABET.len();
+            }
+            dense.push_str("{{");
+            dense.push_str(std::str::from_utf8(&name).unwrap());
+            dense.push_str("}}");
+        }
+        assert_eq!(dense.len(), unique_count * 7);
+        let request = serde_json::json!({
+            "action": "domain.normalize_sql_template",
+            "value": { "sql": dense },
+        });
+        let response_text = super::invoke_json(&request.to_string());
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["parameters"].as_array().unwrap().len(),
+            unique_count
+        );
+        assert_eq!(
+            response["value"]["replacements"].as_array().unwrap().len(),
+            unique_count
+        );
+
+        let oversized = format!(
+            "{{{{name}}}}{}",
+            " ".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES)
+        );
+        let request = serde_json::json!({
+            "action": "domain.normalize_sql_template",
+            "value": { "sql": oversized },
+        });
+        let response: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
+            .expect("oversized source still gets a bounded protocol response");
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["kind"], "sql_template_normalization");
+        assert_eq!(response["error"]["code"], "source_too_large");
     }
 
     #[test]

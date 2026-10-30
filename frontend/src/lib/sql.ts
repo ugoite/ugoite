@@ -10,7 +10,6 @@ import type {
   SqlStructureContext,
   SqlStructureVariableType,
   SqlTemplateNormalization,
-  SqlTemplateReplacement,
 } from "./ugoite-client";
 
 type SqlStructureAggregateFunction =
@@ -431,34 +430,40 @@ export async function normalizeSqlDocument(
   try {
     normalized = await normalizeSqlTemplate(sql);
   } catch (error) {
-    // Keep malformed marker diagnostics on the existing SQL document path.
-    // Other protocol failures must still surface to the caller.
-    if (!(error instanceof UgoiteApiError) || error.kind !== "sql_template_normalization") {
+    // The browser SQL Document limit is explicit; preserve its existing
+    // TooLarge diagnostics and empty parameter discovery for oversized drafts.
+    if (!(error instanceof UgoiteApiError) || error.kind !== "sql_template_normalization" || error.code !== "source_too_large") {
       throw error;
     }
     const document = await parseSqlDocument(sql);
-    return { source: sql, sql, variables: existingVariables, document, replacements: [] };
+    return { source: sql, sql, variables: [], document, replacements: [] };
   }
   const normalizedSql = normalized.sql;
   const sourceByteToUtf16 = utf8ByteToUtf16Offsets(sql);
   const normalizedByteToUtf16 = utf8ByteToUtf16Offsets(normalizedSql);
-  const replacements: SqlParameterReplacement[] = normalized.replacements.flatMap(
-    (replacement: SqlTemplateReplacement) => {
-      const start = sourceByteToUtf16.get(replacement.source_range.start);
-      const end = sourceByteToUtf16.get(replacement.source_range.end);
-      const normalizedStart = normalizedByteToUtf16.get(replacement.normalized_range.start);
-      const normalizedEnd = normalizedByteToUtf16.get(replacement.normalized_range.end);
-      if (start === undefined || end === undefined || normalizedStart === undefined || normalizedEnd === undefined) return [];
-      return [{
-        name: replacement.replacement.slice(1),
+  const replacements: SqlParameterReplacement[] = [];
+  let byteShift = 0;
+  for (const replacement of normalized.replacements) {
+    const [sourceStartByte, sourceEndByte, normalizedLengthByte] = replacement;
+    const normalizedStartByte = sourceStartByte - byteShift;
+    const normalizedEndByte = normalizedStartByte + normalizedLengthByte;
+    const start = sourceByteToUtf16.get(sourceStartByte);
+    const end = sourceByteToUtf16.get(sourceEndByte);
+    const normalizedStart = normalizedByteToUtf16.get(normalizedStartByte);
+    const normalizedEnd = normalizedByteToUtf16.get(normalizedEndByte);
+    if (start !== undefined && end !== undefined && normalizedStart !== undefined && normalizedEnd !== undefined) {
+      const replacementText = normalizedSql.slice(normalizedStart, normalizedEnd);
+      replacements.push({
+        name: replacementText.slice(1),
         start,
         end,
         normalizedStart,
         normalizedEnd,
-        replacement: replacement.replacement,
-      }];
-    },
-  );
+        replacement: replacementText,
+      });
+    }
+    byteShift += sourceEndByte - sourceStartByte - normalizedLengthByte;
+  }
   const document = normalizedSql === sql
     ? await parseSqlDocument(sql)
     : await parseSqlDocument(normalizedSql);

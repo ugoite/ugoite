@@ -169,17 +169,8 @@ pub struct SqlDocumentToken {
     pub range: SqlSourceRange,
 }
 
-/// One replacement made while normalizing a user-facing SQL template marker.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SqlTemplateReplacement {
-    /// Exact marker range in the submitted UTF-8 SQL source.
-    pub source_range: SqlSourceRange,
-    /// Exact placeholder range in the normalized UTF-8 SQL source.
-    pub normalized_range: SqlSourceRange,
-    /// Native DataFusion spelling, such as `$minimum`.
-    pub replacement: String,
-}
+/// Compact `[source_start, source_end, normalized_length]` byte edit.
+pub type SqlTemplateReplacement = [usize; 3];
 
 /// SQL template text and the ordered parameter names derived from its tokens.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,12 +181,17 @@ pub struct SqlTemplateNormalization {
     pub sql: String,
     /// Unique parameter names in first-occurrence source order.
     pub parameters: Vec<String>,
-    /// Source and normalized byte ranges for each template-marker rewrite.
+    /// Compact source and replacement-length byte coordinates for each rewrite.
     pub replacements: Vec<SqlTemplateReplacement>,
+    /// First malformed marker, if present. Valid markers before and after it
+    /// remain normalized so draft editors can retain parameter discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<SqlTemplateNormalizationError>,
 }
 
 /// Failure to normalize a user-facing SQL parameter marker.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "code", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlTemplateNormalizationError {
     /// An opening `{{` marker has no matching `}}` in SQL code.
     MissingClosingBraces { range: SqlSourceRange },
@@ -11498,32 +11494,25 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
 /// identifiers, and comments remain opaque. SQL syntax errors remain drafts:
 /// if tokenization itself fails, the original source is returned unchanged
 /// and later parser/executor diagnostics remain authoritative.
-pub fn normalize_sql_template(
-    source: &str,
-) -> Result<SqlTemplateNormalization, SqlTemplateNormalizationError> {
-    if source.len() > MAX_SQL_DOCUMENT_BYTES {
-        return Ok(SqlTemplateNormalization {
-            sql: source.to_owned(),
-            parameters: Vec::new(),
-            replacements: Vec::new(),
-        });
-    }
+pub fn normalize_sql_template(source: &str) -> SqlTemplateNormalization {
     let dialect = GenericDialect {};
     let source_map = SqlSourceMap::new(source);
     let tokens = match tokenize_source(source, &dialect, &source_map) {
         Ok(tokens) => tokens,
         Err(_) => {
-            return Ok(SqlTemplateNormalization {
+            return SqlTemplateNormalization {
                 sql: source.to_owned(),
                 parameters: Vec::new(),
                 replacements: Vec::new(),
-            });
+                error: None,
+            };
         }
     };
 
     let mut parameters = Vec::new();
     let mut seen_parameters = HashSet::new();
     let mut edits = Vec::new();
+    let mut error = None;
     let mut index = 0;
 
     while index < tokens.len() {
@@ -11556,12 +11545,14 @@ pub fn normalize_sql_template(
 
         let marker_tail = &source[token.range.start + 2..];
         let Some(close_offset) = marker_tail.find("}}") else {
-            return Err(SqlTemplateNormalizationError::MissingClosingBraces {
+            error.get_or_insert(SqlTemplateNormalizationError::MissingClosingBraces {
                 range: SqlSourceRange {
                     start: token.range.start,
                     end: source.len(),
                 },
             });
+            index += 1;
+            continue;
         };
         let close_start = token.range.start + 2 + close_offset;
         let name = source[token.range.start + 2..close_start].trim();
@@ -11570,7 +11561,9 @@ pub fn normalize_sql_template(
             end: close_start + 2,
         };
         if !valid_sql_parameter_name(name) {
-            return Err(SqlTemplateNormalizationError::InvalidParameterName { range });
+            error.get_or_insert(SqlTemplateNormalizationError::InvalidParameterName { range });
+            index += 1;
+            continue;
         }
 
         let replacement = format!("${name}");
@@ -11588,26 +11581,18 @@ pub fn normalize_sql_template(
     let mut source_cursor = 0;
     for (source_range, replacement) in edits {
         normalized_sql.push_str(&source[source_cursor..source_range.start]);
-        let normalized_start = normalized_sql.len();
         normalized_sql.push_str(&replacement);
-        let normalized_end = normalized_sql.len();
-        replacements.push(SqlTemplateReplacement {
-            source_range,
-            normalized_range: SqlSourceRange {
-                start: normalized_start,
-                end: normalized_end,
-            },
-            replacement,
-        });
+        replacements.push([source_range.start, source_range.end, replacement.len()]);
         source_cursor = source_range.end;
     }
     normalized_sql.push_str(&source[source_cursor..]);
 
-    Ok(SqlTemplateNormalization {
+    SqlTemplateNormalization {
         sql: normalized_sql,
         parameters,
         replacements,
-    })
+        error,
+    }
 }
 
 fn derive_sql_document_conditions(document: &SqlDocument) -> Vec<SqlDocumentConditionScope> {
@@ -14656,7 +14641,7 @@ mod tests {
     #[test]
     fn sql_template_normalization_uses_tokens_and_preserves_source_ranges() {
         let source = "SELECT café, $first, {{ second }}, $first, {{second}}";
-        let normalized = normalize_sql_template(source).unwrap();
+        let normalized = normalize_sql_template(source);
 
         assert_eq!(
             normalized.sql,
@@ -14665,29 +14650,22 @@ mod tests {
         assert_eq!(normalized.parameters, ["first", "second"]);
         assert_eq!(normalized.replacements.len(), 2);
         let first = &normalized.replacements[0];
-        assert_eq!(
-            &source[first.source_range.start..first.source_range.end],
-            "{{ second }}"
-        );
-        assert_eq!(
-            &normalized.sql[first.normalized_range.start..first.normalized_range.end],
-            "$second"
-        );
+        assert_eq!(&source[first[0]..first[1]], "{{ second }}");
+        assert_eq!(&normalized.sql[first[0]..first[0] + first[2]], "$second");
         let second = &normalized.replacements[1];
+        let second_normalized_start = second[0] - (first[1] - first[0] - first[2]);
+        assert_eq!(&source[second[0]..second[1]], "{{second}}");
         assert_eq!(
-            &source[second.source_range.start..second.source_range.end],
-            "{{second}}"
-        );
-        assert_eq!(
-            &normalized.sql[second.normalized_range.start..second.normalized_range.end],
+            &normalized.sql[second_normalized_start..second_normalized_start + second[2]],
             "$second"
         );
+        assert_eq!(normalized.error, None);
     }
 
     #[test]
     fn sql_template_normalization_keeps_all_tokenized_literals_identifiers_and_comments_opaque() {
         let source = "SELECT '{{single}}', $$ {{dollar}} $$, '''{{triple_single}}''', \"{{identifier}}\", `{{backtick}}` -- {{line}}\n/* {{block}} */ FROM \"G\" WHERE id = {{actual}}";
-        let normalized = normalize_sql_template(source).unwrap();
+        let normalized = normalize_sql_template(source);
 
         assert_eq!(
             normalized.sql,
@@ -14699,7 +14677,7 @@ mod tests {
     #[test]
     fn sql_template_normalization_keeps_syntax_invalid_drafts_for_parser_diagnostics() {
         let source = "SELECT {{minimum}} +";
-        let normalized = normalize_sql_template(source).unwrap();
+        let normalized = normalize_sql_template(source);
         assert_eq!(normalized.sql, "SELECT $minimum +");
         assert_eq!(normalized.parameters, ["minimum"]);
         assert_eq!(
@@ -14708,28 +14686,48 @@ mod tests {
         );
 
         let unterminated_literal = "SELECT '{{minimum}}";
-        let normalized = normalize_sql_template(unterminated_literal).unwrap();
+        let normalized = normalize_sql_template(unterminated_literal);
         assert_eq!(normalized.sql, unterminated_literal);
         assert!(normalized.parameters.is_empty());
     }
 
     #[test]
-    fn sql_template_normalization_keeps_existing_marker_errors_and_ranges() {
-        let missing = normalize_sql_template("SELECT {{minimum").unwrap_err();
+    fn sql_template_normalization_keeps_partial_references_and_marker_errors() {
+        let partial =
+            normalize_sql_template("SELECT $one, {{bad-name}}, {{two}}, {{also-bad}}, $tail");
+        assert_eq!(
+            partial.sql,
+            "SELECT $one, {{bad-name}}, $two, {{also-bad}}, $tail"
+        );
+        assert_eq!(partial.parameters, ["one", "two", "tail"]);
+        let invalid = partial
+            .error
+            .expect("the first malformed marker is reported");
+        assert_eq!(invalid.code(), "invalid_parameter_name");
+        assert_eq!(invalid.range(), SqlSourceRange { start: 13, end: 25 });
+        assert_eq!(
+            invalid.to_string(),
+            "SQL template variable name must match [A-Za-z_][A-Za-z0-9_]*"
+        );
+
+        let missing = normalize_sql_template("SELECT {{minimum")
+            .error
+            .expect("an unclosed marker is reported");
         assert_eq!(missing.code(), "missing_closing_braces");
         assert_eq!(
             missing.to_string(),
             "SQL template variable is missing closing braces"
         );
         assert_eq!(missing.range(), SqlSourceRange { start: 7, end: 16 });
+    }
 
-        let invalid = normalize_sql_template("SELECT {{bad-name}}").unwrap_err();
-        assert_eq!(invalid.code(), "invalid_parameter_name");
-        assert_eq!(
-            invalid.to_string(),
-            "SQL template variable name must match [A-Za-z_][A-Za-z0-9_]*"
-        );
-        assert_eq!(invalid.range(), SqlSourceRange { start: 7, end: 19 });
+    #[test]
+    fn sql_template_normalization_preserves_native_behavior_above_document_limit() {
+        let source = format!("SELECT {{{{value}}}}{}", " ".repeat(MAX_SQL_DOCUMENT_BYTES));
+        let normalized = normalize_sql_template(&source);
+        assert!(source.len() > MAX_SQL_DOCUMENT_BYTES);
+        assert!(normalized.sql.starts_with("SELECT $value"));
+        assert_eq!(normalized.parameters, ["value"]);
     }
 
     #[test]

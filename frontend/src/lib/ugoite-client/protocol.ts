@@ -451,16 +451,17 @@ export type SqlDocumentSourceRange = {
   end: number;
 };
 
-export type SqlTemplateReplacement = {
-  source_range: SqlDocumentSourceRange;
-  normalized_range: SqlDocumentSourceRange;
-  replacement: string;
-};
+/** Compact tuple: original byte start/end and normalized replacement byte length. */
+export type SqlTemplateReplacement = [number, number, number];
 
 export type SqlTemplateNormalization = {
   sql: string;
   parameters: string[];
   replacements: SqlTemplateReplacement[];
+  error?: {
+    code: "missing_closing_braces" | "invalid_parameter_name";
+    range: SqlDocumentSourceRange;
+  };
 };
 
 export type SqlDocumentTokenKind =

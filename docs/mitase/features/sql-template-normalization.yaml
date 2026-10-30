@@ -37,7 +37,9 @@ features:
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: symbol, name: invoke_sql_template_normalization }
-            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+            claims:
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.bounded-template-protocol }
       - id: authorized-execution
         role: implementation
         facet: service
@@ -57,7 +59,9 @@ features:
             adapter: typescript
             path: frontend/src/lib/sql.ts
             selector: { kind: symbol, name: normalizeSqlDocument }
-            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+            claims:
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.bounded-template-protocol }
       - id: verification
         role: verification
         facet: verification
@@ -73,11 +77,23 @@ features:
             path: crates/ugoite-domain/src/sql_document.rs
             selector: { kind: test, name: tests::sql_template_normalization_keeps_syntax_invalid_drafts_for_parser_diagnostics }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_keeps_syntax_invalid_drafts_for_parser_diagnostics } } }]
+          - id: domain-partial-marker-references
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::sql_template_normalization_keeps_partial_references_and_marker_errors }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_keeps_partial_references_and_marker_errors } } }]
+          - id: domain-unbounded-native-input
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::sql_template_normalization_preserves_native_behavior_above_document_limit }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_preserves_native_behavior_above_document_limit } } }]
           - id: wasm-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: test, name: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.wasm/target.normalize-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors } } }]
+            claims:
+              - { kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.wasm/target.normalize-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors } } }
+              - { kind: verifies, criterion: REQ-SQL-001#criterion.bounded-template-protocol, covers: [FEAT-SQL-006#binding.wasm/target.normalize-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors } } }
           - id: actual-wasm-browser
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
@@ -88,6 +104,11 @@ features:
             path: frontend/src/lib/sql.test.ts
             selector: { kind: test, name: keeps incomplete drafts editable and preserves malformed-marker diagnostics }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.browser-adapter/target.editor-adapter], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps incomplete drafts editable and preserves malformed-marker diagnostics } } }]
+          - id: browser-source-limit
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: keeps the documented SQL Document size limit explicit in the browser protocol }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.bounded-template-protocol, covers: [FEAT-SQL-006#binding.browser-adapter/target.editor-adapter], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps the documented SQL Document size limit explicit in the browser protocol } } }]
           - id: authorized-literal
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
@@ -98,6 +119,11 @@ features:
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
             selector: { kind: test, name: template_parameter_still_binds_during_authorized_execution }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.authorized-execution/target.execution-adapter], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: template_parameter_still_binds_during_authorized_execution } } }]
+          - id: native-malformed-error-compatibility
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_index.rs
+            selector: { kind: test, name: sql_template_normalization_ignores_literals_identifiers_and_comments }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.authorized-execution/target.execution-adapter], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: sql_template_normalization_ignores_literals_identifiers_and_comments } } }]
     contracts:
       - id: shared-normalizer
         kind: custom
@@ -111,4 +137,4 @@ features:
             role: native-service
           - target: FEAT-SQL-006#binding.browser-adapter/target.editor-adapter
             role: browser-adapter
-        guarantees: [REQ-SQL-001#criterion.shared-template-normalization]
+        guarantees: [REQ-SQL-001#criterion.shared-template-normalization, REQ-SQL-001#criterion.bounded-template-protocol]

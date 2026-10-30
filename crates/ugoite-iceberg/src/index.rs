@@ -268,9 +268,11 @@ pub fn datafusion_parameters(
 /// exposed through WASM so Browser and native/server callers use one lexical
 /// authority.
 pub fn normalize_sql_template(sql: &str) -> Result<String> {
-    ugoite_domain::sql_document::normalize_sql_template(sql)
-        .map(|normalized| normalized.sql)
-        .map_err(|error| anyhow!(error))
+    let normalized = ugoite_domain::sql_document::normalize_sql_template(sql);
+    if let Some(error) = normalized.error {
+        return Err(anyhow!(error));
+    }
+    Ok(normalized.sql)
 }
 
 /// Validate SQL syntax using the same DataFusion parser used for query
