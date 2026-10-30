@@ -11259,6 +11259,37 @@ fn is_sql_parameter_boundary(source: &str, start: usize) -> bool {
     !previous_byte.is_ascii_alphanumeric() && *previous_byte != b'_' && *previous_byte != b'$'
 }
 
+fn sql_template_parameter_name(source: &str, start: usize, end: usize) -> Option<&str> {
+    let contents = source.get(start..end)?;
+    let mut characters = contents.char_indices();
+    let (name_start, first) = loop {
+        let (offset, character) = characters.next()?;
+        if !character.is_whitespace() {
+            break (offset, character);
+        }
+    };
+    if first != '_' && !first.is_ascii_alphabetic() {
+        return None;
+    }
+
+    let mut name_end = name_start + first.len_utf8();
+    let mut trailing_whitespace = false;
+    for (offset, character) in characters {
+        if trailing_whitespace {
+            if !character.is_whitespace() {
+                return None;
+            }
+        } else if character == '_' || character.is_ascii_alphanumeric() {
+            name_end = offset + character.len_utf8();
+        } else if character.is_whitespace() {
+            trailing_whitespace = true;
+        } else {
+            return None;
+        }
+    }
+    Some(&contents[name_start..name_end])
+}
+
 /// Apply simultaneous, guarded byte-range replacements to an SQL source.
 ///
 /// Every range and expected slice is checked against the same original source.
@@ -11513,6 +11544,7 @@ pub fn normalize_sql_template(source: &str) -> SqlTemplateNormalization {
     let mut seen_parameters = HashSet::new();
     let mut edits = Vec::new();
     let mut error = None;
+    let mut closing_braces = source.match_indices("}}").peekable();
     let mut index = 0;
 
     while index < tokens.len() {
@@ -11543,8 +11575,14 @@ pub fn normalize_sql_template(source: &str) -> SqlTemplateNormalization {
             continue;
         }
 
-        let marker_tail = &source[token.range.start + 2..];
-        let Some(close_offset) = marker_tail.find("}}") else {
+        let marker_contents_start = token.range.start + 2;
+        while closing_braces
+            .peek()
+            .is_some_and(|(start, _)| *start < marker_contents_start)
+        {
+            closing_braces.next();
+        }
+        let Some((close_start, _)) = closing_braces.peek().copied() else {
             error.get_or_insert(SqlTemplateNormalizationError::MissingClosingBraces {
                 range: SqlSourceRange {
                     start: token.range.start,
@@ -11554,17 +11592,16 @@ pub fn normalize_sql_template(source: &str) -> SqlTemplateNormalization {
             index += 1;
             continue;
         };
-        let close_start = token.range.start + 2 + close_offset;
-        let name = source[token.range.start + 2..close_start].trim();
+        let name = sql_template_parameter_name(source, marker_contents_start, close_start);
         let range = SqlSourceRange {
             start: token.range.start,
             end: close_start + 2,
         };
-        if !valid_sql_parameter_name(name) {
+        let Some(name) = name else {
             error.get_or_insert(SqlTemplateNormalizationError::InvalidParameterName { range });
             index += 1;
             continue;
-        }
+        };
 
         let replacement = format!("${name}");
         edits.push((range, replacement.clone()));
@@ -14728,6 +14765,55 @@ mod tests {
         assert!(source.len() > MAX_SQL_DOCUMENT_BYTES);
         assert!(normalized.sql.starts_with("SELECT $value"));
         assert_eq!(normalized.parameters, ["value"]);
+    }
+
+    #[test]
+    fn sql_template_normalization_handles_maximum_unclosed_and_terminal_close_drafts_linearly() {
+        let prefix = "SELECT $one ";
+        let source = format!(
+            "{prefix}{}",
+            "{{".repeat((MAX_SQL_DOCUMENT_BYTES - prefix.len()) / 2)
+        );
+        assert_eq!(source.len(), MAX_SQL_DOCUMENT_BYTES);
+
+        let started = std::time::Instant::now();
+        let normalized = normalize_sql_template(&source);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(normalized.sql, source);
+        assert_eq!(normalized.parameters, ["one"]);
+        assert!(normalized.replacements.is_empty());
+        assert_eq!(
+            normalized.error,
+            Some(SqlTemplateNormalizationError::MissingClosingBraces {
+                range: SqlSourceRange {
+                    start: prefix.len(),
+                    end: source.len(),
+                },
+            })
+        );
+
+        let opening_pairs = (MAX_SQL_DOCUMENT_BYTES - prefix.len() - 2) / 4;
+        let trailing_whitespace = MAX_SQL_DOCUMENT_BYTES - prefix.len() - opening_pairs * 2 - 2;
+        let mut source = format!("{prefix}{}", "{{".repeat(opening_pairs));
+        source.push_str(&" ".repeat(trailing_whitespace));
+        source.push_str("}}");
+        assert_eq!(source.len(), MAX_SQL_DOCUMENT_BYTES);
+
+        let started = std::time::Instant::now();
+        let normalized = normalize_sql_template(&source);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(normalized.sql, source);
+        assert_eq!(normalized.parameters, ["one"]);
+        assert!(normalized.replacements.is_empty());
+        assert_eq!(
+            normalized.error,
+            Some(SqlTemplateNormalizationError::InvalidParameterName {
+                range: SqlSourceRange {
+                    start: prefix.len(),
+                    end: source.len(),
+                },
+            })
+        );
     }
 
     #[test]

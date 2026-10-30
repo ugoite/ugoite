@@ -87,6 +87,11 @@ features:
             path: crates/ugoite-domain/src/sql_document.rs
             selector: { kind: test, name: tests::sql_template_normalization_preserves_native_behavior_above_document_limit }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_preserves_native_behavior_above_document_limit } } }]
+          - id: domain-maximum-unclosed-marker
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::sql_template_normalization_handles_maximum_unclosed_and_terminal_close_drafts_linearly }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_handles_maximum_unclosed_and_terminal_close_drafts_linearly } } }]
           - id: wasm-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
