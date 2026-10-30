@@ -67,7 +67,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo", async () => {
-    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source /* tail */";
+    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source ORDER BY total DESC /* tail */";
     const document = await parseSqlDocument(source);
     expect(document.diagnostics).toEqual([]);
     const item = document.nodes.find((node) =>
@@ -99,7 +99,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.blur(alias);
     await waitFor(() => expect(sql()).toBe(expected.document.source));
     expect(sql()).toBe(
-      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source /* tail */",
+      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source ORDER BY \"net total\" DESC /* tail */",
     );
     const edited = await parseSqlDocument(sql());
     expect(edited.diagnostics).toEqual(document.diagnostics);

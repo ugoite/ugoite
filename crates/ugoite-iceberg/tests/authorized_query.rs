@@ -4841,12 +4841,22 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
     for source in [
         "SELECT field_100 AS TOTAL FROM tasks ORDER BY \"total\"",
         "SELECT field_100 AS \"total\" FROM tasks ORDER BY TOTAL",
+        "WITH nested AS (SELECT field_100 AS gross FROM tasks) SELECT gross AS TOTAL FROM nested ORDER BY \"total\" /* trailing */",
     ] {
         let document = parse_sql_document(source);
         let item = document
             .nodes
             .iter()
-            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem
+                    && node
+                        .range
+                        .and_then(|range| document.source_slice(range))
+                        .is_some_and(|projection| {
+                            projection.ends_with("AS TOTAL")
+                                || projection.ends_with("AS \"total\"")
+                        })
+            })
             .unwrap();
         let edited = apply_sql_document_semantic_edit_transaction(
             source,
@@ -4871,10 +4881,9 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
             .downcast_ref::<StringArray>()
             .unwrap();
         assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
-        assert_eq!(
-            edited.document.to_sql(),
-            "SELECT field_100 AS \"task title\" FROM tasks ORDER BY \"task title\""
-        );
+        assert!(edited.document.to_sql().contains("AS \"task title\""));
+        assert!(edited.document.to_sql().contains("ORDER BY \"task title\""));
+        assert!(edited.document.to_sql().ends_with("/* trailing */") || !source.contains("trailing"));
     }
 
     let case_distinct = context

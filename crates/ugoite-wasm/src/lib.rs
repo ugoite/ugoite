@@ -4490,7 +4490,7 @@ mod tests {
             SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
-        let source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source /* tail */";
+        let source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source ORDER BY total DESC /* tail */";
         let native_document = ugoite_domain::sql_document::parse_sql_document(source);
         let parsed_request = serde_json::json!({
             "action": "domain.parse_sql_document",
@@ -4543,7 +4543,7 @@ mod tests {
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
         assert_eq!(
             native.document.source,
-            "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source /* tail */"
+            "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source ORDER BY \"net total\" DESC /* tail */"
         );
         assert_eq!(native.document.diagnostics, native_document.diagnostics);
 

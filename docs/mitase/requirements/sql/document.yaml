@@ -79,9 +79,10 @@ requirements:
           preserves that reference's meaning. Same-scope ORDER BY alias
           references include unqualified identifier leaves in expression-shaped
           sort items when no other same-scope reference makes the binding
-          ambiguous; qualified source references remain unchanged. ORDER BY
-          clauses containing comments and ambiguous same-scope references fail
-          closed. Adding or renaming an alias also
+          ambiguous; qualified source references remain unchanged. Comments
+          within an ORDER BY clause and ambiguous same-scope references fail
+          closed; comments following the clause are preserved.
+          Adding or renaming an alias also
           rejects a same-scope reference capture or duplicate output name when
           the sibling output name is an explicit alias or a simple unqualified
           or qualified column reference, using the final identifier part for
@@ -304,7 +305,7 @@ requirements:
       - id: nested-comment-alias-parity-verification
         role: verification
         facet: verification
-        responsibility: Verify one bounded nested SQL alias edit across native Rust, the portable WASM action, and the actual browser WASM client, including exact untouched comment retention, current parse diagnostics, and guarded undo. This scenario does not establish complete SQL corpus coverage. An attempted variant with an outer ORDER BY alias followed by a trailing comment returned NodeRangeUnavailable and remains outside this evidence.
+        responsibility: Verify bounded nested SQL alias edits across native Rust, the portable WASM action, the actual browser WASM client, and an authorized query runtime, including an outer ORDER BY alias followed by a trailing comment, exact untouched comment retention, current parse diagnostics, guarded undo, and execution after editing. This scenario does not establish complete SQL corpus coverage; ambiguous references and comments inside ORDER BY expressions remain fail-closed.
         targets:
           - id: nested-source-native-wasm
             adapter: rust
@@ -319,6 +320,10 @@ requirements:
                 criterion: REQ-SQL-001#criterion.relational-constructors
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_nested_comment_alias_edit_matches_native_and_undoes_exactly } }
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_nested_comment_alias_edit_matches_native_and_undoes_exactly } }
           - id: nested-source-actual-wasm-dom
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
@@ -327,4 +332,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-SQL-001#criterion.relational-constructors
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo } }
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-editor/target.tree-output-alias]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo } }

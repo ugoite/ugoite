@@ -80,6 +80,15 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
                 covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_edits_execute_through_authorized_query_context } }
+          - id: trailing-comment-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: projection_alias_edit_executes_with_the_authored_output_name }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-alias-binding-safety
+                covers: [FEAT-SQL-005#binding.alias-domain/target.typed-alias-operation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: projection_alias_edit_executes_with_the_authored_output_name } }
           - id: editor-interaction
             adapter: typescript
             path: frontend/src/components/SqlColumnsEditor.test.tsx
