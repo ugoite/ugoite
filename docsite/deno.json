@@ -39,7 +39,7 @@
     "svgo": "npm:svgo@4.0.1",
     "typescript": "npm:typescript@5.9.3",
     "unifont": "npm:unifont@0.7.4",
-    "unstorage": "npm:unstorage@1.17.5",
+    "unstorage": "npm:unstorage@1.17.6",
     "vite": "npm:vite@8.1.0",
     "vitest": "npm:vitest@4.1.8",
     "yaml": "npm:yaml@2.9.0",
