@@ -56,7 +56,7 @@
     "npm:h3@^1.15.3": "1.15.11",
     "npm:headers-polyfill@^5.0.1": "5.0.1",
     "npm:html-escaper@3.0.3": "3.0.3",
-    "npm:iron-webcrypto@^1.2.1": "1.2.1",
+    "npm:iron-webcrypto@2": "2.0.0",
     "npm:is-node-process@^1.2.0": "1.2.0",
     "npm:jsdom@^29.1.1": "29.1.1",
     "npm:marked@18.1.2": "18.1.2",
@@ -4960,7 +4960,7 @@
         "crossws",
         "defu",
         "destr",
-        "iron-webcrypto",
+        "iron-webcrypto@1.2.1",
         "node-mock-http",
         "radix3",
         "ufo",
@@ -4974,7 +4974,7 @@
         "crossws",
         "defu",
         "destr",
-        "iron-webcrypto",
+        "iron-webcrypto@1.2.1",
         "node-mock-http",
         "radix3",
         "ufo",
@@ -5359,6 +5359,12 @@
     },
     "iron-webcrypto@1.2.1": {
       "integrity": "sha512-feOM6FaSr6rEABp/eDfVseKyTMDt+KGpeB35SkVn9Tyn0CqvVsY3EwI0v5i8nMHyJnzCIQf7nsy3p41TPkJZhg=="
+    },
+    "iron-webcrypto@2.0.0": {
+      "integrity": "sha512-rtffZKDUHciZElM8mjFCufBC7nVhCxHYyWHESqs89OioEDz4parOofd8/uhrejh/INhQFfYQfByS22LlezR9sQ==",
+      "dependencies": [
+        "uint8array-extras"
+      ]
     },
     "is-alphabetical@2.0.1": {
       "integrity": "sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ=="
@@ -8295,6 +8301,9 @@
     "ufo@1.6.4": {
       "integrity": "sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA=="
     },
+    "uint8array-extras@1.6.0": {
+      "integrity": "sha512-8iAasVS4wUx0gPLjH8Xtz2PeDzTSiy8QiLGu2DT3X5GU+egFEQhpnbtkehbAwjvDcxIERmCYcysiODFmE3Ud0Q=="
+    },
     "ultrahtml@1.6.0": {
       "integrity": "sha512-R9fBn90VTJrqqLDwyMph+HGne8eqY1iPfYhPzZrvKpIfwkWZbcYlfpsb8B9dTvBfpy1/hqAD7Wi8EKfP9e8zdw=="
     },
@@ -9371,7 +9380,7 @@
           "npm:graphql@^16.13.2",
           "npm:h3@^1.15.3",
           "npm:headers-polyfill@^5.0.1",
-          "npm:iron-webcrypto@^1.2.1",
+          "npm:iron-webcrypto@2",
           "npm:is-node-process@^1.2.0",
           "npm:jsdom@^29.1.1",
           "npm:merge-anything@^5.1.7",

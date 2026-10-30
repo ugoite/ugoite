@@ -50,7 +50,7 @@
     "graphql": "npm:graphql@^16.13.2",
     "headers-polyfill": "npm:headers-polyfill@^5.0.1",
     "h3": "npm:h3@^1.15.3",
-    "iron-webcrypto": "npm:iron-webcrypto@^1.2.1",
+    "iron-webcrypto": "npm:iron-webcrypto@^2.0.0",
     "is-node-process": "npm:is-node-process@^1.2.0",
     "jsdom": "npm:jsdom@^29.1.1",
     "merge-anything": "npm:merge-anything@^5.1.7",
