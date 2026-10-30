@@ -426,7 +426,7 @@ features:
       - id: strict-save-preflight-verification
         role: verification
         facet: verification
-        responsibility: Verify that strict save failures publish no first Registry and that a proof becomes unusable after the bound Catalog Head changes.
+        responsibility: Verify strict save failures publish no first Registry or update revision, preserve existing raw history, allow repaired saves, and reject a proof after the bound Catalog Head changes.
         targets:
           - id: invalid-initial-scalar
             adapter: rust
@@ -437,6 +437,15 @@ features:
                 criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
                 covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: invalid_scalar_first_save_does_not_publish_registry_or_entry } }
+          - id: rejected-scalar-update-recovery
+            adapter: rust
+            path: crates/ugoite-iceberg/src/composition/history_tests.rs
+            selector: { kind: test, name: invalid_scalar_update_preserves_history_until_repaired_save }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: invalid_scalar_update_preserves_history_until_repaired_save } }
           - id: stale-first-registry-proof
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition.rs
