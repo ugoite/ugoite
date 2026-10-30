@@ -2,6 +2,7 @@ import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import { batch, createEffect, createSignal, For, Show } from "solid-js";
 import { CompositionGraphDesignCanvas } from "~/components/CompositionGraphDesignCanvas";
 import { CompositionVariableGraphWorkspace } from "~/components/CompositionVariableGraphWorkspace";
+import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
 import {
   appendCompositionGraphComponent,
   type CompositionBindingProvider,
@@ -70,6 +71,40 @@ export interface CompositionGraphStudioProps {
 }
 
 type StudioMode = "design" | "variables";
+type VariableCreationOrigin = StudioMode;
+type PendingVariableCreation = {
+  kind: CompositionVariableCreationKind;
+  origin: VariableCreationOrigin;
+  previousSelection: string | null;
+};
+
+const newVariable = (
+  kind: CompositionVariableCreationKind,
+  id: string,
+): CompositionVariableNode =>
+  kind === "constant"
+    ? {
+      id,
+      kind,
+      value_type: { scalar_type: "string", nullable: false },
+      value: { kind: "string", value: "" },
+    }
+    : kind === "input"
+    ? {
+      id,
+      kind,
+      value_type: { scalar_type: "string", nullable: false },
+      required: true,
+    }
+    : {
+      id,
+      kind,
+      returns: {
+        kind: "scalar",
+        value_type: { scalar_type: "integer", nullable: false },
+      },
+      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+    };
 
 const argumentTypes = new Set<CompositionSqlArgumentType>([
   "string",
@@ -101,6 +136,9 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   >(
     null,
   );
+  const [pendingCreation, setPendingCreation] = createSignal<
+    PendingVariableCreation | null
+  >(null);
   const [unboundArgumentTypes, setUnboundArgumentTypes] = createSignal<
     Record<string, Record<string, CompositionSqlArgumentType>>
   >({});
@@ -112,6 +150,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     sessionId = next;
     setMode("design");
     setSelectedVariableId(null);
+    setPendingCreation(null);
     setUnboundArgumentTypes({});
   });
   const parameterDeclarations = () =>
@@ -255,41 +294,93 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     return true;
   };
 
-  const createDesignInput = () => {
-    const variableId = (() => {
+  const requestCreation = (
+    kind: CompositionVariableCreationKind,
+    origin: VariableCreationOrigin,
+  ) => {
+    if (pendingCreation()) return;
+    setPendingCreation({
+      kind,
+      origin,
+      previousSelection: selectedVariableId(),
+    });
+    if (origin === "variables") setSelectedVariableId(null);
+  };
+
+  const cancelCreation = () => {
+    const pending = pendingCreation();
+    if (!pending) return;
+    setPendingCreation(null);
+    if (pending.origin === "variables") {
+      setSelectedVariableId(
+        pending.previousSelection &&
+          props.draft.variables.some((node) =>
+            node.id === pending.previousSelection
+          )
+          ? pending.previousSelection
+          : null,
+      );
+    }
+  };
+
+  const commitCreation = (rawName: string): boolean => {
+    const pending = pendingCreation();
+    const id = rawName.trim();
+    if (
+      !pending || !id ||
+      props.draft.variables.some((node) => node.id === id)
+    ) return false;
+    const variable = newVariable(pending.kind, id);
+    let nextDraft: CompositionGraphDraft = {
+      ...props.draft,
+      variables: [...props.draft.variables, variable],
+    };
+    if (pending.origin === "design") {
+      if (pending.kind !== "input") return false;
+      const componentPrefix = "input";
       let index = 1;
       while (
-        props.draft.variables.some((node) => node.id === `input_${index}`)
-      ) index++;
-      return `input_${index}`;
-    })();
-    const componentId = (() => {
-      let index = 1;
-      while (
-        props.draft.components.some((component) =>
-          component.id === `input_${index}`
+        nextDraft.components.some((component) =>
+          component.id === `${componentPrefix}_${index}`
         )
       ) index++;
-      return `input_${index}`;
-    })();
-    const input: CompositionVariableNode = {
-      id: variableId,
-      kind: "input",
-      value_type: { scalar_type: "string", nullable: false },
-      required: true,
-    };
-    const withVariable = {
-      ...props.draft,
-      variables: [...props.draft.variables, input],
-    };
-    const next = appendCompositionGraphComponent(withVariable, {
-      id: componentId,
-      kind: "input",
-      variable: variableId,
-    });
-    if (!next) return;
-    props.onDraftChange(next);
-    setSelectedVariableId(variableId);
+      const withComponent = appendCompositionGraphComponent(nextDraft, {
+        id: `${componentPrefix}_${index}`,
+        kind: "input",
+        variable: id,
+      });
+      if (!withComponent) return false;
+      nextDraft = withComponent;
+    }
+    props.onDraftChange(nextDraft);
+    setSelectedVariableId(id);
+    setPendingCreation(null);
+    return true;
+  };
+
+  const changeMode = (entry: StudioMode) => {
+    if (pendingCreation() && pendingCreation()?.origin !== entry) {
+      cancelCreation();
+    }
+    setMode(entry);
+  };
+
+  const pendingForSave = () => !!pendingCreation();
+  const focusCreatedVariable = () => {
+    const id = selectedVariableId();
+    if (!id) return;
+    if (mode() === "variables") {
+      variablePanel?.querySelector<HTMLInputElement>(
+        ".compositionVariableName",
+      )?.focus();
+      return;
+    }
+    const input = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        ".compositionGraphInput input",
+      ),
+    ).find((candidate) => candidate.getAttribute("aria-label") === id);
+    input?.focus();
   };
 
   return (
@@ -308,7 +399,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
                 class="studioModeOption"
                 classList={{ "studioModeOption--active": mode() === entry }}
                 aria-selected={mode() === entry}
-                onClick={() => setMode(entry)}
+                onClick={() => changeMode(entry)}
               >
                 {entry === "design"
                   ? t("composition.studioDesign")
@@ -321,11 +412,22 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           <button
             type="button"
             class="btn primary compositionGraphSave"
-            disabled={props.saveDisabled || props.saving}
+            disabled={props.saveDisabled || props.saving || pendingForSave()}
+            title={pendingForSave()
+              ? t("composition.studioSaveNeedsVariableName")
+              : undefined}
+            aria-describedby={pendingForSave()
+              ? "composition-pending-variable-save"
+              : undefined}
             onClick={() => props.onSave?.()}
           >
             {t("composition.save")}
           </button>
+          <Show when={pendingForSave()}>
+            <span id="composition-pending-variable-save" class="ui-sr-only">
+              {t("composition.studioSaveNeedsVariableName")}
+            </span>
+          </Show>
         </Show>
       </div>
       <section hidden={mode() !== "design"}>
@@ -344,7 +446,11 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           isSessionCurrent={props.isSessionCurrent}
           onSaveSnapshotReady={props.onSaveSnapshotReady}
           onDraftChange={props.onDraftChange}
-          onCreateInput={createDesignInput}
+          pendingInputCreation={pendingCreation()?.origin === "design"}
+          onRequestCreateInput={() => requestCreation("input", "design")}
+          onCommitCreateInput={commitCreation}
+          onCancelCreateInput={cancelCreation}
+          onFocusCreatedInput={focusCreatedVariable}
           onEditVariable={(id) => {
             setSelectedVariableId(id);
             setMode("variables");
@@ -362,6 +468,13 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           selectedVariableId={selectedVariableId()}
           onSelect={setSelectedVariableId}
           onDraftChange={props.onDraftChange}
+          pendingCreationKind={pendingCreation()?.origin === "variables"
+            ? pendingCreation()?.kind
+            : undefined}
+          onRequestCreation={(kind) => requestCreation(kind, "variables")}
+          onCommitCreation={commitCreation}
+          onCancelCreation={cancelCreation}
+          onFocusCreatedVariable={focusCreatedVariable}
           onRemove={(id) => {
             setUnboundArgumentTypes((current) =>
               Object.fromEntries(

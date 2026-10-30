@@ -134,6 +134,18 @@ requirements:
           kind icon. It does not add a common SQL subtitle, repeated type label,
           UUID, or explanatory row copy.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
+      - id: composition-variable-creation-requires-name
+        kind: behavior
+        statement: >-
+          Creating a Value, Input, or inline SQL variable from Variables, or
+          the first Input from Design, requires a user-provided nonblank unique
+          variable name before the graph node is committed. The name becomes
+          the graph variable identity and any created component references it.
+          Cancel leaves the graph unchanged, and Save remains unavailable
+          while a name is pending. Name validation matches the domain graph
+          rules: trimmed nonblank IDs and exact duplicate detection, with no
+          additional character or length restriction.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: composition-mobile-overlays-are-exclusive
         kind: behavior
         statement: >-

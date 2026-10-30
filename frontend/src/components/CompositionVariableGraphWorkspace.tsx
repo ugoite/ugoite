@@ -35,6 +35,10 @@ import {
   replaceSqlFormBindingGuard,
   retainReferencedSqlFormBindingGuards,
 } from "~/lib/form-binding-guards";
+import {
+  CompositionVariableCreationForm,
+  type CompositionVariableCreationKind,
+} from "~/components/CompositionVariableCreationForm";
 
 const scalarTypes: CompositionScalarType[] = [
   "string",
@@ -51,6 +55,11 @@ export interface CompositionVariableGraphWorkspaceProps {
   selectedVariableId: string | null;
   onSelect: (id: string) => void;
   onDraftChange: (draft: CompositionGraphDraft) => void;
+  pendingCreationKind?: CompositionVariableCreationKind;
+  onRequestCreation?: (kind: CompositionVariableCreationKind) => void;
+  onCommitCreation?: (name: string) => boolean;
+  onCancelCreation?: () => void;
+  onFocusCreatedVariable?: () => void;
   onRemove: (id: string) => void;
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
@@ -153,6 +162,7 @@ export function CompositionVariableGraphWorkspace(
   onCleanup(() => formGuardGenerations.clear());
   let mobileDialog: HTMLElement | undefined;
   let mobileOpener: HTMLElement | null = null;
+  let addVariableButton: HTMLButtonElement | undefined;
   const selected = () =>
     props.draft.variables.find((node) => node.id === props.selectedVariableId);
   const updateNode = (next: CompositionVariableNode) =>
@@ -227,43 +237,19 @@ export function CompositionVariableGraphWorkspace(
       props.onEditValidityChange?.(node.id, false);
     });
   };
-  const add = (kind: "constant" | "input" | "query") => {
-    const stem = kind === "constant" ? "value" : kind;
-    let index = 1;
-    while (
-      props.draft.variables.some((node) => node.id === `${stem}_${index}`)
-    ) index++;
-    const id = `${stem}_${index}`;
-    const node: CompositionVariableNode = kind === "constant"
-      ? {
-        id,
-        kind,
-        value_type: { scalar_type: "string", nullable: false },
-        value: { kind: "string", value: "" },
-      }
-      : kind === "input"
-      ? {
-        id,
-        kind,
-        value_type: { scalar_type: "string", nullable: false },
-        required: true,
-      }
-      : {
-        id,
-        kind,
-        returns: {
-          kind: "scalar",
-          value_type: { scalar_type: "integer", nullable: false },
-        },
-        query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
-      };
-    props.onDraftChange({
-      ...props.draft,
-      variables: [...props.draft.variables, node],
-    });
-    props.onSelect(id);
+  const requestCreation = (kind: CompositionVariableCreationKind) => {
+    props.onRequestCreation?.(kind);
     setMenu(false);
     setMobileOpen(false);
+  };
+  const cancelCreation = () => {
+    const target = mobileOpener;
+    props.onCancelCreation?.();
+    queueMicrotask(() => {
+      if (target?.isConnected) target.focus();
+      else addVariableButton?.focus();
+      if (target === mobileOpener) mobileOpener = null;
+    });
   };
   const closeMobile = () => setMobileOpen(false);
   const removeVariable = (variableId: string) => {
@@ -295,6 +281,7 @@ export function CompositionVariableGraphWorkspace(
     queueMicrotask(() => mobileDialog?.focus());
     onCleanup(() => {
       appRoot?.removeAttribute("inert");
+      if (props.pendingCreationKind) return;
       const target = mobileOpener;
       mobileOpener = null;
       queueMicrotask(() => target?.isConnected && target.focus());
@@ -372,6 +359,9 @@ export function CompositionVariableGraphWorkspace(
                 : undefined}
               aria-label={node.id}
               onClick={() => {
+                if (props.pendingCreationKind) {
+                  props.onCancelCreation?.();
+                }
                 props.onSelect(node.id);
                 setMobileOpen(false);
               }}
@@ -386,6 +376,8 @@ export function CompositionVariableGraphWorkspace(
         <IconButton
           icon="plus"
           label={t("composition.studioAddVariable")}
+          disabled={!!props.pendingCreationKind}
+          ref={(element) => addVariableButton = element}
           onClick={() => setMenu((value) => !value)}
         />
         <Show when={menu()}>
@@ -394,15 +386,15 @@ export function CompositionVariableGraphWorkspace(
             role="group"
             aria-label={t("composition.studioAddVariable")}
           >
-            <button type="button" onClick={() => add("constant")}>
+            <button type="button" onClick={() => requestCreation("constant")}>
               <UiIcon name="appearance" />
               {t("composition.studioValue")}
             </button>
-            <button type="button" onClick={() => add("input")}>
+            <button type="button" onClick={() => requestCreation("input")}>
               <UiIcon name="canvas-input" />
               {t("composition.studioAddInput")}
             </button>
-            <button type="button" onClick={() => add("query")}>
+            <button type="button" onClick={() => requestCreation("query")}>
               <UiIcon name="sql" />SQL
             </button>
           </div>
@@ -479,9 +471,19 @@ export function CompositionVariableGraphWorkspace(
         </Portal>
       </Show>
       <main class="compositionVariableEditor">
+        <Show when={props.pendingCreationKind}>
+          <CompositionVariableCreationForm
+            existingNames={props.draft.variables.map((node) => node.id)}
+            onCreate={(name) => props.onCommitCreation?.(name) ?? false}
+            onCancel={cancelCreation}
+            focusAfterCreate={() => props.onFocusCreatedVariable?.()}
+          />
+        </Show>
         <Show
-          when={selected()}
-          fallback={<div class="compositionVariableEditorEmpty" />}
+          when={!props.pendingCreationKind && selected()}
+          fallback={!props.pendingCreationKind
+            ? <div class="compositionVariableEditorEmpty" />
+            : undefined}
         >
           {(node) => (
             <>
