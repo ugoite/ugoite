@@ -4880,6 +4880,43 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
         "Ada"
     );
 
+    let field_source = "SELECT field_101[1] FROM tasks";
+    let field_document = parse_sql_document(field_source);
+    let struct_value = field_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.range
+                .and_then(|range| field_document.source_slice(range))
+                == Some("field_101[1]")
+        })
+        .expect("the indexed Struct is an editable source expression");
+    let named_field = apply_sql_document_semantic_edit_transaction(
+        field_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: field_document.contract_version,
+            expected_source: field_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::WrapExpressionInValueAccess {
+                node_id: struct_value.id,
+                expected_kind: struct_value.kind,
+                access: SqlDocumentValueAccess::StructField {
+                    name: "name".to_owned(),
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        named_field.document.to_sql(),
+        "SELECT (field_101[1])['name'] FROM tasks"
+    );
+    let named_rows = context.execute(named_field.document.to_sql()).await?;
+    let named_values = named_rows[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("named Struct field access returns its string value");
+    assert_eq!(named_values.value(0), "Ada");
+
     let slice_source = "SELECT field_101 FROM tasks";
     let slice_document = parse_sql_document(slice_source);
     let list_value = slice_document

@@ -1036,6 +1036,7 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: SqlDocumentNodeKind;
     access:
+      | { kind: "struct_field"; name: string }
       | { kind: "array_index"; one_based_index: string }
       | {
         kind: "array_slice";
