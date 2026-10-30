@@ -1,9 +1,9 @@
 [toolchain]
 # Single Rust compiler authority for dev, CI, WASM, and Docker source build.
-# Channel was kept at the previously validated 1.95.0: native, WASM
+# Channel was kept at the previously validated 1.99.1: native, WASM
 # (wasm32-unknown-unknown), and Docker source builds succeed on it.
 # Dependabot (rust-toolchain, monthly) proposes updates as normal PRs.
-channel = "1.95.0"
+channel = "1.99.1"
 profile = "minimal"
 components = ["clippy", "rustfmt"]
 targets = ["wasm32-unknown-unknown"]
