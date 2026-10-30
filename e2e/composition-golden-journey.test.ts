@@ -98,6 +98,12 @@ function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+function savedSqlVariablePrefix(name: string): string {
+  const slug = name.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug && /^[a-z]/.test(slug) ? slug : slug ? `query_${slug}` : "query";
+}
+
 function createSeedRows(manifest: SeedManifest): SeedRow[] {
   const firstPage = Array.from(
     { length: manifest.seed_rows.first_page_count },
@@ -203,7 +209,7 @@ async function seedSavedSql(
             },
           },
         );
-        expect(entryResponse.status()).toBe(201);
+        expect(entryResponse.status(), await entryResponse.text()).toBe(201);
       }),
     );
   }
@@ -416,8 +422,16 @@ test.describe("Composition Golden Journey", () => {
         "month_end",
         manifest.parameters.month_end,
       );
+      // Give the second Table its own start-date dependency. This lets the
+      // acceptance check change one query while the first Table is on page 2.
+      await addDateVariable(
+        initialPage,
+        "month_start_other",
+        manifest.parameters.month_start,
+      );
       await addInput(initialPage, "month_start");
       await addInput(initialPage, "month_end");
+      await addInput(initialPage, "month_start_other");
       await initialPage.getByRole("tablist", { name: "Studio mode" })
         .getByRole("tab", { name: "Design", exact: true }).click();
       await initialPage.getByRole("group", { name: "Add to design" })
@@ -441,6 +455,37 @@ test.describe("Composition Golden Journey", () => {
       }
       await picker.getByRole("button", { name: "Add", exact: true }).click();
       await expect(picker).toHaveCount(0);
+      await initialPage.getByRole("group", { name: "Add to design" })
+        .getByRole("button", { name: "Table", exact: true }).click();
+      const independentPicker = initialPage.getByRole("dialog", {
+        name: "Table",
+        exact: true,
+      });
+      await independentPicker.getByRole("tab", {
+        name: "Saved SQL",
+        exact: true,
+      }).click();
+      const independentSqlChoice = independentPicker.getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      });
+      await expect(independentSqlChoice).toBeEnabled({ timeout: 30_000 });
+      await independentSqlChoice.click();
+      await independentPicker.getByLabel(
+        "Variable for SQL argument month_start",
+        {
+          exact: true,
+        },
+      ).selectOption({ label: "month_start_other" });
+      await independentPicker.getByLabel(
+        "Variable for SQL argument month_end",
+        {
+          exact: true,
+        },
+      ).selectOption({ label: "month_end" });
+      await independentPicker.getByRole("button", { name: "Add", exact: true })
+        .click();
+      await expect(independentPicker).toHaveCount(0);
       await initialPage.getByRole("button", { name: "Save", exact: true })
         .click();
       await expect(
@@ -511,16 +556,34 @@ test.describe("Composition Golden Journey", () => {
       await expect(reopenedPage).toHaveURL(
         new RegExp(`${exactPath.replaceAll("/", "\\/")}$`),
       );
-      await expect(reopenedPage.getByLabel("month_start")).toHaveValue(
+      await expect(reopenedPage.getByLabel("month_start", { exact: true }))
+        .toHaveValue(
+          manifest.parameters.month_start,
+        );
+      await expect(reopenedPage.getByLabel("month_end", { exact: true }))
+        .toHaveValue(
+          manifest.parameters.month_end,
+        );
+      await expect(
+        reopenedPage.getByLabel("month_start_other", { exact: true }),
+      ).toHaveValue(
         manifest.parameters.month_start,
       );
-      await expect(reopenedPage.getByLabel("month_end")).toHaveValue(
-        manifest.parameters.month_end,
-      );
-      await expect(reopenedPage.getByLabel("month_start")).toBeEditable();
-      await expect(reopenedPage.getByLabel("month_end")).toBeEditable();
+      await expect(reopenedPage.getByLabel("month_start", { exact: true }))
+        .toBeEditable();
+      await expect(reopenedPage.getByLabel("month_end", { exact: true }))
+        .toBeEditable();
 
-      const table = reopenedPage.getByRole("table");
+      const independentQueryId = `${
+        savedSqlVariablePrefix(seed.savedSqlName)
+      }_table`;
+      const changedQueryId = `${independentQueryId}_2`;
+      const table = reopenedPage.getByRole("table", {
+        name: `${independentQueryId} results`,
+        exact: true,
+      });
+      const tableRegion = reopenedPage.locator(".compositionGraphValue")
+        .filter({ has: table });
       await expect(table.locator("tbody tr")).toHaveCount(
         manifest.expected.first_page_rows,
       );
@@ -528,11 +591,42 @@ test.describe("Composition Golden Journey", () => {
       await expect(table).toContainText(
         seed.rows[manifest.expected.first_page_rows - 1]!.merchant,
       );
-      await expect(
-        reopenedPage.getByRole("button", { name: "Next", exact: true }),
-      ).toBeEnabled();
+      await expect(tableRegion.getByRole("button", {
+        name: "Next",
+        exact: true,
+      })).toBeEnabled();
+      const secondTable = reopenedPage.getByRole("table", {
+        name: `${changedQueryId} results`,
+        exact: true,
+      });
+      const secondTableRegion = reopenedPage.locator(".compositionGraphValue")
+        .filter({ has: secondTable });
+      await expect(secondTable.locator("tbody tr")).toHaveCount(
+        manifest.expected.first_page_rows,
+      );
+      await expect(secondTableRegion.getByRole("button", {
+        name: "Next",
+        exact: true,
+      })).toBeEnabled();
 
-      await reopenedPage.getByRole("button", { name: "Next", exact: true })
+      const evaluations: Array<Record<string, unknown>> = [];
+      reopenedPage.on("request", (outgoing) => {
+        const url = new URL(outgoing.url());
+        if (
+          outgoing.method() === "POST" &&
+          url.pathname.endsWith(`/spaces/${seed.spaceId}/compositions/evaluate`)
+        ) {
+          try {
+            evaluations.push(
+              outgoing.postDataJSON() as Record<string, unknown>,
+            );
+          } catch {
+            evaluations.push({});
+          }
+        }
+      });
+
+      await tableRegion.getByRole("button", { name: "Next", exact: true })
         .click();
       await expect(table.locator("tbody tr")).toHaveCount(
         manifest.expected.second_page_rows,
@@ -541,24 +635,25 @@ test.describe("Composition Golden Journey", () => {
       expect(secondPageRow).toBeTruthy();
       await expect(table).toContainText(secondPageRow!.merchant);
 
-      await reopenedPage.getByLabel("month_start").fill(
+      const evaluationCountBeforeChange = evaluations.length;
+      await reopenedPage.getByLabel("month_start_other", { exact: true }).fill(
         manifest.parameters.month_start_after_change,
       );
-      await expect(table.locator("tbody tr")).toHaveCount(
+      await expect(secondTable.locator("tbody tr")).toHaveCount(
         manifest.expected.after_month_start_change_rows,
       );
-      await expect(reopenedPage.getByText(
-        "The query returned no rows.",
-        { exact: true },
-      )).toBeVisible();
-      // ResultPagination intentionally renders no navigation on a single
-      // (here empty) page, so accept absent-or-disabled pagination.
-      await expect(
-        reopenedPage.getByRole("button", { name: "Next", exact: true }),
-      ).toHaveCount(0);
-      await expect(
-        reopenedPage.getByRole("button", { name: "Previous", exact: true }),
-      ).toHaveCount(0);
+      await expect.poll(() => evaluations.length).toBe(
+        evaluationCountBeforeChange + 1,
+      );
+      expect(evaluations.at(-1)?.requested_queries).toEqual([changedQueryId]);
+      expect(evaluations.at(-1)?.requested_queries).not.toContain(
+        independentQueryId,
+      );
+      // The changed Table is empty, while the unrelated Table stays on page 2.
+      await expect(table.locator("tbody tr")).toHaveCount(
+        manifest.expected.second_page_rows,
+      );
+      await expect(table).toContainText(secondPageRow!.merchant);
     } finally {
       await reopenedContext.close();
     }
