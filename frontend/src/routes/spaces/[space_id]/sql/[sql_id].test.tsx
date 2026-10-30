@@ -52,6 +52,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
     sql: string;
     readOnly?: boolean;
     previewDisabled?: boolean;
+    planner?: { status: string; isCurrent: boolean };
     variables: Array<{ name: string; type: string; default?: unknown }>;
     parameterValues: Record<string, string | number | boolean | undefined>;
     onSqlChange?: (value: string) => void;
@@ -93,7 +94,9 @@ vi.mock("~/components/SQLWorkspace", () => ({
       ))}
       <button
         type="button"
-        disabled={props.previewDisabled}
+        disabled={props.previewDisabled ||
+          props.planner?.status !== "success" ||
+          !props.planner?.isCurrent}
         onClick={props.onPreview}
       >
         Run Query

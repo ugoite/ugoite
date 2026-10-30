@@ -79,6 +79,53 @@ describe("SQL workspace planning", () => {
     disposeRoot();
   });
 
+  it("rejects execution when planning the current SQL draft fails", async () => {
+    vi.useFakeTimers();
+    planMock.mockResolvedValue({ result_schema: [] });
+    queryMock.mockResolvedValue({
+      columns: ["value"],
+      column_types: ["integer"],
+      rows: [[1]],
+      has_more: false,
+    });
+    let controller!: ReturnType<typeof createSqlWorkspaceController>;
+    let setSql!: (value: string) => void;
+    const disposeRoot = createRoot((dispose) => {
+      const [sql, updateSql] = createSignal("SELECT 1");
+      setSql = updateSql;
+      controller = createSqlWorkspaceController({
+        spaceId: () => "space",
+        sql,
+        variables: () => [],
+      });
+      return dispose;
+    });
+
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.waitFor(() => expect(controller.plan().status).toBe("success"));
+    controller.run();
+    await vi.waitFor(() => expect(queryMock).toHaveBeenCalledOnce());
+
+    planMock.mockRejectedValueOnce(new Error("SQL syntax is invalid"));
+    setSql("SELECT FROM");
+    controller.run();
+    expect(queryMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.waitFor(() =>
+      expect(controller.plan()).toMatchObject({
+        status: "error",
+        isCurrent: true,
+        error: expect.stringContaining("SQL syntax is invalid"),
+      })
+    );
+    controller.run();
+    await controller.count();
+    expect(queryMock).toHaveBeenCalledOnce();
+    expect(countMock).not.toHaveBeenCalled();
+    expect(controller.preview().page).toBeUndefined();
+    disposeRoot();
+  });
+
   it("replans wildcard output against current authorization and rejects stale parameter snapshots", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({

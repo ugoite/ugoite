@@ -285,6 +285,16 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
       message: planner.error,
     }];
   };
+  const previewDisabledReason = () => {
+    const planner = props.planner;
+    if (!planner || planner.status === "success" && planner.isCurrent) {
+      return undefined;
+    }
+    if (planner.status === "error" && planner.isCurrent && planner.error) {
+      return planner.error;
+    }
+    return t("sqlPage.planRequiredForRun");
+  };
 
   const parameterValue = (
     name: string,
@@ -371,7 +381,12 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           class="btn primary"
           onClick={() => props.onPreview()}
           disabled={props.preview.status === "loading" ||
-            props.previewDisabled}
+            props.previewDisabled ||
+            Boolean(previewDisabledReason())}
+          title={previewDisabledReason()}
+          aria-describedby={previewDisabledReason()
+            ? `${workspaceId()}-run-plan-reason`
+            : undefined}
           aria-busy={props.preview.status === "loading" || undefined}
         >
           <Show when={props.preview.status === "loading"}>
@@ -379,6 +394,16 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           </Show>
           {t("sqlPage.runQuery")}
         </button>
+        <Show when={previewDisabledReason()}>
+          {(reason) => (
+            <span
+              id={`${workspaceId()}-run-plan-reason`}
+              class="sr-only"
+            >
+              {reason()}
+            </span>
+          )}
+        </Show>
       </div>
 
       <Show when={props.preview.status === "loading"}>

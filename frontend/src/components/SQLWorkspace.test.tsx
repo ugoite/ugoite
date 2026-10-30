@@ -102,6 +102,35 @@ describe("SQLWorkspace", () => {
     );
   });
 
+  it("keeps Run Query disabled until the supplied plan is current and successful", () => {
+    const pending = renderWorkspace({
+      planner: { status: "pending", isCurrent: false },
+    });
+    const pendingButton = screen.getByRole("button", { name: "Run Query" });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAccessibleDescription(
+      "Wait for SQL validation to finish before running.",
+    );
+    pending.unmount();
+
+    const failed = renderWorkspace({
+      planner: {
+        status: "error",
+        isCurrent: true,
+        error: "SQL syntax is invalid",
+      },
+    });
+    const failedButton = screen.getByRole("button", { name: "Run Query" });
+    expect(failedButton).toBeDisabled();
+    expect(failedButton).toHaveAccessibleDescription("SQL syntax is invalid");
+    failed.unmount();
+
+    renderWorkspace({
+      planner: { status: "success", isCurrent: true },
+    });
+    expect(screen.getByRole("button", { name: "Run Query" })).toBeEnabled();
+  });
+
   it("REQ-FE-080: keeps exact Saved SQL read-only while preview remains available", () => {
     const onPreview = vi.fn();
     renderWorkspace({

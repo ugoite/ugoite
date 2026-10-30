@@ -511,6 +511,8 @@ export function createSqlWorkspaceController(
   };
 
   const run = () => {
+    const currentPlan = plan();
+    if (currentPlan.status !== "success" || !currentPlan.isCurrent) return;
     void loadPage(undefined, 1, []);
   };
 

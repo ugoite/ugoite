@@ -30,6 +30,15 @@ requirements:
           draft; unchanged exact-revision previews retain their stored
           bindings and current authorization is checked by each later request.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: execution-preflight
+        kind: behavior
+        statement: >-
+          The SQL workspace controller dispatches a page query only while the
+          plan for its current planning identity has succeeded. A pending,
+          rejected, or stale plan leaves execution undispatched; a current
+          successful plan does not replace the server's authorization check on
+          the subsequent query request.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
     bindings:
       - id: verification
         role: verification
@@ -63,6 +72,15 @@ requirements:
                 criterion: REQ-SQL-002#criterion.definition-preflight
                 covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: keeps definition preflight independent of invalid transient preview values } }
+          - id: current-plan-run-guard
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: rejects execution when planning the current SQL draft fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-002#criterion.execution-preflight
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: rejects execution when planning the current SQL draft fails } }
           - id: exact-revision-after-type-edit
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx

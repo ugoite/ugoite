@@ -570,6 +570,18 @@ requirements:
           current only while it matches the SQL and transient parameter values
           used to run it; results without that confirmation stay hidden.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: current-plan-run-state
+        kind: behavior
+        statement: >-
+          When a Workspace owner supplies planner state, Run Query is enabled
+          only for a current successful plan. Pending, rejected, and stale
+          planner states disable it and expose a concise accessible reason.
+          Once SQL no longer matches the current result, Count rows and page
+          continuation are unavailable until a current preview exists. A host
+          that owns planning through another workflow may omit planner state
+          and continues to control Run Query through its own preview callback
+          and disabled state.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: editor-accessibility-and-wrapping
         kind: quality
         statement: >-
@@ -614,6 +626,33 @@ requirements:
                 criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+          - id: planner-gated-run-action
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: keeps Run Query disabled until the supplied plan is current and successful }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.current-plan-run-state
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: keeps Run Query disabled until the supplied plan is current and successful } }
+          - id: saved-sql-invalid-draft-browser
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "invalid SQL draft shows a diagnostic, blocks unsafe actions, and keeps comments through repair" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.current-plan-run-state
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "invalid SQL draft shows a diagnostic, blocks unsafe actions, and keeps comments through repair" } }
+          - id: composition-run-without-workspace-planner
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "creates a bound filter argument in Composition" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.current-plan-run-state
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a bound filter argument in Composition" } }
           - id: adapter-owned-query
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

@@ -86,6 +86,132 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("invalid SQL draft shows a diagnostic, blocks unsafe actions, and keeps comments through repair", async ({ page, request }) => {
+    const name = `Invalid SQL draft ${Date.now()}`;
+    const rowsSql = Array.from(
+      { length: 101 },
+      (_, index) => `SELECT ${index + 1} AS value`,
+    ).join(" UNION ALL ");
+    const originalSql = `${rowsSql} ORDER BY value -- keep this comment`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: originalSql,
+          variables: [],
+        },
+      },
+    );
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      await expect(editor).toContainText(originalSql);
+
+      const runRequest = () =>
+        page.waitForRequest((request) =>
+          request.method() === "POST" &&
+          new URL(request.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+        );
+      const initialRun = runRequest();
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      await initialRun;
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      )
+        .toBeVisible();
+      const nextPage = page.getByRole("button", { name: "Next", exact: true });
+      await expect(nextPage).toBeVisible();
+      const countRequest = page.waitForRequest((request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/count`
+      );
+      await page.getByRole("button", { name: "Count rows", exact: true })
+        .click();
+      await countRequest;
+      await nextPage.click();
+      await expect(page.getByRole("button", { name: "Previous", exact: true }))
+        .toBeVisible();
+
+      const invalidSql = originalSql.replace(
+        "SELECT 1 AS value",
+        "SELECT FROM AS value",
+      );
+      const invalidPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === invalidSql
+      );
+      const queryRequests: string[] = [];
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          new URL(request.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+        ) queryRequests.push(request.url());
+      });
+      await editor.fill(invalidSql);
+      const planResponse = await invalidPlan;
+      expect(planResponse.ok()).toBe(false);
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }),
+      )
+        .toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Count rows", exact: true }),
+      )
+        .toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Next", exact: true }))
+        .toHaveCount(0);
+
+      const runButton = page.getByRole("button", {
+        name: "Run Query",
+        exact: true,
+      });
+      await expect(runButton).toBeDisabled();
+      await expect(runButton).toHaveAccessibleDescription(/invalid SQL query/);
+      await expect.poll(() => queryRequests.length).toBe(0);
+
+      const repairedSql = originalSql.replace(
+        "SELECT 1 AS value",
+        "SELECT 0 AS value",
+      );
+      await editor.fill(repairedSql);
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeEnabled();
+      await expect(editor).toContainText("-- keep this comment");
+
+      const savedUpdate = page.waitForResponse((response) =>
+        response.request().method() === "PUT" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/${savedSqlId}`
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const updateResponse = await savedUpdate;
+      expect(updateResponse.ok(), await updateResponse.text()).toBe(true);
+      const persisted = await request.get(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+      expect(persisted.ok()).toBe(true);
+      expect((await persisted.json() as { sql: string }).sql).toBe(repairedSql);
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("@smoke SQL tree reorders ARRAY elements and the saved query returns the new order", async ({ page, request }) => {
     const name = `Array order ${Date.now()}`;
     const created = await request.post(

@@ -31,6 +31,8 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
               - kind: satisfies
+                criterion: REQ-FE-080#criterion.current-plan-run-state
+              - kind: satisfies
                 criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
           - id: sql-workspace-layout
             adapter: declared
