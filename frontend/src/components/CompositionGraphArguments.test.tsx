@@ -70,7 +70,6 @@ describe("Composition shared SQL argument editing", () => {
       },
     ];
     const [draft, setDraft] = createSignal(initial);
-    const run = vi.fn();
     const validity = vi.fn();
     render(() => (
       <CompositionGraphStudio
