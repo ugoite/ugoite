@@ -2471,6 +2471,215 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     );
     assert_eq!(history_after, history_before);
     assert_eq!(remote_history_after, history_before);
+
+    // A prereplacement source-shaped Composition is still a raw Entry. Keep
+    // its exact carrier available through history and export while the typed
+    // query path rejects it; this is deliberately not a legacy reader.
+    let legacy_yaml = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Monthly expenses
+tags: []
+spec:
+  variables:
+    - id: month_start
+      type: date
+      required: true
+      format: year-month
+    - id: month_end
+      type: date
+      required: true
+      format: year-month
+  sources:
+    - id: expense_rows
+      kind: entry_query
+      form_id: "00000000-0000-7000-8000-000000000010"
+      field_schema:
+        - field_id: 100
+          field_type: date
+        - field_id: 101
+          field_type: string
+        - field_id: 102
+          field_type: double
+      query:
+        filters:
+          - field_id: 100
+            operator: gte
+            value:
+              variable: month_start
+          - field_id: 100
+            operator: lt
+            value:
+              variable: month_end
+        sort:
+          - field_id: 100
+            direction: desc
+        projection:
+          kind: fields
+          fields: [100, 101, 102]
+    - id: month_total
+      kind: saved_sql
+      entry_id: "00000000-0000-7000-8000-000000000020"
+      revision_id: "00000000-0000-7000-8000-000000000021"
+      expected_result:
+        - name: total
+          type: float
+      variables:
+        month_start:
+          variable: month_start
+        month_end:
+          variable: month_end
+  components:
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
+    - id: total
+      kind: metric
+      source: month_total
+      column: total
+    - id: transactions
+      kind: table
+      source: expense_rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
+          - kind: component
+            component: total
+          - kind: component
+            component: transactions
+"#;
+    let legacy = seed_raw_composition_revision(
+        service.operator(),
+        &service.workspace_path(&fixture.space_id),
+        RawCompositionSeed {
+            name: "Monthly expenses".to_string(),
+            kind: "dashboard".to_string(),
+            tags: Vec::new(),
+            format_version: 1,
+            spec: legacy_yaml.to_string(),
+        },
+        &fixture.owner_principal_id.to_string(),
+    )
+    .await
+    .expect("seed source-shaped historical Composition");
+    let legacy_id = legacy.entry_id.to_string();
+    let legacy_revision = legacy.revision_id.to_string();
+    let legacy_history_args = ["composition", "history", legacy_id.as_str()];
+    let legacy_history = stdout_json(
+        &run_cli(&core_config_path, &legacy_history_args).await,
+        "Core source-shaped Composition history",
+    );
+    assert_eq!(legacy_history["total"], 1);
+    assert_eq!(
+        stdout_json(
+            &run_cli(&fixture.config_path, &legacy_history_args).await,
+            "Remote source-shaped Composition history",
+        ),
+        legacy_history
+    );
+
+    let legacy_raw_args = [
+        "composition",
+        "inspect",
+        legacy_id.as_str(),
+        "--revision",
+        legacy_revision.as_str(),
+        "--raw",
+    ];
+    for (config, surface) in [
+        (&core_config_path, "Core"),
+        (&fixture.config_path, "Remote"),
+    ] {
+        let raw = run_cli(config, &legacy_raw_args).await;
+        assert!(
+            raw.status.success(),
+            "{surface} raw inspect of old shape must work"
+        );
+        assert_eq!(raw.stdout, legacy_yaml.as_bytes());
+    }
+
+    let legacy_export_path = output_dir.join("legacy-composition-export.ugcomp.yaml");
+    let legacy_remote_export_path = output_dir.join("legacy-remote-composition-export.ugcomp.yaml");
+    let legacy_export_args = [
+        "composition",
+        "export",
+        legacy_id.as_str(),
+        "--revision",
+        legacy_revision.as_str(),
+        "--output",
+        legacy_export_path.to_str().expect("legacy export path"),
+    ];
+    let legacy_remote_export_args = [
+        "composition",
+        "export",
+        legacy_id.as_str(),
+        "--revision",
+        legacy_revision.as_str(),
+        "--output",
+        legacy_remote_export_path
+            .to_str()
+            .expect("legacy remote export path"),
+    ];
+    let export = run_cli(&core_config_path, &legacy_export_args).await;
+    let remote_export = run_cli(&fixture.config_path, &legacy_remote_export_args).await;
+    assert!(export.status.success(), "raw export of old shape must work");
+    assert!(
+        remote_export.status.success(),
+        "remote raw export of old shape must work"
+    );
+    assert_eq!(
+        std::fs::read(&legacy_export_path).unwrap(),
+        legacy_yaml.as_bytes()
+    );
+    assert_eq!(
+        std::fs::read(&legacy_remote_export_path).unwrap(),
+        legacy_yaml.as_bytes()
+    );
+
+    let legacy_query_args = [
+        "composition",
+        "query",
+        legacy_id.as_str(),
+        "--revision",
+        legacy_revision.as_str(),
+    ];
+    let core_rejected = stdout_json(
+        &run_cli(&core_config_path, &legacy_query_args).await,
+        "Core typed query rejection of source-shaped Composition",
+    );
+    let remote_rejected = stdout_json(
+        &run_cli(&fixture.config_path, &legacy_query_args).await,
+        "Remote typed query rejection of source-shaped Composition",
+    );
+    assert_composition_query_semantics_match(&core_rejected, &remote_rejected);
+    assert_eq!(core_rejected["ok"], false);
+    assert_eq!(
+        core_rejected["diagnostics"],
+        json!([{"code": "invalid_composition"}])
+    );
+    assert_eq!(
+        stdout_json(
+            &run_cli(&fixture.config_path, &legacy_history_args).await,
+            "Remote source-shaped Composition history after raw recovery",
+        ),
+        legacy_history
+    );
+    assert_eq!(
+        stdout_json(
+            &run_cli(&core_config_path, &legacy_history_args).await,
+            "Core source-shaped Composition history after raw recovery",
+        ),
+        legacy_history
+    );
 }
 
 #[tokio::test]

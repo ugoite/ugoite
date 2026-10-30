@@ -193,6 +193,27 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column } }
+      - id: composition-raw-recovery-verification
+        role: verification
+        facet: verification
+        responsibility: Verify prereplacement source-shaped Composition data remains raw Entry history and export while typed operations reject it.
+        targets:
+          - id: cli-source-shaped-raw-recovery
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector:
+              kind: test
+              name: test_cli_composition_unsupported_version_recovery_matches_core_remote
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.replaced-composition-grammar-fails-closed
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-cli
+                    harness: test_journey_remote
+                    test: test_cli_composition_unsupported_version_recovery_matches_core_remote
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend
