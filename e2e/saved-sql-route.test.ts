@@ -86,6 +86,66 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("@smoke SQL tree reorders ARRAY elements and the saved query returns the new order", async ({ page, request }) => {
+    const name = `Array order ${Date.now()}`;
+    const created = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: "SELECT ARRAY[4, 9]",
+          variables: [],
+        },
+      },
+    );
+    const body = await created.json() as { id?: string };
+    expect([200, 201], JSON.stringify(body)).toContain(created.status());
+    const savedSqlId = body.id!;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const editor = page.locator(".ui-sql-editor");
+      await expect(editor).toContainText("ARRAY[4, 9]");
+      await page.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      await page.getByRole("button", { name: "SQL tree", exact: true }).click();
+      const tree = page.getByRole("dialog", { name: "SQL tree" });
+      await tree.getByRole("treeitem", { name: /Value: 9/ }).first().click();
+      await tree.getByRole("button", { name: "Move ARRAY element up" }).click();
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(editor).toContainText("ARRAY[9, 4]");
+      await tree.getByRole("button", { name: "Close", exact: true }).first()
+        .click();
+
+      const ran = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const result = await ran;
+      expect(result.ok(), await result.text()).toBe(true);
+      const output = await result.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(output.columns).toHaveLength(1);
+      expect(output.rows).toEqual([{ [output.columns[0]]: [9, 4] }]);
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      )
+        .toBeVisible();
+      await expect(page.locator('p[role="alert"]')).toHaveCount(0);
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("REQ-FE-063 @smoke: scalar SELECT without a Form can use SQL structure editing", async ({ page, request }) => {
     const name = `Scalar SQL ${Date.now()}`;
     const createResponse = await request.post(

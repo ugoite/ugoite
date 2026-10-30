@@ -11,6 +11,41 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
+    const initial = "SELECT ARRAY[4, 9]";
+    const document = await parseSqlDocument(initial);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    expect(array).toBeDefined();
+    expect(array?.kind).toBe("other_expression");
+    const elements = document.nodes.filter((node) =>
+      node.parent === array!.id && node.kind === "literal_expression"
+    );
+    expect(elements).toHaveLength(2);
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const arrayItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(array!.id)
+    );
+    expect(arrayItem).toBeDefined();
+
+    const secondElement = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(elements[1].id),
+    );
+    expect(secondElement).toBeDefined();
+    fireEvent.click(secondElement!);
+    expect(
+      screen.getByRole("button", { name: "Move ARRAY element up" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move ARRAY element up" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe("SELECT ARRAY[9, 4]"));
+  });
+
   it("renames an output alias and its resolved bare ORDER BY reference atomically", async () => {
     const source = 'SELECT 1 AS "total" ORDER BY TOTAL DESC';
     const document = await parseSqlDocument(source);

@@ -806,6 +806,10 @@
             [
               "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
               "constructs and edits ARRAY elements through the expression inspector"
+            ],
+            [
+              "e2e/saved-sql-route.test.ts",
+              "@smoke SQL tree reorders ARRAY elements and the saved query returns the new order"
             ]
           ]
         },
