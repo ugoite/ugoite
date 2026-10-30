@@ -237,6 +237,19 @@ requirements:
                 criterion: REQ-FE-063#criterion.shared-structure-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run" } }
+          - id: browser-empty-draft-actions
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.relation-free-starter
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.shared-structure-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable" } }
           - id: typed-default-create
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx

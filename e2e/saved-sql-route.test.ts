@@ -251,6 +251,80 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+      waitUntil: "domcontentloaded",
+    });
+
+    const editor = page.locator(".ui-sql-editor");
+    const editorContent = editor.locator(".cm-content");
+    await expect(editorContent).toContainText("SELECT 1");
+    await editorContent.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Backspace");
+    await expect(editorContent).toHaveText("");
+
+    const toolbar = page.getByRole("group", { name: "SQL", exact: true });
+    for (
+      const [action, dialogName] of [
+        ["Form", "Form"],
+        ["Columns", "Columns"],
+        ["Filter", "Filter"],
+        ["Sort", "Sort"],
+      ] as const
+    ) {
+      const button = toolbar.getByRole("button", { name: action, exact: true });
+      await expect(button).toBeEnabled();
+      await button.click();
+      const dialog = page.getByRole("dialog", { name: dialogName });
+      await expect(dialog).toBeVisible();
+      if (action === "Form") {
+        await expect(dialog.getByRole("button", { name: "Entry", exact: true }))
+          .toBeVisible();
+      }
+      await dialog.getByRole("button", { name: "Close", exact: true }).last()
+        .click();
+      await expect(dialog).toHaveCount(0);
+      await expect(editor).toHaveText("");
+    }
+
+    const structure = toolbar.getByRole("button", {
+      name: "Structure",
+      exact: true,
+    });
+    await expect(structure).toBeEnabled();
+    await structure.click();
+    const structureOptions = page.getByRole("group", {
+      name: "Structure options",
+    });
+    await structureOptions.getByRole("button", {
+      name: "SQL tree",
+      exact: true,
+    }).click();
+    await expect(page.getByRole("dialog", { name: "SQL tree" }))
+      .toBeVisible();
+    await page.getByRole("dialog", { name: "SQL tree" })
+      .getByRole("button", { name: "Close", exact: true }).last().click();
+    await expect(editor).toHaveText("");
+
+    const argumentsAction = toolbar.getByRole("button", {
+      name: "Arguments",
+      exact: true,
+    });
+    await expect(argumentsAction).toBeEnabled();
+    await argumentsAction.click();
+    const argumentsDialog = page.getByRole("dialog", { name: "Arguments" });
+    await expect(argumentsDialog).toBeVisible();
+    await expect(argumentsDialog.getByLabel("Argument name", { exact: true }))
+      .toBeVisible();
+    await argumentsDialog.getByRole("button", {
+      name: "Close",
+      exact: true,
+    }).last().click();
+    await expect(editor).toHaveText("");
+  });
+
   test("REQ-FE-064 @smoke: a Form query exposes every shared SQL action", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const relation = await getDefaultFormRelation(request, spaceId);
