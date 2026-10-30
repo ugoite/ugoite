@@ -4126,6 +4126,10 @@ a.tool {
   border-color: var(--ui-border);
   background: var(--ui-surface-2);
 }
+.studioModeOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
 .studioModeOption:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
