@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# Pinned: rig 0.45+ requires rustc 1.97, above the pinned toolchain (1.95.0).
+# Exact pin: rig 0.45 reworks the sans-IO AgentRun API (PendingToolCall,
+# AgentRun::tool_results, ModelTurn::new, Message handling) and this adapter
+# has no behavioral test coverage, so the migration needs a dedicated,
+# behavior-verified PR instead of riding a Dependabot bump.
 rig-agent = { version = "=0.44.0", default-features = false }
 serde_json = "1.0"
 ugoite-konase = { path = "../ugoite-konase" }
