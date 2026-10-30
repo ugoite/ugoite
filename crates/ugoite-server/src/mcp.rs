@@ -353,6 +353,7 @@ fn unsupported_protocol_version(id: Value, requested: &str) -> Response {
     )
 }
 
+#[allow(clippy::result_large_err)]
 async fn authenticate(
     state: &AppState,
     headers: &HeaderMap,
@@ -690,6 +691,7 @@ fn insufficient_scope(state: &AppState, scheme: &str, actions: &[&str]) -> Respo
     )
 }
 
+#[allow(clippy::result_large_err)]
 async fn dispatch(
     state: &AppState,
     auth: &AuthContext,
@@ -738,6 +740,7 @@ fn fixed_list(request: &RpcRequest, templates: bool) -> Result<Value, Box<Respon
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn tools_list(state: &AppState, auth: &AuthContext) -> Result<Value, Response> {
     let mut tools = vec![
         json!({"name":"ugoite.search","description":"Find Entries by query and return compact summaries with stable resource links.","inputSchema":search_schema(),"outputSchema":search_output_schema(),"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}),
@@ -805,6 +808,7 @@ fn undo_output_schema() -> Value {
     json!({"type":"object","properties":{"run_id":{"type":"string"},"reverted_change_count":{"type":"integer","minimum":0},"_untrusted_content":{"const":true}},"required":["run_id","reverted_change_count","_untrusted_content"],"additionalProperties":false})
 }
 
+#[allow(clippy::result_large_err)]
 async fn resources_read(
     state: &AppState,
     auth: &AuthContext,
@@ -1018,6 +1022,7 @@ fn unix_millis(value: Option<&Value>) -> i64 {
         .unwrap_or_default()
 }
 
+#[allow(clippy::result_large_err)]
 async fn history_projection(
     state: &AppState,
     auth: &AuthContext,
@@ -1061,6 +1066,7 @@ async fn history_projection(
     )
 }
 
+#[allow(clippy::result_large_err)]
 async fn schema_for_entry(
     state: &AppState,
     auth: &AuthContext,
@@ -1109,6 +1115,7 @@ fn form_projection(form: &Value) -> Value {
     json!({"id":form.get("id").and_then(Value::as_str).unwrap_or_default(),"version":form.get("version").and_then(Value::as_i64).unwrap_or(1),"name":sanitize_mcp_string(form.get("name").and_then(Value::as_str).unwrap_or_default()),"description":form.get("description").and_then(Value::as_str).map(sanitize_mcp_string),"fields":fields,"_untrusted_content":true})
 }
 
+#[allow(clippy::result_large_err)]
 async fn tools_call(
     state: &AppState,
     auth: &AuthContext,
@@ -1184,6 +1191,7 @@ fn request_run_id(request: &RpcRequest) -> Result<RunId, Response> {
     })
 }
 
+#[allow(clippy::result_large_err)]
 async fn rebind_tool_failure(
     result: Result<Value, Response>,
     id: &Value,
@@ -1204,6 +1212,7 @@ async fn rebind_tool_failure(
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn search(
     state: &AppState,
     auth: &AuthContext,
@@ -1291,6 +1300,7 @@ fn map_search_service_error(error: anyhow::Error) -> Response {
     tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable")
 }
 
+#[allow(clippy::result_large_err)]
 async fn save(
     state: &AppState,
     auth: &AuthContext,
@@ -1439,6 +1449,7 @@ fn mcp_save_error(error: ApiError, operation: &str) -> Response {
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn undo(state: &AppState, auth: &AuthContext, run_id: &RunId) -> Result<Value, Response> {
     let service = state.service.clone();
     let space_id = auth.space_id.clone();
@@ -1479,6 +1490,7 @@ async fn undo(state: &AppState, auth: &AuthContext, run_id: &RunId) -> Result<Va
     .map_err(|_| tool_error("UNDO_FAILED", "The Konase Work could not be undone"))
 }
 
+#[allow(clippy::result_large_err)]
 async fn delete(
     state: &AppState,
     auth: &AuthContext,
