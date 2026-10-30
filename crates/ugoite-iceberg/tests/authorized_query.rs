@@ -4767,9 +4767,9 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query(
 ) -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
-        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
-        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
-        SqlDocumentValueAccess,
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeData,
+        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+        SqlDocumentSemanticLiteral, SqlDocumentValueAccess,
     };
 
     let workspace = IcebergWorkspace::memory_for_tests(
@@ -5035,6 +5035,38 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
         array_query.document.to_sql(),
         "SELECT ARRAY[4, 9] FROM tasks"
     );
+    let array_document = parse_sql_document(&array_query.document.source);
+    let last_array_element = array_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.parent
+                .and_then(|parent_id| array_document.nodes.get(parent_id as usize))
+                .is_some_and(|parent| {
+                    matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                })
+                && node
+                    .range
+                    .and_then(|range| array_document.source_slice(range))
+                    == Some("9")
+        })
+        .expect("the final array element can be selected for reordering");
+    let array_query = apply_sql_document_semantic_edit_transaction(
+        &array_query.document.source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: array_document.contract_version,
+            expected_source: array_query.document.source.clone(),
+            edits: vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                node_id: last_array_element.id,
+                expected_kind: last_array_element.kind,
+                move_up: true,
+            }],
+        },
+    )?;
+    assert_eq!(
+        array_query.document.to_sql(),
+        "SELECT ARRAY[9, 4] FROM tasks"
+    );
     let array_batches = context.execute(array_query.document.to_sql()).await?;
     let array = array_batches[0]
         .column(0)
@@ -5047,8 +5079,8 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
         .downcast_ref::<Int64Array>()
         .expect("the list contains Int64 values");
     assert_eq!(values.len(), 2);
-    assert_eq!(values.value(0), 4);
-    assert_eq!(values.value(1), 9);
+    assert_eq!(values.value(0), 9);
+    assert_eq!(values.value(1), 4);
 
     let empty_array_batches = context
         .execute("SELECT CAST(ARRAY[] AS BIGINT[]) AS empty")

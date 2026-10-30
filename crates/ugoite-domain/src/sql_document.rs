@@ -912,6 +912,12 @@ pub enum SqlDocumentSemanticEdit {
         node_id: u32,
         expected_kind: SqlDocumentNodeKind,
     },
+    /// Move one direct ARRAY literal element to the adjacent position.
+    MoveArrayLiteralElement {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        move_up: bool,
+    },
     /// Wrap an expression in one typed array access suffix. The
     /// source expression is retained verbatim inside parentheses; planning
     /// remains responsible for checking its actual type and field/index.
@@ -2715,6 +2721,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(remove_array_literal_element(&document, node)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::MoveArrayLiteralElement { move_up, .. } = semantic_edit {
+            edits.push(move_array_literal_element(&document, node, *move_up)?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::WrapExpressionInValueAccess { access, .. } = semantic_edit {
             edits.push(wrap_expression_in_value_access(&document, node, access)?);
             continue;
@@ -3205,6 +3215,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::RemoveArrayLiteralElement { .. } => {
                 unreachable!("ARRAY element edits are expanded before single-node edits")
             }
+            SqlDocumentSemanticEdit::MoveArrayLiteralElement { .. } => {
+                unreachable!("ARRAY element edits are expanded before single-node edits")
+            }
             SqlDocumentSemanticEdit::WrapExpressionInValueAccess { .. } => {
                 unreachable!("value access edits are expanded before single-node edits")
             }
@@ -3426,6 +3439,11 @@ impl SqlDocumentSemanticEdit {
             | Self::RemoveArrayLiteralElement {
                 node_id,
                 expected_kind,
+            }
+            | Self::MoveArrayLiteralElement {
+                node_id,
+                expected_kind,
+                ..
             }
             | Self::WrapExpressionInValueAccess {
                 node_id,
@@ -6526,6 +6544,108 @@ fn remove_array_literal_element(
     {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
+    Ok(SqlDocumentEdit {
+        range,
+        expected_text,
+        replacement,
+    })
+}
+
+fn move_array_literal_element(
+    document: &SqlDocument,
+    element: &SqlDocumentNode,
+    move_up: bool,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    let array_id = element
+        .parent
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let array = document
+        .nodes
+        .get(array_id as usize)
+        .filter(|node| node.id == array_id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    if !matches!(array.semantic, Some(SqlDocumentNodeData::ArrayLiteral)) {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let projection_id = array
+        .parent
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let projection = document
+        .nodes
+        .get(projection_id as usize)
+        .filter(|node| {
+            node.id == projection_id
+                && node.kind == SqlDocumentNodeKind::SelectItem
+                && node.semantic.is_none()
+        })
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let projection_range = projection
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if range_has_comment(document, projection_range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let elements = document
+        .nodes
+        .iter()
+        .filter(|node| node.parent == Some(array.id) && node.range.is_some())
+        .collect::<Vec<_>>();
+    let index = elements
+        .iter()
+        .position(|candidate| candidate.id == element.id)
+        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let other_index = if move_up {
+        index.checked_sub(1)
+    } else {
+        (index + 1 < elements.len()).then_some(index + 1)
+    }
+    .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+    let (left, right) = if other_index < index {
+        (elements[other_index], elements[index])
+    } else {
+        (elements[index], elements[other_index])
+    };
+    let left_range = left
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let right_range = right
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if left_range.start < projection_range.start
+        || right_range.end > projection_range.end
+        || left_range.end > right_range.start
+    {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let gap = SqlSourceRange {
+        start: left_range.end,
+        end: right_range.start,
+    };
+    let separator = document
+        .source_slice(gap)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if separator.trim() != "," {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let left_text = document
+        .source_slice(left_range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let right_text = document
+        .source_slice(right_range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let mut replacement =
+        String::with_capacity(right_text.len() + separator.len() + left_text.len());
+    replacement.push_str(right_text);
+    replacement.push_str(separator);
+    replacement.push_str(left_text);
+    let range = SqlSourceRange {
+        start: left_range.start,
+        end: right_range.end,
+    };
+    let expected_text = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+        .to_owned();
     Ok(SqlDocumentEdit {
         range,
         expected_text,
@@ -19351,6 +19471,103 @@ mod tests {
                 ),
             ),
             Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+    }
+
+    #[test]
+    fn semantic_array_element_move_preserves_separator_and_undo() {
+        let source = "SELECT ARRAY[1,  2, 3]";
+        let document = parse_sql_document(source);
+        let second = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .is_some_and(|parent| {
+                        matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                    })
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("2")
+            })
+            .expect("second array element");
+        let moved = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                    node_id: second.id,
+                    expected_kind: second.kind,
+                    move_up: true,
+                }],
+            ),
+        )
+        .expect("element can move up");
+        assert_eq!(moved.document.source, "SELECT ARRAY[2,  1, 3]");
+        let restored =
+            apply_sql_document_edit_transaction(&moved.document.source, &moved.undo).unwrap();
+        assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn semantic_array_element_move_rejects_boundaries_and_comments() {
+        let boundary_source = "SELECT ARRAY[1, 2]";
+        let document = parse_sql_document(boundary_source);
+        let first = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .is_some_and(|parent| {
+                        matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                    })
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("1")
+            })
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                boundary_source,
+                &semantic_transaction(
+                    boundary_source,
+                    vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                        node_id: first.id,
+                        expected_kind: first.kind,
+                        move_up: true
+                    }]
+                )
+            )
+            .unwrap_err(),
+            SqlDocumentEditError::InvalidSemanticReplacement,
+        );
+
+        let commented_source = "SELECT ARRAY[1, /* keep */ 2]";
+        let document = parse_sql_document(commented_source);
+        let first = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .is_some_and(|parent| {
+                        matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                    })
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("1")
+            })
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                commented_source,
+                &semantic_transaction(
+                    commented_source,
+                    vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                        node_id: first.id,
+                        expected_kind: first.kind,
+                        move_up: false
+                    }]
+                )
+            )
+            .unwrap_err(),
+            SqlDocumentEditError::NodeRangeUnavailable,
         );
     }
 

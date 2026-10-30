@@ -179,6 +179,29 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: array-literal-element-reordering
+        kind: behavior
+        statement: >-
+          For an eligible direct element of an unaliased ARRAY literal in a
+          complete SELECT projection item, the SQL Document tree can move the
+          selected element exactly one position up or down when a neighbor
+          exists. Rust validates the ARRAY parent and exact source ranges,
+          swaps only the two adjacent element expressions, preserves the
+          original comma and whitespace between them and every source byte
+          outside that span, and returns a guarded undo. Boundary moves,
+          comment-bearing projection items, unsupported source ranges, and
+          unrecognized separators fail closed; comment-bearing projection
+          items do not expose the move controls. The WASM operation returns
+          the same native result. For eligible rows that expose the controls,
+          boundary moves are disabled and the reason is given in the control's
+          accessible name and title. For
+          executor-admitted SQL, reordering preserves the corresponding array
+          value order; authorized planning and execution remain authoritative
+          for admission and result types.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: relational-constructors
         kind: behavior
         statement: >-
@@ -234,7 +257,7 @@ requirements:
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
             selector: { kind: test, name: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query }
-            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }]
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-element-indexing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slicing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }, { kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query } } }]
           - id: browser-selection-source-resets
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx

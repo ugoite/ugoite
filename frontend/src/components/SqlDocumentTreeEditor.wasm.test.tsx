@@ -417,7 +417,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("edits existing literal slice bounds in place through actual WASM", async () => {
-    const initial = "SELECT values[ /* lower */ 1 /* after lower */ : /* upper */ 2 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount";
+    const initial =
+      "SELECT values[ /* lower */ 1 /* after lower */ : /* upper */ 2 /* after upper */] AS chosen, amount FROM tasks WHERE amount > 0 ORDER BY amount";
     const document = await parseSqlDocument(initial);
     const slice = document.nodes.find((node) =>
       node.semantic?.kind === "array_slice"
@@ -526,6 +527,75 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT ARRAY[4, 9] /* preserve */")
+    );
+
+    const initialArrayDocument = await parseSqlDocument(sql());
+    const initialFirstArrayElement = initialArrayDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "4"
+    );
+    expect(initialFirstArrayElement).toBeDefined();
+    const initialFirstArrayElementItem =
+      (await screen.findAllByRole("treeitem"))
+        .find((node) =>
+          node.dataset.sqlDocumentNode === String(initialFirstArrayElement!.id)
+        );
+    expect(initialFirstArrayElementItem).toBeDefined();
+    fireEvent.click(initialFirstArrayElementItem!);
+    const moveUpDisabled = screen.getByRole("button", {
+      name: "Move ARRAY element up: Already the first ARRAY element",
+    });
+    expect(moveUpDisabled).toBeDisabled();
+    expect(moveUpDisabled).toHaveAttribute(
+      "title",
+      "Already the first ARRAY element",
+    );
+
+    const lastArrayElement = initialArrayDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "9"
+    );
+    expect(lastArrayElement).toBeDefined();
+    const lastArrayElementItem = (await screen.findAllByRole("treeitem"))
+      .find((node) =>
+        node.dataset.sqlDocumentNode === String(lastArrayElement!.id)
+      );
+    expect(lastArrayElementItem).toBeDefined();
+    fireEvent.click(lastArrayElementItem!);
+    const moveDownDisabled = screen.getByRole("button", {
+      name: "Move ARRAY element down: Already the last ARRAY element",
+    });
+    expect(moveDownDisabled).toBeDisabled();
+    expect(moveDownDisabled).toHaveAttribute(
+      "title",
+      "Already the last ARRAY element",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move ARRAY element up" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT ARRAY[9, 4] /* preserve */")
+    );
+
+    const swappedArrayDocument = await parseSqlDocument(sql());
+    const swappedFirstElement = swappedArrayDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "9"
+    );
+    expect(swappedFirstElement).toBeDefined();
+    const swappedFirstItem = (await screen.findAllByRole("treeitem"))
+      .find((node) =>
+        node.dataset.sqlDocumentNode === String(swappedFirstElement!.id)
+      );
+    expect(swappedFirstItem).toBeDefined();
+    fireEvent.click(swappedFirstItem!);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move ARRAY element down" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>
       expect(sql()).toBe("SELECT ARRAY[4, 9] /* preserve */")

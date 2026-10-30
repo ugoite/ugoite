@@ -41,13 +41,12 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, and fixed-bound one-based slice construction or terminal literal-bound updates while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
+        responsibility: Apply typed source-aware semantic edits for parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, fixed-bound one-based slice construction or terminal literal-bound updates, and adjacent ARRAY literal element moves while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
         targets:
           - id: semantic-expression-edits
             adapter: rust
@@ -58,15 +57,14 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-element-indexing
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, and controls to construct fixed-bound one-based slices or edit prepopulated terminal literal slice bounds in the SQL document tree editor.
+        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, controls to construct fixed-bound one-based slices, edit prepopulated terminal literal slice bounds, and move eligible ARRAY literal elements one position up or down in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -79,8 +77,8 @@ features:
                 criterion: REQ-SQL-001#criterion.relational-constructors
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-element-indexing
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-slicing
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
       - id: sql-document-verification
         role: verification
@@ -639,7 +637,7 @@ features:
       - id: projection-position-protocol
         role: implementation
         facet: wasm
-        responsibility: Dispatch bounded guarded SQL Document semantic edits, including projection-position, predicate, grouping, relational, LIMIT, output-alias, and fixed-bound array-slice construction or bound-update operations, through the portable Rust/WASM protocol.
+        responsibility: Dispatch bounded guarded SQL Document semantic edits, including projection-position, predicate, grouping, relational, LIMIT, output-alias, fixed-bound array-slice construction or bound-update, and adjacent ARRAY literal element move operations, through the portable Rust/WASM protocol.
         targets:
           - id: semantic-edit-action
             adapter: rust
@@ -657,6 +655,7 @@ features:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-slicing
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
       - id: projection-position-verification
         role: verification
         facet: verification
@@ -906,6 +905,9 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: edits an existing NOT expression to a unary sign and restores it with WASM undo } }
+          - { id: array-element-reorder-native, adapter: rust, path: crates/ugoite-domain/src/sql_document.rs, selector: { kind: test, name: tests::semantic_array_element_move_preserves_separator_and_undo }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_array_element_move_preserves_separator_and_undo } } }] }
+          - { id: array-element-reorder-rejections, adapter: rust, path: crates/ugoite-domain/src/sql_document.rs, selector: { kind: test, name: tests::semantic_array_element_move_rejects_boundaries_and_comments }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_array_element_move_rejects_boundaries_and_comments } } }] }
+          - { id: array-element-reorder-actual-wasm-ui, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: constructs and edits ARRAY elements through the expression inspector }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action, FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: constructs and edits ARRAY elements through the expression inspector } } }] }
           - id: relational-join-native
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
@@ -972,7 +974,7 @@ features:
             role: rust-wasm
           - target: FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls
             role: browser-editor
-        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes, REQ-SQL-001#criterion.array-slicing]
+        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes, REQ-SQL-001#criterion.array-slicing, REQ-SQL-001#criterion.array-literal-element-reordering]
       - id: guarded-edit-portable-protocol
         kind: custom
         source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
