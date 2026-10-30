@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM denoland/deno:2.9.8 AS frontend-build
+FROM denoland/deno:2.8.3 AS frontend-build
 WORKDIR /repo
 ARG UGOITE_SOURCE_SHA=unknown
 ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
@@ -24,7 +24,7 @@ COPY crates ./crates
 COPY vendor ./vendor
 COPY shared ./shared
 COPY docs/brand/assets ./docs/brand/assets
-RUN cd frontend && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
+RUN cd frontend && deno install --frozen --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
 RUN bash scripts/build-ugoite-wasm.sh release target/wasm/ugoite_wasm.release.wasm
 RUN bash scripts/activate-ugoite-wasm.sh release
 RUN UGOITE_STATIC_SPA=true deno task frontend:build
