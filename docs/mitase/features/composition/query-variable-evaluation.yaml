@@ -464,6 +464,19 @@ features:
                 criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
                 covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: successful_save_rejects_operation_replay_with_changed_work } }
+          - id: saved-work-is-transient-in-browser
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: Composition Studio saves and reopens a filtered SQL metric }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
       - id: atomic-selected-evaluation-verification
         role: verification
         facet: verification

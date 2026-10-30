@@ -329,6 +329,23 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" } }
+          - id: saved-composition-components-reference-variables
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: Composition Studio saves and reopens a filtered SQL metric }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.single-typed-variable-graph
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.display-components-reference-variables
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
 
           - id: shared-form-focus-after-parse
             adapter: typescript
