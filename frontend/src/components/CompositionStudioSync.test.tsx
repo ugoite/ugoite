@@ -548,20 +548,27 @@ describe("CompositionStudio graph surface", () => {
     });
     renderStudio(createCompositionGraphDraft("Report"));
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "customer_id" },
+    });
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Variable name" })
+        .closest("form")!,
+    );
 
-    expect(await screen.findByRole("button", { name: "input, input_1" }))
+    expect(await screen.findByRole("button", { name: "input, customer_id" }))
       .toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    fireEvent.click(screen.getByRole("button", { name: "input, input_1" }));
+    fireEvent.click(screen.getByRole("button", { name: "input, customer_id" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "input_1", exact: true }),
+      screen.getByRole("button", { name: "customer_id", exact: true }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Variable ID" }))
+      expect(screen.getByRole("textbox", { name: "Variable name" }))
         .toHaveFocus()
     );
     fireEvent.click(screen.getByRole("tab", { name: "Design" }));
@@ -574,13 +581,13 @@ describe("CompositionStudio graph surface", () => {
       spec: CompositionGraphDraft;
     }).spec;
     expect(spec.variables).toContainEqual(expect.objectContaining({
-      id: "input_1",
+      id: "customer_id",
       kind: "input",
     }));
     expect(spec.components).toContainEqual({
       id: "input_1",
       kind: "input",
-      variable: "input_1",
+      variable: "customer_id",
     });
     expect(spec.layout.rows.flatMap((row) => row.items)).toContainEqual({
       kind: "component",
@@ -765,8 +772,15 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
 
-    expect(screen.getByRole("textbox", { name: "Variable ID" })).toHaveValue(
-      "input_1",
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "maximum_rows" },
+    });
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Variable name" })
+        .closest("form")!,
+    );
+    expect(screen.getByRole("textbox", { name: "Variable name" })).toHaveValue(
+      "maximum_rows",
     );
     expect(
       screen.queryByText("SQL", { selector: ".compositionVariableRailItem" }),
@@ -778,6 +792,14 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(screen.getByRole("button", { name: "SQL" }));
+
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "query" },
+    });
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Variable name" })
+        .closest("form")!,
+    );
 
     const editor = screen.getByRole("textbox", { name: "SQL" });
     expect(editor).toHaveValue("SELECT 1");

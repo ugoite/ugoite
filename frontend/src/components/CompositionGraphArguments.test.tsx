@@ -545,4 +545,138 @@ describe("Composition shared SQL argument editing", () => {
     );
     await waitFor(() => expect(opener).toHaveFocus());
   });
+
+  it("creates a variable only after a unique name is submitted", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables = [{
+      id: "existing",
+      kind: "constant",
+      value_type: { scalar_type: "string", nullable: false },
+      value: { kind: "string", value: "" },
+    }];
+    const [draft, setDraft] = createSignal(initial);
+    const onSave = vi.fn();
+    render(() => (
+      <CompositionGraphStudio
+        draft={draft()}
+        forms={[]}
+        savedSql={[]}
+        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
+        session={{
+          session_id: "editor",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "principal",
+        }}
+        getPrincipalGeneration={async () => "principal"}
+        isSessionCurrent={() => true}
+        sqlSchema={buildSqlSchema([])}
+        onDraftChange={setDraft}
+        onSave={onSave}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Variables", exact: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("button", { name: "SQL", exact: true }));
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(draft().variables).toHaveLength(1);
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute(
+      "title",
+      "Add or cancel the variable before saving.",
+    );
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveFocus());
+    fireEvent.input(name, { target: { value: "existing" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A variable with this name already exists.",
+    );
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect(draft().variables).toHaveLength(1);
+
+    fireEvent.input(name, { target: { value: "   " } });
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect(draft().variables).toHaveLength(1);
+
+    fireEvent.input(name, { target: { value: "query_1" } });
+    fireEvent.submit(name.closest("form")!);
+    expect(draft().variables.at(-1)).toMatchObject({
+      id: "query_1",
+      kind: "query",
+      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+    });
+    expect(screen.getByRole("button", { name: "query_1", exact: true }))
+      .toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Variable name" }))
+        .toHaveFocus()
+    );
+    expect(save).toBeEnabled();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("adds and cancels a Design input in place with matching graph references", async () => {
+    const [draft, setDraft] = createSignal(
+      createCompositionGraphDraft("Report"),
+    );
+    render(() => (
+      <CompositionGraphStudio
+        draft={draft()}
+        forms={[]}
+        savedSql={[]}
+        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
+        session={{
+          session_id: "editor",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "principal",
+        }}
+        getPrincipalGeneration={async () => "principal"}
+        isSessionCurrent={() => true}
+        sqlSchema={buildSqlSchema([])}
+        onDraftChange={setDraft}
+        onSave={() => {}}
+      />
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute(
+      "title",
+      "Add or cancel the variable before saving.",
+    );
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "discarded" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(save).toBeEnabled();
+    expect(draft().variables).toHaveLength(0);
+    expect(draft().components).toHaveLength(0);
+
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveFocus());
+    fireEvent.input(name, { target: { value: "customer_id" } });
+    fireEvent.submit(name.closest("form")!);
+
+    expect(screen.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(draft().variables).toContainEqual({
+      id: "customer_id",
+      kind: "input",
+      value_type: { scalar_type: "string", nullable: false },
+      required: true,
+    });
+    expect(draft().components).toContainEqual(
+      expect.objectContaining({ kind: "input", variable: "customer_id" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "customer_id" }))
+        .toHaveFocus()
+    );
+  });
 });

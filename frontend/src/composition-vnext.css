@@ -124,6 +124,27 @@
 .compositionVariableEditorEmpty {
   min-height: 8rem;
 }
+.compositionVariableCreationForm {
+  display: grid;
+  gap: var(--ui-spacing-sm);
+  align-content: start;
+  max-width: 32rem;
+}
+.compositionVariableCreationForm label {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+}
+.compositionVariableCreationName {
+  min-height: 44px;
+}
+.compositionVariableCreationActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
+}
+.compositionVariableCreationActions button {
+  min-height: 44px;
+}
 .compositionVariableMobileOpen,
 .compositionVariableRailBackdrop {
   display: none;

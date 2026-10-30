@@ -388,7 +388,8 @@ async function addStudioTypedInput(
   await page.getByRole("button", { name: "Add variable", exact: true }).click();
   await page.getByRole("group", { name: "Add variable" })
     .getByRole("button", { name: "Input", exact: true }).click();
-  await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).press("Enter");
   await page.getByLabel("Type", { exact: true }).selectOption(type);
   if (defaultValue) {
     await page.getByLabel("Default", { exact: true }).fill(defaultValue);
@@ -1590,6 +1591,21 @@ test.describe("Composition Studio Journey", () => {
       await page.keyboard.press("Escape");
       await expect(initialPicker).toHaveCount(0);
       await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
+      await page.getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: "Add variable", exact: true })
+        .click();
+      await page.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Input", exact: true }).click();
+      const pendingName = page.getByLabel("Variable name", { exact: true });
+      await expect(pendingName).toBeFocused();
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "input_1", exact: true }))
+        .toHaveCount(0);
+      await pendingName.fill("discarded");
+      await pendingName.press("Escape");
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeEnabled();
       await addStudioTypedInput(page, "minimum", "integer", "0");
       await addStudioInput(page, "minimum");
 

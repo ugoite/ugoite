@@ -293,7 +293,8 @@ async function addDateVariable(
   await page.getByRole("button", { name: "Add variable", exact: true }).click();
   await page.getByRole("group", { name: "Add variable" })
     .getByRole("button", { name: "Input", exact: true }).click();
-  await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).press("Enter");
   await page.getByLabel("Type", { exact: true }).selectOption("date");
   await page.getByLabel("Default", { exact: true }).fill(defaultValue);
 }

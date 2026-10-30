@@ -263,6 +263,22 @@ features:
                 criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+          - id: variable-name-creation-form
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableCreationForm.tsx
+            selector: { kind: symbol, name: CompositionVariableCreationForm }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+          - id: composition-graph-studio
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphStudio.tsx
+            selector: { kind: symbol, name: CompositionGraphStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
           - id: sql-structure-toolbar
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.tsx
@@ -351,6 +367,8 @@ features:
                 criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-text-inspector-variable-binding
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
       - id: graph-workspace-read-verification
         role: verification
         facet: verification
@@ -437,6 +455,33 @@ features:
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.space-membership-mutation-signal]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/space-api.access.test.ts, test: "does not notify when a membership mutation fails" } }
+          - id: variable-add-requires-name
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableGraphWorkspace.test.tsx
+            selector: { kind: test, name: "adds typed graph nodes through the variable rail" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableGraphWorkspace.test.tsx, test: "adds typed graph nodes through the variable rail" } }
+          - id: variable-name-validation-and-save-guard
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "creates a variable only after a unique name is submitted" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a variable only after a unique name is submitted" } }
+          - id: design-input-name-reference
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "adds and cancels a Design input in place with matching graph references" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "adds and cancels a Design input in place with matching graph references" } }
           - id: selected-sql-only
             adapter: typescript
             path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
@@ -501,6 +546,10 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
           - id: source-revision-keeps-composition-pin
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts
@@ -518,6 +567,7 @@ features:
                 criterion: REQ-COMP-009#criterion.display-components-reference-variables
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-binding-rebind.test.ts, test: Composition shared query edits update every display } }
+
 
           - id: shared-form-focus-after-parse
             adapter: typescript
