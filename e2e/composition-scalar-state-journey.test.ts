@@ -250,6 +250,17 @@ async function seedScalarStateComposition(
       description: "Amount that must match the scalar result.",
     }],
   );
+  const multipleRowsSql = await createSavedSql(
+    request,
+    spaceId,
+    `Scalar multiple rows ${suffix}`,
+    `SELECT ${amount} AS value FROM ${table} WHERE ${amount} <= $maximum`,
+    [{
+      name: "maximum",
+      type: "integer",
+      description: "Maximum amount included in the scalar result.",
+    }],
+  );
   const zeroRowsYaml = await completeCompositionGraphYaml(request, spaceId, {
     name: `Empty scalar after Input ${suffix}`,
     variables: [
@@ -277,19 +288,51 @@ async function seedScalarStateComposition(
           schema_fingerprint: "",
         },
       },
+      {
+        id: "maximum",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 10 },
+      },
+      {
+        id: "multiple_rows",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: true },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: multipleRowsSql.entryId,
+          revision_id: multipleRowsSql.revisionId,
+          column: "value",
+          arguments: [{ name: "maximum", variable: "maximum" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
     ],
     components: [
       { id: "minimum_input", kind: "input", variable: "minimum" },
+      { id: "maximum_input", kind: "input", variable: "maximum" },
       { id: "zero_rows", kind: "metric", variable: "zero_rows" },
+      { id: "multiple_rows", kind: "metric", variable: "multiple_rows" },
     ],
     rows: [
       {
         id: "inputs",
-        items: [{ kind: "component", component: "minimum_input" }],
+        items: ["minimum_input", "maximum_input"].map((component) => ({
+          kind: "component" as const,
+          component,
+        })),
       },
       {
         id: "scalar_states",
-        items: [{ kind: "component", component: "zero_rows" }],
+        items: ["zero_rows", "multiple_rows"].map((component) => ({
+          kind: "component" as const,
+          component,
+        })),
       },
     ],
   });
@@ -541,6 +584,59 @@ test.describe("Composition scalar state journey", () => {
         name: "zero_rows",
         exact: true,
       })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
+      await minimumInput.fill("10");
+      await expect(metricOutput(page, "zero_rows")).toHaveText("10", {
+        timeout: scalarResultTimeoutMs,
+      });
+
+      const maximumInput = page.getByRole("textbox", {
+        name: "maximum",
+        exact: true,
+      });
+      await expect(maximumInput).toHaveValue("10");
+      await expect(metricOutput(page, "multiple_rows")).toHaveText("10", {
+        timeout: scalarResultTimeoutMs,
+      });
+      const failedEvaluation = page.waitForResponse((response) => {
+        if (
+          response.request().method() !== "POST" ||
+          !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+        ) return false;
+        return response.request().postDataJSON().variables?.maximum === 20;
+      });
+      await maximumInput.fill("20");
+      const result = await (await failedEvaluation).json();
+      expect(result.ok).toBe(false);
+      expect(result.query_diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          variable_id: "multiple_rows",
+          result_diagnostic: expect.objectContaining({
+            result_diagnostic: expect.objectContaining({
+              code: "scalar_multiple_rows",
+            }),
+          }),
+        }),
+      ]));
+      const multipleRowsSection = page.getByRole("region", {
+        name: "scalar_states",
+        exact: true,
+      });
+      await expect(multipleRowsSection.getByRole("alert")).toContainText(
+        await page.locator("html").getAttribute("lang").then((locale) =>
+          locale === "ja"
+            ? "指標の結果が複数行です。"
+            : "The metric returned more than one row."
+        ),
+        { timeout: scalarResultTimeoutMs },
+      );
+      await expect(page.getByRole("region", {
+        name: "multiple_rows",
+        exact: true,
+      })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
+      await maximumInput.fill("10");
+      await expect(metricOutput(page, "multiple_rows")).toHaveText("10", {
+        timeout: scalarResultTimeoutMs,
+      });
     } finally {
       await freshContext.close();
     }

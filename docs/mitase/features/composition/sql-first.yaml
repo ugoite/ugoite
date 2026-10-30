@@ -193,6 +193,20 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column } }
+      - id: scalar-cardinality-browser-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the Browser reports a scalar cardinality failure when user input makes a previously valid scalar query return multiple rows, clears the invalid metric, and restores it after the user repairs the input.
+        targets:
+          - id: scalar-cardinality-diagnostic-and-repair
+            adapter: typescript
+            path: e2e/composition-scalar-state-journey.test.ts
+            selector: { kind: test, name: scalar_result_distinguishes_zero_rows_null_and_zero }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.scalar-cardinality-is-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-query-evaluation]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-scalar-state-journey.test.ts, test: scalar_result_distinguishes_zero_rows_null_and_zero } }
       - id: composition-raw-recovery-verification
         role: verification
         facet: verification
