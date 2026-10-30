@@ -227,6 +227,11 @@
 .compositionGraphToolbar .studioMode {
   margin-top: 0;
 }
+.compositionGraphPendingModeNotice {
+  margin: 0;
+  color: var(--ui-muted-foreground);
+  font-size: var(--ui-font-size-sm);
+}
 .compositionGraphSave {
   min-height: 44px;
 }

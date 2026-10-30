@@ -359,9 +359,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   };
 
   const changeMode = (entry: StudioMode) => {
-    if (pendingCreation() && pendingCreation()?.origin !== entry) {
-      cancelCreation();
-    }
+    if (pendingCreation() && pendingCreation()?.origin !== entry) return;
     setMode(entry);
   };
 
@@ -399,6 +397,15 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
                 class="studioModeOption"
                 classList={{ "studioModeOption--active": mode() === entry }}
                 aria-selected={mode() === entry}
+                disabled={!!pendingCreation() &&
+                  pendingCreation()?.origin !== entry}
+                title={pendingCreation() && pendingCreation()?.origin !== entry
+                  ? t("composition.finishOrCancelVariableCreation")
+                  : undefined}
+                aria-describedby={pendingCreation() &&
+                    pendingCreation()?.origin !== entry
+                  ? "compositionPendingModeNotice"
+                  : undefined}
                 onClick={() => changeMode(entry)}
               >
                 {entry === "design"
@@ -408,6 +415,15 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
             )}
           </For>
         </nav>
+        <Show when={pendingCreation()}>
+          <p
+            id="compositionPendingModeNotice"
+            class="compositionGraphPendingModeNotice"
+            role="status"
+          >
+            {t("composition.finishOrCancelVariableCreation")}
+          </p>
+        </Show>
         <Show when={props.onSave}>
           <button
             type="button"
