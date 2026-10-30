@@ -20765,7 +20765,7 @@ mod tests {
                 .replace("1 AS total", "1 AS \"renamed\"")
                 .replace("ORDER BY total", "ORDER BY \"renamed\"");
             assert_eq!(renamed.document.source, expected);
-            assert_eq!(renamed.document.source.ends_with(suffix), true);
+            assert!(renamed.document.source.ends_with(suffix));
             let restored =
                 apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
                     .expect("alias and sort references undo atomically");
