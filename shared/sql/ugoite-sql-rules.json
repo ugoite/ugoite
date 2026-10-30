@@ -366,7 +366,7 @@
           ],
           "limits": [
             "Typed projection expression, Form-column and wildcard expansion, append/remove/reorder; source outside the edit is retained.",
-            "Typed alias construction and rename are supported; unquoted identifiers use ASCII lowercase folding while quoted identifiers preserve case. Rename updates a bare same-scope ORDER BY alias reference atomically. References in other clauses, expression-shaped ORDER BY items, and comment-bearing ORDER BY items fail closed; full alias resolution coverage remains unverified."
+            "Typed alias construction and rename are supported; unquoted identifiers use ASCII lowercase folding while quoted identifiers preserve case. Rename updates same-scope ORDER BY alias references atomically, including unqualified identifier leaves inside ORDER BY expressions when no other same-scope reference makes the binding ambiguous. Qualified source references remain unchanged. References in other clauses, comment-bearing ORDER BY clauses, and ambiguous same-scope references fail closed; full alias resolution coverage remains unverified."
           ]
         },
         {

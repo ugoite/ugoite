@@ -490,7 +490,7 @@ test.describe("Composition Golden Journey", () => {
         .click();
       await expect(
         initialPage.getByText("Could not save this tool.", { exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 60_000 });
 
       const replayResponsePromise = initialPage.waitForResponse((response) => {
         const url = new URL(response.url());

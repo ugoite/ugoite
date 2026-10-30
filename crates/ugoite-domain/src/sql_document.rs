@@ -8953,12 +8953,63 @@ fn projection_alias_reference_edits(
             continue;
         }
 
-        // Only a bare ORDER BY item in the same query has an unambiguous
-        // output-alias binding. Other same-spelled references may be source
-        // columns or belong to a clause with different name-resolution rules.
+        // ORDER BY resolves output aliases, including identifier leaves in
+        // expression-shaped sort keys. Keep other clauses and qualified
+        // identifiers out of this rewrite: those can refer to source columns.
         let order_item = ancestor_of_kind(document, candidate.id, SqlDocumentNodeKind::OrderByItem)
             .ok_or(SqlDocumentEditError::ProjectionAliasConflict)?;
-        if order_by_item_expression(document, order_item)?.id != candidate.id {
+        let expression = order_by_item_expression(document, order_item)?;
+        if expression.kind == SqlDocumentNodeKind::FunctionExpression {
+            return Err(SqlDocumentEditError::ProjectionAliasConflict);
+        }
+        let mut ancestor_id = candidate.id;
+        while ancestor_id != expression.id {
+            let ancestor = document
+                .nodes
+                .get(ancestor_id as usize)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if ancestor.kind == SqlDocumentNodeKind::CompoundIdentifierExpression
+                || ancestor.kind == SqlDocumentNodeKind::SubqueryExpression
+                // Identifiers inside function arguments, window clauses, or
+                // aggregate FILTER clauses can bind to input columns rather
+                // than the projection alias. Keep alias rewrites to explicit
+                // operator expressions until those scopes can be resolved.
+                || ancestor.kind == SqlDocumentNodeKind::FunctionExpression
+            {
+                return Err(SqlDocumentEditError::ProjectionAliasConflict);
+            }
+            ancestor_id = ancestor
+                .parent
+                .ok_or(SqlDocumentEditError::ProjectionAliasConflict)?;
+        }
+        if ancestor_id != expression.id {
+            return Err(SqlDocumentEditError::ProjectionAliasConflict);
+        }
+        if document.nodes.iter().any(|other| {
+            if other.id == candidate.id
+                || other.kind != SqlDocumentNodeKind::IdentifierExpression
+                || query_ancestor_id(document, other.id) != Some(query_id)
+            {
+                return false;
+            }
+            let other_range = other.range;
+            if other_range.is_some_and(|range| {
+                let expression_range = expression.range;
+                expression_range.is_some_and(|expression_range| {
+                    expression_range.start <= range.start && range.end <= expression_range.end
+                })
+            }) {
+                return false;
+            }
+            matches!(
+                &other.semantic,
+                Some(SqlDocumentNodeData::Identifier { value, quote_style })
+                    if sql_identifiers_match(
+                        &SqlDocumentIdentifier { value: value.clone(), quote_style: *quote_style },
+                        old_alias
+                    )
+            )
+        }) {
             return Err(SqlDocumentEditError::ProjectionAliasConflict);
         }
         let order_clause = order_item
@@ -20652,9 +20703,38 @@ mod tests {
             );
         }
 
+        let expression_source =
+            "SELECT 1 AS total FROM (SELECT 'source' AS total) AS source ORDER BY total + 1";
+        let expression_document = parse_sql_document(expression_source);
+        let item = expression_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "renamed".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            expression_source,
+            &semantic_transaction(expression_source, vec![rename]),
+        )
+        .expect("an ORDER BY expression can keep a same-scope projection alias binding");
+        assert_eq!(
+            renamed.document.source,
+            "SELECT 1 AS \"renamed\" FROM (SELECT 'source' AS total) AS source ORDER BY \"renamed\" + 1"
+        );
+        let restored = apply_sql_document_edit_transaction(&renamed.document.source, &renamed.undo)
+            .expect("expression alias and reference edits undo atomically");
+        assert_eq!(restored.document.source, expression_source);
+
         for source in [
-            "SELECT amount AS total FROM \"G\" ORDER BY total + 1",
-            "SELECT amount AS total FROM \"G\" ORDER BY total /* keep */",
+            "SELECT amount AS total FROM \"G\" ORDER BY ROW_NUMBER() OVER (ORDER BY total)",
+            "SELECT amount AS total FROM \"G\" ORDER BY COUNT(*) FILTER (WHERE total > 0)",
         ] {
             let document = parse_sql_document(source);
             let item = document
@@ -20670,17 +20750,55 @@ mod tests {
                     quote_style: Some('"'),
                 }),
             };
-            assert!(
-                matches!(
-                    apply_sql_document_semantic_edit_transaction(
-                        source,
-                        &semantic_transaction(source, vec![rename])
-                    ),
-                    Err(SqlDocumentEditError::ProjectionAliasConflict)
-                        | Err(SqlDocumentEditError::NodeRangeUnavailable)
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(source, vec![rename])
                 ),
-                "{source}"
+                Err(SqlDocumentEditError::ProjectionAliasConflict),
+                "nested function scope must not be rewritten: {source}"
             );
+            assert_eq!(document.source, source, "rejection preserves source text");
+        }
+
+        for source in [
+            "SELECT amount AS total FROM \"G\" ORDER BY total /* keep */ + 1",
+            "SELECT amount AS total FROM \"G\" ORDER BY \"G\".total + 1",
+        ] {
+            let document = parse_sql_document(source);
+            let item = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .unwrap();
+            let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "renamed".into(),
+                    quote_style: Some('"'),
+                }),
+            };
+            let result = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(source, vec![rename]),
+            );
+            if source.contains("/*") {
+                assert!(
+                    matches!(
+                        result,
+                        Err(SqlDocumentEditError::ProjectionAliasConflict)
+                            | Err(SqlDocumentEditError::NodeRangeUnavailable)
+                    ),
+                    "{source}"
+                );
+            } else {
+                let renamed = result.expect("a qualified source column is not an alias binding");
+                assert_eq!(
+                    renamed.document.source,
+                    "SELECT amount AS \"renamed\" FROM \"G\" ORDER BY \"G\".total + 1"
+                );
+            }
         }
 
         let capture_source = "SELECT amount FROM \"G\" ORDER BY total";

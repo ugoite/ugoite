@@ -646,6 +646,7 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.relational-constructors
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.projection-alias-binding-safety }
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.array-element-indexing
               - kind: satisfies

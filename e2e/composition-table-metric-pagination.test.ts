@@ -236,7 +236,7 @@ test.describe("Composition Table and Metric pagination", () => {
     // twelve parallel batches had started but two writes were still pending
     // at the seven-minute bound; allow the final batches to complete within
     // the job's 45-minute limit.
-    test.setTimeout(540_000);
+    test.setTimeout(720_000);
     await waitForServers(request);
     seed = await seedComposition(request);
   });

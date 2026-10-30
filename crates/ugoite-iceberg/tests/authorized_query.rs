@@ -1465,6 +1465,70 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
     let context = workspace
         .authorized_query_context(authorized_policy)
         .await?;
+    let binding_probe = "SELECT source.total * -1 AS total, source.total AS src FROM (SELECT 2 AS total UNION ALL SELECT -2 AS total) AS source ORDER BY total + 1";
+    let binding_probe_result = context.execute(binding_probe).await?;
+    let mut binding_probe_source_values = Vec::new();
+    for batch in &binding_probe_result {
+        let values = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the source projection remains Int64");
+        binding_probe_source_values.extend(values.values().iter().copied());
+    }
+    assert_eq!(binding_probe_source_values, vec![2, -2]);
+
+    let renamed_binding_probe = "SELECT source.total * -1 AS renamed, source.total AS src FROM (SELECT 2 AS total UNION ALL SELECT -2 AS total) AS source ORDER BY renamed + 1";
+    let renamed_binding_probe_result = context.execute(renamed_binding_probe).await?;
+    let mut renamed_binding_probe_source_values = Vec::new();
+    for batch in &renamed_binding_probe_result {
+        let values = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the source projection remains Int64");
+        renamed_binding_probe_source_values.extend(values.values().iter().copied());
+    }
+    assert_eq!(renamed_binding_probe_source_values, vec![2, -2]);
+
+    let alias_source =
+        "SELECT 1 AS total FROM (SELECT 'source' AS total) AS source ORDER BY total + 1";
+    let alias_document = ugoite_domain::sql_document::parse_sql_document(alias_source);
+    let alias_item = alias_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .expect("the SQL document exposes the aliased projection");
+    let renamed_alias = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        alias_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: alias_document.contract_version,
+            expected_source: alias_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetProjectionAlias {
+                    node_id: alias_item.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem,
+                    alias: Some(ugoite_domain::sql_document::SqlDocumentIdentifier {
+                        value: "renamed_total".to_owned(),
+                        quote_style: Some('"'),
+                    }),
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        renamed_alias.document.to_sql(),
+        "SELECT 1 AS \"renamed_total\" FROM (SELECT 'source' AS total) AS source ORDER BY \"renamed_total\" + 1"
+    );
+    let alias_result = context.execute(renamed_alias.document.to_sql()).await?;
+    assert_eq!(
+        alias_result
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the edited ORDER BY alias expression reaches the authorized executor"
+    );
     let join_source = "SELECT left_rows.field_100 FROM tasks AS left_rows";
     let join_document = ugoite_domain::sql_document::parse_sql_document(join_source);
     let relation_tree = join_document
