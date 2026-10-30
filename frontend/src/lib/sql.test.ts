@@ -5,6 +5,7 @@ import {
   buildSqlStructureContexts,
   filterSqlStructureContextsByFormGuards,
   mergeSqlStructureVariables,
+  normalizeSqlDocument,
   normalizeSqlVariables,
   parseSqlVariableDefault,
   sqlLintDiagnostics,
@@ -214,6 +215,40 @@ describe("sql helpers", () => {
         sql: "SELECT $label",
         variables: [{ type: "string", name: "label", description: "" }],
       });
+  });
+
+  it("does not treat a dollar-quoted template lookalike as a parameter", async () => {
+    expect(
+      await normalizeSqlVariables("SELECT $$ {{label}} $$ AS value"),
+    ).toEqual({
+      sql: "SELECT $$ {{label}} $$ AS value",
+      variables: [],
+    });
+  });
+
+  it("keeps SQL token boundaries authoritative with Unicode offsets and duplicate variables", async () => {
+    const result = await normalizeSqlDocument(
+      `SELECT 'café 🧪', {{label}}, {{label}}, '''{{triple}}''', "{{identifier}}"`,
+    );
+    expect(result.sql).toBe(
+      `SELECT 'café 🧪', $label, $label, '''{{triple}}''', "{{identifier}}"`,
+    );
+    expect(result.variables.map(({ name }) => name)).toEqual(["label"]);
+    expect(result.replacements).toHaveLength(2);
+    expect(result.replacements[0].start).toBe(`SELECT 'café 🧪', `.length);
+    expect(result.document.source).toBe(result.sql);
+  });
+
+  it("keeps incomplete drafts editable and preserves malformed-marker diagnostics", async () => {
+    const incomplete = await normalizeSqlDocument("SELECT {{minimum}} +");
+    expect(incomplete.sql).toBe("SELECT $minimum +");
+    expect(incomplete.variables.map(({ name }) => name)).toEqual(["minimum"]);
+    expect(incomplete.document.status).toBe("invalid_sql");
+
+    const malformed = await normalizeSqlDocument("SELECT {{bad-name}}");
+    expect(malformed.sql).toBe("SELECT {{bad-name}}");
+    expect(malformed.document.status).toBe("invalid_sql");
+    expect(malformed.document.diagnostics.length).toBeGreaterThan(0);
   });
 
   it("should expose no SQL schema without backend Form metadata", () => {

@@ -1,0 +1,114 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: Shared SQL template normalization
+features:
+  - id: FEAT-SQL-006
+    title: Shared SQL template normalization
+    summary: Normalize user-authored SQL parameter markers with one Rust token authority across browser, native, and authorized execution paths.
+    status: implemented
+    bindings:
+      - id: contract-source
+        role: contract-source
+        facet: domain
+        responsibility: Provide the Rust Domain operation whose token interpretation is shared by every host.
+        targets:
+          - id: shared-operation
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: normalize_sql_template }
+            claims: [{ kind: evidences, anchor: REQ-SQL-001#criterion.shared-template-normalization }]
+      - id: domain
+        role: implementation
+        facet: core
+        responsibility: Recognize user-facing markers and named placeholders using the SQL token stream and return normalized SQL, ordered unique names, and byte-range edits.
+        targets:
+          - id: normalize-template
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: normalize_sql_template }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+      - id: wasm
+        role: implementation
+        facet: wasm
+        responsibility: Expose the Domain normalizer through the bounded portable browser protocol.
+        targets:
+          - id: normalize-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_template_normalization }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+      - id: authorized-execution
+        role: implementation
+        facet: service
+        responsibility: Normalize saved and authorized SQL through the same Domain operation before DataFusion planning.
+        targets:
+          - id: execution-adapter
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: normalize_sql_template }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+      - id: browser-adapter
+        role: implementation
+        facet: frontend
+        responsibility: Call the actual Rust/WASM normalizer and adapt UTF-8 byte ranges for editor offsets without interpreting SQL template syntax.
+        targets:
+          - id: editor-adapter
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: normalizeSqlDocument }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.shared-template-normalization }]
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify token opacity and draft handling, native/WASM parity, actual-WASM browser adaptation, and authorized DataFusion behavior for both literal lookalikes and bound markers.
+        targets:
+          - id: domain-tokens
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::sql_template_normalization_keeps_all_tokenized_literals_identifiers_and_comments_opaque }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_keeps_all_tokenized_literals_identifiers_and_comments_opaque } } }]
+          - id: domain-drafts-and-errors
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::sql_template_normalization_keeps_syntax_invalid_drafts_for_parser_diagnostics }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.domain/target.normalize-template], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::sql_template_normalization_keeps_syntax_invalid_drafts_for_parser_diagnostics } } }]
+          - id: wasm-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.wasm/target.normalize-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_template_normalization_protocol_matches_native_and_reports_marker_errors } } }]
+          - id: actual-wasm-browser
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: keeps SQL token boundaries authoritative with Unicode offsets and duplicate variables }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.browser-adapter/target.editor-adapter], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps SQL token boundaries authoritative with Unicode offsets and duplicate variables } } }]
+          - id: actual-wasm-draft-errors
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: keeps incomplete drafts editable and preserves malformed-marker diagnostics }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.browser-adapter/target.editor-adapter], runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps incomplete drafts editable and preserves malformed-marker diagnostics } } }]
+          - id: authorized-literal
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: dollar_quoted_template_lookalike_remains_literal_in_authorized_execution }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.authorized-execution/target.execution-adapter], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: dollar_quoted_template_lookalike_remains_literal_in_authorized_execution } } }]
+          - id: authorized-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: template_parameter_still_binds_during_authorized_execution }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.shared-template-normalization, covers: [FEAT-SQL-006#binding.authorized-execution/target.execution-adapter], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: template_parameter_still_binds_during_authorized_execution } } }]
+    contracts:
+      - id: shared-normalizer
+        kind: custom
+        source: FEAT-SQL-006#binding.contract-source/target.shared-operation
+        participants:
+          - target: FEAT-SQL-006#binding.domain/target.normalize-template
+            role: rust-domain
+          - target: FEAT-SQL-006#binding.wasm/target.normalize-action
+            role: rust-wasm
+          - target: FEAT-SQL-006#binding.authorized-execution/target.execution-adapter
+            role: native-service
+          - target: FEAT-SQL-006#binding.browser-adapter/target.editor-adapter
+            role: browser-adapter
+        guarantees: [REQ-SQL-001#criterion.shared-template-normalization]

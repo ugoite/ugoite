@@ -40,6 +40,27 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: shared-template-normalization
+        kind: behavior
+        statement: >-
+          Native Rust SQL execution and the browser's actual WASM protocol use
+          one Rust Domain normalization operation for the user-facing
+          `{{name}}` and `{{ name }}` parameter spellings. It rewrites only
+          markers whose opening braces are SQL punctuation tokens; marker-like
+          text in strings (including dollar-quoted and triple-quoted strings),
+          quoted identifiers, and comments remains byte-for-byte unchanged.
+          Existing `$name` placeholders remain supported, and the operation
+          returns unique parameter names in first-occurrence order together
+          with UTF-8 source and normalized ranges for each rewrite. Malformed
+          markers retain stable error codes and messages. Tokenizable but
+          syntactically incomplete drafts remain available for the SQL parser's
+          ordinary diagnostics; lexer failures leave the source unchanged.
+          Frontend code adapts protocol ranges to editor offsets but does not
+          parse or generate SQL template semantics.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: guarded-edit-transaction
         kind: behavior
         statement: >-

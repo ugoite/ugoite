@@ -168,6 +168,51 @@ async fn values_query_is_rejected_by_shared_read_only_admission() -> Result<()> 
 }
 
 #[tokio::test]
+async fn dollar_quoted_template_lookalike_remains_literal_in_authorized_execution() -> Result<()> {
+    let service = UgoiteService::new("memory://sql-template-dollar-quoted")?;
+    let owner = uuid::Uuid::from_u128(0x5100);
+    let space_id = service
+        .create_space_for_principal("sqltemplatequote", owner, "Owner")
+        .await?
+        .to_string();
+    let page = service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[owner],
+            query_request("SELECT $$ {{label}} $$ AS value".to_string(), 10),
+        )
+        .await?;
+
+    assert_eq!(page.columns, ["value"]);
+    assert_eq!(page.rows, [json!({"value": " {{label}} "})]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn template_parameter_still_binds_during_authorized_execution() -> Result<()> {
+    let service = UgoiteService::new("memory://sql-template-parameter")?;
+    let owner = uuid::Uuid::from_u128(0x5101);
+    let space_id = service
+        .create_space_for_principal("sqltemplateparam", owner, "Owner")
+        .await?
+        .to_string();
+    let mut request = query_request("SELECT {{ label }} AS value".to_string(), 10);
+    request
+        .parameters
+        .insert("label".to_string(), json!("bound"));
+    request
+        .parameter_types
+        .insert("label".to_string(), "string".to_string());
+    let page = service
+        .query_sql_authorized_for_principals(&space_id, &[owner], request)
+        .await?;
+
+    assert_eq!(page.columns, ["value"]);
+    assert_eq!(page.rows, [json!({"value": "bound"})]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-form-name", "sqlformname").await?;
     let form_id = space
