@@ -27,7 +27,7 @@
     "npm:@solidjs/testing-library@0.8.10": "0.8.10_@solidjs+router@0.16.1__solid-js@1.9.13_solid-js@1.9.13",
     "npm:@solidjs/testing-library@~0.8.10": "0.8.10_@solidjs+router@0.16.1__solid-js@1.9.13_solid-js@1.9.13",
     "npm:@tailwindcss/node@4.3.0": "4.3.0",
-    "npm:@tailwindcss/oxide@4.3.0": "4.3.0",
+    "npm:@tailwindcss/oxide@4.3.3": "4.3.3",
     "npm:@tailwindcss/vite@4.3.3": "4.3.3_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0",
     "npm:@tanstack/server-functions-plugin@1.121.21": "1.121.21_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0",
     "npm:@testing-library/dom@^10.4.0": "10.4.1",
@@ -251,7 +251,7 @@
         "@types/hast",
         "@types/mdast",
         "js-yaml",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "retext-smartypants",
         "shiki@4.3.0",
         "smol-toml",
@@ -263,7 +263,7 @@
       "dependencies": [
         "@astrojs/compiler",
         "@astrojs/yaml2ts",
-        "@jridgewell/sourcemap-codec@1.5.5",
+        "@jridgewell/sourcemap-codec",
         "@volar/kit",
         "@volar/language-core",
         "@volar/language-server",
@@ -322,7 +322,7 @@
         "@mdx-js/mdx",
         "acorn",
         "astro",
-        "es-module-lexer@2.1.0",
+        "es-module-lexer@2.3.2",
         "estree-util-visit",
         "hast-util-to-html",
         "piccolore",
@@ -1954,7 +1954,7 @@
     "@jridgewell/gen-mapping@0.3.13": {
       "integrity": "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==",
       "dependencies": [
-        "@jridgewell/sourcemap-codec@1.5.5",
+        "@jridgewell/sourcemap-codec",
         "@jridgewell/trace-mapping"
       ]
     },
@@ -1975,9 +1975,6 @@
         "@jridgewell/trace-mapping"
       ]
     },
-    "@jridgewell/sourcemap-codec@1.5.5": {
-      "integrity": "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="
-    },
     "@jridgewell/sourcemap-codec@1.6.0": {
       "integrity": "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="
     },
@@ -1985,7 +1982,7 @@
       "integrity": "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==",
       "dependencies": [
         "@jridgewell/resolve-uri",
-        "@jridgewell/sourcemap-codec@1.5.5"
+        "@jridgewell/sourcemap-codec"
       ]
     },
     "@lezer/common@1.5.2": {
@@ -2206,7 +2203,7 @@
       "integrity": "sha512-byAiBZ1t3tXQvc8dMD/eoyE7lTXYorhn+6uVW5AC+JGI1KtJC/LvDche5cfUE+qiefH+Ybq0bUCJU0aB1cSHUA==",
       "dependencies": [
         "is-glob",
-        "picomatch@4.0.4"
+        "picomatch@4.0.7"
       ]
     },
     "@parcel/watcher-win32-arm64@2.5.6": {
@@ -2230,7 +2227,7 @@
         "detect-libc",
         "is-glob",
         "node-addon-api",
-        "picomatch@4.0.4"
+        "picomatch@4.0.7"
       ],
       "optionalDependencies": [
         "@parcel/watcher-android-arm64",
@@ -2385,10 +2382,10 @@
         "@rollup/pluginutils",
         "commondir",
         "estree-walker@2.0.2",
-        "fdir",
+        "fdir@6.5.0_picomatch@4.0.7",
         "is-reference",
         "magic-string@0.30.21",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "rollup"
       ],
       "optionalPeers": [
@@ -2459,7 +2456,7 @@
       "dependencies": [
         "@types/estree",
         "estree-walker@2.0.2",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "rollup"
       ],
       "optionalPeers": [
@@ -2765,19 +2762,9 @@
         "tailwindcss@4.3.3"
       ]
     },
-    "@tailwindcss/oxide-android-arm64@4.3.0": {
-      "integrity": "sha512-TJPiq67tKlLuObP6RkwvVGDoxCMBVtDgKkLfa/uyj7/FyxvQwHS+UOnVrXXgbEsfUaMgiVvC4KbJnRr26ho4Ng==",
-      "os": ["android"],
-      "cpu": ["arm64"]
-    },
     "@tailwindcss/oxide-android-arm64@4.3.3": {
       "integrity": "sha512-Y85A2gmPSkl5Ve5qR86GL4HT509cFqQh1aes9p3sSkyTPwt0Pppf3GkwGe4JPACcRYjgJIEhQgM6dBClnr0NYw==",
       "os": ["android"],
-      "cpu": ["arm64"]
-    },
-    "@tailwindcss/oxide-darwin-arm64@4.3.0": {
-      "integrity": "sha512-oMN/WZRb+SO37BmUElEgeEWuU8E/HXRkiODxJxLe1UTHVXLrdVSgfaJV7pSlhRGMSOiXLuxTIjfsF3wYvz8cgQ==",
-      "os": ["darwin"],
       "cpu": ["arm64"]
     },
     "@tailwindcss/oxide-darwin-arm64@4.3.3": {
@@ -2785,19 +2772,9 @@
       "os": ["darwin"],
       "cpu": ["arm64"]
     },
-    "@tailwindcss/oxide-darwin-x64@4.3.0": {
-      "integrity": "sha512-N6CUmu4a6bKVADfw77p+iw6Yd9Q3OBhe0veaDX+QazfuVYlQsHfDgxBrsjQ/IW+zywL8mTrNd0SdJT/zgtvMdA==",
-      "os": ["darwin"],
-      "cpu": ["x64"]
-    },
     "@tailwindcss/oxide-darwin-x64@4.3.3": {
       "integrity": "sha512-fAeUqfV5ndhxRwai8cXGzdLvul9utWOmeTkv69unv4ZXixjn61Z+p9lCWdwOwA3TYboG3BwdVuN/RDjhBRl0mw==",
       "os": ["darwin"],
-      "cpu": ["x64"]
-    },
-    "@tailwindcss/oxide-freebsd-x64@4.3.0": {
-      "integrity": "sha512-zDL5hBkQdH5C6MpqbK3gQAgP80tsMwSI26vjOzjJtNCMUo0lFgOItzHKBIupOZNQxt3ouPH7RPhvNhiTfCe5CQ==",
-      "os": ["freebsd"],
       "cpu": ["x64"]
     },
     "@tailwindcss/oxide-freebsd-x64@4.3.3": {
@@ -2805,28 +2782,13 @@
       "os": ["freebsd"],
       "cpu": ["x64"]
     },
-    "@tailwindcss/oxide-linux-arm-gnueabihf@4.3.0": {
-      "integrity": "sha512-R06HdNi7A7OEoMsf6d4tjZ71RCWnZQPHj2mnotSFURjNLdBC+cIgXQ7l81CqeoiQftjf6OOblxXMInMgN2VzMA==",
-      "os": ["linux"],
-      "cpu": ["arm"]
-    },
     "@tailwindcss/oxide-linux-arm-gnueabihf@4.3.3": {
       "integrity": "sha512-aAYUprJAJQWWbRrPvtjdroZ56Md+JM8pMiopS6xGEwDfLhqj+2ver2p4nU4Mb3CRqcMmNBjo8KkUgcxhkzVQGQ==",
       "os": ["linux"],
       "cpu": ["arm"]
     },
-    "@tailwindcss/oxide-linux-arm64-gnu@4.3.0": {
-      "integrity": "sha512-qTJHELX8jetjhRQHCLilkVLmybpzNQAtaI/gaoVoidn/ufbNDbAo8KlK2J+yPoc8wQxvDxCmh/5lr8nC1+lTbg==",
-      "os": ["linux"],
-      "cpu": ["arm64"]
-    },
     "@tailwindcss/oxide-linux-arm64-gnu@4.3.3": {
       "integrity": "sha512-nDxldcEENOxZRzC2uu9jrutZdAAQtb+8WWDCSnWL1zvBk1+FN+x6MtDViPB5AJMfttVCUhehGWus3XBPgatM/w==",
-      "os": ["linux"],
-      "cpu": ["arm64"]
-    },
-    "@tailwindcss/oxide-linux-arm64-musl@4.3.0": {
-      "integrity": "sha512-Z6sukiQsngnWO+l39X4pPbiWT81IC+PLKF+PHxIlyZbGNb9MODfYlXEVlFvej5BOZInWX01kVyzeLvHsXhfczQ==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
@@ -2835,18 +2797,8 @@
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@tailwindcss/oxide-linux-x64-gnu@4.3.0": {
-      "integrity": "sha512-DRNdQRpSGzRGfARVuVkxvM8Q12nh19l4BF/G7zGA1oe+9wcC6saFBHTISrpIcKzhiXtSrlSrluCfvMuledoCTQ==",
-      "os": ["linux"],
-      "cpu": ["x64"]
-    },
     "@tailwindcss/oxide-linux-x64-gnu@4.3.3": {
       "integrity": "sha512-tx7us1muwOKAKWao2v/GaafFeQboE6aj88vC6ziN2NCGcRm8gWUhwjzg+YdVB1e4boAtdtma4L43onunI6NS4w==",
-      "os": ["linux"],
-      "cpu": ["x64"]
-    },
-    "@tailwindcss/oxide-linux-x64-musl@4.3.0": {
-      "integrity": "sha512-Z0IADbDo8bh6I7h2IQMx601AdXBLfFpEdUotft86evd/8ZPflZe9COPO8Q1vw+pfLWIUo9zN/JGZvwuAJqduqg==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
@@ -2855,73 +2807,42 @@
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@tailwindcss/oxide-wasm32-wasi@4.3.0": {
-      "integrity": "sha512-HNZGOUxEmElksYR7S6sC5jTeNGpobAsy9u7Gu0AskJ8/20FR9GqebUyB+HBcU/ax6BHuiuJi+Oda4B+YX6H1yA==",
-      "cpu": ["wasm32"]
-    },
     "@tailwindcss/oxide-wasm32-wasi@4.3.3": {
       "integrity": "sha512-jx1+rPhY/5Ympkktd656HBWEBLxP7dH06losBLjjf5vgCODXvi9KhtftWcMIwTFIDqBr7cRnQkdLnAG+IOlGvQ==",
       "cpu": ["wasm32"]
-    },
-    "@tailwindcss/oxide-win32-arm64-msvc@4.3.0": {
-      "integrity": "sha512-Pe+RPVTi1T+qymuuRpcdvwSVZjnll/f7n8gBxMMh3xLTctMDKqpdfGimbMyioqtLhUYZxdJ9wGNhV7MKHvgZsQ==",
-      "os": ["win32"],
-      "cpu": ["arm64"]
     },
     "@tailwindcss/oxide-win32-arm64-msvc@4.3.3": {
       "integrity": "sha512-3rc292Ca2ceK6Ulcc/bAVnTs/3nDtoPhyEKlgPv+yQJQi/JS/AMJlqzxvlDacL1nekbrcf6bTqp/jV4qgnPxNQ==",
       "os": ["win32"],
       "cpu": ["arm64"]
     },
-    "@tailwindcss/oxide-win32-x64-msvc@4.3.0": {
-      "integrity": "sha512-Mvrf2kXW/yeW/OTezZlCGOirXRcUuLIBx/5Y12BaPM7wJoryG6dfS/NJL8aBPqtTEx/Vm4T4vKzFUcKDT+TKUA==",
-      "os": ["win32"],
-      "cpu": ["x64"]
-    },
     "@tailwindcss/oxide-win32-x64-msvc@4.3.3": {
       "integrity": "sha512-yJ0pwIVc/nYeGoV02WtsN8KYyLQv7kyI2wDnkezyJlGGjkd4QLwDGAwl47YpPJeuI0M0ObaXGSPjvWDPeTPggw==",
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@tailwindcss/oxide@4.3.0": {
-      "integrity": "sha512-F7HZGBeN9I0/AuuJS5PwcD8xayx5ri5GhjYUDBEVYUkexyA/giwbDNjRVrxSezE3T250OU2K/wp/ltWx3UOefg==",
-      "optionalDependencies": [
-        "@tailwindcss/oxide-android-arm64@4.3.0",
-        "@tailwindcss/oxide-darwin-arm64@4.3.0",
-        "@tailwindcss/oxide-darwin-x64@4.3.0",
-        "@tailwindcss/oxide-freebsd-x64@4.3.0",
-        "@tailwindcss/oxide-linux-arm-gnueabihf@4.3.0",
-        "@tailwindcss/oxide-linux-arm64-gnu@4.3.0",
-        "@tailwindcss/oxide-linux-arm64-musl@4.3.0",
-        "@tailwindcss/oxide-linux-x64-gnu@4.3.0",
-        "@tailwindcss/oxide-linux-x64-musl@4.3.0",
-        "@tailwindcss/oxide-wasm32-wasi@4.3.0",
-        "@tailwindcss/oxide-win32-arm64-msvc@4.3.0",
-        "@tailwindcss/oxide-win32-x64-msvc@4.3.0"
-      ]
-    },
     "@tailwindcss/oxide@4.3.3": {
       "integrity": "sha512-krXjAikiaFSPaK/FkAQT5UTx3VormQaiZ5hBFlJZ9UFQGB/rwg1MZIhHAG9smMQRTdyJxP6Qt5MwMtdyU5FWrA==",
       "optionalDependencies": [
-        "@tailwindcss/oxide-android-arm64@4.3.3",
-        "@tailwindcss/oxide-darwin-arm64@4.3.3",
-        "@tailwindcss/oxide-darwin-x64@4.3.3",
-        "@tailwindcss/oxide-freebsd-x64@4.3.3",
-        "@tailwindcss/oxide-linux-arm-gnueabihf@4.3.3",
-        "@tailwindcss/oxide-linux-arm64-gnu@4.3.3",
-        "@tailwindcss/oxide-linux-arm64-musl@4.3.3",
-        "@tailwindcss/oxide-linux-x64-gnu@4.3.3",
-        "@tailwindcss/oxide-linux-x64-musl@4.3.3",
-        "@tailwindcss/oxide-wasm32-wasi@4.3.3",
-        "@tailwindcss/oxide-win32-arm64-msvc@4.3.3",
-        "@tailwindcss/oxide-win32-x64-msvc@4.3.3"
+        "@tailwindcss/oxide-android-arm64",
+        "@tailwindcss/oxide-darwin-arm64",
+        "@tailwindcss/oxide-darwin-x64",
+        "@tailwindcss/oxide-freebsd-x64",
+        "@tailwindcss/oxide-linux-arm-gnueabihf",
+        "@tailwindcss/oxide-linux-arm64-gnu",
+        "@tailwindcss/oxide-linux-arm64-musl",
+        "@tailwindcss/oxide-linux-x64-gnu",
+        "@tailwindcss/oxide-linux-x64-musl",
+        "@tailwindcss/oxide-wasm32-wasi",
+        "@tailwindcss/oxide-win32-arm64-msvc",
+        "@tailwindcss/oxide-win32-x64-msvc"
       ]
     },
     "@tailwindcss/vite@4.3.3_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0": {
       "integrity": "sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==",
       "dependencies": [
         "@tailwindcss/node@4.3.3",
-        "@tailwindcss/oxide@4.3.3",
+        "@tailwindcss/oxide",
         "tailwindcss@4.3.3",
         "vite@8.1.0_esbuild@0.28.1_yaml@2.9.0"
       ]
@@ -3149,7 +3070,7 @@
         "glob@13.0.6",
         "graceful-fs",
         "node-gyp-build",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "resolve-from"
       ],
       "bin": true
@@ -3238,7 +3159,7 @@
         "@types/chai",
         "@vitest/spy@4.1.8",
         "@vitest/utils",
-        "chai@6.2.2",
+        "chai",
         "tinyrainbow"
       ]
     },
@@ -3590,7 +3511,7 @@
         "devalue@5.8.1",
         "diff",
         "dset",
-        "es-module-lexer@2.1.0",
+        "es-module-lexer@2.3.2",
         "esbuild@0.28.1",
         "flattie",
         "fontace",
@@ -3609,14 +3530,14 @@
         "p-queue",
         "package-manager-detector",
         "piccolore",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "rehype",
         "semver@7.8.4",
         "shiki@4.3.0",
         "smol-toml",
         "svgo",
         "tinyclip",
-        "tinyexec@1.2.4",
+        "tinyexec",
         "tinyglobby",
         "ultrahtml",
         "unifont",
@@ -3911,9 +3832,6 @@
     },
     "ccount@2.0.1": {
       "integrity": "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="
-    },
-    "chai@6.2.2": {
-      "integrity": "sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg=="
     },
     "chai@6.3.0": {
       "integrity": "sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg=="
@@ -4485,9 +4403,6 @@
     "es-module-lexer@1.7.0": {
       "integrity": "sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA=="
     },
-    "es-module-lexer@2.1.0": {
-      "integrity": "sha512-n27zTYMjYu1aj4MjCWzSP7G9r75utsaoc8m61weK+W8JMBGGQybd43GstCXZ3WNmSFtGT9wi59qQTW6mhTR5LQ=="
-    },
     "es-module-lexer@2.3.2": {
       "integrity": "sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw=="
     },
@@ -4701,9 +4616,6 @@
         "strip-final-newline"
       ]
     },
-    "expect-type@1.3.0": {
-      "integrity": "sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA=="
-    },
     "expect-type@1.4.0": {
       "integrity": "sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA=="
     },
@@ -4766,12 +4678,15 @@
       ]
     },
     "fdir@6.5.0_picomatch@4.0.4": {
+      "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="
+    },
+    "fdir@6.5.0_picomatch@4.0.7": {
       "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==",
       "dependencies": [
-        "picomatch@4.0.4"
+        "picomatch@4.0.7"
       ],
       "optionalPeers": [
-        "picomatch@4.0.4"
+        "picomatch@4.0.7"
       ]
     },
     "file-uri-to-path@1.0.0": {
@@ -5945,13 +5860,13 @@
     "magic-string@0.30.21": {
       "integrity": "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==",
       "dependencies": [
-        "@jridgewell/sourcemap-codec@1.5.5"
+        "@jridgewell/sourcemap-codec"
       ]
     },
     "magic-string@1.4.5": {
       "integrity": "sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w==",
       "dependencies": [
-        "@jridgewell/sourcemap-codec@1.6.0"
+        "@jridgewell/sourcemap-codec"
       ]
     },
     "magicast@0.2.11": {
@@ -7001,9 +6916,6 @@
     "picomatch@2.3.2": {
       "integrity": "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="
     },
-    "picomatch@4.0.4": {
-      "integrity": "sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A=="
-    },
     "picomatch@4.0.7": {
       "integrity": "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="
     },
@@ -7521,7 +7433,7 @@
       "integrity": "sha512-UJUT4+1Ho4OcWmPYU3sYXgUqI8B8Ayfe06MX7y0qCJ1K8aGoKtR/NDd/2nZqM7ADkrzny+I99Ul7GgyoiVNAgg==",
       "dependencies": [
         "open",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "rollup",
         "source-map@0.7.6",
         "yargs@18.0.0"
@@ -8237,17 +8149,14 @@
     "tinyclip@0.1.14": {
       "integrity": "sha512-F1oWdz8tjT17qe1d5JgDK6z03WGOhYYAN0lK3/D/fzNiy93xswLLEw7pk+3g05onhAy6Bsc6PLNUGhdgVjemMQ=="
     },
-    "tinyexec@1.2.4": {
-      "integrity": "sha512-SHf/r48b7vOrjve9PxJo3MN5v5yuyjHvdUcrQffT3WXMUfnGmHDVbC4k3sHJaJTgZCwpUplIaAo5ANtMyp3YHg=="
-    },
     "tinyexec@1.3.1": {
       "integrity": "sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA=="
     },
     "tinyglobby@0.2.17": {
       "integrity": "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==",
       "dependencies": [
-        "fdir",
-        "picomatch@4.0.4"
+        "fdir@6.5.0_picomatch@4.0.7",
+        "picomatch@4.0.7"
       ]
     },
     "tinyrainbow@3.2.0": {
@@ -8472,7 +8381,7 @@
         "magic-string@0.30.21",
         "mlly",
         "pathe@2.0.3",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "pkg-types@2.3.1",
         "scule",
         "strip-literal",
@@ -8560,7 +8469,7 @@
       "integrity": "sha512-5lWVjgi6vuHhJ526bI4nlCOmkCIF3nnfXkCMDeMJrtdvxTs6ZFCM8oNufGTsDbKv/tJ/xj8RpvXjRuPBZJuJog==",
       "dependencies": [
         "pathe@2.0.3",
-        "picomatch@4.0.4"
+        "picomatch@4.0.7"
       ]
     },
     "unplugin@2.3.11": {
@@ -8568,7 +8477,7 @@
       "dependencies": [
         "@jridgewell/remapping",
         "acorn",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "webpack-virtual-modules"
       ]
     },
@@ -8576,7 +8485,7 @@
       "integrity": "sha512-0Mqk3AT2TZCXWKdcoaufeXNukv2mTrEZExeXlHIOZXdqYoHHr4n51pymnwV8x2BOVxwXbK2HLlI7usrqMpycdg==",
       "dependencies": [
         "@jridgewell/remapping",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "webpack-virtual-modules"
       ]
     },
@@ -8744,8 +8653,8 @@
       "integrity": "sha512-NTKlcQjlAK7MlQoyb6LgaqHc8sso/pVyUJYWMws3jg21uTJw/LddqIFPcPqP6PzpgbIcZyKI85sFE4HBrQDA8A==",
       "dependencies": [
         "esbuild@0.25.12",
-        "fdir",
-        "picomatch@4.0.4",
+        "fdir@6.5.0_picomatch@4.0.4",
+        "picomatch@4.0.7",
         "postcss",
         "rollup",
         "tinyglobby",
@@ -8764,7 +8673,7 @@
       "dependencies": [
         "esbuild@0.28.1",
         "lightningcss",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "postcss",
         "rolldown",
         "tinyglobby",
@@ -8799,16 +8708,16 @@
         "@vitest/snapshot",
         "@vitest/spy@4.1.8",
         "@vitest/utils",
-        "es-module-lexer@2.1.0",
-        "expect-type@1.3.0",
+        "es-module-lexer@2.3.2",
+        "expect-type",
         "jsdom",
         "magic-string@0.30.21",
         "obug@2.1.3",
         "pathe@2.0.3",
-        "picomatch@4.0.4",
+        "picomatch@4.0.7",
         "std-env@4.3.0",
         "tinybench@2.9.0",
-        "tinyexec@1.2.4",
+        "tinyexec",
         "tinyglobby",
         "tinyrainbow",
         "vite@8.1.0_esbuild@0.28.1_yaml@2.9.0",
@@ -8826,16 +8735,16 @@
         "@types/chai",
         "@vitest/coverage-v8@5.0.5_vitest@5.0.5_jsdom@29.1.1_msw@2.14.6__typescript@5.9.3_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0",
         "@vitest/mocker@5.0.5_msw@2.14.6__typescript@5.9.3_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0",
-        "chai@6.3.0",
+        "chai",
         "es-module-lexer@2.3.2",
-        "expect-type@1.4.0",
+        "expect-type",
         "jsdom",
         "magic-string@1.4.5",
         "obug@3.0.0",
         "picomatch@4.0.7",
         "std-env@4.3.0",
         "tinybench@6.2.2",
-        "tinyexec@1.3.1",
+        "tinyexec",
         "tinyglobby",
         "vite@8.1.0_esbuild@0.28.1_yaml@2.9.0",
         "why-is-node-running@3.2.1"
@@ -9412,7 +9321,7 @@
           "npm:@astrojs/starlight@0.41.0",
           "npm:@oslojs/encoding@1.1.0",
           "npm:@tailwindcss/node@4.3.0",
-          "npm:@tailwindcss/oxide@4.3.0",
+          "npm:@tailwindcss/oxide@4.3.3",
           "npm:@tailwindcss/vite@4.3.3",
           "npm:@vitest/coverage-v8@5.0.5",
           "npm:astro@7.0.2",
@@ -9461,7 +9370,7 @@
           "npm:@solidjs/start@^1.3.2",
           "npm:@solidjs/testing-library@~0.8.10",
           "npm:@tailwindcss/node@4.3.0",
-          "npm:@tailwindcss/oxide@4.3.0",
+          "npm:@tailwindcss/oxide@4.3.3",
           "npm:@tailwindcss/vite@4.3.3",
           "npm:@tanstack/server-functions-plugin@1.121.21",
           "npm:@testing-library/dom@^10.4.0",
