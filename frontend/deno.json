@@ -11,7 +11,7 @@
     "@codemirror/autocomplete": "npm:@codemirror/autocomplete@^6.20.2",
     "@codemirror/commands": "npm:@codemirror/commands@^6.11.1",
     "@codemirror/lang-sql": "npm:@codemirror/lang-sql@^6.10.0",
-    "@codemirror/language": "npm:@codemirror/language@^6.12.3",
+    "@codemirror/language": "npm:@codemirror/language@^6.13.1",
     "@codemirror/lint": "npm:@codemirror/lint@^6.9.6",
     "@codemirror/state": "npm:@codemirror/state@^6.6.0",
     "@codemirror/view": "npm:@codemirror/view@^6.43.0",
