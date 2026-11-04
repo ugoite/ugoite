@@ -387,6 +387,29 @@ test.describe("Composition Table and Metric pagination", () => {
       requested_queries: ["paged_rows"],
     });
 
+    const nextPageResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+    );
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await uiExpect(studioTable.locator("tbody tr")).toHaveCount(2);
+    const nextEvaluation = await (await nextPageResponse).json() as {
+      query_results?: Record<string, {
+        value?: { kind: string; rows?: unknown[][] };
+        has_more: boolean;
+        count_snapshot?: string;
+      }>;
+    };
+    const nextPage = nextEvaluation.query_results?.paged_rows;
+    expect(nextPage?.value?.kind).toBe("table");
+    expect(nextPage?.value?.rows).toHaveLength(2);
+    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-100");
+    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-101");
+    expect(JSON.stringify(nextPage?.value?.rows)).not.toContain("Pager-102");
+    expect(nextPage?.has_more).toBe(false);
+    expect(evaluationRequests.at(-1)).toMatchObject({
+      page: { variable_id: "paged_rows", cursor: firstPage?.next },
+    });
+
     const appendedEntryResponse = await request.post(
       getBackendUrl(`/spaces/${seed.spaceId}/entries`),
       {
@@ -410,8 +433,9 @@ test.describe("Composition Table and Metric pagination", () => {
         revision_id: seed.tableSql.revisionId,
       },
       parameters: { minimum: 0 },
-      composition_count_snapshot: firstPage?.count_snapshot,
+      composition_count_snapshot: nextPage?.count_snapshot,
     });
+    expect(nextPage?.count_snapshot).toMatch(/^v1\./);
     expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);
     const validCountRequest = countRequests.at(-1)!;
     const pageTokenCountResponse = await request.post(
@@ -429,37 +453,11 @@ test.describe("Composition Table and Metric pagination", () => {
       {
         data: {
           ...validCountRequest,
-          composition_count_snapshot: `${firstPage?.count_snapshot}x`,
+          composition_count_snapshot: `${nextPage?.count_snapshot}x`,
         },
       },
     );
     expect(tamperedSnapshotResponse.status()).toBe(422);
-    expect(
-      await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
-    )
-      .toBe(sourceBefore);
-
-    const nextPageResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-    );
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await uiExpect(studioTable.locator("tbody tr")).toHaveCount(2);
-    const nextEvaluation = await (await nextPageResponse).json() as {
-      query_results?: Record<string, {
-        value?: { kind: string; rows?: unknown[][] };
-        has_more: boolean;
-      }>;
-    };
-    const nextPage = nextEvaluation.query_results?.paged_rows;
-    expect(nextPage?.value?.kind).toBe("table");
-    expect(nextPage?.value?.rows).toHaveLength(2);
-    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-100");
-    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-101");
-    expect(JSON.stringify(nextPage?.value?.rows)).not.toContain("Pager-102");
-    expect(nextPage?.has_more).toBe(false);
-    expect(evaluationRequests.at(-1)).toMatchObject({
-      page: { variable_id: "paged_rows", cursor: firstPage?.next },
-    });
     expect(
       await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
     )
