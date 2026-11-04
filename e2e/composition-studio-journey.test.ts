@@ -1962,22 +1962,54 @@ test.describe("Composition Studio Journey", () => {
       name: "independent_minimum",
       exact: true,
     })).toHaveValue("0");
-    const initialExchange = () =>
-      [...evaluationExchanges.values()].flat().find((exchange) => {
-        const requested = exchange.request.requested_queries;
-        return Array.isArray(requested) &&
-          requested.includes(dependentVariableId) &&
-          requested.includes(independentTableVariableId) &&
-          exchange.response?.evaluation_id === exchange.evaluationId;
-      });
-    await expect.poll(() => initialExchange()).toBeDefined();
-    const initial = initialExchange()!;
-    const initialEvaluation = initial.response!;
-    expect(initial.evaluationId).toBeTruthy();
+    const successfulEvaluationFor = (variableId: string) =>
+      [...evaluationExchanges.entries()].flatMap(([evaluationId, exchanges]) =>
+        exchanges.filter((exchange) => {
+          const requested = exchange.request.requested_queries;
+          const computed = exchange.response?.computed_query_ids;
+          return exchange.evaluationId === evaluationId &&
+            exchange.failure === undefined &&
+            Array.isArray(requested) && requested.includes(variableId) &&
+            exchange.response?.ok === true &&
+            exchange.response.evaluation_id === evaluationId &&
+            Array.isArray(computed) && computed.includes(variableId);
+        })
+      )[0];
+    await expect.poll(() =>
+      Boolean(
+        successfulEvaluationFor(dependentVariableId) &&
+          successfulEvaluationFor(independentTableVariableId),
+      )
+    ).toBe(true);
+    const initialDependentExchange =
+      successfulEvaluationFor(dependentVariableId)!;
+    const initialTableExchange =
+      successfulEvaluationFor(independentTableVariableId)!;
+    const initialDependentEvaluation = initialDependentExchange.response!;
+    const initialEvaluation = initialTableExchange.response!;
+    expect(initialDependentExchange.evaluationId).toBeTruthy();
+    expect(initialTableExchange.evaluationId).toBeTruthy();
     expect([...evaluationExchanges.keys()].every(Boolean)).toBe(true);
-    expect(initialEvaluation.evaluation_id).toBe(initial.evaluationId);
-    expect(initialEvaluation.computed_query_ids).toEqual(
-      expect.arrayContaining([dependentVariableId, independentTableVariableId]),
+    expect(initialDependentEvaluation.evaluation_id).toBe(
+      initialDependentExchange.evaluationId,
+    );
+    expect(initialDependentEvaluation.computed_query_ids).toContain(
+      dependentVariableId,
+    );
+    expect(initialDependentEvaluation.query_results).toHaveProperty(
+      dependentVariableId,
+    );
+    expect(initialDependentEvaluation.publication_fingerprint).toBe(
+      initialEvaluation.publication_fingerprint,
+    );
+    expect(initialDependentEvaluation.authorization_fingerprint).toBe(
+      initialEvaluation.authorization_fingerprint,
+    );
+    expect(initialEvaluation.evaluation_id).toBe(
+      initialTableExchange.evaluationId,
+    );
+    expect(initialEvaluation.computed_query_ids).toContain(
+      independentTableVariableId,
     );
     expect(initialEvaluation.publication_fingerprint).toBeTruthy();
     expect(initialEvaluation.authorization_fingerprint).toBeTruthy();
@@ -2018,12 +2050,15 @@ test.describe("Composition Studio Journey", () => {
         );
     }).toBe(true);
     const changedInputExchange = changedInputAttempts().find((exchange) =>
-      exchange.response?.evaluation_id === exchange.evaluationId
+      exchange.failure === undefined && exchange.response?.ok === true &&
+        exchange.response.evaluation_id === exchange.evaluationId &&
+        Array.isArray(exchange.response.computed_query_ids) &&
+        exchange.response.computed_query_ids.includes(dependentVariableId)
     );
     expect(changedInputExchange).toBeDefined();
     expect(changedInputExchange!.evaluationId).toBeTruthy();
     expect(changedInputExchange!.request.target).toEqual(
-      initial.request.target,
+      initialTableExchange.request.target,
     );
     const changedInputEvaluation = changedInputExchange!.response!;
     expect(changedInputEvaluation.evaluation_id).toBe(
