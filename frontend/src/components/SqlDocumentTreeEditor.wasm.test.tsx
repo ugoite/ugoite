@@ -11,6 +11,53 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("authors the exact EXISTS seed through the inspector and restores it with WASM undo", async () => {
+    const initial = "SELECT 1 WHERE TRUE";
+    const initialDocument = await parseSqlDocument(initial);
+    const truth = initialDocument.nodes.find((node) =>
+      node.range && initial.slice(node.range.start, node.range.end) === "TRUE"
+    );
+    expect(truth).toBeDefined();
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: initialDocument.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_expression_with_exists_subquery",
+        node_id: truth!.id,
+        expected_kind: truth!.kind,
+      }],
+    });
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const truthItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(truth!.id)
+    );
+    expect(truthItem).toBeDefined();
+    fireEvent.click(truthItem!);
+    fireEvent.click(screen.getByRole("button", { name: "Use EXISTS" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const existsSql = "SELECT 1 WHERE EXISTS (SELECT 1)";
+    await waitFor(() => expect(sql()).toBe(existsSql));
+    const edited = await parseSqlDocument(sql());
+    const exists = edited.nodes.find((node) =>
+      node.kind === "subquery_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "EXISTS (SELECT 1)"
+    );
+    expect(exists).toBeDefined();
+    expect(edited.nodes.some((node) =>
+      node.kind === "select" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "SELECT 1"
+    )).toBe(true);
+
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
+    expect(restored.document.source).toBe(initial);
+  });
+
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
     const initial = "SELECT ARRAY[4, 9]";
     const document = await parseSqlDocument(initial);
@@ -67,7 +114,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo", async () => {
-    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source ORDER BY total DESC /* tail */";
+    const source =
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "total" FROM source ORDER BY total DESC /* tail */';
     const document = await parseSqlDocument(source);
     expect(document.diagnostics).toEqual([]);
     const item = document.nodes.find((node) =>
@@ -99,11 +147,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.blur(alias);
     await waitFor(() => expect(sql()).toBe(expected.document.source));
     expect(sql()).toBe(
-      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source ORDER BY \"net total\" DESC /* tail */",
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "net total" FROM source ORDER BY "net total" DESC /* tail */',
     );
     const edited = await parseSqlDocument(sql());
     expect(edited.diagnostics).toEqual(document.diagnostics);
-    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
     expect(restored.document.source).toBe(source);
     expect(restored.document.diagnostics).toEqual(document.diagnostics);
   });
