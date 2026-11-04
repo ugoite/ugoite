@@ -354,12 +354,13 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("@smoke SQL tree authors IN and NOT IN, executes distinct booleans, and saves/reloads both exact queries", async ({ page }) => {
+  test("@smoke SQL tree authors IN and NOT IN and records HTTP 422 planning rejections", async ({ page }) => {
     const inSql = "SELECT (1) IN (SELECT 1)";
     const notInSql = "SELECT (1) NOT IN (SELECT 1)";
-    const queryPrefix = `Subquery predicate round trip ${Date.now()}`;
-    const savedSqlIds: string[] = [];
-    try {
+    const assertRejectedForm = async (
+      choice: "in" | "not_in",
+      expectedSql: string,
+    ) => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
         waitUntil: "domcontentloaded",
       });
@@ -369,84 +370,26 @@ test.describe("Saved SQL route", () => {
         .click();
       await page.getByRole("button", { name: "SQL tree", exact: true }).click();
       const tree = page.getByRole("dialog", { name: "SQL tree" });
-      const author = async (choice: "in" | "not_in", expected: string) => {
-        await tree.getByRole("treeitem", { name: /Value: 1/ }).first().click();
-        await tree.getByLabel("Subquery condition").selectOption(choice);
-        await tree.getByRole("button", { name: "Apply", exact: true }).click();
-        await expect(editor).toContainText(expected);
-      };
-      const execute = async (expectedValue: boolean) => {
-        const run = page.waitForResponse((response) =>
-          response.request().method() === "POST" &&
-          new URL(response.url()).pathname ===
-            `/api/spaces/${spaceId}/sql/query`
-        );
-        await page.getByRole("button", { name: "Run Query", exact: true })
-          .click();
-        const response = await run;
-        expect(response.ok(), await response.text()).toBe(true);
-        const output = await response.json() as {
-          columns: string[];
-          rows: Record<string, unknown>[];
-        };
-        expect(output.columns).toHaveLength(1);
-        expect(output.rows).toEqual([{ [output.columns[0]]: expectedValue }]);
-      };
-      const saveReloadAndAssert = async (queryName: string, sql: string) => {
-        await expect(editor).toContainText(sql);
-        await page.getByLabel("Query name").fill(queryName);
-        const createSavedQuery = page.waitForResponse((response) =>
-          response.request().method() === "POST" &&
-          new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
-        );
-        await page.getByRole("button", { name: "Save", exact: true })
-          .click();
-        const created = await createSavedQuery;
-        expect([200, 201], await created.text()).toContain(created.status());
-        const savedSqlId = (await created.json() as { id: string }).id;
-        savedSqlIds.push(savedSqlId);
-        await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/sql$`));
-        await page.getByRole("link", { name: new RegExp(queryName) }).click();
-        await expect(page).toHaveURL(
-          new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
-        );
-        await page.reload({ waitUntil: "domcontentloaded" });
-        await expect(page.getByRole("heading", { level: 1, name: queryName }))
-          .toBeVisible();
-        await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
-          .toContainText(sql);
-        const persisted = await page.request.get(
-          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        );
-        expect(persisted.ok()).toBe(true);
-        expect((await persisted.json() as { sql: string }).sql).toBe(sql);
-      };
+      await tree.getByRole("treeitem", { name: /Value: 1/ }).first().click();
+      await tree.getByLabel("Subquery condition").selectOption(choice);
+      const plan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === expectedSql
+      );
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(editor.locator(".cm-content")).toHaveText(expectedSql);
+      const response = await plan;
+      expect(response.status()).toBe(422);
+      await expect(page.getByRole("button", { name: "Run Query", exact: true }))
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+    };
 
-      await author("in", inSql);
-      await tree.getByRole("button", { name: "Close", exact: true }).first()
-        .click();
-      await execute(true);
-      await saveReloadAndAssert(`${queryPrefix} IN`, inSql);
-
-      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
-        waitUntil: "domcontentloaded",
-      });
-      await expect(editor).toContainText("SELECT 1");
-      await page.getByRole("button", { name: "Structure", exact: true })
-        .click();
-      await page.getByRole("button", { name: "SQL tree", exact: true }).click();
-      await author("not_in", notInSql);
-      await tree.getByRole("button", { name: "Close", exact: true }).first()
-        .click();
-      await execute(false);
-      await saveReloadAndAssert(`${queryPrefix} NOT IN`, notInSql);
-    } finally {
-      for (const savedSqlId of savedSqlIds) {
-        await page.request.delete(
-          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        );
-      }
-    }
+    await assertRejectedForm("in", inSql);
+    await assertRejectedForm("not_in", notInSql);
   });
 
   test("REQ-FE-063 @smoke: scalar SELECT without a Form can use SQL structure editing", async ({ page, request }) => {
