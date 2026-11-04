@@ -199,6 +199,15 @@ requirements:
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "inserts a Form table with only a variable reference" } }
+          - id: form-sql-host-delegation
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "creates a Form-backed table query and component in one picker selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "creates a Form-backed table query and component in one picker selection" } }
           - id: form-metric-picker
             adapter: typescript
             path: frontend/src/components/CompositionVariableBindingPicker.test.tsx

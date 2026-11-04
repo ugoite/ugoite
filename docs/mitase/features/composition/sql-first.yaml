@@ -230,6 +230,20 @@ features:
                 anchor: REQ-COMP-009#criterion.display-components-reference-variables
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+      - id: form-sql-authority-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that Composition Studio delegates a Form table SQL seed to Rust/WASM and passes the exact returned SQL into the graph and preview input.
+        targets:
+          - id: form-sql-host-delegation
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "creates a Form-backed table query and component in one picker selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "creates a Form-backed table query and component in one picker selection" } }
       - id: composition-raw-recovery-verification
         role: verification
         facet: verification
