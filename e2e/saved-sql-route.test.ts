@@ -877,6 +877,7 @@ test.describe("Saved SQL route", () => {
     await limit.fill("1");
     await tree.getByRole("button", { name: "Set row limit", exact: true })
       .click();
+    await tree.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(editor).toContainText('FROM "Entry"');
     await expect(editor).not.toContainText("*");
     await expect(editor).toContainText(selectedProjection!);
