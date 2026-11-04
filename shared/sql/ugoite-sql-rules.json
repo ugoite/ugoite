@@ -773,7 +773,11 @@
           "selectors": [
             [
               "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
-              "authors the exact %s seed through the inspector and restores it with WASM undo"
+              "authors the exact IN seed through the inspector and restores it with WASM undo"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "authors the exact NOT IN seed through the inspector and restores it with WASM undo"
             ],
             [
               "e2e/saved-sql-route.test.ts",
