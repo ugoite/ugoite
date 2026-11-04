@@ -437,3 +437,174 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
     .sort((left, right) => String(left.id).localeCompare(String(right.id)));
   expect(savedSqlSourcesAfter).toEqual(savedSqlSourcesBefore);
 });
+
+test("Composition shared query edits update every display", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const suffix = crypto.randomUUID().slice(0, 8);
+
+  const spaceResponse = await request.post(getBackendUrl("/spaces"), {
+    data: {
+      slug: `composition-shared-edit-${suffix}`,
+      name: `Composition Shared Edit ${suffix}`,
+    },
+  });
+  expect([200, 201]).toContain(spaceResponse.status());
+  const space = await spaceResponse.json() as { space_uid?: string };
+  expect(space.space_uid).toBeTruthy();
+  const spaceId = space.space_uid!;
+
+  const formName = `SharedEditForm${suffix}`;
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Item\n\n## Amount\n`,
+        fields: {
+          Item: { type: "string", required: true },
+          Amount: { type: "integer", required: true },
+        },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+  for (
+    const [item, amount] of [["First shared row", 11], [
+      "Second shared row",
+      22,
+    ]] as const
+  ) {
+    const entry = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      { data: { form: formName, fields: { Item: item, Amount: amount } } },
+    );
+    expect(entry.status()).toBe(201);
+  }
+
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as FormSummary[];
+  const form = forms.find((candidate) => candidate.name === formName);
+  expect(form?.id).toBeTruthy();
+  expect(form?.sql_relation).toBeTruthy();
+  const amountColumn = form?.fields?.Amount?.sql_column;
+  expect(amountColumn).toBeTruthy();
+  const formVariableId = `${slug(formName)}_rows`;
+
+  await page.goto(
+    getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+    { waitUntil: "domcontentloaded" },
+  );
+  await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill(
+    `Shared query edit ${suffix}`,
+  );
+  const palette = page.getByRole("group", { name: "Add to design" });
+  await palette.getByRole("button", { name: "Table", exact: true }).click();
+  const formPicker = page.getByRole("dialog", { name: "Table", exact: true });
+  await formPicker.getByRole("tab", { name: "Forms", exact: true }).click();
+  await formPicker.getByRole("button", { name: formName, exact: true }).click();
+  await expect(formPicker).toHaveCount(0);
+
+  await palette.getByRole("button", { name: "Table", exact: true }).click();
+  const reusePicker = page.getByRole("dialog", {
+    name: "Table",
+    exact: true,
+  });
+  await reusePicker.getByRole("tab", { name: "Variables", exact: true })
+    .click();
+  await reusePicker.getByRole("button", {
+    name: formVariableId,
+    exact: true,
+  }).click();
+  await expect(reusePicker).toHaveCount(0);
+
+  const componentOne = page.locator(
+    '.compositionGraphValue[data-component-id="component_1"]',
+  );
+  const componentTwo = page.locator(
+    '.compositionGraphValue[data-component-id="component_2"]',
+  );
+  for (const component of [componentOne, componentTwo]) {
+    await expect(component.getByRole("table")).toContainText(
+      "First shared row",
+      { timeout: 30_000 },
+    );
+    await expect(component.getByRole("table")).toContainText(
+      "Second shared row",
+    );
+  }
+
+  await page.getByRole("tab", { name: "Variables", exact: true }).click();
+  await page.getByRole("button", { name: formVariableId, exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+  await expect(editor).toContainText("SELECT *", { timeout: 30_000 });
+  await editor.click();
+  await editor.press("ControlOrMeta+A");
+  await editor.pressSequentially(
+    `SELECT * FROM ${sqlIdentifier(form!.sql_relation!)} WHERE ${
+      sqlIdentifier(amountColumn!)
+    } > 15`,
+  );
+  await expect(editor).toContainText("> 15");
+
+  await page.getByRole("tab", { name: "Design", exact: true }).click();
+  for (const component of [componentOne, componentTwo]) {
+    const table = component.getByRole("table");
+    await expect(table).toContainText("Second shared row", {
+      timeout: 30_000,
+    });
+    await expect(table).not.toContainText("First shared row", {
+      timeout: 30_000,
+    });
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+  }
+
+  const saveResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname.endsWith(
+      `/spaces/${spaceId}/compositions`,
+    )
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const saveResponse = await saveResponsePromise;
+  expect([200, 201]).toContain(saveResponse.status());
+  const saved = await saveResponse.json() as {
+    composition_id: string;
+    revision_id: string;
+  };
+  const revisionResponse = await request.get(
+    getBackendUrl(
+      `/spaces/${spaceId}/compositions/${saved.composition_id}/history/${saved.revision_id}`,
+    ),
+  );
+  expect(revisionResponse.ok()).toBe(true);
+  const revision = await revisionResponse.json() as SavedRevision;
+  const document = parseYaml(String(revision.fields.spec)) as {
+    spec?: {
+      variables?: Array<{
+        id?: string;
+        query?: { kind?: string; sql?: string };
+      }>;
+      components?: Array<{ id?: string; variable?: string }>;
+    };
+  };
+  const sharedQuery = document.spec?.variables?.find((variable) =>
+    variable.id === formVariableId
+  );
+  expect(sharedQuery?.query).toMatchObject({ kind: "inline_sql" });
+  expect(sharedQuery?.query?.sql).toContain("> 15");
+  expect(
+    document.spec?.components?.map(({ id, variable }) => ({
+      id,
+      variable,
+    })),
+  ).toEqual([
+    { id: "component_1", variable: formVariableId },
+    { id: "component_2", variable: formVariableId },
+  ]);
+});
