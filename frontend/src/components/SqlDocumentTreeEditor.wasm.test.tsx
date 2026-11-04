@@ -940,6 +940,60 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
   });
 
+  it("removes direct ARRAY elements from an aliased projection through actual WASM", async () => {
+    const initial = 'SELECT ARRAY[4,  9] AS "values]", 7 AS untouched';
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+
+    const selectElement = async (text: string) => {
+      const document = await parseSqlDocument(sql());
+      const element = document.nodes.find((node) =>
+        node.kind === "literal_expression" && node.range &&
+        sql().slice(node.range.start, node.range.end) === text &&
+        node.parent !== null &&
+        document.nodes.find((parent) => parent.id === node.parent)?.semantic
+            ?.kind === "array_literal"
+      );
+      expect(element).toBeDefined();
+      const item = (await screen.findAllByRole("treeitem")).find((node) =>
+        node.dataset.sqlDocumentNode === String(element!.id)
+      );
+      expect(item).toBeDefined();
+      fireEvent.click(item!);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    };
+
+    await selectElement("4");
+    await waitFor(() =>
+      expect(sql()).toBe('SELECT ARRAY[9] AS "values]", 7 AS untouched')
+    );
+    await selectElement("9");
+    await waitFor(() =>
+      expect(sql()).toBe('SELECT ARRAY[] AS "values]", 7 AS untouched')
+    );
+  });
+
+  it("does not offer aliased ARRAY removal when the literal has no elements", async () => {
+    const source = "SELECT ARRAY[] AS values_out";
+    const document = await parseSqlDocument(source);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    expect(array).toBeDefined();
+    expect(document.nodes.some((node) => node.parent === array!.id)).toBe(
+      false,
+    );
+    render(() => (
+      <SqlDocumentTreeEditor sql={() => source} onSqlChange={() => {}} />
+    ));
+    expect(
+      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeNull();
+  });
+
   it("does not offer aliased ARRAY append when the alias contains a closing bracket", async () => {
     const initial = 'SELECT ARRAY[4] AS "values]"';
     const document = await parseSqlDocument(initial);
