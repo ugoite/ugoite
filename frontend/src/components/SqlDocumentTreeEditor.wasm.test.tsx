@@ -898,8 +898,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       }),
     ).toBeDisabled();
     expect(
-      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeEnabled();
 
     fireEvent.click(moveUp);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
