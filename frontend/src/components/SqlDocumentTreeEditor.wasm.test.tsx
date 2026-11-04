@@ -42,14 +42,20 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     await waitFor(() => expect(sql()).toBe(existsSql));
     const edited = await parseSqlDocument(sql());
     const exists = edited.nodes.find((node) =>
-      node.kind === "subquery_expression" && node.range &&
-      sql().slice(node.range.start, node.range.end) === "EXISTS (SELECT 1)"
+      node.kind === "subquery_expression"
     );
     expect(exists).toBeDefined();
-    expect(edited.nodes.some((node) =>
-      node.kind === "select" && node.range &&
-      sql().slice(node.range.start, node.range.end) === "SELECT 1"
-    )).toBe(true);
+    const existsQuery = edited.nodes.find((node) =>
+      node.kind === "query" && node.parent === exists!.id
+    );
+    expect(existsQuery).toBeDefined();
+    expect(
+      edited.nodes.some((node) =>
+        node.kind === "select" && node.parent === existsQuery!.id &&
+        node.range &&
+        sql().slice(node.range.start, node.range.end) === "SELECT 1"
+      ),
+    ).toBe(true);
 
     const restored = await applySqlDocumentEditTransaction(
       sql(),

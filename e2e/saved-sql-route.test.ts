@@ -311,6 +311,8 @@ test.describe("Saved SQL route", () => {
       const created = await createSavedQuery;
       expect([200, 201], await created.text()).toContain(created.status());
       savedSqlId = (await created.json() as { id: string }).id;
+      await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/sql$`));
+      await page.getByRole("link", { name: new RegExp(queryName) }).click();
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
       );
