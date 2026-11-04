@@ -25,6 +25,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-009#criterion.exact-query-identities
               - kind: documents
+                anchor: REQ-COMP-009#criterion.saved-sql-label-source-explicit
+              - kind: documents
                 anchor: REQ-COMP-009#criterion.scalar-cardinality-is-explicit
               - kind: documents
                 anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
@@ -118,6 +120,13 @@ features:
         facet: domain
         responsibility: Parse and validate the strict variable graph and reject the replaced Composition schema without compatibility paths.
         targets:
+          - id: saved-sql-label-source-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: symbol, name: VariableGraphSavedSqlLabelSource }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
           - id: canonical-composition-model
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
@@ -240,6 +249,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
           - id: composition-data-workspace
             adapter: typescript
             path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
@@ -281,6 +292,8 @@ features:
                 criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
           - id: composition-studio
             adapter: typescript
             path: frontend/src/components/CompositionStudio.tsx
@@ -288,6 +301,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
               - kind: satisfies
@@ -450,6 +465,42 @@ features:
                 criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableGraphWorkspace.test.tsx, test: "adds typed graph nodes through the variable rail" } }
+          - id: saved-sql-label-source-domain-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: test, name: "saved_sql_label_source_is_required_at_the_canonical_boundary" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.saved-sql-label-source-contract]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: saved_sql_label_source_is_required_at_the_canonical_boundary } }
+          - id: saved-sql-generated-pattern-collision
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphRenderer.test.tsx
+            selector: { kind: test, name: "uses the declared variable label when its ID matches a generated pattern" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphRenderer.test.tsx, test: "uses the declared variable label when its ID matches a generated pattern" } }
+          - id: saved-sql-label-source-renamed
+            adapter: typescript
+            path: frontend/src/lib/composition-variable-binding.test.ts
+            selector: { kind: test, name: "marks a renamed Saved SQL binding as using the variable label" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-variable-binding.test.ts, test: "marks a renamed Saved SQL binding as using the variable label" } }
+          - id: saved-sql-label-source-created
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "displays the authorized pinned Saved SQL source without reading the moving head" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.saved-sql-label-source-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "displays the authorized pinned Saved SQL source without reading the moving head" } }
           - id: variable-name-validation-and-save-guard
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx

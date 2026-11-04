@@ -95,6 +95,7 @@ describe("Composition explicit query count", () => {
       kind: "saved_sql",
       entry_id: "saved",
       revision_id: "pinned",
+      label_source: "source",
       arguments: node.query.arguments,
     };
     expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(

@@ -245,6 +245,26 @@ mod tests {
     }
 
     #[test]
+    fn saved_sql_label_source_is_required_at_the_canonical_boundary() {
+        let missing = GRAPH.replace("        label_source: variable\n", "");
+        assert_ne!(missing, GRAPH);
+        assert_eq!(
+            canonicalize_composition_yaml(&missing),
+            Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+
+        let unknown = GRAPH.replace(
+            "        label_source: variable\n",
+            "        label_source: identifier_pattern\n",
+        );
+        assert_ne!(unknown, GRAPH);
+        assert_eq!(
+            canonicalize_composition_yaml(&unknown),
+            Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+    }
+
+    #[test]
     fn duplicate_form_bindings_and_invalid_metric_types_are_rejected() {
         let mut document = canonicalize_composition_yaml(GRAPH).unwrap().document;
         let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[2].kind

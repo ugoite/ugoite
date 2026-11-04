@@ -236,6 +236,7 @@ describe("CompositionGraphRenderer", () => {
               entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
               revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
               column: "total_amount",
+              label_source: "source",
               arguments: [],
             },
           }
@@ -282,8 +283,9 @@ describe("CompositionGraphRenderer", () => {
       .not.toBeInTheDocument();
   });
 
-  it("uses the declared variable name for a Saved SQL metric with a named ID", () => {
-    const variableId = "all_rows";
+  it("uses the declared variable label when its ID matches a generated pattern", () => {
+    const variableId =
+      "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_all_rows";
     const namedVariableDraft: CompositionGraphDraft = {
       ...draft,
       variables: draft.variables.map((node) =>
@@ -296,6 +298,7 @@ describe("CompositionGraphRenderer", () => {
               entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
               revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
               column: "row_count",
+              label_source: "variable",
               arguments: [],
             },
           }
@@ -355,6 +358,7 @@ describe("CompositionGraphRenderer", () => {
               kind: "saved_sql",
               entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
               revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
+              label_source: "source",
               arguments: [],
             },
           }

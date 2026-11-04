@@ -27,7 +27,8 @@ pub use variable_graph::{
     VariableGraphDiagnosticCode, VariableGraphFormBinding, VariableGraphLiteral, VariableGraphNode,
     VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
     VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 pub use variable_graph_input::{
     parse_variable_graph_input, resolve_variable_graph_inputs, ResolvedVariableGraphInputs,

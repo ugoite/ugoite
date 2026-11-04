@@ -57,10 +57,6 @@ const variableValue = (
 const inputType = (type: CompositionScalarType): string =>
   type === "date" ? "date" : type === "timestamp" ? "datetime-local" : "text";
 
-const isGeneratedSavedSqlVariableId = (value: string): boolean =>
-  /^query_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i
-    .test(value);
-
 const queryError = (
   evaluation: CompositionEvaluationResponse | undefined,
   variableId: string,
@@ -122,7 +118,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         if (
                           valueNode?.kind === "query" &&
                           valueNode.query.kind === "saved_sql" &&
-                          isGeneratedSavedSqlVariableId(variableId() ?? "")
+                          valueNode.query.label_source === "source"
                         ) {
                           return valueNode.query.column ??
                             t("composition.studioMetricPreview");
