@@ -435,6 +435,168 @@ describe("CompositionGraphRenderer", () => {
       .toHaveTextContent("1");
   });
 
+  it("renders the exact current integer input when REST returns a rounded number", () => {
+    const directInputMetricDraft: CompositionGraphDraft = {
+      ...draft,
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: "minimum" }
+          : component
+      ),
+    };
+    const roundedEvaluation = {
+      ...evaluation,
+      variable_values: { minimum: 9007199254740992 },
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={directInputMetricDraft}
+        evaluation={roundedEvaluation}
+        rawInputs={{ minimum: "9007199254740993" }}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent("9007199254740993");
+  });
+
+  it("uses an exact default or hides an unsafe bare integer Metric value", () => {
+    const directInputMetricDraft: CompositionGraphDraft = {
+      ...draft,
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: "minimum" }
+          : component
+      ),
+    };
+    const roundedEvaluation = {
+      ...evaluation,
+      variable_values: { minimum: 9007199254740992 },
+    };
+    const exactDefaultDraft = structuredClone(directInputMetricDraft);
+    const defaultInput = exactDefaultDraft.variables.find((node) =>
+      node.id === "minimum"
+    );
+    if (defaultInput?.kind === "input") {
+      defaultInput.default = {
+        kind: "integer",
+        value: "9007199254740993",
+      };
+    }
+
+    const { unmount } = render(() => (
+      <CompositionGraphRenderer
+        draft={exactDefaultDraft}
+        evaluation={roundedEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent("9007199254740993");
+    unmount();
+
+    const noDefaultDraft = structuredClone(exactDefaultDraft);
+    const input = noDefaultDraft.variables.find((node) => node.id === "minimum");
+    if (input?.kind === "input") delete input.default;
+    const { unmount: unmountUnsafe } = render(() => (
+      <CompositionGraphRenderer
+        draft={noDefaultDraft}
+        evaluation={roundedEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent(/^minimum\s*$/);
+    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
+    unmountUnsafe();
+
+    const safeEvaluation = {
+      ...evaluation,
+      variable_values: { minimum: 42 },
+    };
+    render(() => (
+      <CompositionGraphRenderer
+        draft={noDefaultDraft}
+        evaluation={safeEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent("42");
+  });
+
+  it("renders no data for an unsafe integer with a nullable null default", () => {
+    const nullableInputMetricDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.id === "minimum" && node.kind === "input"
+          ? {
+            ...node,
+            value_type: { ...node.value_type, nullable: true },
+            required: false,
+            default: { kind: "null" } as const,
+          }
+          : node
+      ),
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: "minimum" }
+          : component
+      ),
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={nullableInputMetricDraft}
+        evaluation={{
+          ...evaluation,
+          variable_values: { minimum: 9007199254740992 },
+        }}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent("No data");
+    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
+  });
+
   it("renders evaluated JSON and current raw string inputs in text bindings", () => {
     const textDraft: CompositionGraphDraft = {
       name: "Report",

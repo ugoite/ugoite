@@ -72,6 +72,31 @@ const variableValue = (
   return result?.kind === "scalar" ? literalValue(result.value) : undefined;
 };
 
+const metricInputValue = (
+  draft: CompositionGraphDraft,
+  evaluation: CompositionEvaluationResponse | undefined,
+  rawInputs: Readonly<Record<string, string>>,
+  id: string,
+  unavailableInputIds: ReadonlySet<string>,
+): unknown => {
+  const node = draft.variables.find((candidate) => candidate.id === id);
+  const value = variableValue(
+    draft,
+    evaluation,
+    rawInputs,
+    id,
+    unavailableInputIds,
+    true,
+  );
+  if (
+    node?.kind === "input" && node.value_type.scalar_type === "integer" &&
+    typeof value === "number" && !Number.isSafeInteger(value)
+  ) {
+    return node.default !== undefined ? literalValue(node.default) : undefined;
+  }
+  return value;
+};
+
 const inputType = (type: CompositionScalarType): string =>
   type === "date" ? "date" : type === "timestamp" ? "datetime-local" : "text";
 
@@ -104,7 +129,7 @@ const queryError = (
   return key ? t(key) : t("composition.queryFailed");
 };
 
-/** Render evaluated graph values and current raw input in directly bound Text; no source or SQL reads occur here. */
+/** Render evaluated values and raw direct bindings without issuing source reads. */
 export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
   const componentById = (id: string) =>
     props.draft.components.find((component) => component.id === id);
@@ -296,18 +321,31 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                         </p>
                                       );
                                   }
-                                  const value = evaluated()?.kind === "scalar"
-                                    ? literalValue(evaluated()!.value)
-                                    : variableValue(
+                                  const unavailableInputIds = new Set([
+                                    ...Object.keys(props.inputStates),
+                                    ...props.blockedQueryIds,
+                                  ]);
+                                  const result = evaluated();
+                                  let value: unknown;
+                                  if (result?.kind === "scalar") {
+                                    value = literalValue(result.value);
+                                  } else if (entry().kind === "metric") {
+                                    value = metricInputValue(
                                       props.draft,
                                       props.evaluation,
                                       props.rawInputs,
                                       variableId() ?? "",
-                                      new Set([
-                                        ...Object.keys(props.inputStates),
-                                        ...props.blockedQueryIds,
-                                      ]),
+                                      unavailableInputIds,
                                     );
+                                  } else {
+                                    value = variableValue(
+                                      props.draft,
+                                      props.evaluation,
+                                      props.rawInputs,
+                                      variableId() ?? "",
+                                      unavailableInputIds,
+                                    );
+                                  }
                                   const displayValue = value === null
                                     ? t("composition.metricNoData")
                                     : safeText(value);
