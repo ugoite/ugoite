@@ -555,6 +555,15 @@ features:
                 criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "counts only on request, pages in both directions, and rejects an obsolete count" } }
+          - id: saved-table-run-count-and-continuation
+            adapter: typescript
+            path: e2e/composition-table-metric-pagination.test.ts
+            selector: { kind: test, name: "Studio counts the pinned Table SQL separately and preserves its source while paging" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts the pinned Table SQL separately and preserves its source while paging" } }
           - id: browser-inline-copy
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts

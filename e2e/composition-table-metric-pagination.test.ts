@@ -17,6 +17,7 @@ type SeedState = {
   compositionId: string;
   revisionId: string;
   compositionName: string;
+  tableSql: SavedSqlRevision;
 };
 
 function sqlIdentifier(value: string): string {
@@ -32,6 +33,11 @@ async function createSavedSql(
   spaceId: string,
   name: string,
   sql: string,
+  variables = [{
+    type: "float",
+    name: "minimum",
+    description: "Minimum amount to include.",
+  }],
 ): Promise<SavedSqlRevision> {
   const response = await request.post(
     getBackendUrl(`/spaces/${spaceId}/sql`),
@@ -40,11 +46,7 @@ async function createSavedSql(
         name,
         kind: "user-query",
         sql,
-        variables: [{
-          type: "float",
-          name: "minimum",
-          description: "Minimum amount to include.",
-        }],
+        variables,
       },
     },
   );
@@ -134,6 +136,17 @@ async function seedComposition(
       sqlIdentifier(amountColumn!)
     } >= $minimum`,
   );
+  const tableSql = await createSavedSql(
+    request,
+    spaceId,
+    `Paged table source ${suffix}`,
+    `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
+      sqlIdentifier(merchantColumn!)
+    } AS merchant FROM ${sqlIdentifier(relation!)} ORDER BY ${
+      sqlIdentifier(amountColumn!)
+    } ASC`,
+    [],
+  );
 
   const graph: CompositionGraphSeed = {
     name: compositionName,
@@ -150,13 +163,11 @@ async function seedComposition(
         kind: "query",
         returns: { kind: "table", columns: [] },
         query: {
-          kind: "inline_sql",
-          sql: `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
-            sqlIdentifier(merchantColumn!)
-          } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
-            sqlIdentifier(amountColumn!)
-          } >= $minimum_amount ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
-          arguments: [{ name: "minimum_amount", variable: "minimum_amount" }],
+          kind: "saved_sql",
+          entry_id: tableSql.entryId,
+          revision_id: tableSql.revisionId,
+          label_source: "variable",
+          arguments: [],
           form_bindings: [],
           schema_fingerprint: "",
         },
@@ -224,7 +235,22 @@ async function seedComposition(
     compositionId: savedComposition.composition_id!,
     revisionId: savedComposition.revision_id!,
     compositionName,
+    tableSql,
   };
+}
+
+async function getSavedSqlSource(
+  request: APIRequestContext,
+  spaceId: string,
+  savedSqlId: string,
+): Promise<string> {
+  const response = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+  );
+  expect(response.ok()).toBe(true);
+  const savedSql = await response.json() as { sql?: string };
+  expect(savedSql.sql).toBeTruthy();
+  return savedSql.sql!;
 }
 
 test.describe("Composition Table and Metric pagination", () => {
@@ -304,5 +330,110 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(input).toHaveValue("0");
     await uiExpect(metric).toHaveText("102");
     expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
+  });
+
+  test("Studio counts the pinned Table SQL separately and preserves its source while paging", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const uiExpect = expect.configure({ timeout: 20_000 });
+    const revisionPath =
+      `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.revisionId}`;
+    const sourceBefore = await getSavedSqlSource(
+      request,
+      seed.spaceId,
+      seed.tableSql.entryId,
+    );
+    expect(sourceBefore).not.toMatch(/\bLIMIT\b/i);
+
+    await page.goto(getFrontendUrl(`${revisionPath}/edit`), {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "paged_rows", exact: true }).click();
+    const studioRun = page.getByRole("button", {
+      name: "Run Query",
+      exact: true,
+    });
+    const evaluationRequests: Array<Record<string, unknown>> = [];
+    const countRequests: Array<Record<string, unknown>> = [];
+    page.on("request", (outgoing) => {
+      const path = new URL(outgoing.url()).pathname;
+      if (
+        path.endsWith("/compositions/evaluate") &&
+        outgoing.method() === "POST"
+      ) {
+        evaluationRequests.push(
+          outgoing.postDataJSON() as Record<string, unknown>,
+        );
+      }
+      if (path.endsWith("/sql/query/count") && outgoing.method() === "POST") {
+        countRequests.push(outgoing.postDataJSON() as Record<string, unknown>);
+      }
+    });
+    const firstPageResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+    );
+    await studioRun.click();
+    const firstEvaluation = await (await firstPageResponse).json() as {
+      query_results?: Record<string, {
+        value?: { kind: string; rows?: unknown[][] };
+        has_more: boolean;
+        next?: string;
+      }>;
+    };
+    const firstPage = firstEvaluation.query_results?.paged_rows;
+    expect(firstPage?.value?.kind).toBe("table");
+    expect(firstPage?.value?.rows).toHaveLength(100);
+    expect(firstPage?.has_more).toBe(true);
+    expect(firstPage?.next).toBeTruthy();
+    const studioTable = page.getByRole("table");
+    await uiExpect(studioTable.locator("tbody tr")).toHaveCount(100);
+    await uiExpect(
+      page.getByRole("button", { name: "Count rows", exact: true }),
+    )
+      .toBeEnabled();
+    expect(countRequests).toHaveLength(0);
+    expect(evaluationRequests.at(-1)).toMatchObject({
+      requested_queries: ["paged_rows"],
+    });
+
+    const countResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/sql/query/count")
+    );
+    await page.getByRole("button", { name: "Count rows", exact: true }).click();
+    expect(await (await countResponse).json()).toMatchObject({ count: 102 });
+    expect(countRequests.at(-1)).toMatchObject({
+      saved_sql: {
+        id: seed.tableSql.entryId,
+        revision_id: seed.tableSql.revisionId,
+      },
+    });
+    expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);
+    expect(
+      await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
+    )
+      .toBe(sourceBefore);
+
+    const nextPageResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+    );
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await uiExpect(studioTable.locator("tbody tr")).toHaveCount(2);
+    const nextEvaluation = await (await nextPageResponse).json() as {
+      query_results?: Record<string, {
+        value?: { kind: string; rows?: unknown[][] };
+        has_more: boolean;
+      }>;
+    };
+    const nextPage = nextEvaluation.query_results?.paged_rows;
+    expect(nextPage?.value?.kind).toBe("table");
+    expect(nextPage?.value?.rows).toHaveLength(2);
+    expect(nextPage?.has_more).toBe(false);
+    expect(evaluationRequests.at(-1)).toMatchObject({
+      page: { variable_id: "paged_rows", cursor: firstPage?.next },
+    });
+    expect(
+      await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
+    )
+      .toBe(sourceBefore);
   });
 });
