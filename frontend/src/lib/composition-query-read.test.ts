@@ -98,8 +98,14 @@ describe("Composition explicit query count", () => {
       label_source: "source",
       arguments: node.query.arguments,
     };
+    delete response.queries[0].portable_sql;
     expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
-      { sql: "", saved_sql: { id: "saved", revision_id: "pinned" } },
+      {
+        sql: "",
+        saved_sql: { id: "saved", revision_id: "pinned" },
+        parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
+        parameter_types: { text: "string", minimum: "integer" },
+      },
     );
   });
 
