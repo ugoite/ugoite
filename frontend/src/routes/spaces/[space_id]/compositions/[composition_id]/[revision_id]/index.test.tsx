@@ -477,6 +477,79 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock).toHaveBeenCalledOnce();
   });
 
+  it("starts a fresh check for each access-change signal while a check is pending", async () => {
+    const sameSnapshot = {
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      valid_for_ms: 30_000,
+    };
+    const changedSnapshot = {
+      ...sameSnapshot,
+      authorization_fingerprint: "auth-2",
+    };
+    let resolveFirstSnapshot!: (value: typeof sameSnapshot) => void;
+    let resolveSecondSnapshot!: (value: typeof changedSnapshot) => void;
+    let resolveFreshEvaluation!: (value: ReturnType<typeof evaluation>) => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveFreshEvaluation = (value) =>
+            resolve({ ...value, evaluation_id: request.evaluation_id });
+        })
+      );
+    accessSnapshotMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirstSnapshot = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecondSnapshot = resolve;
+        }),
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+
+    accessChangeHandlers[0]("space-1");
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    accessChangeHandlers[0]("space-1");
+    await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveFirstSnapshot(sameSnapshot);
+    await Promise.resolve();
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    expect(evaluateMock).toHaveBeenCalledOnce();
+
+    resolveSecondSnapshot(changedSnapshot);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+    resolveFreshEvaluation(evaluation("eval-fresh", "auth-2", {
+      rows: 2,
+      stable: 11,
+    }));
+    await waitFor(() => expect(screen.getByText("11")).toBeInTheDocument());
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+  });
+
   it("does not publish an evaluation started before suspend and evaluates again after resume", async () => {
     let resolveOldEvaluation!: (value: ReturnType<typeof evaluation>) => void;
     let resolveFreshEvaluation!: (value: ReturnType<typeof evaluation>) => void;

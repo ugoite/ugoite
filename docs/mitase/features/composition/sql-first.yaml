@@ -378,6 +378,15 @@ features:
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "restores cached results only after a same-Space check confirms unchanged authority" } }
+          - id: repeated-access-change-invalidates-in-flight-snapshot
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "starts a fresh check for each access-change signal while a check is pending" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "starts a fresh check for each access-change signal while a check is pending" } }
           - id: successful-resource-access-mutation-signals
             adapter: typescript
             path: frontend/src/lib/access-api.test.ts
