@@ -405,6 +405,7 @@ describe("CompositionStudio graph surface", () => {
           },
           has_more: !request.page,
           next: request.page ? undefined : "next-page",
+          count_snapshot: "count-snapshot-token",
         },
       },
     }));
@@ -427,6 +428,7 @@ describe("CompositionStudio graph surface", () => {
     );
     expect(countMock.mock.calls[0][1]).toEqual({
       sql: "SELECT field_100 FROM form_immutable",
+      composition_count_snapshot: "count-snapshot-token",
       parameters: {},
       parameter_types: {},
     });
