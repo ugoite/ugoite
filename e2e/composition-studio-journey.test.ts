@@ -1857,14 +1857,21 @@ test.describe("Composition Studio Journey", () => {
           kind: "user-query",
           sql: `SELECT ${sqlIdentifier(nameColumn!)} AS merchant FROM ${
             sqlIdentifier(sqlRelation!)
-          } ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
-          variables: [],
+          } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum ORDER BY ${
+            sqlIdentifier(amountColumn!)
+          } ASC`,
+          variables: [{
+            type: "integer",
+            name: "minimum",
+            description: "Minimum amount included in the independent table.",
+          }],
         },
       },
     );
     expect([200, 201]).toContain(independentSql.status());
 
     const evaluationRequests: Array<Record<string, unknown>> = [];
+    const evaluationResponses: Array<Record<string, unknown>> = [];
     page.on("request", (outgoing) => {
       if (
         new URL(outgoing.url()).pathname.endsWith("/compositions/evaluate")
@@ -1878,6 +1885,19 @@ test.describe("Composition Studio Journey", () => {
         }
       }
     });
+    page.on("response", async (incoming) => {
+      if (
+        new URL(incoming.url()).pathname.endsWith("/compositions/evaluate")
+      ) {
+        try {
+          evaluationResponses.push(
+            await incoming.json() as Record<string, unknown>,
+          );
+        } catch {
+          evaluationResponses.push({});
+        }
+      }
+    });
 
     await page.goto(
       getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
@@ -1887,11 +1907,19 @@ test.describe("Composition Studio Journey", () => {
       `Design dependency preview ${suffix}`,
     );
     await addStudioTypedInput(page, "minimum", "integer", "0");
+    await addStudioTypedInput(page, "independent_minimum", "integer", "0");
     await addStudioInput(page, "minimum");
+    await addStudioInput(page, "independent_minimum");
     await addMetricDisplay(page, dependentSqlName, "matching_count", {
       minimum: "minimum",
     });
-    await addCanvasDisplay(page, "Table", independentSqlName);
+    await addCanvasDisplay(
+      page,
+      "Table",
+      independentSqlName,
+      undefined,
+      { minimum: "independent_minimum" },
+    );
 
     const dependentVariableId = `${
       savedSqlVariablePrefix(dependentSqlName)
@@ -1906,14 +1934,33 @@ test.describe("Composition Studio Journey", () => {
     });
     await expect(dependentMetric).toHaveText("2", { timeout: 30_000 });
     await expect(independentTable).toContainText("Independent row 000");
+    await expect(page.getByRole("textbox", {
+      name: "independent_minimum",
+      exact: true,
+    })).toHaveValue("0");
     const firstPageRequest = evaluationRequests.at(-1);
     expect(firstPageRequest?.requested_queries).toEqual(
       expect.arrayContaining([dependentVariableId, independentTableVariableId]),
     );
+    await expect.poll(() => evaluationResponses.length).toBe(
+      evaluationRequests.length,
+    );
+    const initialEvaluation = evaluationResponses.at(-1)!;
+    expect(initialEvaluation.computed_query_ids).toEqual(
+      expect.arrayContaining([dependentVariableId, independentTableVariableId]),
+    );
+    expect(initialEvaluation.publication_fingerprint).toBeTruthy();
+    expect(initialEvaluation.authorization_fingerprint).toBeTruthy();
+    expect(initialEvaluation.query_results).toHaveProperty(
+      independentTableVariableId,
+    );
 
     await expect(independentTable.locator("tbody tr")).toHaveCount(2);
     await expect(independentTable).toContainText("Independent row 001");
+    const independentRowsBefore = await independentTable.locator("tbody tr")
+      .allTextContents();
     const beforeInputChange = evaluationRequests.length;
+    const beforeResponseCount = evaluationResponses.length;
 
     await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
     await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
@@ -1924,9 +1971,28 @@ test.describe("Composition Studio Journey", () => {
       dependentVariableId,
     ]);
     expect(evaluationRequests.at(-1)).not.toHaveProperty("page");
-    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
-    await expect(independentTable).toContainText("Independent row 000");
-    await expect(independentTable).toContainText("Independent row 001");
+    await expect.poll(() => evaluationResponses.length).toBe(
+      beforeResponseCount + 1,
+    );
+    const changedInputEvaluation = evaluationResponses.at(-1)!;
+    expect(evaluationRequests.at(-1)?.target).toEqual(
+      firstPageRequest?.target,
+    );
+    expect(changedInputEvaluation.computed_query_ids).toEqual([
+      dependentVariableId,
+    ]);
+    expect(changedInputEvaluation.query_results).not.toHaveProperty(
+      independentTableVariableId,
+    );
+    expect(changedInputEvaluation.publication_fingerprint).toBe(
+      initialEvaluation.publication_fingerprint,
+    );
+    expect(changedInputEvaluation.authorization_fingerprint).toBe(
+      initialEvaluation.authorization_fingerprint,
+    );
+    await expect.poll(() =>
+      independentTable.locator("tbody tr").allTextContents()
+    ).toEqual(independentRowsBefore);
   });
 
   test("Pinned Saved SQL source supports an explicit inline copy and explicit counts", async ({ page, request }) => {
