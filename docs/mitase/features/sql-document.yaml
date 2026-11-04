@@ -40,7 +40,7 @@ features:
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for named Struct-field access with escaped SQL string literals, parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, fixed-bound one-based slice construction or terminal literal-bound updates, and adjacent ARRAY literal element moves while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
+        responsibility: Apply typed source-aware semantic edits for named Struct-field access with escaped SQL string literals, parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles and predicate edits, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, fixed-bound one-based slice construction or terminal literal-bound updates, and adjacent ARRAY literal element moves while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
         targets:
           - id: semantic-expression-edits
             adapter: rust
@@ -59,7 +59,7 @@ features:
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped named Struct-field access, typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, controls to construct fixed-bound one-based slices, edit prepopulated terminal literal slice bounds, and move eligible ARRAY literal elements one position up or down in the SQL document tree editor.
+        responsibility: Render node-scoped named Struct-field access, typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle and simple comparison predicates in its existing shared condition editor, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, controls to construct fixed-bound one-based slices, edit prepopulated terminal literal slice bounds, and move eligible ARRAY literal elements one position up or down in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -76,6 +76,11 @@ features:
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }
+          - id: aggregate-filter-condition-workspace
+            adapter: typescript
+            path: frontend/src/components/SqlConditionWorkspace.tsx
+            selector: { kind: symbol, name: SqlConditionWorkspace }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.typed-expression-attributes }]
       - id: sql-document-verification
         role: verification
         facet: verification
@@ -707,7 +712,7 @@ features:
       - id: typed-expression-attributes-verification
         role: verification
         facet: verification
-        responsibility: Verify lossless typed CAST, operator, CASE, predicate, and literal edits in native Rust, authorized executor contexts, actual WASM protocol dispatch, and browser DOM controls.
+        responsibility: Verify lossless typed CAST, operator, CASE, predicate, and literal edits in native Rust, authorized executor contexts, actual WASM protocol dispatch, and browser DOM controls, including aggregate FILTER predicate construction, source editing, execution, and undo.
         targets:
           - id: group-by-structure-native-undo
             adapter: rust
@@ -778,15 +783,9 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_aggregate_filter_toggle_is_typed_undoable_and_preserves_source } }
-          - id: aggregate-filter-wasm-parity
-            adapter: rust
-            path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: test, name: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity }
-            claims:
-              - kind: verifies
-                criterion: REQ-SQL-001#criterion.typed-expression-attributes
-                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity } }
+          - { id: aggregate-filter-condition-native-undo, adapter: rust, path: crates/ugoite-domain/src/sql_document.rs, selector: { kind: test, name: tests::semantic_aggregate_filter_condition_is_typed_and_undoable }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_aggregate_filter_condition_is_typed_and_undoable } } }] }
+          - { id: aggregate-filter-wasm-parity, adapter: rust, path: crates/ugoite-wasm/src/lib.rs, selector: { kind: test, name: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_common_toolbar_semantic_operations_have_wasm_parity } } }] }
+          - { id: aggregate-filter-condition-wasm-dom, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: creates and edits an aggregate FILTER predicate from source SQL }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.typed-expression-attributes, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.aggregate-filter-condition-workspace], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: creates and edits an aggregate FILTER predicate from source SQL } } }] }
           - id: aggregate-filter-dom-control
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.test.tsx

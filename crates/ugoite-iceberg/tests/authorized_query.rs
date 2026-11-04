@@ -4046,6 +4046,97 @@ async fn typed_sql_document_group_and_aggregate_edits_execute_authorized_queries
             .value(0),
         3
     );
+    let filter_scope = ugoite_domain::sql_document::parse_sql_document(filter_seed.to_sql())
+        .conditions
+        .into_iter()
+        .find(|scope| {
+            scope.kind
+                == ugoite_domain::sql_document::SqlDocumentConditionScopeKind::AggregateFilter
+        })
+        .expect("aggregate FILTER has a typed condition scope");
+    let seed_id = match filter_scope.expression.expect("FILTER expression") {
+        ugoite_domain::sql_document::SqlDocumentConditionNode::Advanced { node_id, .. } => node_id,
+        _ => panic!("FILTER starts at TRUE"),
+    };
+    let predicate_transaction = |source: &str, node_id: u32, value: &str| {
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::UpdateFilterCondition {
+                    node_id,
+                    expected_kind: document.nodes[node_id as usize].kind,
+                    condition:
+                        ugoite_domain::sql_document::SqlDocumentFilterCondition::Comparison {
+                            column: ugoite_domain::sql_document::SqlDocumentColumnReference {
+                                qualifier: None,
+                                column: ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                    value: "field_100".to_owned(),
+                                    quote_style: None,
+                                },
+                            },
+                            operator: ugoite_domain::sql_document::SqlDocumentFilterOperator::Eq,
+                            value: Some(
+                                ugoite_domain::sql_document::SqlDocumentSemanticLiteral::String {
+                                    value: value.to_owned(),
+                                },
+                            ),
+                        },
+                },
+            ],
+        }
+    };
+    let food_predicate = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        filter_seed.to_sql(),
+        &predicate_transaction(filter_seed.to_sql(), seed_id, "food"),
+    )?
+    .document;
+    assert_eq!(
+        food_predicate.to_sql(),
+        "SELECT COUNT(field_101) FILTER (WHERE field_100 = 'food') FROM tasks"
+    );
+    let food_result = context.execute(food_predicate.to_sql()).await?;
+    assert_eq!(
+        food_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        2
+    );
+    let food_document = ugoite_domain::sql_document::parse_sql_document(food_predicate.to_sql());
+    let food_scope = food_document
+        .conditions
+        .iter()
+        .find(|scope| {
+            scope.kind
+                == ugoite_domain::sql_document::SqlDocumentConditionScopeKind::AggregateFilter
+        })
+        .expect("edited aggregate FILTER has a typed scope");
+    let food_id = match food_scope.expression.as_ref().expect("FILTER expression") {
+        ugoite_domain::sql_document::SqlDocumentConditionNode::Comparison { node_id, .. } => {
+            *node_id
+        }
+        _ => panic!("food filter is a typed comparison"),
+    };
+    let travel_predicate =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            food_predicate.to_sql(),
+            &predicate_transaction(food_predicate.to_sql(), food_id, "travel"),
+        )?
+        .document;
+    let travel_result = context.execute(travel_predicate.to_sql()).await?;
+    assert_eq!(
+        travel_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        1
+    );
     let filter_seed_document =
         ugoite_domain::sql_document::parse_sql_document(filter_seed.to_sql());
     let true_literal = filter_seed_document
