@@ -4,6 +4,7 @@ import {
   type BrowserContext,
   expect,
   type Page,
+  type Request,
   test,
 } from "@playwright/test";
 import {
@@ -1870,32 +1871,55 @@ test.describe("Composition Studio Journey", () => {
     );
     expect([200, 201]).toContain(independentSql.status());
 
-    const evaluationRequests: Array<Record<string, unknown>> = [];
-    const evaluationResponses: Array<Record<string, unknown>> = [];
+    type EvaluationExchange = {
+      evaluationId: string;
+      request: Record<string, unknown>;
+      response?: Record<string, unknown>;
+      failure?: string;
+    };
+    const evaluationExchanges = new Map<string, EvaluationExchange[]>();
+    const exchangeByRequest = new WeakMap<Request, EvaluationExchange>();
     page.on("request", (outgoing) => {
       if (
         new URL(outgoing.url()).pathname.endsWith("/compositions/evaluate")
       ) {
+        let body: Record<string, unknown> = {};
         try {
-          evaluationRequests.push(
-            outgoing.postDataJSON() as Record<string, unknown>,
-          );
+          body = outgoing.postDataJSON() as Record<string, unknown>;
         } catch {
-          evaluationRequests.push({});
+          // Keep malformed requests in the trace so the matching assertions
+          // below fail instead of silently omitting them.
         }
+        const exchange = {
+          evaluationId: typeof body.evaluation_id === "string"
+            ? body.evaluation_id
+            : "",
+          request: body,
+        };
+        const exchangesForId = evaluationExchanges.get(exchange.evaluationId) ??
+          [];
+        exchangesForId.push(exchange);
+        evaluationExchanges.set(exchange.evaluationId, exchangesForId);
+        exchangeByRequest.set(outgoing, exchange);
       }
     });
     page.on("response", async (incoming) => {
       if (
         new URL(incoming.url()).pathname.endsWith("/compositions/evaluate")
       ) {
+        const exchange = exchangeByRequest.get(incoming.request());
+        if (!exchange) return;
         try {
-          evaluationResponses.push(
-            await incoming.json() as Record<string, unknown>,
-          );
+          exchange.response = await incoming.json() as Record<string, unknown>;
         } catch {
-          evaluationResponses.push({});
+          exchange.response = {};
         }
+      }
+    });
+    page.on("requestfailed", (outgoing) => {
+      const exchange = exchangeByRequest.get(outgoing);
+      if (exchange) {
+        exchange.failure = outgoing.failure()?.errorText ?? "request failed";
       }
     });
 
@@ -1938,14 +1962,20 @@ test.describe("Composition Studio Journey", () => {
       name: "independent_minimum",
       exact: true,
     })).toHaveValue("0");
-    const firstPageRequest = evaluationRequests.at(-1);
-    expect(firstPageRequest?.requested_queries).toEqual(
-      expect.arrayContaining([dependentVariableId, independentTableVariableId]),
-    );
-    await expect.poll(() => evaluationResponses.length).toBe(
-      evaluationRequests.length,
-    );
-    const initialEvaluation = evaluationResponses.at(-1)!;
+    const initialExchange = () =>
+      [...evaluationExchanges.values()].flat().find((exchange) => {
+        const requested = exchange.request.requested_queries;
+        return Array.isArray(requested) &&
+          requested.includes(dependentVariableId) &&
+          requested.includes(independentTableVariableId) &&
+          exchange.response?.evaluation_id === exchange.evaluationId;
+      });
+    await expect.poll(() => initialExchange()).toBeDefined();
+    const initial = initialExchange()!;
+    const initialEvaluation = initial.response!;
+    expect(initial.evaluationId).toBeTruthy();
+    expect([...evaluationExchanges.keys()].every(Boolean)).toBe(true);
+    expect(initialEvaluation.evaluation_id).toBe(initial.evaluationId);
     expect(initialEvaluation.computed_query_ids).toEqual(
       expect.arrayContaining([dependentVariableId, independentTableVariableId]),
     );
@@ -1959,25 +1989,54 @@ test.describe("Composition Studio Journey", () => {
     await expect(independentTable).toContainText("Independent row 001");
     const independentRowsBefore = await independentTable.locator("tbody tr")
       .allTextContents();
-    const beforeInputChange = evaluationRequests.length;
-    const beforeResponseCount = evaluationResponses.length;
+    const evaluationIdsBeforeInputChange = new Set(
+      evaluationExchanges.keys(),
+    );
 
     await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
     await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
-    await expect.poll(() => evaluationRequests.length).toBe(
-      beforeInputChange + 1,
+    const changedInputAttempts = () =>
+      [...evaluationExchanges.entries()]
+        .filter(([evaluationId]) =>
+          !evaluationIdsBeforeInputChange.has(evaluationId)
+        )
+        .flatMap(([, exchanges]) => exchanges)
+        .filter((exchange) =>
+          exchange.request.variables !== null &&
+          typeof exchange.request.variables === "object" &&
+          (exchange.request.variables as Record<string, unknown>).minimum ===
+            1 &&
+          JSON.stringify(exchange.request.requested_queries) ===
+            JSON.stringify([dependentVariableId]) &&
+          !Object.hasOwn(exchange.request, "page")
+        );
+    await expect.poll(() => {
+      const attempts = changedInputAttempts();
+      return attempts.length > 0 &&
+        attempts.every((exchange) =>
+          exchange.response !== undefined || exchange.failure !== undefined
+        );
+    }).toBe(true);
+    const changedInputExchange = changedInputAttempts().find((exchange) =>
+      exchange.response?.evaluation_id === exchange.evaluationId
     );
-    expect(evaluationRequests.at(-1)?.requested_queries).toEqual([
-      dependentVariableId,
-    ]);
-    expect(evaluationRequests.at(-1)).not.toHaveProperty("page");
-    await expect.poll(() => evaluationResponses.length).toBe(
-      beforeResponseCount + 1,
+    expect(changedInputExchange).toBeDefined();
+    expect(changedInputExchange!.evaluationId).toBeTruthy();
+    expect(changedInputExchange!.request.target).toEqual(
+      initial.request.target,
     );
-    const changedInputEvaluation = evaluationResponses.at(-1)!;
-    expect(evaluationRequests.at(-1)?.target).toEqual(
-      firstPageRequest?.target,
+    const changedInputEvaluation = changedInputExchange!.response!;
+    expect(changedInputEvaluation.evaluation_id).toBe(
+      changedInputExchange!.evaluationId,
     );
+    for (
+      const superseded of changedInputAttempts().filter((exchange) =>
+        exchange.failure !== undefined
+      )
+    ) {
+      expect(superseded.response).toBeUndefined();
+      expect(superseded.evaluationId).toBeTruthy();
+    }
     expect(changedInputEvaluation.computed_query_ids).toEqual([
       dependentVariableId,
     ]);
