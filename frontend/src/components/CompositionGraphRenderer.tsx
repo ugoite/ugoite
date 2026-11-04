@@ -33,6 +33,21 @@ export interface CompositionGraphRendererProps {
 const literalValue = (value: CompositionLiteral | undefined): unknown =>
   !value || value.kind === "null" ? null : value.value;
 
+const evaluatedInputValue = (
+  value: unknown,
+  type: CompositionScalarType,
+): unknown => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  // The REST response uses JSON values, while exact-integer decoding can
+  // preserve a typed integer literal. Keep JSON objects opaque.
+  if (type === "json") return value;
+  const literal = value as { kind?: unknown; value?: unknown };
+  if (literal.kind === "null") return null;
+  return literal.kind === type && "value" in value ? literal.value : value;
+};
+
 const variableValue = (
   draft: CompositionGraphDraft,
   evaluation: CompositionEvaluationResponse | undefined,
@@ -47,7 +62,10 @@ const variableValue = (
   if (node.kind === "input") {
     if (preferRawInput && Object.hasOwn(rawInputs, id)) return rawInputs[id];
     if (unavailableInputIds.has(id)) return undefined;
-    return literalValue(evaluation?.variable_values[id] ?? node.default);
+    const values = evaluation?.variable_values;
+    return values && Object.hasOwn(values, id)
+      ? evaluatedInputValue(values[id], node.value_type.scalar_type)
+      : literalValue(node.default);
   }
   if (unavailableInputIds.has(id)) return undefined;
   const result = evaluation?.query_results[id]?.value;
