@@ -440,7 +440,7 @@ test.describe("Composition Table and Metric pagination", () => {
         },
       },
     );
-    expect(pageTokenCountResponse.status()).toBe(400);
+    expect(pageTokenCountResponse.status()).toBe(422);
     const tamperedSnapshotResponse = await request.post(
       getBackendUrl(`/spaces/${seed.spaceId}/sql/query/count`),
       {
@@ -450,7 +450,7 @@ test.describe("Composition Table and Metric pagination", () => {
         },
       },
     );
-    expect(tamperedSnapshotResponse.status()).toBe(400);
+    expect(tamperedSnapshotResponse.status()).toBe(422);
     expect(
       await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
     )
