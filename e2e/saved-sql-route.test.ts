@@ -539,6 +539,86 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("@smoke SQL Workspace creates, runs, saves, and reloads the exact EXISTS query", async ({ page }) => {
+    const existsSql = "SELECT 1 WHERE EXISTS (SELECT 1)";
+    const queryName = `Exists round trip ${Date.now()}`;
+    let savedSqlId: string | undefined;
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+        waitUntil: "domcontentloaded",
+      });
+      const sqlEditor = page.getByRole("textbox", {
+        name: "SQL",
+        exact: true,
+      });
+      await sqlEditor.fill(existsSql);
+      await expect(sqlEditor).toContainText(existsSql);
+
+      const firstRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const firstResult = await firstRun;
+      expect(firstResult.ok(), await firstResult.text()).toBe(true);
+      const firstOutput = await firstResult.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(firstOutput.columns).toHaveLength(1);
+      expect(firstOutput.rows).toEqual([{ [firstOutput.columns[0]]: 1 }]);
+
+      await page.getByLabel("Query name").fill(queryName);
+      const createSavedQuery = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const created = await createSavedQuery;
+      expect([200, 201], await created.text()).toContain(created.status());
+      savedSqlId = (await created.json() as { id: string }).id;
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
+      );
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { level: 1, name: queryName }))
+        .toBeVisible();
+      await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+        .toContainText(existsSql);
+      const persisted = await page.request.get(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+      expect(persisted.ok()).toBe(true);
+      expect((await persisted.json() as { sql: string }).sql).toBe(existsSql);
+
+      const reloadRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const reloadResult = await reloadRun;
+      expect(reloadResult.ok(), await reloadResult.text()).toBe(true);
+      const reloadOutput = await reloadResult.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(reloadOutput.columns).toHaveLength(1);
+      expect(reloadOutput.rows).toEqual([{ [reloadOutput.columns[0]]: 1 }]);
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      ).toBeVisible();
+    } finally {
+      if (savedSqlId) {
+        await page.request.delete(
+          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+      }
+    }
+  });
+
   test("REQ-FE-063 @smoke: scalar SELECT without a Form can use SQL structure editing", async ({ page, request }) => {
     const name = `Scalar SQL ${Date.now()}`;
     const createResponse = await request.post(
