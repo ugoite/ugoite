@@ -136,7 +136,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo", async () => {
-    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source ORDER BY total DESC /* tail */";
+    const source =
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "total" FROM source ORDER BY total DESC /* tail */';
     const document = await parseSqlDocument(source);
     expect(document.diagnostics).toEqual([]);
     const item = document.nodes.find((node) =>
@@ -168,11 +169,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.blur(alias);
     await waitFor(() => expect(sql()).toBe(expected.document.source));
     expect(sql()).toBe(
-      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source ORDER BY \"net total\" DESC /* tail */",
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "net total" FROM source ORDER BY "net total" DESC /* tail */',
     );
     const edited = await parseSqlDocument(sql());
     expect(edited.diagnostics).toEqual(document.diagnostics);
-    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
     expect(restored.document.source).toBe(source);
     expect(restored.document.diagnostics).toEqual(document.diagnostics);
   });
@@ -1150,6 +1154,78 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     await waitFor(() =>
       expect(sql()).toBe("SELECT field_100 FROM tasks LIMIT $page_size")
     );
+  });
+
+  it("declares a typed SQL argument while editing an expression through actual WASM", async () => {
+    const initial = 'SELECT amount >= 1 AS matches FROM "Expenses"';
+    const document = await parseSqlDocument(initial);
+    const value = document.nodes.find((node) =>
+      node.semantic?.kind === "literal" &&
+      node.semantic.literal_kind === "number"
+    );
+    expect(value).toBeDefined();
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_literal",
+        node_id: value!.id,
+        expected_kind: value!.kind,
+        literal: { kind: "named_parameter", name: "minimum" },
+      }],
+    });
+    const [sql, setSql] = createSignal(initial);
+    const changes: string[] = [];
+    const onArgumentAdded = (argument: {
+      name: string;
+      type: string;
+      description: string;
+    }) => {
+      changes.push("argument");
+      expect(argument).toEqual({
+        name: "minimum",
+        type: "integer",
+        description: "",
+      });
+    };
+    render(() => (
+      <SqlDocumentTreeEditor
+        sql={sql}
+        onSqlChange={(nextSql) => {
+          changes.push("sql");
+          setSql(nextSql);
+        }}
+        argumentDefinitions={() => []}
+        onArgumentAdded={onArgumentAdded}
+      />
+    ));
+
+    const valueItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(value!.id)
+    );
+    expect(valueItem).toBeDefined();
+    fireEvent.click(valueItem!);
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "named_parameter" },
+    });
+    fireEvent.input(screen.getByLabelText("Argument name"), {
+      target: { value: "minimum" },
+    });
+    fireEvent.change(screen.getByLabelText("Type"), {
+      target: { value: "integer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(sql()).toBe(expected.document.source));
+    expect(sql()).toBe(
+      'SELECT amount >= $minimum AS matches FROM "Expenses"',
+    );
+    expect(changes).toEqual(["argument", "sql"]);
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
+    expect(restored.document.source).toBe(initial);
   });
 
   it("renames a CTE output column and its binding through the actual WASM tree editor", async () => {
