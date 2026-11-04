@@ -259,6 +259,54 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       )
     );
     await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
+  it.each(
+    [
+      ["IN", "in", "SELECT (1) IN (SELECT 1)"],
+      ["NOT IN", "not_in", "SELECT (1) NOT IN (SELECT 1)"],
+    ] as const,
+  )(
+    "authors the exact %s seed through the inspector and restores it with WASM undo",
+    async (_label, template, expectedSql) => {
+      const initial = "SELECT 1";
+      const initialDocument = await parseSqlDocument(initial);
+      const operand = initialDocument.nodes.find((node) =>
+        node.range && initial.slice(node.range.start, node.range.end) === "1"
+      );
+      expect(operand).toBeDefined();
+      const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+        contract_version: initialDocument.contract_version,
+        expected_source: initial,
+        edits: [{
+          kind: "wrap_expression_in_subquery_predicate",
+          node_id: operand!.id,
+          expected_kind: operand!.kind,
+          template,
+        }],
+      });
+
+      const [sql, setSql] = createSignal(initial);
+      render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+      const operandItem = (await screen.findAllByRole("treeitem")).find((
+        item,
+      ) => item.dataset.sqlDocumentNode === String(operand!.id));
+      expect(operandItem).toBeDefined();
+      fireEvent.click(operandItem!);
+      fireEvent.change(screen.getByLabelText("Subquery condition"), {
+        target: { value: template },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+      await waitFor(() => expect(sql()).toBe(expectedSql));
+      const edited = await parseSqlDocument(sql());
+      expect(edited.diagnostics).toEqual([]);
+      const restored = await applySqlDocumentEditTransaction(
+        sql(),
+        expected.undo,
+      );
+      expect(restored.document.source).toBe(initial);
+    },
+  );
+
   it("authors the exact EXISTS seed through the inspector and restores it with WASM undo", async () => {
     const initial = "SELECT 1 WHERE TRUE";
     const initialDocument = await parseSqlDocument(initial);

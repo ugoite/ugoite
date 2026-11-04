@@ -769,6 +769,19 @@
           ]
         },
         {
+          "id": "in-not-in-subquery-round-trip",
+          "selectors": [
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "authors the exact %s seed through the inspector and restores it with WASM undo"
+            ],
+            [
+              "e2e/saved-sql-route.test.ts",
+              "@smoke SQL tree authors IN and NOT IN, executes distinct booleans, and saves/reloads both exact queries"
+            ]
+          ]
+        },
+        {
           "id": "common-toolbar",
           "selectors": [
             [
