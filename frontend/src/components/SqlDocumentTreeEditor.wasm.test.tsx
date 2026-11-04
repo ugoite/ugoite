@@ -175,6 +175,11 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
     await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
 
+    const whereAddCondition = () =>
+      within(screen.getByRole("region", { name: "Filters" })).getByRole(
+        "button",
+        { name: "Add condition" },
+      );
     fireEvent.click(
       within(screen.getByRole("region", {
         name: "Aggregate FILTER condition",
@@ -185,6 +190,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
         'SELECT COUNT(field_101) FROM "form_expenses" WHERE field_101 > 0',
       )
     );
+    await waitFor(() => expect(document.activeElement).toBe(whereAddCondition()));
   });
 
   it("restores focus to the aggregate scope after removing a child condition", async () => {

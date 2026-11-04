@@ -924,7 +924,15 @@ export function SqlConditionWorkspace(props: Props) {
         (isGroup(node) && node.children.some(containsNode));
     };
     const scope = conditions().find((item) => containsNode(item.expression));
-    const restoreFocusKey = scope ? addConditionFocusKey(scope) : undefined;
+    const restoreScope = scope?.kind === "aggregate_filter" &&
+        scope.expression?.node_id === nodeId
+      ? conditions().find((item) =>
+        item.query_node_id === scope.query_node_id && item.kind === "where"
+      )
+      : scope;
+    const restoreFocusKey = restoreScope
+      ? addConditionFocusKey(restoreScope)
+      : undefined;
     const removeEdit: SqlDocumentSemanticEdit =
       scope?.kind === "aggregate_filter" &&
           scope.expression?.node_id === nodeId
