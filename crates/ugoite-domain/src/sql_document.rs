@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 26;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 27;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -663,8 +663,19 @@ pub struct SqlDocument {
 #[serde(deny_unknown_fields)]
 pub struct SqlDocumentConditionScope {
     pub query_node_id: u32,
+    /// The SELECT WHERE scope or aggregate FILTER scope represented here.
+    pub kind: SqlDocumentConditionScopeKind,
+    /// Parser node identifying the editable scope (SELECT or aggregate).
+    pub scope_node_id: u32,
     pub where_clause_node_id: Option<u32>,
     pub expression: Option<SqlDocumentConditionNode>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlDocumentConditionScopeKind {
+    Where,
+    AggregateFilter,
 }
 
 /// A supported condition or an exact-source advanced predicate leaf.
@@ -11759,10 +11770,58 @@ fn derive_sql_document_conditions(document: &SqlDocument) -> Vec<SqlDocumentCond
                 .and_then(|root| condition_node_from_document(document, root));
             SqlDocumentConditionScope {
                 query_node_id: select.id,
+                kind: SqlDocumentConditionScopeKind::Where,
+                scope_node_id: select.id,
                 where_clause_node_id: clause.map(|clause| clause.id),
                 expression,
             }
         })
+        .chain(document.nodes.iter().filter_map(|function| {
+            if function.kind != SqlDocumentNodeKind::FunctionExpression {
+                return None;
+            }
+            let is_registered_aggregate = match &function.semantic {
+                Some(SqlDocumentNodeData::Function {
+                    name,
+                    argument_count: Some(argument_count),
+                    has_filter: true,
+                    has_over: false,
+                    has_argument_clauses: false,
+                    ..
+                }) if *argument_count > 0 && name.len() == 1 => name.last().is_some_and(|part| {
+                    crate::sql_functions::user_sql_aggregate(&part.value).is_some()
+                }),
+                _ => false,
+            };
+            if !is_registered_aggregate {
+                return None;
+            }
+            let clause = document.nodes.iter().find(|candidate| {
+                candidate.parent == Some(function.id)
+                    && candidate.kind == SqlDocumentNodeKind::WhereClause
+            })?;
+            let root = document.nodes.iter().find(|candidate| {
+                candidate.parent == Some(clause.id) && is_expression_node_kind(candidate.kind)
+            })?;
+            let mut ancestor = function.id;
+            let select_id = loop {
+                let current = document.nodes.get(ancestor as usize)?;
+                if current.id != ancestor {
+                    return None;
+                }
+                if current.kind == SqlDocumentNodeKind::Select {
+                    break ancestor;
+                }
+                ancestor = current.parent?;
+            };
+            Some(SqlDocumentConditionScope {
+                query_node_id: select_id,
+                kind: SqlDocumentConditionScopeKind::AggregateFilter,
+                scope_node_id: function.id,
+                where_clause_node_id: Some(clause.id),
+                expression: condition_node_from_document(document, root),
+            })
+        }))
         .collect()
 }
 
@@ -14391,6 +14450,77 @@ impl Visitor for NodeCollector<'_> {
     }
 
     fn post_visit_expr(&mut self, _expression: &Expr) -> ControlFlow<Self::Break> {
+        if let Expr::Function(function) = _expression {
+            let is_admitted_aggregate = function
+                .name
+                .0
+                .last()
+                .and_then(|part| match part {
+                    ObjectNamePart::Identifier(identifier) => {
+                        crate::sql_functions::user_sql_aggregate(&identifier.value)
+                    }
+                    ObjectNamePart::Function(_) => None,
+                })
+                .is_some();
+            if is_admitted_aggregate {
+                if let (Some(filter), Some(function_id)) =
+                    (function.filter.as_deref(), self.parents.last().copied())
+                {
+                    let function_range = self.nodes[function_id as usize].range;
+                    let filter_range = self.expression_range(filter);
+                    if let (Some(function_range), Some(filter_range)) =
+                        (function_range, filter_range)
+                    {
+                        let where_token = self
+                            .tokens
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, token)| {
+                                token.range.start >= function_range.start
+                                    && token.range.end <= filter_range.start
+                            })
+                            .find(|(index, token)| {
+                                token_text(self.source, token)
+                                    .is_some_and(|text| text.eq_ignore_ascii_case("WHERE"))
+                                    && self.tokens[..*index].iter().rev().any(|previous| {
+                                        previous.range.start >= function_range.start
+                                            && token_text(self.source, previous).is_some_and(
+                                                |text| text.eq_ignore_ascii_case("FILTER"),
+                                            )
+                                    })
+                            })
+                            .map(|(_, token)| token.range);
+                        let filter_node_id = self
+                            .nodes
+                            .iter()
+                            .find(|node| {
+                                node.parent == Some(function_id)
+                                    && node.kind == expression_kind(filter)
+                                    && node
+                                        .range
+                                        .is_some_and(|range| range.start == filter_range.start)
+                            })
+                            .map(|node| node.id);
+                        if let (Some(where_range), Some(filter_node_id)) =
+                            (where_token, filter_node_id)
+                        {
+                            let clause_id = self.nodes.len() as u32;
+                            self.nodes.push(SqlDocumentNode {
+                                id: clause_id,
+                                parent: Some(function_id),
+                                kind: SqlDocumentNodeKind::WhereClause,
+                                range: Some(SqlSourceRange {
+                                    start: where_range.start,
+                                    end: filter_range.end,
+                                }),
+                                semantic: None,
+                            });
+                            self.nodes[filter_node_id as usize].parent = Some(clause_id);
+                        }
+                    }
+                }
+            }
+        }
         if let Some(node_id) = self.parents.last().copied() {
             let child_end = self
                 .nodes
@@ -19362,6 +19492,84 @@ mod tests {
         let restored =
             apply_sql_document_edit_transaction(&removed.document.source, &removed.undo).unwrap();
         assert_eq!(restored.document.source, added.document.source);
+    }
+
+    #[test]
+    fn semantic_aggregate_filter_condition_is_typed_and_undoable() {
+        let source = "SELECT COUNT(*) FROM items WHERE field_101 > 0";
+        let document = parse_sql_document(source);
+        let aggregate = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::FunctionExpression
+                    && matches!(node.semantic, Some(SqlDocumentNodeData::Function { ref name, .. })
+                    if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("count")))
+            })
+            .expect("COUNT is represented as an aggregate");
+        let enabled = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetAggregateFilter {
+                    node_id: aggregate.id,
+                    expected_kind: aggregate.kind,
+                    enabled: true,
+                }],
+            ),
+        )
+        .expect("aggregate FILTER can be enabled");
+        assert_eq!(
+            enabled.document.source,
+            "SELECT COUNT(*) FILTER (WHERE TRUE) FROM items WHERE field_101 > 0"
+        );
+
+        let filtered = parse_sql_document(&enabled.document.source);
+        let scope = filtered
+            .conditions
+            .iter()
+            .find(|scope| scope.kind == SqlDocumentConditionScopeKind::AggregateFilter)
+            .expect("aggregate FILTER has a typed condition scope");
+        let SqlDocumentConditionNode::Advanced { node_id, .. } = scope.expression.as_ref().unwrap()
+        else {
+            panic!("TRUE begins as an advanced seed");
+        };
+        let changed = apply_sql_document_semantic_edit_transaction(
+            &enabled.document.source,
+            &semantic_transaction(
+                &enabled.document.source,
+                vec![SqlDocumentSemanticEdit::UpdateFilterCondition {
+                    node_id: *node_id,
+                    expected_kind: SqlDocumentNodeKind::LiteralExpression,
+                    condition: SqlDocumentFilterCondition::Comparison {
+                        column: SqlDocumentColumnReference {
+                            qualifier: None,
+                            column: SqlDocumentIdentifier {
+                                value: "field_100".into(),
+                                quote_style: None,
+                            },
+                        },
+                        operator: SqlDocumentFilterOperator::Eq,
+                        value: Some(SqlDocumentSemanticLiteral::String {
+                            value: "food".into(),
+                        }),
+                    },
+                }],
+            ),
+        )
+        .expect("typed condition replaces the aggregate FILTER seed");
+        assert_eq!(
+            changed.document.source,
+            "SELECT COUNT(*) FILTER (WHERE field_100 = 'food') FROM items WHERE field_101 > 0"
+        );
+        let restored_seed =
+            apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+                .expect("condition edit has an exact inverse");
+        assert_eq!(restored_seed.document.source, enabled.document.source);
+        let restored_source =
+            apply_sql_document_edit_transaction(&restored_seed.document.source, &enabled.undo)
+                .expect("aggregate FILTER toggle has an exact inverse");
+        assert_eq!(restored_source.document.source, source);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { createSignal } from "solid-js";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import {
   applySqlDocumentEditTransaction,
@@ -9,6 +9,8 @@ import {
   type SqlDocumentSemanticEditTransaction,
 } from "~/lib/ugoite-client";
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
+import { SqlConditionWorkspace } from "./SqlConditionWorkspace";
+import type { SqlStructureAdapterContext } from "~/lib/sql";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   it("edits a directly written CAST to TIMESTAMP(3) through actual WASM", async () => {
@@ -78,6 +80,93 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     const edited = await parseSqlDocument(sql());
     expect(edited.status).toBe("parsed");
     expect(edited.diagnostics).toEqual([]);
+  it("creates and edits an aggregate FILTER predicate from source SQL", async () => {
+    const initial =
+      'SELECT COUNT(field_101) FILTER (WHERE TRUE) FROM "form_expenses" WHERE field_101 > 0';
+    const context: SqlStructureAdapterContext = {
+      identity: "form-expenses",
+      relationSelectable: true,
+      label: "Expenses",
+      stableRelation: "form_expenses",
+      parser: {
+        relation: "form_expenses",
+        columns: [
+          { name: "field_100", type: "string" },
+          { name: "field_101", type: "integer" },
+        ],
+        stable_key: ["_ugoite_id"],
+      },
+      columnCapabilities: {
+        field_100: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq"],
+          aggregateFunctions: ["count"],
+          groupable: true,
+          distinctable: true,
+        },
+        field_101: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq"],
+          aggregateFunctions: ["count"],
+          groupable: true,
+          distinctable: true,
+        },
+      },
+      columnLabels: { field_100: "Category", field_101: "Amount" },
+    };
+    const [sql, setSql] = createSignal(initial);
+    render(() => (
+      <SqlConditionWorkspace
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+
+    const aggregateScope = await screen.findByRole("region", {
+      name: "Aggregate FILTER condition",
+    });
+    fireEvent.click(
+      within(aggregateScope).getByRole("button", { name: "Add condition" }),
+    );
+    fireEvent.change(within(aggregateScope).getByLabelText("Column for new filter"), {
+      target: { value: "field_100" },
+    });
+    fireEvent.input(within(aggregateScope).getByLabelText("Value for new filter"), {
+      target: { value: "food" },
+    });
+    fireEvent.click(within(aggregateScope).getByRole("button", { name: "Add filter" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT COUNT(field_101) FILTER (WHERE field_100 = \'food\') FROM "form_expenses" WHERE field_101 > 0',
+      )
+    );
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("region", {
+          name: "Aggregate FILTER condition",
+        })).getByRole("button", { name: "Edit condition" }),
+      ).toBeInTheDocument()
+    );
+    const updatedScope = within(screen.getByRole("region", {
+      name: "Aggregate FILTER condition",
+    }));
+    fireEvent.click(updatedScope.getByRole("button", { name: "Edit condition" }));
+    const value = updatedScope.getByLabelText("Value");
+    fireEvent.input(value, { target: { value: "travel" } });
+    fireEvent.click(updatedScope.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT COUNT(field_101) FILTER (WHERE field_100 = \'travel\') FROM "form_expenses" WHERE field_101 > 0',
+      )
+    );
   });
 
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
