@@ -15372,6 +15372,7 @@ spec:
         kind: saved_sql
         entry_id: "{saved_sql_id}"
         revision_id: "{saved_sql_revision_id}"
+        label_source: variable
         arguments:
           - {{ name: month_start, variable: month_start }}
           - {{ name: month_end, variable: month_end }}
