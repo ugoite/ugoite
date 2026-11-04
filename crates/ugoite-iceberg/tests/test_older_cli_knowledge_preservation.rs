@@ -12,6 +12,7 @@ const SQL_FIRST_COMPOSITION: &str = include_str!("fixtures/composition-sql-first
 const OLD_READER_BINARY_ENV: &str = "UGOITE_V021_CLI_PATH";
 const UNRELATED_ENTRY_ID: &str = "unrelated-note";
 const UNRELATED_FORM_NAME: &str = "OlderCliNote";
+const LEGACY_SOURCE_COMPOSITION_RAW: &str = "format: ugoite.composition\nformat_version: 1\nname: Legacy report\nkind: dashboard\nspec:\n  sources: []\n  components: []\n";
 
 fn run_v021(cli: &Path, config: &Path, args: &[&str]) -> Result<Output> {
     Command::new(cli)
@@ -122,6 +123,21 @@ async fn older_cli_updates_unrelated_knowledge_without_rewriting_composition() -
         .await?;
     let composition_id = saved.entry_id.to_string();
     let composition_revision_id = saved.revision_id.to_string();
+    let legacy_composition = composition::seed_raw_composition_revision(
+        service.operator(),
+        &service.workspace_path(&space_id),
+        composition::RawCompositionSeed {
+            name: "Legacy report".to_string(),
+            kind: "dashboard".to_string(),
+            tags: Vec::new(),
+            format_version: 1,
+            spec: LEGACY_SOURCE_COMPOSITION_RAW.to_string(),
+        },
+        "current-writer",
+    )
+    .await?;
+    let legacy_composition_id = legacy_composition.entry_id.to_string();
+    let legacy_revision_id = legacy_composition.revision_id.to_string();
     let (config_dir, config_path) = cli_config(root.path(), &space_id)?;
     let fields_path = config_dir.path().join("updated-fields.json");
     std::fs::write(
@@ -200,6 +216,52 @@ async fn older_cli_updates_unrelated_knowledge_without_rewriting_composition() -
             .revision_id
             .to_string()
             == composition_revision_id
+    );
+
+    let legacy_raw = reopened
+        .get_composition_raw_authorized_for_principals(&space_id, &legacy_composition_id, &[owner])
+        .await?;
+    ensure!(
+        legacy_raw.revision.revision_id.to_string() == legacy_revision_id,
+        "the v0.2.1 write changed the opaque Composition revision"
+    );
+    ensure!(
+        legacy_raw
+            .fields
+            .get("spec")
+            .and_then(Value::as_str)
+            .map(str::as_bytes)
+            == Some(LEGACY_SOURCE_COMPOSITION_RAW.as_bytes()),
+        "the v0.2.1 write changed the opaque raw Composition carrier"
+    );
+    let legacy_history = reopened
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &legacy_composition_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    let legacy_history_revision_ids = legacy_history
+        .revisions
+        .iter()
+        .map(|item| item.revision.revision_id.to_string())
+        .collect::<Vec<_>>();
+    ensure!(
+        legacy_history.total == 1
+            && legacy_history.revisions.len() == 1
+            && legacy_history_revision_ids == [legacy_revision_id],
+        "the v0.2.1 write changed the opaque Composition history identity, count, or order"
+    );
+    ensure!(
+        legacy_history.revisions[0]
+            .fields
+            .get("spec")
+            .and_then(Value::as_str)
+            .map(str::as_bytes)
+            == Some(LEGACY_SOURCE_COMPOSITION_RAW.as_bytes()),
+        "the opaque Composition history no longer exposes the exact raw carrier"
     );
 
     let entry_after = reopened.get_entry(&space_id, UNRELATED_ENTRY_ID).await?;
