@@ -575,7 +575,8 @@ async function expectCompositionSemanticValues(
     await Promise.all(
       Object.keys(expected.inputs).map(async (name) => [
         name,
-        await page.getByRole("textbox", { name, exact: true }).inputValue(),
+        await page.getByLabel(name, { exact: true })
+          .and(page.locator("input")).inputValue(),
       ]),
     ),
   );
