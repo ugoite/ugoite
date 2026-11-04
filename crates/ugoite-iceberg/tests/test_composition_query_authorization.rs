@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
+use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
     CompositionResultFieldType, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind,
@@ -682,6 +682,113 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         .await?;
     assert!(resolution.diagnostics.is_empty());
     let mut compiled_request = resolved_sql_request(&resolution)?;
+    let evaluation = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            ugoite_iceberg::service::CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&["source".to_string()]),
+            None,
+        )
+        .await?;
+    let count_snapshot = evaluation
+        .query_results
+        .get("source")
+        .and_then(|result| result.count_snapshot.clone())
+        .context("Composition evaluation issues a server-owned Count snapshot")?;
+    let evaluation_request = evaluation
+        .plan
+        .as_ref()
+        .context("saved Composition evaluation retains its resolved query")?
+        .queries
+        .first()
+        .and_then(|query| query.request.clone())
+        .context("saved Composition evaluation resolved a SQL request")?;
+    let count_snapshot_as_page = service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryRequest {
+                continuation: Some(count_snapshot.clone()),
+                ..compiled_request.clone()
+            },
+        )
+        .await;
+    assert!(
+        count_snapshot_as_page.is_err(),
+        "Count snapshot tokens cannot continue a SQL page"
+    );
+    let count_request = || {
+        SqlQueryCountRequest {
+        // SQL execution fingerprints the original graph source before the
+        // adapter binds the human Form name to its stable Form ID. Use that
+        // same source representation for the explicit Count request.
+        sql: format!(
+            "SELECT \"_ugoite_id\" AS id, \"{title_column}\" AS title FROM \"{form_name}\" ORDER BY \"_ugoite_id\""
+        ),
+        parameters: evaluation_request.parameters.clone(),
+        parameter_types: evaluation_request.parameter_types.clone(),
+        saved_sql: evaluation_request.saved_sql.clone(),
+        binding_base: evaluation_request.binding_base.clone(),
+        form_binding_guards: evaluation_request.form_binding_guards.clone(),
+        composition_count_snapshot: Some(count_snapshot.clone()),
+    }
+    };
+    let initial_count = service
+        .count_sql_authorized_for_principals(&space_id, &[viewer], count_request())
+        .await?;
+    assert_eq!(initial_count, 4);
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "composition-query-04",
+            form_name.to_string(),
+            Vec::new(),
+            source_fields("late publication row"),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let pinned_count = service
+        .count_sql_authorized_for_principals(&space_id, &[viewer], count_request())
+        .await?;
+    assert_eq!(pinned_count, 4, "Count stays on the evaluation publication");
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: saved.entry_id.to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: vec![Grant {
+                    principal_id: owner,
+                    actions: [Action::Read].into_iter().collect(),
+                }],
+            },
+        )
+        .await?;
+    let denied_count = service
+        .count_sql_authorized_for_principals(&space_id, &[viewer], count_request())
+        .await;
+    assert!(
+        denied_count.is_err(),
+        "revoked Composition access fails closed"
+    );
+
     // Keep the page small so this query exercises a continuation.
     compiled_request.limit = 2;
     let first_page = service

@@ -65,6 +65,7 @@ function fixture(): {
       rows: {
         value: { kind: "table", columns: [], rows: [] },
         has_more: false,
+        count_snapshot: "v1.opaque-count-coordinate",
       },
     },
     component_bindings: [],
@@ -81,6 +82,7 @@ describe("Composition explicit query count", () => {
       sql: response.queries[0].portable_sql,
       parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
       parameter_types: { text: "string", minimum: "integer" },
+      composition_count_snapshot: "v1.opaque-count-coordinate",
     });
     expect(request.sql).not.toContain("Original name");
     expect(request.sql).not.toContain("DROP TABLE");

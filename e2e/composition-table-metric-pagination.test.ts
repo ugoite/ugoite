@@ -14,6 +14,7 @@ type SavedSqlRevision = { entryId: string; revisionId: string };
 
 type SeedState = {
   spaceId: string;
+  formName: string;
   compositionId: string;
   revisionId: string;
   compositionName: string;
@@ -229,6 +230,7 @@ async function seedComposition(
 
   return {
     spaceId,
+    formName,
     compositionId: savedComposition.composition_id!,
     revisionId: savedComposition.revision_id!,
     compositionName,
@@ -363,6 +365,7 @@ test.describe("Composition Table and Metric pagination", () => {
     const firstEvaluation = await (await firstPageResponse).json() as {
       query_results?: Record<string, {
         value?: { kind: string; rows?: unknown[][] };
+        count_snapshot?: string;
         has_more: boolean;
         next?: string;
       }>;
@@ -372,6 +375,7 @@ test.describe("Composition Table and Metric pagination", () => {
     expect(firstPage?.value?.rows).toHaveLength(100);
     expect(firstPage?.has_more).toBe(true);
     expect(firstPage?.next).toBeTruthy();
+    expect(firstPage?.count_snapshot).toMatch(/^v1\./);
     const studioTable = page.getByRole("table");
     await uiExpect(studioTable.locator("tbody tr")).toHaveCount(100);
     await uiExpect(
@@ -383,19 +387,53 @@ test.describe("Composition Table and Metric pagination", () => {
       requested_queries: ["paged_rows"],
     });
 
+    const appendedEntryResponse = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/entries`),
+      {
+        data: {
+          form: seed.formName,
+          fields: { Amount: 102, Merchant: "Pager-102" },
+        },
+      },
+    );
+    expect(appendedEntryResponse.status()).toBe(201);
+
     const countResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/sql/query/count")
     );
     await page.getByRole("button", { name: "Count rows", exact: true }).click();
     expect(await (await countResponse).json()).toMatchObject({ count: 102 });
     expect(countRequests.at(-1)).toMatchObject({
+      sql: "",
       saved_sql: {
         id: seed.tableSql.entryId,
         revision_id: seed.tableSql.revisionId,
       },
       parameters: { minimum: 0 },
+      composition_count_snapshot: firstPage?.count_snapshot,
     });
     expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);
+    const validCountRequest = countRequests.at(-1)!;
+    const pageTokenCountResponse = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/query/count`),
+      {
+        data: {
+          ...validCountRequest,
+          composition_count_snapshot: firstPage?.next,
+        },
+      },
+    );
+    expect(pageTokenCountResponse.status()).toBe(400);
+    const tamperedSnapshotResponse = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/query/count`),
+      {
+        data: {
+          ...validCountRequest,
+          composition_count_snapshot: `${firstPage?.count_snapshot}x`,
+        },
+      },
+    );
+    expect(tamperedSnapshotResponse.status()).toBe(400);
     expect(
       await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
     )
@@ -415,6 +453,9 @@ test.describe("Composition Table and Metric pagination", () => {
     const nextPage = nextEvaluation.query_results?.paged_rows;
     expect(nextPage?.value?.kind).toBe("table");
     expect(nextPage?.value?.rows).toHaveLength(2);
+    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-100");
+    expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-101");
+    expect(JSON.stringify(nextPage?.value?.rows)).not.toContain("Pager-102");
     expect(nextPage?.has_more).toBe(false);
     expect(evaluationRequests.at(-1)).toMatchObject({
       page: { variable_id: "paged_rows", cursor: firstPage?.next },

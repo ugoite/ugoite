@@ -15,7 +15,7 @@ export function compositionQueryCountRequest(
   if (
     node?.kind !== "query" || node.returns.kind !== "table" ||
     descriptor?.returns.kind !== "table" ||
-    !evaluation.query_results[variableId]
+    !evaluation.query_results[variableId]?.count_snapshot
   ) {
     throw new Error("A current validated table query is required");
   }
@@ -78,6 +78,8 @@ export function compositionQueryCountRequest(
         },
       }
       : {}),
+    composition_count_snapshot: evaluation.query_results[variableId]!
+      .count_snapshot,
     parameters,
     parameter_types,
   };

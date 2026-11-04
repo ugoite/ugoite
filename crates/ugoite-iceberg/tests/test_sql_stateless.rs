@@ -147,6 +147,7 @@ async fn values_query_is_rejected_by_shared_read_only_admission() -> Result<()> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: "VALUES (1)".to_string(),
@@ -270,6 +271,7 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: named_sql.clone(),
@@ -286,6 +288,7 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 sql: named_sql.clone(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -547,6 +550,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: String::new(),
@@ -562,6 +566,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: String::new(),
@@ -685,6 +690,7 @@ async fn saved_sql_draft_inherits_exact_parent_form_binding_after_rename() -> Re
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 sql: sql.clone(),
                 saved_sql: None,
                 binding_base: Some(base.clone()),
@@ -968,6 +974,7 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: String::new(),
@@ -986,6 +993,7 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: String::new(),
@@ -1455,6 +1463,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: String::new(),
@@ -1782,6 +1791,7 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: base_sql(&space),
@@ -1797,6 +1807,7 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: format!(
@@ -1833,6 +1844,7 @@ async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: aggregate_sql,
@@ -1862,6 +1874,7 @@ async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql: base_sql(&space),
@@ -1884,6 +1897,7 @@ async fn stateless_count_preserves_aggregate_result_row_semantics() -> Result<()
             .count_sql(
                 &space.space_id,
                 SqlQueryCountRequest {
+                    composition_count_snapshot: None,
                     binding_base: None,
                     form_binding_guards: Vec::new(),
                     sql,
@@ -2537,6 +2551,7 @@ async fn stateless_sql_stays_read_only_with_opaque_continuation() -> Result<()> 
             .count_sql(
                 &space.space_id,
                 SqlQueryCountRequest {
+                    composition_count_snapshot: None,
                     binding_base: None,
                     form_binding_guards: Vec::new(),
                     sql,

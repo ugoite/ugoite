@@ -163,6 +163,7 @@ pub struct CompositionGraphQueryResult {
     pub result: VariableGraphValidatedResult,
     pub has_more: bool,
     pub next: Option<String>,
+    pub count_snapshot: Option<String>,
 }
 
 /// Resolved graph metadata shared by all components referencing each query
@@ -545,6 +546,7 @@ impl UgoiteService {
                 ),
                 result_schema: Some(result_schema),
                 exact_integer_rows,
+                composition_count_snapshot: None,
             };
             evaluation
                 .accept_page(&variable_id, &request, &page)
@@ -1020,6 +1022,7 @@ impl UgoiteService {
             .collect::<BTreeMap<_, _>>();
 
         let mut query_diagnostics = Vec::new();
+        let mut count_snapshots = BTreeMap::new();
         for variable_id in &computed_query_ids {
             let Some(query) = queries_by_id.get(variable_id.as_str()).copied() else {
                 continue;
@@ -1090,6 +1093,7 @@ impl UgoiteService {
                     ),
                     result_schema: Some(probe.result_schema),
                     exact_integer_rows: None,
+                    composition_count_snapshot: None,
                 }
             } else {
                 match principal_ids {
@@ -1128,6 +1132,9 @@ impl UgoiteService {
                     }
                 }
             };
+            if let Some(count_snapshot) = page_result.composition_count_snapshot.clone() {
+                count_snapshots.insert(variable_id.clone(), count_snapshot);
+            }
             if let Err(diagnostics) = evaluation.accept_page(variable_id, &request, &page_result) {
                 query_diagnostics.extend(diagnostics);
             }
@@ -1185,12 +1192,14 @@ impl UgoiteService {
             .unwrap_or_default()
             .into_iter()
             .map(|(variable_id, value)| {
+                let count_snapshot = count_snapshots.remove(&variable_id);
                 (
                     variable_id,
                     CompositionGraphQueryResult {
                         result: value.result,
                         has_more: value.has_more,
                         next: value.next,
+                        count_snapshot,
                     },
                 )
             })

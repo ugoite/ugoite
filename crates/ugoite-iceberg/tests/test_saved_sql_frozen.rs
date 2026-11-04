@@ -236,6 +236,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
         .count_sql(
             &expected.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 form_binding_guards: Vec::new(),
                 binding_base: None,
                 sql: String::new(),
