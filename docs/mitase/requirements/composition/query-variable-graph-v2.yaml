@@ -49,6 +49,20 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: saved-sql-label-source-explicit
+        kind: behavior
+        statement: >-
+          Every Saved SQL query variable carries a required `label_source` of
+          `source` or `variable`. `source` presents the selected output column,
+          or a neutral metric-preview label when no column is selected;
+          `variable` presents the variable's current name and is selected when
+          it is renamed. Domain parsing rejects a missing or unknown value.
+          Rendering never infers label ownership from an ID pattern, and the
+          label source does not change SQL planning or evaluation.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: scalar-cardinality-is-explicit
         kind: behavior
         statement: >-

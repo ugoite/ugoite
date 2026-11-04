@@ -51,6 +51,8 @@ export type CompositionQueryDefinition =
     entry_id: string;
     revision_id: string;
     column?: string;
+    /** Explicitly selects the source column or user variable label. */
+    label_source: "source" | "variable";
   });
 
 export type CompositionQueryReturn =
@@ -581,6 +583,9 @@ export const renameCompositionVariable = (
         ...renamed,
         query: {
           ...renamed.query,
+          ...(renamed.query.kind === "saved_sql"
+            ? { label_source: "variable" as const }
+            : {}),
           arguments: renamed.query.arguments.map((argument) =>
             argument.variable === from
               ? { ...argument, variable: next }

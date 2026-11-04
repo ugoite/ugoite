@@ -219,6 +219,7 @@ fn omitted_nullable_sql_cells_are_restored_as_null_for_graph_results() {
             entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
             revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
             column: Some("value".to_owned()),
+            label_source: ugoite_domain::composition::VariableGraphSavedSqlLabelSource::Source,
         },
         Vec::new(),
     );
@@ -348,6 +349,8 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
                     entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
                     revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                     column: Some("total".to_owned()),
+                    label_source:
+                        ugoite_domain::composition::VariableGraphSavedSqlLabelSource::Source,
                 },
                 vec![argument("floor", "threshold")],
             ),

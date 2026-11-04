@@ -403,6 +403,7 @@ impl UgoiteService {
             entry_id: Some(entry_id),
             revision_id: Some(revision_id),
             column,
+            ..
         } = &query.definition
         else {
             return Ok(None);

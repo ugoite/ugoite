@@ -61,6 +61,7 @@ spec:
         entry_id: "00000000-0000-7000-8000-000000000020"
         revision_id: "00000000-0000-7000-8000-000000000021"
         column: total
+        label_source: variable
         arguments:
           - name: month_start
             variable: month_start

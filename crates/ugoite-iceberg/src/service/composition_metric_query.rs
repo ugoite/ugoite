@@ -11,8 +11,9 @@ use ugoite_core::composition_metric::{
 };
 use ugoite_core::query::QueryLimits;
 use ugoite_core::sql_query::{SqlQueryRequest, SqlScalarProbeResult};
-use ugoite_domain::composition::CompositionDiagnosticCode;
-use ugoite_domain::composition::VariableGraphLiteral;
+#[cfg(test)]
+use ugoite_domain::composition::VariableGraphSavedSqlLabelSource;
+use ugoite_domain::composition::{CompositionDiagnosticCode, VariableGraphLiteral};
 use ugoite_domain::id::{validate_entry_id, validate_revision_id};
 
 #[derive(Clone, Copy)]
@@ -1012,6 +1013,7 @@ mod tests {
                                 entry_id: saved_sql["id"].as_str().map(str::to_owned),
                                 revision_id: saved_sql["revision_id"].as_str().map(str::to_owned),
                                 column: Some("total".to_string()),
+                                label_source: VariableGraphSavedSqlLabelSource::Source,
                             },
                             arguments: Vec::new(),
                             form_bindings: Vec::new(),

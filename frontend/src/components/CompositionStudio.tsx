@@ -900,6 +900,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const base = draftQuery("saved_sql", {
         entry_id,
         revision_id,
+        label_source: "source",
       }, args);
       const withId = (column?: string) => ({
         ...base,
@@ -924,7 +925,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
           }
           return value;
         })(),
-        query: { ...base.query, ...(column ? { column } : {}) },
+        query: {
+          ...base.query,
+          ...(column ? { column } : {}),
+        },
       });
       if (component === "table") {
         try {

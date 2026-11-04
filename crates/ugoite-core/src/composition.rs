@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use ugoite_domain::composition::VariableGraphSavedSqlLabelSource;
 use ugoite_domain::composition::{
     variable_graph_dependency_order, variable_graph_literal_matches, CompositionComponent,
     CompositionDiagnosticCode, CompositionMetricPresentation, CompositionResultFieldType,
@@ -1414,6 +1416,7 @@ mod tests {
                                     "00000000-0000-0000-0000-000000000002".to_owned(),
                                 ),
                                 column: None,
+                                label_source: VariableGraphSavedSqlLabelSource::Source,
                             },
                             arguments: vec![VariableGraphArgumentBinding {
                                 name: "minimum".to_owned(),
