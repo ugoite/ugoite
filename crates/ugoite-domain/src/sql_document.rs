@@ -5119,6 +5119,17 @@ fn condition_semantic_edit(
                     | SqlDocumentConditionNode::Advanced { node_id, .. } => *node_id == node.id,
                 })
             }) {
+                if scope.kind == SqlDocumentConditionScopeKind::AggregateFilter {
+                    let function = document
+                        .nodes
+                        .get(scope.scope_node_id as usize)
+                        .filter(|candidate| {
+                            candidate.id == scope.scope_node_id
+                                && candidate.kind == SqlDocumentNodeKind::FunctionExpression
+                        })
+                        .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                    return set_aggregate_filter(document, function, false).map(Some);
+                }
                 if let Some(where_id) = scope.where_clause_node_id {
                     let clause = document
                         .nodes
@@ -19570,6 +19581,47 @@ mod tests {
             apply_sql_document_edit_transaction(&restored_seed.document.source, &enabled.undo)
                 .expect("aggregate FILTER toggle has an exact inverse");
         assert_eq!(restored_source.document.source, source);
+    }
+
+    #[test]
+    fn semantic_aggregate_filter_root_removal_disables_filter_and_undoes() {
+        for source in [
+            "SELECT COUNT(*) FILTER (WHERE TRUE) FROM items",
+            "SELECT COUNT(*) FILTER (WHERE field_100 = 'food') FROM items",
+        ] {
+            let document = parse_sql_document(source);
+            let scope = document
+                .conditions
+                .iter()
+                .find(|scope| scope.kind == SqlDocumentConditionScopeKind::AggregateFilter)
+                .expect("aggregate FILTER has a condition scope");
+            let node_id = match scope.expression.as_ref().expect("filter predicate") {
+                SqlDocumentConditionNode::Group { node_id, .. }
+                | SqlDocumentConditionNode::Comparison { node_id, .. }
+                | SqlDocumentConditionNode::Advanced { node_id, .. } => *node_id,
+            };
+            let node = document
+                .nodes
+                .get(node_id as usize)
+                .expect("predicate node");
+            let removed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::RemoveFilterCondition {
+                        node_id,
+                        expected_kind: node.kind,
+                    }],
+                ),
+            )
+            .expect("removing the aggregate FILTER root disables the clause");
+            assert_eq!(removed.document.source, "SELECT COUNT(*) FROM items");
+            assert!(!removed.document.source.contains("FILTER"));
+            let restored =
+                apply_sql_document_edit_transaction(&removed.document.source, &removed.undo)
+                    .expect("root removal has an exact inverse");
+            assert_eq!(restored.document.source, source);
+        }
     }
 
     #[test]

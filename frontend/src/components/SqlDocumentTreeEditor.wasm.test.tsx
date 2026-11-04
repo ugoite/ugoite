@@ -167,6 +167,12 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
         'SELECT COUNT(field_101) FILTER (WHERE field_100 = \'travel\') FROM "form_expenses" WHERE field_101 > 0',
       )
     );
+    fireEvent.click(updatedScope.getByRole("button", { name: "Remove filter" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT COUNT(field_101) FROM "form_expenses" WHERE field_101 > 0',
+      )
+    );
   });
 
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
