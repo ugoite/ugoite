@@ -700,6 +700,11 @@ mod tests {
 
     #[test]
     fn continuation_round_trips_and_rejects_tampering() {
+        let signing_key = Uuid::new_v4().into_bytes();
+        let mut wrong_signing_key = Uuid::new_v4().into_bytes();
+        if wrong_signing_key == signing_key {
+            wrong_signing_key[0] ^= 1;
+        }
         let continuation = SqlContinuation::new(
             Uuid::parse_str("01900000-0000-7000-8000-000000000001")
                 .expect("space id")
@@ -711,15 +716,15 @@ mod tests {
             100,
         )
         .expect("continuation");
-        let encoded = continuation.encode(b"secret").expect("encode");
+        let encoded = continuation.encode(&signing_key).expect("encode");
         assert_eq!(
-            SqlContinuation::decode(&encoded, b"secret").expect("decode"),
+            SqlContinuation::decode(&encoded, &signing_key).expect("decode"),
             continuation
         );
         let mut tampered = encoded.clone();
         tampered.push('x');
         assert!(matches!(
-            SqlContinuation::decode(&tampered, b"secret"),
+            SqlContinuation::decode(&tampered, &signing_key),
             Err(SqlQueryError::Tampered | SqlQueryError::Invalid(_))
         ));
         assert!(matches!(
@@ -732,9 +737,10 @@ mod tests {
         count_snapshot.composition_entry_id =
             Some("01900000-0000-7000-8000-000000000002".to_string());
         let encoded = count_snapshot
-            .encode(b"secret")
+            .encode(&signing_key)
             .expect("encode count snapshot");
-        let decoded = SqlContinuation::decode(&encoded, b"secret").expect("decode count snapshot");
+        let decoded =
+            SqlContinuation::decode(&encoded, &signing_key).expect("decode count snapshot");
         assert_eq!(
             decoded.purpose,
             SqlContinuationPurpose::CompositionCountSnapshot
@@ -747,11 +753,11 @@ mod tests {
         let mut tampered_payload = decoded;
         tampered_payload.purpose = SqlContinuationPurpose::Page;
         let forged = tampered_payload
-            .encode(b"secret")
+            .encode(&signing_key)
             .expect("test can sign a page-purpose token");
         assert_ne!(forged, encoded, "purpose is covered by the signed payload");
         assert!(matches!(
-            SqlContinuation::decode(&forged, b"another-secret"),
+            SqlContinuation::decode(&forged, &wrong_signing_key),
             Err(SqlQueryError::Tampered | SqlQueryError::Invalid(_))
         ));
     }
