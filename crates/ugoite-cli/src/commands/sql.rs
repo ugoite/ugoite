@@ -404,6 +404,7 @@ mod export_sink_tests {
             next: Some(next.to_string()),
             execution_id: None,
             request_fingerprint: None,
+            composition_count_snapshot: None,
             result_schema: None,
             exact_integer_rows: None,
         };
@@ -432,6 +433,7 @@ mod export_sink_tests {
             next: None,
             execution_id: None,
             request_fingerprint: None,
+            composition_count_snapshot: None,
             result_schema: None,
             exact_integer_rows: None,
         };
@@ -870,6 +872,7 @@ pub async fn run(
                     parameter_types,
                     saved_sql: None,
                     binding_base: None,
+                    composition_count_snapshot: None,
                 },
             )
             .await?;

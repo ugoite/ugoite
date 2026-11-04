@@ -10,7 +10,7 @@ features:
     bindings:
       - id: count-snapshot-service
         role: implementation
-        facet: storage
+        facet: service
         responsibility: Issue purpose-bound Count coordinates from Composition SQL execution and validate them against the current authorization state before using their pinned Publication.
         targets:
           - id: issue-count-coordinate
@@ -27,11 +27,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-      - id: count-snapshot-contract
-        role: implementation
-        facet: api
-        responsibility: Carry the opaque server-issued coordinate from Composition query results into the explicit SQL Count request without allowing clients to select a Publication.
-        targets:
           - id: count-request
             adapter: rust
             path: crates/ugoite-core/src/sql_query.rs
@@ -58,6 +53,21 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: count-snapshot-rest-contract
+        role: contract-source
+        facet: api
+        responsibility: Define the explicit SQL Count operation and its opaque Composition Count snapshot field in the HTTP request contract.
+        targets:
+          - id: count-operation
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: /spaces/{space_id}/sql/query/count
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
       - id: count-snapshot-browser
         role: implementation
         facet: frontend
@@ -93,7 +103,7 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-014#binding.count-snapshot-contract/target.count-request]
+                covers: [FEAT-COMP-014#binding.count-snapshot-service/target.count-request]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: continuation_round_trips_and_rejects_tampering } }
           - id: browser-count-interleaving
             adapter: typescript
@@ -103,7 +113,8 @@ features:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
                 covers:
-                  - FEAT-COMP-014#binding.count-snapshot-contract/target.composition-count-result
+                  - FEAT-COMP-014#binding.count-snapshot-service/target.composition-count-result
                   - FEAT-COMP-014#binding.count-snapshot-rest/target.count-handler
                   - FEAT-COMP-014#binding.count-snapshot-browser/target.count-request-builder
+                  - FEAT-COMP-014#binding.count-snapshot-rest-contract/target.count-operation
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts the pinned Table SQL separately and preserves its source while paging" } }
