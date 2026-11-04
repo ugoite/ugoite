@@ -7722,11 +7722,17 @@ impl UgoiteService {
         let composition_count_snapshot =
             match (pinned_publication, continuation_context_fingerprint) {
                 (Some(publication), Some(context_fingerprint)) => {
+                    let snapshot_parameter_fingerprint = SqlQueryRequest {
+                        parameter_types: effective_parameter_types.clone(),
+                        ..request.clone()
+                    }
+                    .typed_parameter_fingerprint(&effective_parameter_types)
+                    .map_err(sql_query_contract_error)?;
                     let mut snapshot = SqlContinuation::new(
                         state.space_uid.into(),
                         publication.clone(),
                         sql_fingerprint,
-                        parameter_fingerprint,
+                        snapshot_parameter_fingerprint,
                         authorization_fingerprint,
                         0,
                     )?;
@@ -7829,7 +7835,7 @@ impl UgoiteService {
             .sql_fingerprint(&normalized_sql)
             .map_err(sql_query_contract_error)?;
         let parameter_fingerprint = count_query
-            .parameter_fingerprint()
+            .typed_parameter_fingerprint(&effective_parameter_types)
             .map_err(sql_query_contract_error)?;
         if let Some(snapshot) = &composition_snapshot {
             let space_uid = self.space_uid(space_id).await?;

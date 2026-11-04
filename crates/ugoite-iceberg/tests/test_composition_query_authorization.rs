@@ -8,8 +8,8 @@ use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQuery
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
     CompositionResultFieldType, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind,
-    FlowRow, VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    FlowRow, VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphLiteral,
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
     VariableGraphResultType, VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor,
     VariableGraphScalarType,
 };
@@ -1195,5 +1195,200 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         saved_sql_revoked.diagnostics[0].code,
         ugoite_domain::composition::CompositionDiagnosticCode::QueryUnavailable
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_float_count_snapshot_matches_integer_json_zero() -> Result<()> {
+    let op = common::setup_operator()?;
+    let service = UgoiteService::from_operator(
+        op,
+        format!("memory://saved-sql-float-count-snapshot-{}", Uuid::now_v7()),
+    );
+    let owner = Uuid::from_u128(3_433_301);
+    let space_id = service
+        .create_space_for_principal("saved-sql-float-count-snapshot", owner, "Owner")
+        .await?
+        .to_string();
+    let form_name = "count-snapshot-float";
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {"amount": {"id": 201, "type": "double", "required": true}}
+            }),
+        )
+        .await?;
+    let amount_column = ugoite_domain::form::sql_column_name(ugoite_domain::id::FieldId::new(201)?);
+    for (id, amount) in [("float-count-zero", 0.0), ("float-count-one", 1.0)] {
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                id,
+                form_name.to_string(),
+                Vec::new(),
+                BTreeMap::from([("amount".to_string(), json!(amount))]),
+                BTreeMap::new(),
+                "owner",
+            )
+            .await?;
+    }
+    let saved_sql = service
+        .create_saved_sql(
+            &space_id,
+            None,
+            &SqlPayload {
+                name: Some("Float count source".to_string()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: format!(
+                    "SELECT \"{amount_column}\" AS amount FROM \"{form_name}\" WHERE \"{amount_column}\" >= $minimum ORDER BY \"{amount_column}\""
+                ),
+                variables: json!([{
+                    "name":"minimum",
+                    "type":"float",
+                    "description":"Minimum amount to include."
+                }]),
+            },
+            "owner",
+        )
+        .await?;
+    let saved_sql_id = saved_sql["id"].as_str().context("Saved SQL id")?;
+    let saved_sql_revision = saved_sql["revision_id"]
+        .as_str()
+        .context("Saved SQL revision")?;
+    let document = CompositionDocument {
+        format: CompositionFormat::UgoiteComposition,
+        format_version: 1,
+        kind: CompositionKind::Dashboard,
+        name: "Saved SQL float count".to_string(),
+        spec: CompositionSpec {
+            variables: vec![
+                VariableGraphNode {
+                    id: "minimum".to_string(),
+                    kind: VariableGraphNodeKind::Input {
+                        value_type: scalar_descriptor(CompositionResultFieldType::Float, false),
+                        required: true,
+                        default: Some(VariableGraphLiteral::Float(0.0)),
+                    },
+                },
+                VariableGraphNode {
+                    id: "rows".to_string(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Table {
+                            columns: Vec::new(),
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::SavedSql {
+                                entry_id: Some(saved_sql_id.to_string()),
+                                revision_id: Some(saved_sql_revision.to_string()),
+                                column: None,
+                                label_source: VariableGraphSavedSqlLabelSource::Source,
+                            },
+                            arguments: vec![VariableGraphArgumentBinding {
+                                name: "minimum".to_string(),
+                                variable: "minimum".to_string(),
+                            }],
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
+                },
+            ],
+            components: vec![
+                CompositionComponent::Table {
+                    id: "rows-table".to_string(),
+                    variable: "rows".to_string(),
+                    presentation: None,
+                },
+                CompositionComponent::Input {
+                    id: "minimum-input".to_string(),
+                    variable: "minimum".to_string(),
+                },
+            ],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_string(),
+                    items: vec![
+                        FlowItem::Component {
+                            component: "rows-table".to_string(),
+                        },
+                        FlowItem::Component {
+                            component: "minimum-input".to_string(),
+                        },
+                    ],
+                }],
+            },
+        },
+    };
+    let saved_composition = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let evaluation = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &[owner],
+            ugoite_iceberg::service::CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved_composition.entry_id.to_string(),
+                revision_id: saved_composition.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&["rows".to_string()]),
+            None,
+        )
+        .await?;
+    let count_snapshot = evaluation
+        .query_results
+        .get("rows")
+        .and_then(|result| result.count_snapshot.clone())
+        .context("Saved SQL Composition evaluation Count snapshot")?;
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "float-count-later-publication",
+            form_name.to_string(),
+            Vec::new(),
+            BTreeMap::from([("amount".to_string(), json!(2.0))]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+
+    // The browser serializes the evaluated JavaScript number 0 as JSON `0`,
+    // while the Rust Float literal in the page request is serialized as `0.0`.
+    let count = service
+        .count_sql_authorized_for_principals(
+            &space_id,
+            &[owner],
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::from_iter([("minimum".to_string(), json!(0))]),
+                parameter_types: BTreeMap::from([("minimum".to_string(), "float".to_string())]),
+                saved_sql: Some(SavedSqlRevisionRef {
+                    id: saved_sql_id.to_string(),
+                    revision_id: saved_sql_revision.to_string(),
+                }),
+                binding_base: None,
+                form_binding_guards: Vec::new(),
+                composition_count_snapshot: Some(count_snapshot),
+            },
+        )
+        .await?;
+    assert_eq!(count, 2);
     Ok(())
 }

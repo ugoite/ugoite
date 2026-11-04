@@ -8,7 +8,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -162,6 +162,36 @@ impl SqlQueryRequest {
             ))
         }
         .map_err(SqlQueryError::Serialize)?;
+        fingerprint(&bytes)
+    }
+
+    /// Fingerprint parameters after the SQL adapter has resolved their
+    /// effective declared types. JSON transports may represent the same typed
+    /// floating-point zero as either `0` or `0.0`; normalize that coordinate
+    /// for Composition Count snapshots while retaining the declared type.
+    pub fn typed_parameter_fingerprint(
+        &self,
+        effective_types: &BTreeMap<String, String>,
+    ) -> Result<String, SqlQueryError> {
+        let mut parameters = self.parameters.clone();
+        for (name, value) in parameters.iter_mut() {
+            if matches!(
+                effective_types.get(name).map(String::as_str),
+                Some("float" | "double")
+            ) {
+                let Some(number) = value.as_number() else {
+                    continue;
+                };
+                let normalized = number.as_f64().and_then(Number::from_f64).ok_or_else(|| {
+                    SqlQueryError::Invalid(format!(
+                        "SQL parameter {name} is not a finite floating-point value"
+                    ))
+                })?;
+                *value = Value::Number(normalized);
+            }
+        }
+        let bytes = serde_json::to_vec(&(&parameters, effective_types))
+            .map_err(SqlQueryError::Serialize)?;
         fingerprint(&bytes)
     }
 
@@ -695,6 +725,62 @@ mod tests {
         assert_ne!(
             with_base("revision-a").execution_fingerprint().unwrap(),
             with_base("revision-b").execution_fingerprint().unwrap()
+        );
+    }
+
+    #[test]
+    fn typed_count_fingerprint_normalizes_float_transport_but_preserves_page_coordinates() {
+        let count_request = |value: Value, parameter_type: &str| SqlQueryRequest {
+            sql: String::new(),
+            parameters: Map::from_iter([("minimum".to_string(), value)]),
+            parameter_types: BTreeMap::from([("minimum".to_string(), parameter_type.to_string())]),
+            saved_sql: Some(SavedSqlRevisionRef {
+                id: "saved-table".to_string(),
+                revision_id: "saved-revision".to_string(),
+            }),
+            ..SqlQueryRequest::default()
+        };
+        let rust_float = count_request(serde_json::json!(0.0), "float");
+        let browser_float = count_request(serde_json::json!(0), "float");
+        let typed_float_types = BTreeMap::from([("minimum".to_string(), "float".to_string())]);
+
+        assert_ne!(
+            rust_float
+                .parameter_fingerprint()
+                .expect("raw Rust fingerprint"),
+            browser_float
+                .parameter_fingerprint()
+                .expect("raw browser fingerprint"),
+            "existing ordinary paging fingerprints remain unchanged"
+        );
+        assert_eq!(
+            rust_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed Rust fingerprint"),
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed browser fingerprint")
+        );
+        assert_ne!(
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed float fingerprint"),
+            count_request(serde_json::json!(1), "float")
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("changed float fingerprint"),
+            "a changed typed parameter remains bound"
+        );
+        assert_ne!(
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed float fingerprint"),
+            count_request(serde_json::json!(0), "integer")
+                .typed_parameter_fingerprint(&BTreeMap::from([(
+                    "minimum".to_string(),
+                    "integer".to_string(),
+                )]))
+                .expect("typed integer fingerprint"),
+            "the declared SQL argument type remains bound"
         );
     }
 
