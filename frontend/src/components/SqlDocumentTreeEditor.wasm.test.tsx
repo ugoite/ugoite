@@ -289,8 +289,15 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   ) => {
     const initial = "SELECT 1";
     const initialDocument = await parseSqlDocument(initial);
+    const projection = initialDocument.nodes.find((node) =>
+      node.kind === "select_item" && node.range &&
+      initial.slice(node.range.start, node.range.end) === "1"
+    );
+    expect(projection).toBeDefined();
     const operand = initialDocument.nodes.find((node) =>
-      node.range && initial.slice(node.range.start, node.range.end) === "1"
+      node.kind === "literal_expression" && node.range &&
+      initial.slice(node.range.start, node.range.end) === "1" &&
+      node.parent === projection!.id
     );
     expect(operand).toBeDefined();
     const expected = await applySqlDocumentSemanticEditTransaction(initial, {
