@@ -81,7 +81,6 @@ type LeafDraft = {
 };
 type GroupTarget = {
   parentNodeId: number | null;
-  queryNodeId: number;
   scopeNodeId: number;
 };
 
@@ -347,7 +346,6 @@ export function SqlConditionWorkspace(props: Props) {
       if (emptyRoot && !addTarget()) {
         setAddTarget({
           parentNodeId: null,
-          queryNodeId: emptyRoot.query_node_id,
           scopeNodeId: emptyRoot.scope_node_id,
         });
       } else if (
@@ -432,6 +430,13 @@ export function SqlConditionWorkspace(props: Props) {
     );
     return matches.length === 1 ? matches[0] : undefined;
   };
+  const addConditionFocusKey = (
+    scope: SqlDocumentConditionScope,
+    parentNodeId: number | null = null,
+  ) =>
+    `add-filter:${scope.query_node_id}:${scope.scope_node_id}:${
+      parentNodeId ?? "root"
+    }`;
   const columnLabel = (scope: SqlDocumentConditionScope, name: string) =>
     contextFor(scope)?.columnLabels?.[name] ??
       (name === "_ugoite_id"
@@ -795,7 +800,7 @@ export function SqlConditionWorkspace(props: Props) {
         if (isGroup(node)) {
           const operator = groupDrafts()[node.node_id];
           if (operator && operator !== node.operator) {
-            restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
+            restoreFocusKey ??= addConditionFocusKey(scope);
             edits.push({
               kind: "set_filter_group_operator",
               node_id: node.node_id,
@@ -806,7 +811,7 @@ export function SqlConditionWorkspace(props: Props) {
           }
           node.children.forEach(visit);
         } else if (isComparison(node) && drafts()[node.node_id]) {
-          restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
+          restoreFocusKey ??= addConditionFocusKey(scope);
           const built = makeCondition(
             draftFor(node),
             false,
@@ -919,9 +924,7 @@ export function SqlConditionWorkspace(props: Props) {
         (isGroup(node) && node.children.some(containsNode));
     };
     const scope = conditions().find((item) => containsNode(item.expression));
-    const restoreFocusKey = scope
-      ? `add-filter:${scope.query_node_id}:root`
-      : undefined;
+    const restoreFocusKey = scope ? addConditionFocusKey(scope) : undefined;
     const removeEdit: SqlDocumentSemanticEdit =
       scope?.kind === "aggregate_filter" &&
           scope.expression?.node_id === nodeId
@@ -951,7 +954,6 @@ export function SqlConditionWorkspace(props: Props) {
   ) => {
     const target = {
       parentNodeId,
-      queryNodeId: scope.query_node_id,
       scopeNodeId: scope.scope_node_id,
     };
     setAddTarget(target);
@@ -1036,9 +1038,7 @@ export function SqlConditionWorkspace(props: Props) {
       if (!committed) return;
       setGroupTarget(null);
       setAddTarget(null);
-      const focusKey = `add-filter:${scope.query_node_id}:${
-        target.parentNodeId ?? "root"
-      }`;
+      const focusKey = addConditionFocusKey(scope, target.parentNodeId);
       setTimeout(() => {
         globalThis.document?.querySelector<HTMLElement>(
           `[data-condition-focus="${focusKey}"]`,
@@ -1498,9 +1498,10 @@ export function SqlConditionWorkspace(props: Props) {
             <button
               type="button"
               class="ui-button ui-button-secondary"
-              data-condition-focus={`add-filter:${p.scope.query_node_id}:${
-                p.parentNodeId ?? "root"
-              }`}
+              data-condition-focus={addConditionFocusKey(
+                p.scope,
+                p.parentNodeId,
+              )}
               disabled={busy() || locked()}
               onClick={() => {
                 setNewColumn("");
@@ -1509,7 +1510,6 @@ export function SqlConditionWorkspace(props: Props) {
                 setGroupTarget(null);
                 setAddTarget({
                   parentNodeId: p.parentNodeId,
-                  queryNodeId: p.scope.query_node_id,
                   scopeNodeId: p.scope.scope_node_id,
                 });
               }}
@@ -1522,9 +1522,10 @@ export function SqlConditionWorkspace(props: Props) {
             <span>{t("sqlPage.structure.column")}</span>
             <select
               class="ui-input"
-              data-condition-focus={`add-filter:${p.scope.query_node_id}:${
-                p.parentNodeId ?? "root"
-              }`}
+              data-condition-focus={addConditionFocusKey(
+                p.scope,
+                p.parentNodeId,
+              )}
               aria-label={t("sqlPage.structure.addFilterColumn")}
               value={newColumn()}
               disabled={busy() || locked()}

@@ -5161,7 +5161,18 @@ fn condition_semantic_edit(
             let mut range = container
                 .range
                 .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
-            if removed_id != node.id {
+            let is_aggregate_filter = document.conditions.iter().any(|scope| {
+                scope.kind == SqlDocumentConditionScopeKind::AggregateFilter
+                    && scope
+                        .expression
+                        .as_ref()
+                        .is_some_and(|root| condition_tree_contains(root, node.id))
+            });
+            // Ordinary WHERE groups can have an outer parenthesis around the
+            // whole condition tree that is outside the binary expression's
+            // parser range. FILTER delimiters already provide that boundary;
+            // widening into them can make a valid child removal fail to parse.
+            if removed_id != node.id && !is_aggregate_filter {
                 if let Some(open_index) = document
                     .tokens
                     .iter()
@@ -19622,6 +19633,50 @@ mod tests {
                     .expect("root removal has an exact inverse");
             assert_eq!(restored.document.source, source);
         }
+    }
+
+    #[test]
+    fn semantic_aggregate_filter_child_removal_preserves_scope_and_undoes() {
+        let source =
+            "SELECT COUNT(*) FILTER (WHERE (field_100 = 'travel') AND (field_101 = 10)) FROM items";
+        let document = parse_sql_document(source);
+        let scope = document
+            .conditions
+            .iter()
+            .find(|scope| scope.kind == SqlDocumentConditionScopeKind::AggregateFilter)
+            .expect("aggregate FILTER has a condition scope");
+        let SqlDocumentConditionNode::Group { children, .. } = scope.expression.as_ref().unwrap()
+        else {
+            panic!("the aggregate FILTER is an AND group");
+        };
+        let node_id = children
+            .iter()
+            .find_map(|child| match child {
+                SqlDocumentConditionNode::Comparison {
+                    node_id, column, ..
+                } if column.column.value == "field_100" => Some(*node_id),
+                _ => None,
+            })
+            .expect("the selected FILTER child is a comparison");
+        let node = &document.nodes[node_id as usize];
+        let removed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::RemoveFilterCondition {
+                    node_id,
+                    expected_kind: node.kind,
+                }],
+            ),
+        )
+        .expect("removing one FILTER child preserves the aggregate scope");
+        assert_eq!(
+            removed.document.source,
+            "SELECT COUNT(*) FILTER (WHERE (field_101 = 10)) FROM items"
+        );
+        let restored = apply_sql_document_edit_transaction(&removed.document.source, &removed.undo)
+            .expect("child removal has an exact inverse");
+        assert_eq!(restored.document.source, source);
     }
 
     #[test]
