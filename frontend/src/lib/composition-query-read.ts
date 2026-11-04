@@ -1,8 +1,5 @@
 import type { CompositionEvaluationResponse } from "./composition-api";
-import type {
-  CompositionGraphDraft,
-  CompositionLiteral,
-} from "./composition-variable-binding";
+import type { CompositionGraphDraft } from "./composition-variable-binding";
 import type { SqlQueryCountRequest } from "./types";
 
 /** Project validated graph values into the existing explicit SQL count API. */
@@ -44,16 +41,29 @@ export function compositionQueryCountRequest(
         : undefined
       : variable?.value_type;
     const result = evaluation.query_results[argument.variable]?.value;
-    const literal: CompositionLiteral | undefined = result?.kind === "scalar"
+    const value: unknown = result?.kind === "scalar"
       ? result.value
       : evaluation.variable_values[argument.variable];
     if (
-      !valueType || !literal || valueType.scalar_type === "decimal" ||
+      !valueType || value === undefined ||
+      valueType.scalar_type === "decimal" ||
       valueType.scalar_type === "json"
     ) {
       throw new Error("A validated SQL scalar argument is required");
     }
-    parameters[argument.name] = literal.kind === "null" ? null : literal.value;
+    const taggedLiteral = value !== null && typeof value === "object" &&
+      "kind" in value;
+    if (taggedLiteral) {
+      if (value.kind === "null") {
+        parameters[argument.name] = null;
+      } else if ("value" in value) {
+        parameters[argument.name] = value.value;
+      } else {
+        throw new Error("A validated SQL scalar argument is required");
+      }
+    } else {
+      parameters[argument.name] = value;
+    }
     parameter_types[argument.name] = valueType.scalar_type;
   }
   return {
