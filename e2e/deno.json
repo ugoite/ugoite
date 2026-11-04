@@ -5,7 +5,7 @@
     "docsite:navigation:raw": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test docsite-mobile-nav.test.ts docsite-links.test.ts",
     "docsite:navigation": "bash scripts/run-docsite-navigation.sh",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts entry-query-late-response.test.ts",
-    "composition-metric": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-metric-journey.test.ts",
+    "composition-metric": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-metric-journey.test.ts composition-table-metric-pagination.test.ts",
     "composition-binding-rebind": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-binding-rebind.test.ts",
     "composition-source-acl-isolation": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-source-acl-isolation.test.ts",
     "native-zoom-200": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test native-zoom-200.test.ts --headed",
