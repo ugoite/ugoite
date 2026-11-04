@@ -408,6 +408,9 @@ test.describe("Composition Golden Journey", () => {
       // revision. Declare graph Inputs before binding its named arguments.
       const initialPicker = initialPage.getByRole("dialog", { name: "Table" });
       await expect(initialPicker).toBeVisible();
+      await expect(initialPicker).not.toHaveAttribute("aria-busy", "true", {
+        timeout: 30_000,
+      });
       await initialPage.keyboard.press("Escape");
       await expect(initialPicker).toHaveCount(0);
       const nameInput = initialPage.getByLabel("Name", { exact: true });
