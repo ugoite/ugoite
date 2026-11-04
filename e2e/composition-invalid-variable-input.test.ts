@@ -119,6 +119,7 @@ async function seedInvalidInputComposition(
           kind: "saved_sql",
           entry_id: savedSql.id!,
           revision_id: savedSql.revision_id!,
+          label_source: "variable",
           arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],
           schema_fingerprint: "",

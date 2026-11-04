@@ -172,6 +172,7 @@ async function seedComposition(
           kind: "saved_sql",
           entry_id: metricSql.entryId,
           revision_id: metricSql.revisionId,
+          label_source: "variable",
           column: "matching_count",
           arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],

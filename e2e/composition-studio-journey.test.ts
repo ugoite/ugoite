@@ -447,6 +447,7 @@ function graphSavedSqlQuery(
       kind: "saved_sql",
       entry_id: savedSqlId,
       revision_id: savedSqlRevisionId,
+      label_source: "variable",
       ...(column ? { column } : {}),
       arguments: args,
       form_bindings: [],
@@ -806,7 +807,7 @@ test.describe("Composition Studio Journey", () => {
         { timeout: 30_000 },
       );
       await expect(
-        page.getByRole("heading", { name: totalVariable, exact: true }),
+        page.getByRole("heading", { name: "total", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", {
         name: "Restore this revision",
@@ -830,7 +831,7 @@ test.describe("Composition Studio Journey", () => {
       expect(restored.revisionId).not.toBe(editedRevisionId);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 3);
       await expect(
-        page.getByRole("heading", { name: totalVariable, exact: true }),
+        page.getByRole("heading", { name: "total", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.getByText("Total spent", { exact: true }),
@@ -1898,7 +1899,7 @@ test.describe("Composition Studio Journey", () => {
     const independentVariableId = savedSqlVariablePrefix(independentSqlName);
     const independentTableVariableId = `${independentVariableId}_table`;
     const dependentMetric = page.locator(
-      `.compositionGraphMetric[aria-label="${dependentVariableId}"] strong`,
+      '.compositionGraphMetric[aria-label="matching_count"] strong',
     );
     const independentTable = page.getByRole("table", {
       name: `${independentTableVariableId} results`,
