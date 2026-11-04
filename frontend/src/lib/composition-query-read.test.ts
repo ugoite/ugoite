@@ -103,6 +103,25 @@ describe("Composition explicit query count", () => {
     );
   });
 
+  it("preserves a valid zero-valued scalar argument for explicit Count", () => {
+    const { draft, response } = fixture();
+    draft.variables[1] = {
+      id: "floor",
+      kind: "input",
+      value_type: { scalar_type: "float", nullable: false },
+      required: true,
+      default: { kind: "float", value: 0 },
+    };
+    delete response.query_results.floor;
+    response.variable_values.floor = 0;
+    expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
+      {
+        parameters: { minimum: 0 },
+        parameter_types: { minimum: "float" },
+      },
+    );
+  });
+
   it("preserves prototype-shaped SQL parameter names across JSON transport", () => {
     // Deno omits this legacy setter, while browsers retain it.
     const original = Object.getOwnPropertyDescriptor(
