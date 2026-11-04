@@ -142,10 +142,9 @@ async function seedComposition(
     `Paged table source ${suffix}`,
     `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
       sqlIdentifier(merchantColumn!)
-    } AS merchant FROM ${sqlIdentifier(relation!)} ORDER BY ${
+    } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
       sqlIdentifier(amountColumn!)
-    } ASC`,
-    [],
+    } >= $minimum ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
   );
 
   const graph: CompositionGraphSeed = {
@@ -167,7 +166,7 @@ async function seedComposition(
           entry_id: tableSql.entryId,
           revision_id: tableSql.revisionId,
           label_source: "variable",
-          arguments: [],
+          arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],
           schema_fingerprint: "",
         },
@@ -348,6 +347,11 @@ test.describe("Composition Table and Metric pagination", () => {
       waitUntil: "domcontentloaded",
     });
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "minimum_amount", exact: true })
+      .click();
+    const inputDefault = page.getByLabel("Default", { exact: true });
+    await inputDefault.fill("0");
+    await uiExpect(inputDefault).toHaveValue("0");
     await page.getByRole("button", { name: "paged_rows", exact: true }).click();
     const studioRun = page.getByRole("button", {
       name: "Run Query",
@@ -406,6 +410,7 @@ test.describe("Composition Table and Metric pagination", () => {
         id: seed.tableSql.entryId,
         revision_id: seed.tableSql.revisionId,
       },
+      parameters: { minimum: 0 },
     });
     expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);
     expect(
