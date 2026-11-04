@@ -764,6 +764,98 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("REQ-FE-063 @smoke: relation-free SELECT 1 keeps shared SQL actions reachable", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    const name = `Relation-free actions ${Date.now()}`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: "SELECT 1",
+          variables: [],
+        },
+      },
+    );
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      const toolbar = page.getByRole("group", { name: "SQL", exact: true });
+      const assertSqlUnchanged = async () => {
+        await expect.poll(() =>
+          editor.evaluate((element) => element.textContent)
+        )
+          .toBe("SELECT 1");
+      };
+      await assertSqlUnchanged();
+
+      const openAndClose = async (action: string) => {
+        const button = toolbar.getByRole("button", {
+          name: action,
+          exact: true,
+        });
+        await expect(button).toBeEnabled();
+        await button.click();
+        const dialog = page.getByRole("dialog", {
+          name: action,
+          exact: true,
+        });
+        await expect(dialog).toBeVisible();
+        await dialog.locator("footer").getByRole("button", {
+          name: "Close",
+          exact: true,
+        }).click();
+        await expect(dialog).toHaveCount(0);
+        await assertSqlUnchanged();
+      };
+
+      for (const action of ["Form", "Columns", "Filter", "Sort"]) {
+        await openAndClose(action);
+      }
+
+      const structure = toolbar.getByRole("button", {
+        name: "Structure",
+        exact: true,
+      });
+      await expect(structure).toBeEnabled();
+      await structure.click();
+      const structureOptions = page.getByRole("group", {
+        name: "Structure options",
+        exact: true,
+      });
+      const sqlTreeAction = structureOptions.getByRole("button", {
+        name: "SQL tree",
+        exact: true,
+      });
+      await expect(sqlTreeAction).toBeEnabled();
+      await sqlTreeAction.click();
+      const sqlTree = page.getByRole("dialog", {
+        name: "SQL tree",
+        exact: true,
+      });
+      await expect(sqlTree).toBeVisible();
+      await sqlTree.locator("footer").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
+      await expect(sqlTree).toHaveCount(0);
+      await assertSqlUnchanged();
+
+      await openAndClose("Arguments");
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
