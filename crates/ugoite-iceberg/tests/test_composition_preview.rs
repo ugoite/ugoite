@@ -2173,6 +2173,7 @@ async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacem
         .count_sql(
             &space_id,
             ugoite_core::sql_query::SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 binding_base: None,
                 form_binding_guards: Vec::new(),
                 sql,

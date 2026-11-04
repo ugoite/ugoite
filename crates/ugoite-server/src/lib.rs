@@ -11894,6 +11894,7 @@ fn api_composition_evaluation_response(
                     value,
                     has_more: result.has_more,
                     next: result.next,
+                    count_snapshot: result.count_snapshot,
                     exact_integer_rows,
                 },
             ))

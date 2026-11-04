@@ -14518,6 +14518,10 @@
             "items": {
               "$ref": "#/components/schemas/SqlFormBindingGuard"
             }
+          },
+          "composition_count_snapshot": {
+            "type": "string",
+            "description": "Opaque server-issued Composition evaluation snapshot. The server rechecks current authorization and uses the Publication bound to the signed token."
           }
         },
         "additionalProperties": false
@@ -15646,6 +15650,10 @@
           "next": {
             "type": "string",
             "description": "Opaque continuation for the same query variable and immutable graph snapshot."
+          },
+          "count_snapshot": {
+            "type": "string",
+            "description": "Opaque server-issued snapshot token for counting this query at the same authorized Publication."
           },
           "exact_integer_rows": {
             "type": "array",

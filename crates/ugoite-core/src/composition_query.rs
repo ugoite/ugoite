@@ -1944,6 +1944,7 @@ mod tests {
                     .collect(),
             ),
             exact_integer_rows: None,
+            composition_count_snapshot: None,
         }
     }
 

@@ -1,0 +1,109 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Snapshot-bound SQL Count
+features:
+  - id: FEAT-COMP-014
+    title: Composition Count publication pin
+    summary: Keep explicit SQL Count on the immutable publication used by its Composition query evaluation, with server-owned authority and current authorization checks.
+    status: planned
+    bindings:
+      - id: count-snapshot-service
+        role: implementation
+        facet: storage
+        responsibility: Issue purpose-bound Count coordinates from Composition SQL execution and validate them against the current authorization state before using their pinned Publication.
+        targets:
+          - id: issue-count-coordinate
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: query_sql_authorized_with_context }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: count-on-pinned-publication
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: count_sql_authorized_for_principals }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: count-snapshot-contract
+        role: implementation
+        facet: api
+        responsibility: Carry the opaque server-issued coordinate from Composition query results into the explicit SQL Count request without allowing clients to select a Publication.
+        targets:
+          - id: count-request
+            adapter: rust
+            path: crates/ugoite-core/src/sql_query.rs
+            selector: { kind: symbol, name: SqlQueryCountRequest }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: composition-count-result
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector: { kind: symbol, name: CompositionGraphQueryResult }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: count-snapshot-rest
+        role: implementation
+        facet: backend
+        responsibility: Forward the opaque Count coordinate to the authorized service operation using identity and current authorization derived from the server request context.
+        targets:
+          - id: count-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: count_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: count-snapshot-browser
+        role: implementation
+        facet: frontend
+        responsibility: Submit an explicit Count request using the snapshot coordinate for the current Composition evaluation.
+        targets:
+          - id: count-request-builder
+            adapter: typescript
+            path: frontend/src/lib/composition-query-read.ts
+            selector: { kind: symbol, name: compositionQueryCountRequest }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: count-snapshot-verification
+        role: verification
+        facet: verification
+        responsibility: Verify publication pinning across append, current ACL rechecking, token purpose separation and tamper rejection, and the server-backed Table journey.
+        targets:
+          - id: native-interleaving-and-acl
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: source_resolution_and_continuation_recheck_current_authorization }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers:
+                  - FEAT-COMP-014#binding.count-snapshot-service/target.issue-count-coordinate
+                  - FEAT-COMP-014#binding.count-snapshot-service/target.count-on-pinned-publication
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: source_resolution_and_continuation_recheck_current_authorization } }
+          - id: token-purpose-and-redaction
+            adapter: rust
+            path: crates/ugoite-core/src/sql_query.rs
+            selector: { kind: test, name: continuation_round_trips_and_rejects_tampering }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-014#binding.count-snapshot-contract/target.count-request]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: continuation_round_trips_and_rejects_tampering } }
+          - id: browser-count-interleaving
+            adapter: typescript
+            path: e2e/composition-table-metric-pagination.test.ts
+            selector: { kind: test, name: "Studio counts the pinned Table SQL separately and preserves its source while paging" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers:
+                  - FEAT-COMP-014#binding.count-snapshot-contract/target.composition-count-result
+                  - FEAT-COMP-014#binding.count-snapshot-rest/target.count-handler
+                  - FEAT-COMP-014#binding.count-snapshot-browser/target.count-request-builder
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts the pinned Table SQL separately and preserves its source while paging" } }

@@ -655,6 +655,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
                 &space_id,
                 &[viewer],
                 SqlQueryCountRequest {
+                    composition_count_snapshot: None,
                     form_binding_guards: Vec::new(),
                     binding_base: None,
                     sql: String::new(),
@@ -720,6 +721,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
             &space_id,
             &[viewer],
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 form_binding_guards: Vec::new(),
                 binding_base: None,
                 sql: String::new(),
@@ -857,6 +859,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
                 &space_id,
                 &[viewer],
                 SqlQueryCountRequest {
+                    composition_count_snapshot: None,
                     form_binding_guards: Vec::new(),
                     binding_base: None,
                     sql: String::new(),
