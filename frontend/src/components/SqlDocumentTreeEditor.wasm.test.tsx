@@ -64,6 +64,11 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     const aggregateScope = await screen.findByRole("region", {
       name: "Aggregate FILTER condition",
     });
+    const aggregateAddCondition = () =>
+      within(screen.getByRole("region", {
+        name: "Aggregate FILTER condition",
+      })).getByRole("button", { name: "Add condition" });
+    aggregateAddCondition().focus();
     fireEvent.click(
       within(aggregateScope).getByRole("button", { name: "Add condition" }),
     );
@@ -79,6 +84,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
         'SELECT COUNT(field_101) FILTER (WHERE field_100 = \'food\') FROM "form_expenses" WHERE field_101 > 0',
       )
     );
+    await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
 
     await waitFor(() =>
       expect(
@@ -100,12 +106,86 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
         'SELECT COUNT(field_101) FILTER (WHERE field_100 = \'travel\') FROM "form_expenses" WHERE field_101 > 0',
       )
     );
-    fireEvent.click(updatedScope.getByRole("button", { name: "Remove filter" }));
+    await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
+
+    fireEvent.click(
+      within(screen.getByRole("region", {
+        name: "Aggregate FILTER condition",
+      })).getByRole("button", { name: "Remove filter" }),
+    );
     await waitFor(() =>
       expect(sql()).toBe(
         'SELECT COUNT(field_101) FROM "form_expenses" WHERE field_101 > 0',
       )
     );
+  });
+
+  it("restores focus to the aggregate scope after removing a child condition", async () => {
+    const initial =
+      'SELECT COUNT(field_101) FILTER (WHERE (field_100 = \'travel\') AND (field_101 = 10)) FROM "form_expenses" WHERE field_101 > 0';
+    const context: SqlStructureAdapterContext = {
+      identity: "form-expenses",
+      relationSelectable: true,
+      label: "Expenses",
+      stableRelation: "form_expenses",
+      parser: {
+        relation: "form_expenses",
+        columns: [
+          { name: "field_100", type: "string" },
+          { name: "field_101", type: "integer" },
+        ],
+        stable_key: ["_ugoite_id"],
+      },
+      columnCapabilities: {
+        field_100: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq"],
+          aggregateFunctions: ["count"],
+          groupable: true,
+          distinctable: true,
+        },
+        field_101: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq"],
+          aggregateFunctions: ["count"],
+          groupable: true,
+          distinctable: true,
+        },
+      },
+      columnLabels: { field_100: "Category", field_101: "Amount" },
+    };
+    const [sql, setSql] = createSignal(initial);
+    render(() => (
+      <SqlConditionWorkspace
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const aggregateScope = await screen.findByRole("region", {
+      name: "Aggregate FILTER condition",
+    });
+    const aggregateAddCondition = () =>
+      within(screen.getByRole("region", {
+        name: "Aggregate FILTER condition",
+      })).getByRole("button", { name: "Add condition" });
+    fireEvent.click(
+      within(within(aggregateScope).getByRole("group", { name: "Category" })).getByRole(
+        "button",
+        { name: "Remove filter" },
+      ),
+    );
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT COUNT(field_101) FILTER (WHERE (field_101 = 10)) FROM "form_expenses" WHERE field_101 > 0',
+      )
+    );
+    await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
   });
 
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {

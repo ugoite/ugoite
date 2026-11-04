@@ -531,7 +531,7 @@ describe("SQL Filter and Sort task editors", () => {
     );
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        document.querySelector('[data-condition-focus="add-filter:2:root"]'),
+        screen.getByRole("button", { name: "Add condition" }),
       )
     );
   });
