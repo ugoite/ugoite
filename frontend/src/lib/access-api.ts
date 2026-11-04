@@ -1,4 +1,5 @@
 import { protocolFetch } from "./ugoite-client/protocol";
+import { publishCompositionAccessChange } from "./composition-access-changes";
 
 export type ResourceKind =
   | "entry"
@@ -35,10 +36,12 @@ export const accessApi = {
     resourceId: string,
     policy: AccessPolicy,
   ): Promise<AccessPolicy> {
-    return await protocolFetch(
+    const updated = await protocolFetch<AccessPolicy>(
       "access.put",
       { space_id: spaceId, kind, resource_id: resourceId },
       policy,
     );
+    publishCompositionAccessChange(spaceId);
+    return updated;
   },
 };

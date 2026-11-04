@@ -298,6 +298,29 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: composition-access-change-signal
+            adapter: typescript
+            path: frontend/src/lib/composition-access-changes.ts
+            selector: { kind: symbol, name: subscribeToCompositionAccessChanges }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: resource-access-mutation-signal
+            adapter: typescript
+            path: frontend/src/lib/access-api.ts
+            selector: { kind: symbol, name: accessApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: space-membership-mutation-signal
+            adapter: typescript
+            path: frontend/src/lib/space-api.ts
+            selector: { kind: symbol, name: spaceApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
           - id: composition-history-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
@@ -319,6 +342,78 @@ features:
         facet: verification
         responsibility: Verify explicit count and paging, obsolete-result suppression, and browser pinning before an independent inline copy.
         targets:
+          - id: access-change-broadcast
+            adapter: typescript
+            path: frontend/src/lib/composition-access-changes.test.ts
+            selector: { kind: test, name: "delivers a published change to another same-origin tab channel" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-access-change-signal]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-access-changes.test.ts, test: "delivers a published change to another same-origin tab channel" } }
+          - id: unrelated-space-signal-is-ignored
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "ignores access-change signals for another Space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "ignores access-change signals for another Space" } }
+          - id: changed-access-snapshot-gates-recovery
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "gates results until a same-Space access-change check confirms authority" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "gates results until a same-Space access-change check confirms authority" } }
+          - id: unchanged-access-snapshot-reveals-cache
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "restores cached results only after a same-Space check confirms unchanged authority" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "restores cached results only after a same-Space check confirms unchanged authority" } }
+          - id: successful-resource-access-mutation-signals
+            adapter: typescript
+            path: frontend/src/lib/access-api.test.ts
+            selector: { kind: test, name: "notifies Composition views after a successful resource policy update" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.resource-access-mutation-signal]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/access-api.test.ts, test: "notifies Composition views after a successful resource policy update" } }
+          - id: failed-resource-access-mutation-does-not-signal
+            adapter: typescript
+            path: frontend/src/lib/access-api.test.ts
+            selector: { kind: test, name: "does not notify after a rejected policy update" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.resource-access-mutation-signal]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/access-api.test.ts, test: "does not notify after a rejected policy update" } }
+          - id: successful-membership-mutation-signals
+            adapter: typescript
+            path: frontend/src/lib/space-api.access.test.ts
+            selector: { kind: test, name: "notifies after successful invites, role changes, and revocations" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.space-membership-mutation-signal]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/space-api.access.test.ts, test: "notifies after successful invites, role changes, and revocations" } }
+          - id: failed-membership-mutation-does-not-signal
+            adapter: typescript
+            path: frontend/src/lib/space-api.access.test.ts
+            selector: { kind: test, name: "does not notify when a membership mutation fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.space-membership-mutation-signal]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/space-api.access.test.ts, test: "does not notify when a membership mutation fails" } }
           - id: selected-sql-only
             adapter: typescript
             path: frontend/src/components/CompositionVariableBindingPicker.test.tsx

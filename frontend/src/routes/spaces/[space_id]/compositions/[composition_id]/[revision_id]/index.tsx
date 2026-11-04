@@ -34,6 +34,7 @@ import { t } from "~/lib/i18n";
 import { parseVariableGraphInput } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { subscribeToCompositionAccessChanges } from "~/lib/composition-access-changes";
 import {
   spaceCompositionEditPath,
   spaceCompositionHistoryPath,
@@ -446,6 +447,20 @@ export default function CompositionRevisionRoute() {
     accessSuspensions.delete(reason);
     if (!accessIsSuspended()) onAccessResume();
   };
+
+  const onCompositionAccessChange = (changedSpaceId: string) => {
+    if (changedSpaceId !== params.space_id) return;
+    const lease = accessLease;
+    if (!lease) {
+      clearVisibleResults();
+      if (!accessIsSuspended()) void evaluate();
+      return;
+    }
+    setAccessSnapshotBlocked(true);
+    if (!accessIsSuspended()) void recheckAccess(lease, true);
+  };
+
+  onCleanup(subscribeToCompositionAccessChanges(onCompositionAccessChange));
 
   const onVisibilityChange = () => {
     if (document.visibilityState === "hidden") onAccessSuspend("hidden");

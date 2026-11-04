@@ -12,6 +12,7 @@ import type {
 import { auditApi } from "./audit-api";
 import type { AuditListQuery, SpaceAuditPage } from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
+import { publishCompositionAccessChange } from "./composition-access-changes";
 
 /** Space API client backed by the shared Rust/WASM protocol. */
 export const spaceApi = {
@@ -109,11 +110,13 @@ export const spaceApi = {
     id: string,
     payload: SpaceMemberInvitePayload,
   ): Promise<SpaceMemberInviteResponse> {
-    return await protocolFetch<SpaceMemberInviteResponse>(
+    const invited = await protocolFetch<SpaceMemberInviteResponse>(
       "space.members.invite",
       { space_id: id },
       payload,
     );
+    publishCompositionAccessChange(id);
+    return invited;
   },
 
   async updateMemberRole(
@@ -121,26 +124,32 @@ export const spaceApi = {
     principalId: string,
     payload: SpaceMemberRoleUpdatePayload,
   ): Promise<{ principal_id: string; role: SpaceMember["role"] }> {
-    return await protocolFetch<
+    const updated = await protocolFetch<
       { principal_id: string; role: SpaceMember["role"] }
     >(
       "space.members.update_role",
       { space_id: id, principal_id: principalId },
       payload,
     );
+    publishCompositionAccessChange(id);
+    return updated;
   },
 
   async revokeMember(
     id: string,
     principalId: string,
   ): Promise<{ principal_id: string; state: "revoked" }> {
-    return await protocolFetch<{ principal_id: string; state: "revoked" }>(
+    const revoked = await protocolFetch<
+      { principal_id: string; state: "revoked" }
+    >(
       "space.members.revoke",
       {
         space_id: id,
         principal_id: principalId,
       },
     );
+    publishCompositionAccessChange(id);
+    return revoked;
   },
 
   async listAgents(id: string): Promise<AgentPrincipal[]> {
