@@ -251,9 +251,15 @@ requirements:
           ranges, swaps only the two adjacent element expressions, preserves
           the original comma and whitespace between them and every source byte
           outside that span, including the projection alias, and returns a
-          guarded undo. This move operation does not make append or removal
-          available for aliased items; those operations remain limited to
-          unaliased items. Boundary moves, comment-bearing projection items,
+          guarded undo. For a complete aliased projection with one direct
+          ARRAY literal, the tree can also append a typed literal element
+          while preserving the alias and all source bytes outside the ARRAY
+          closing bracket; a guarded undo restores the exact source. Append
+          requires direct ARRAY ownership and an unambiguous bracket boundary.
+          Aliased removal remains unavailable. Empty aliased arrays,
+          comment-bearing projection items, ambiguous aliases or source
+          ranges, and unsupported shapes fail closed. Boundary moves,
+          comment-bearing projection items,
           unsupported or ambiguous source ranges, and unrecognized separators
           fail closed; comment-bearing projection items do not expose the move
           controls. The WASM operation returns the same native result. For
@@ -262,6 +268,27 @@ requirements:
           For executor-admitted SQL, reordering preserves the corresponding
           array value order; authorized planning and execution remain
           authoritative for admission and result types.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: aliased-array-literal-element-appending
+        kind: behavior
+        statement: >-
+          For an eligible complete aliased SELECT projection item containing
+          exactly one direct non-empty ARRAY literal, the SQL Document tree
+          can append a typed literal element using the existing ARRAY Add
+          action. Rust identifies the ARRAY closing bracket from the direct
+          typed ARRAY node and complete projection tokens. The edit changes
+          only that bracket into the appended element and closing bracket,
+          preserves the alias and all surrounding source bytes, and provides
+          a guarded exact undo. The equivalent WASM operation returns the same
+          edit. Empty arrays, comment-bearing projection items, quoted aliases
+          containing `]`, missing or ambiguous direct ARRAY ownership or
+          source ranges, and unsupported projections fail closed. This
+          criterion does not enable aliased element removal. For
+          executor-admitted queries, the authorized executor remains
+          authoritative for planning and result types.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,

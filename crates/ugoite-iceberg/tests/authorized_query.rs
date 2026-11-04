@@ -5154,6 +5154,77 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 }
 
 #[tokio::test]
+async fn typed_sql_document_aliased_array_append_executes_authorized_query() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(935)),
+        "memory://authorized-aliased-array-append",
+    )
+    .await?;
+    let tasks = form(936, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    let revision = revision(&tasks, 937, 938, "one row");
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.aliased-array-append-entry",
+            &revision,
+        )?)?
+        .append_revisions(tasks.id, vec![revision])
+        .await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[937]))
+        .await?;
+
+    let source = "SELECT ARRAY[4] AS values_out FROM tasks";
+    let document = parse_sql_document(source);
+    let projection = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+        .expect("the aliased ARRAY projection is editable");
+    let appended = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                node_id: projection.id,
+                expected_kind: projection.kind,
+                literal: SqlDocumentSemanticLiteral::Number {
+                    value: "9".to_owned(),
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        appended.document.to_sql(),
+        "SELECT ARRAY[4, 9] AS values_out FROM tasks"
+    );
+    let rows = context.execute(appended.document.to_sql()).await?;
+    let batch = rows
+        .first()
+        .expect("the appended ARRAY query returns a row");
+    assert_eq!(batch.schema().field(0).name(), "values_out");
+    let values = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("the aliased ARRAY literal returns a list")
+        .value(0);
+    let values = values
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the appended ARRAY has integer elements");
+    assert_eq!(values.values(), &[4, 9]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query(
 ) -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
