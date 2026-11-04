@@ -406,7 +406,36 @@ describe("CompositionGraphRenderer", () => {
       .toBeInTheDocument();
   });
 
-  it("renders the current raw string input in text bindings before evaluation", () => {
+  it("renders a Metric bound directly to an evaluated integer input", () => {
+    const directInputMetricDraft: CompositionGraphDraft = {
+      ...draft,
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: "minimum" }
+          : component
+      ),
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={directInputMetricDraft}
+        evaluation={evaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("region", { name: "minimum", exact: true }))
+      .toHaveTextContent("1");
+  });
+
+  it("renders evaluated JSON and current raw string inputs in text bindings", () => {
     const textDraft: CompositionGraphDraft = {
       name: "Report",
       variables: [{
@@ -447,7 +476,7 @@ describe("CompositionGraphRenderer", () => {
           ...evaluation,
           computed_query_ids: [],
           variable_values: {
-            report_title: { kind: "string", value: "Previous title" },
+            report_title: "Previous title",
           },
           query_results: {},
         }}
