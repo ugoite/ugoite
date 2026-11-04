@@ -498,6 +498,10 @@
     background: var(--ui-surface-1);
     box-shadow: var(--ui-shadow-lg);
   }
+  .compositionVariableRail--mobile .compositionVariableAddMenu {
+    top: calc(100% + var(--ui-spacing-xs));
+    bottom: auto;
+  }
   .compositionVariableRailBackdrop {
     position: fixed;
     z-index: 21;
