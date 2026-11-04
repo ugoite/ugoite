@@ -179,7 +179,7 @@ requirements:
       - id: graph-draft-and-atomic-bindings
         role: verification
         facet: verification
-        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. The broader Composition SQL argument requirement remains unverified because no current test covers host-side variable and Input creation in the same draft update.
+        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. Also verify that a SQL argument declaration can be explicitly bound to a Design Input in the same graph draft. Other required, default, unused, unbound, and incompatible argument cases remain an explicit verification gap.
         targets:
           - id: graph-draft-shape
             adapter: typescript
@@ -235,6 +235,19 @@ requirements:
                 criterion: REQ-FE-079#criterion.sql-filter-adds-typed-parameter
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "creates a typed argument when filtering a fresh Form query" } }
+          - id: host-input-explicit-argument-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" } }
           - id: mode-and-insertion
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

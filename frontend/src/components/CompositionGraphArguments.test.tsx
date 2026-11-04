@@ -12,6 +12,7 @@ import { createSignal } from "solid-js";
 import { CompositionGraphStudio } from "./CompositionGraphStudio";
 import {
   type CompositionGraphDraft,
+  compositionGraphDocumentDraft,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { buildSqlSchema } from "~/lib/sql";
@@ -268,6 +269,128 @@ describe("Composition shared SQL argument editing", () => {
     expect(run).toHaveBeenCalledWith("rows");
     fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
     expect(save).toHaveBeenCalledOnce();
+  });
+
+  it("keeps SQL declarations and a Design Input in one explicitly bound graph draft", async () => {
+    const { draft, setDraft, query, open, validity } = setup();
+    const dialog = await open();
+    setDraft((current) => ({
+      ...current,
+      variables: current.variables.map((node) =>
+        node.id === "rows" && node.kind === "query"
+          ? {
+            ...node,
+            query: {
+              ...node.query,
+              kind: "inline_sql",
+              sql: "SELECT $minimum AS value",
+            },
+          }
+          : node
+      ),
+    }));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("Argument name")).toBeEnabled()
+    );
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "minimum" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Type", { exact: true }), {
+      target: { value: "integer" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
+    await waitFor(() =>
+      expect(query().query.arguments).toContainEqual({
+        name: "minimum",
+        variable: "",
+      })
+    );
+    expect(within(dialog).getByLabelText("Type for minimum")).toHaveValue(
+      "integer",
+    );
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Remove limit" }))
+        .toBeEnabled()
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove limit" }),
+    );
+    await waitFor(() =>
+      expect(query().query.arguments).toEqual([{ name: "minimum", variable: "" }])
+    );
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" })[0],
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Design", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Input", exact: true }));
+    const inputName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(inputName, { target: { value: "minimum_value" } });
+    fireEvent.submit(inputName.closest("form")!);
+    await waitFor(() =>
+      expect(draft().components).toContainEqual({
+        id: "input_1",
+        kind: "input",
+        variable: "minimum_value",
+      })
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Variables", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "minimum_value", exact: true }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
+      target: { value: "integer" },
+    });
+    await waitFor(() =>
+      expect(draft().variables.find((node) => node.id === "minimum_value"))
+        .toMatchObject({
+          kind: "input",
+          value_type: { scalar_type: "integer", nullable: false },
+        })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
+    const inputBinding = screen.getByRole("combobox", {
+      name: "minimum",
+      exact: true,
+    });
+    fireEvent.change(inputBinding, { target: { value: "minimum_value" } });
+    await waitFor(() =>
+      expect(query().query.arguments).toEqual([{
+        name: "minimum",
+        variable: "minimum_value",
+      }])
+    );
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith("rows", true));
+
+    expect(draft().components).toContainEqual({
+      id: "input_1",
+      kind: "input",
+      variable: "minimum_value",
+    });
+    expect(draft().layout.rows.flatMap((row) => row.items)).toContainEqual({
+      kind: "component",
+      component: "input_1",
+    });
+    const savedSpec = compositionGraphDocumentDraft(draft()).spec;
+    expect(savedSpec.variables.find((node) => node.id === "minimum_value"))
+      .toMatchObject({
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+      });
+    expect(savedSpec.variables.find((node) => node.id === "rows"))
+      .toMatchObject({
+        query: {
+          sql: "SELECT $minimum AS value",
+          arguments: [{ name: "minimum", variable: "minimum_value" }],
+        },
+      });
+    expect(savedSpec.components).toEqual([{
+      id: "input_1",
+      kind: "input",
+      variable: "minimum_value",
+    }]);
+    expect(savedSpec.layout).toEqual(draft().layout);
   });
 
   it("renames through Rust while preserving bindings and comment lookalikes", async () => {
