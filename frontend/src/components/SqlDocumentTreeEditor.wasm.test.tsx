@@ -136,7 +136,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
   });
 
   it("keeps nested SQL trivia and diagnostics through a scoped alias edit and WASM undo", async () => {
-    const source = "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"total\" FROM source ORDER BY total DESC /* tail */";
+    const source =
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "total" FROM source ORDER BY total DESC /* tail */';
     const document = await parseSqlDocument(source);
     expect(document.diagnostics).toEqual([]);
     const item = document.nodes.find((node) =>
@@ -168,11 +169,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.blur(alias);
     await waitFor(() => expect(sql()).toBe(expected.document.source));
     expect(sql()).toBe(
-      "WITH /* lead */ source AS (SELECT amount AS \"gross\" FROM \"G\" WHERE note = 'x -- literal' /* where keep */) SELECT gross AS \"net total\" FROM source ORDER BY \"net total\" DESC /* tail */",
+      'WITH /* lead */ source AS (SELECT amount AS "gross" FROM "G" WHERE note = \'x -- literal\' /* where keep */) SELECT gross AS "net total" FROM source ORDER BY "net total" DESC /* tail */',
     );
     const edited = await parseSqlDocument(sql());
     expect(edited.diagnostics).toEqual(document.diagnostics);
-    const restored = await applySqlDocumentEditTransaction(sql(), expected.undo);
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
     expect(restored.document.source).toBe(source);
     expect(restored.document.diagnostics).toEqual(document.diagnostics);
   });
@@ -859,6 +863,51 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(sql()).toBe("SELECT ARRAY[] /* preserve */"));
     view.unmount();
+  });
+
+  it("reorders direct ARRAY elements in an aliased projection through actual WASM", async () => {
+    const initial = "SELECT ARRAY[4,  9] AS ordered_values, 7 AS untouched";
+    const document = await parseSqlDocument(initial);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    expect(array).toBeDefined();
+    const projection = document.nodes.find((node) => node.id === array?.parent);
+    expect(projection?.semantic?.kind).toBe("projection_alias");
+    const secondElement = document.nodes.find((node) =>
+      node.parent === array?.id && node.kind === "literal_expression" &&
+      node.range && initial.slice(node.range.start, node.range.end) === "9"
+    );
+    expect(secondElement).toBeDefined();
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const elementItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(secondElement!.id),
+    );
+    expect(elementItem).toBeDefined();
+    fireEvent.click(elementItem!);
+
+    const moveUp = screen.getByRole("button", {
+      name: "Move ARRAY element up",
+    });
+    expect(moveUp).toBeEnabled();
+    expect(
+      screen.getByRole("button", {
+        name: "Move ARRAY element down: Already the last ARRAY element",
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeNull();
+
+    fireEvent.click(moveUp);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        "SELECT ARRAY[9,  4] AS ordered_values, 7 AS untouched",
+      )
+    );
   });
 
   it("hides ARRAY element removal when comments make the edit unsafe", async () => {

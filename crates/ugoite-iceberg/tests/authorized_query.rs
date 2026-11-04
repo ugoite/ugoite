@@ -5154,7 +5154,7 @@ async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyh
 }
 
 #[tokio::test]
-async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query(
+async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query(
 ) -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeData,
@@ -5508,6 +5508,59 @@ async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authori
     assert_eq!(values.len(), 2);
     assert_eq!(values.value(0), 9);
     assert_eq!(values.value(1), 4);
+
+    let aliased_source = "SELECT ARRAY[4, 9] AS ordered_values FROM tasks";
+    let aliased_document = parse_sql_document(aliased_source);
+    let aliased_array = aliased_document
+        .nodes
+        .iter()
+        .find(|node| matches!(node.semantic, Some(SqlDocumentNodeData::ArrayLiteral)))
+        .expect("the aliased ARRAY expression is represented");
+    let aliased_element = aliased_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.parent == Some(aliased_array.id)
+                && node
+                    .range
+                    .and_then(|range| aliased_document.source_slice(range))
+                    == Some("9")
+        })
+        .expect("the aliased ARRAY's second direct element is represented");
+    let aliased_reorder = apply_sql_document_semantic_edit_transaction(
+        aliased_source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: aliased_document.contract_version,
+            expected_source: aliased_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                node_id: aliased_element.id,
+                expected_kind: aliased_element.kind,
+                move_up: true,
+            }],
+        },
+    )?;
+    assert_eq!(
+        aliased_reorder.document.to_sql(),
+        "SELECT ARRAY[9, 4] AS ordered_values FROM tasks"
+    );
+    let aliased_batches = context.execute(aliased_reorder.document.to_sql()).await?;
+    assert_eq!(
+        aliased_batches[0].schema().field(0).name(),
+        "ordered_values"
+    );
+    let aliased_array = aliased_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("the alias-preserving edit returns an integer list");
+    let aliased_list_values = aliased_array.value(0);
+    let aliased_values = aliased_list_values
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the aliased list contains Int64 values");
+    assert_eq!(aliased_values.len(), 2);
+    assert_eq!(aliased_values.value(0), 9);
+    assert_eq!(aliased_values.value(1), 4);
 
     let empty_array_batches = context
         .execute("SELECT CAST(ARRAY[] AS BIGINT[]) AS empty")
