@@ -1634,36 +1634,64 @@ test.describe("Composition Studio Journey", () => {
       await expect(designPendingName).toHaveValue("draft_label");
       await expect(page.getByRole("button", { name: "Save", exact: true }))
         .toHaveAttribute("title", "Add or cancel the variable before saving.");
-      await expect(page.getByRole("status")).toContainText(
+      await expect(page.getByText(
         "Finish or cancel adding this variable before switching modes.",
-      );
+        { exact: true },
+      )).toBeVisible();
       await page.screenshot({
         path: test.info().outputPath("variable-name-design-desktop.png"),
         fullPage: true,
       });
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.getByRole("tablist", { name: "Studio mode" })
-        .getByRole("tab", { name: "Variables", exact: true }).click();
-      await page.getByRole("button", { name: "Add variable", exact: true })
-        .click();
-      await page.getByRole("group", { name: "Add variable" })
-        .getByRole("button", { name: "Value", exact: true }).click();
-      await expect(page.getByLabel("Variable name", { exact: true })).toBeFocused();
-      await page.screenshot({
-        path: test.info().outputPath("variable-name-value-390px.png"),
-        fullPage: true,
-      });
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("tablist", { name: "Studio mode" })
-        .getByRole("tab", { name: "Design", exact: true }).click();
-      await page.getByRole("button", { name: "Input", exact: true }).click();
-      await expect(page.getByLabel("Variable name", { exact: true })).toBeFocused();
-      await page.screenshot({
-        path: test.info().outputPath("variable-name-design-390px.png"),
-        fullPage: true,
-      });
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      for (const width of [320, 375, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.getByRole("tablist", { name: "Studio mode" })
+          .getByRole("tab", { name: "Variables", exact: true }).click();
+        await page.getByRole("button", { name: "Show variables", exact: true })
+          .click();
+        await page.getByRole("button", { name: "Add variable", exact: true })
+          .click();
+        const mobileValueOption = page.getByRole("group", {
+          name: "Add variable",
+        }).getByRole("button", { name: "Value", exact: true });
+        await expect(mobileValueOption).toBeVisible();
+        const mobileValueBox = await mobileValueOption.boundingBox();
+        expect(mobileValueBox).not.toBeNull();
+        expect(mobileValueBox!.x).toBeGreaterThanOrEqual(0);
+        expect(mobileValueBox!.y).toBeGreaterThanOrEqual(0);
+        expect(mobileValueBox!.x + mobileValueBox!.width)
+          .toBeLessThanOrEqual(width);
+        expect(mobileValueBox!.y + mobileValueBox!.height)
+          .toBeLessThanOrEqual(844);
+        expect(
+          await page.evaluate(() =>
+            document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth
+          ),
+        ).toBe(true);
+        await mobileValueOption.click();
+        await expect(page.getByLabel("Variable name", { exact: true }))
+          .toBeFocused();
+        if (width === 390) {
+          await page.screenshot({
+            path: test.info().outputPath("variable-name-value-390px.png"),
+            fullPage: true,
+          });
+        }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("tablist", { name: "Studio mode" })
+          .getByRole("tab", { name: "Design", exact: true }).click();
+        await page.getByRole("button", { name: "Input", exact: true }).click();
+        await expect(page.getByLabel("Variable name", { exact: true }))
+          .toBeFocused();
+        if (width === 390) {
+          await page.screenshot({
+            path: test.info().outputPath("variable-name-design-390px.png"),
+            fullPage: true,
+          });
+        }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.getByRole("tablist", { name: "Studio mode" })
         .getByRole("tab", { name: "Variables", exact: true }).click();
@@ -1678,9 +1706,11 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("button", { name: "input_1", exact: true }))
         .toHaveCount(0);
       await pendingName.fill("discarded");
-      await pendingName.press("Escape");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(page.getByRole("button", { name: "Save", exact: true }))
-        .toBeEnabled();
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "input_1", exact: true }))
+        .toHaveCount(0);
       await addStudioTypedInput(page, "minimum", "integer", "0");
       await addStudioInput(page, "minimum");
 

@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "saved-sql-route", "late-query-response", "composition-golden", "composition-stale", "composition-studio", "composition-metric", "composition-binding-rebind", "composition-scalar-state", "composition-input-validation", "composition-source-acl-isolation", "native-zoom-200", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "saved-sql-route", "late-query-response", "composition-golden", "composition-stale", "composition-studio", "composition-variable-name", "composition-metric", "composition-binding-rebind", "composition-scalar-state", "composition-input-validation", "composition-source-acl-isolation", "native-zoom-200", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "navigation", "screenshot", or "full"
@@ -297,6 +297,9 @@ case "$TEST_TYPE" in
   composition-studio)
     run_e2e_task composition-studio "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
+  composition-variable-name)
+    run_e2e_task composition-variable-name "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
   composition-binding-rebind)
     run_e2e_task composition-binding-rebind "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
@@ -361,7 +364,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|saved-sql-route|late-query-response|composition-golden|composition-stale|composition-studio|composition-metric|composition-binding-rebind|composition-scalar-state|composition-input-validation|composition-source-acl-isolation|native-zoom-200|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|saved-sql-route|late-query-response|composition-golden|composition-stale|composition-studio|composition-variable-name|composition-metric|composition-binding-rebind|composition-scalar-state|composition-input-validation|composition-source-acl-isolation|native-zoom-200|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
     exit 1
     ;;
 esac
