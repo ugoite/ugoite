@@ -190,8 +190,19 @@ impl SqlQueryRequest {
                 *value = Value::Number(normalized);
             }
         }
-        let bytes = serde_json::to_vec(&(&parameters, effective_types))
-            .map_err(SqlQueryError::Serialize)?;
+        let bytes = if self.form_binding_guards.is_empty() && self.binding_base.is_none() {
+            serde_json::to_vec(&(&parameters, effective_types))
+        } else if self.binding_base.is_none() {
+            serde_json::to_vec(&(&parameters, effective_types, &self.form_binding_guards))
+        } else {
+            serde_json::to_vec(&(
+                &parameters,
+                effective_types,
+                &self.binding_base,
+                &self.form_binding_guards,
+            ))
+        }
+        .map_err(SqlQueryError::Serialize)?;
         fingerprint(&bytes)
     }
 
@@ -781,6 +792,53 @@ mod tests {
                 )]))
                 .expect("typed integer fingerprint"),
             "the declared SQL argument type remains bound"
+        );
+
+        let bound_request = SqlQueryRequest {
+            sql: "SELECT * FROM \"Expense\"".to_string(),
+            parameters: Map::from_iter([("minimum".to_string(), serde_json::json!(0))]),
+            parameter_types: BTreeMap::from([("minimum".to_string(), "float".to_string())]),
+            binding_base: Some(SavedSqlRevisionRef {
+                id: "base-query".to_string(),
+                revision_id: "base-revision".to_string(),
+            }),
+            form_binding_guards: vec![SqlFormBindingGuard {
+                name: "Expense".to_string(),
+                form_id: "form-a".to_string(),
+            }],
+            ..SqlQueryRequest::default()
+        };
+        let bound_types = BTreeMap::from([("minimum".to_string(), "float".to_string())]);
+        let original_bound_fingerprint = bound_request
+            .typed_parameter_fingerprint(&bound_types)
+            .expect("bound request fingerprint");
+        let changed_binding_base = SqlQueryRequest {
+            binding_base: Some(SavedSqlRevisionRef {
+                id: "base-query".to_string(),
+                revision_id: "different-revision".to_string(),
+            }),
+            ..bound_request.clone()
+        };
+        assert_ne!(
+            original_bound_fingerprint,
+            changed_binding_base
+                .typed_parameter_fingerprint(&bound_types)
+                .expect("changed binding-base fingerprint"),
+            "the binding-base revision remains bound"
+        );
+        let changed_form_guard = SqlQueryRequest {
+            form_binding_guards: vec![SqlFormBindingGuard {
+                name: "Expense".to_string(),
+                form_id: "different-form".to_string(),
+            }],
+            ..bound_request
+        };
+        assert_ne!(
+            original_bound_fingerprint,
+            changed_form_guard
+                .typed_parameter_fingerprint(&bound_types)
+                .expect("changed Form guard fingerprint"),
+            "the resolved Form identity remains bound"
         );
     }
 
