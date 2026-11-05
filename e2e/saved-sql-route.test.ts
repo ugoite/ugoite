@@ -1172,7 +1172,7 @@ test.describe("Saved SQL route", () => {
         "SELECT COUNT(*)",
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        'WHERE "_ugoite_id" = $entry_id',
+        /WHERE\s+(?:\("_ugoite_id"\s*=\s*\$entry_id(?![A-Za-z0-9_])\)|"_ugoite_id"\s*=\s*\$entry_id(?![A-Za-z0-9_]))/,
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'GROUP BY "_ugoite_id"',
