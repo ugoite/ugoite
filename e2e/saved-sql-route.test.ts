@@ -583,9 +583,14 @@ test.describe("Saved SQL route", () => {
 
       await openAndClose("Arguments");
     } finally {
-      await request.delete(
+      const deleteResponse = await request.delete(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
       );
+      expect(
+        deleteResponse.ok(),
+        `Failed to delete relation-free SQL fixture (${deleteResponse.status()}): ${await deleteResponse
+          .text()}`,
+      ).toBe(true);
     }
   });
 
