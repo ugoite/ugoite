@@ -75,6 +75,17 @@ bounded EXISTS edit shape. It does not establish editing or meaning agreement
 across the full admitted SQL grammar; S-02 and `coverage_complete: false`
 remain unchanged.
 
+A second existing-query slice loads `SELECT (SELECT 1) AS value` from SQL text
+and changes only the nested literal to produce `SELECT (SELECT 2) AS value`.
+The exact result is admitted, planned, and executed through every Rust corpus
+stage with one row and one column containing `2`. The WASM-backed editor test
+uses the parsed subquery/query/select/list/item ancestry and source range to
+select the nested literal, verifies the exact edit and diagnostics, and undoes
+to the original SQL. The Saved SQL browser journey verifies the exact plan
+request, result value, save/reload, and repeated result. This is still only one
+scalar-subquery projection shape; all other admitted grammar and full S-02
+coverage remain open.
+
 The separate
 [`sql-document-parser-parity.json`](../../../shared/sql/sql-document-parser-parity.json)
 corpus establishes parser parity only. Both parser entry points use
