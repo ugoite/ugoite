@@ -1436,9 +1436,29 @@ test.describe("Saved SQL route", () => {
         `FROM "${alternateFormName}"`,
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
+        "SELECT COUNT(*)",
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        'WHERE "_ugoite_id" = $entry_id',
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
         'GROUP BY "_ugoite_id"',
       );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        'ORDER BY "_ugoite_id" ASC',
+      );
       await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
+      const retainedArguments = await open("Arguments");
+      await expect(
+        retainedArguments.getByRole("textbox", {
+          name: "Default for entry_id",
+          exact: true,
+        }),
+      ).toHaveValue(entryId);
+      await retainedArguments.getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).last().click();
       await page.getByLabel("Query name").fill(queryName);
       const saveButton = page.getByRole("button", {
         name: "Save",
