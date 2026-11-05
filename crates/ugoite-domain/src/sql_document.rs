@@ -19729,7 +19729,10 @@ mod tests {
             ),
         )
         .expect("the added outer condition can be removed independently");
-        assert_eq!(removed_condition.document.source, source);
+        assert_eq!(
+            removed_condition.document.source,
+            "SELECT COUNT((SELECT SUM(inner_value) FILTER (WHERE inner_value > 0) FROM inner_items)) FILTER (WHERE (outer_value > 0)) FROM outer_items"
+        );
         assert!(removed_condition
             .document
             .source
