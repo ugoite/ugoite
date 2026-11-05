@@ -564,14 +564,8 @@ test.describe("Saved SQL route", () => {
       );
       await nestedSelect.click();
       await tree.getByRole("button", { name: "Add filter clause" }).click();
-      const nestedSelectId = await nestedSelect.getAttribute(
-        "data-sql-document-node",
-      );
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      const refreshedNestedSelect = tree.locator(
-        `[role="treeitem"][data-sql-document-node="${nestedSelectId}"]`,
-      );
-      const whereTrue = refreshedNestedSelect.locator(
+      const whereTrue = tree.locator(
         '[role="treeitem"]:has(> code[aria-label$="WHERE TRUE"])',
       );
       const trueLiteral = whereTrue.locator(
