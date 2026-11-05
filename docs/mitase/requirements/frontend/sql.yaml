@@ -257,7 +257,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.shared-structure-actions
-                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: complex admitted Form query keeps shared SQL actions reachable" } }
           - id: typed-default-create
             adapter: typescript
