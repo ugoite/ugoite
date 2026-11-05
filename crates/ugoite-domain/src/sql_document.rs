@@ -19637,8 +19637,7 @@ mod tests {
             inner_scope.where_clause_node_id
         );
         let scope_clause_source = |scope: &SqlDocumentConditionScope| {
-            document
-                .nodes[scope.where_clause_node_id.unwrap() as usize]
+            document.nodes[scope.where_clause_node_id.unwrap() as usize]
                 .range
                 .and_then(|range| document.source_slice(range))
                 .expect("FILTER scope has its own WHERE source")
@@ -19668,9 +19667,7 @@ mod tests {
                             },
                         },
                         operator: SqlDocumentFilterOperator::Gt,
-                        value: Some(SqlDocumentSemanticLiteral::Number {
-                            value: "0".into(),
-                        }),
+                        value: Some(SqlDocumentSemanticLiteral::Number { value: "0".into() }),
                     },
                 }],
             ),
@@ -19733,9 +19730,10 @@ mod tests {
         )
         .expect("the added outer condition can be removed independently");
         assert_eq!(removed_condition.document.source, source);
-        assert!(removed_condition.document.source.contains(
-            "SUM(inner_value) FILTER (WHERE inner_value > 0)"
-        ));
+        assert!(removed_condition
+            .document
+            .source
+            .contains("SUM(inner_value) FILTER (WHERE inner_value > 0)"));
 
         let removed_outer_filter = apply_sql_document_semantic_edit_transaction(
             source,
