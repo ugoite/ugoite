@@ -309,7 +309,9 @@ test.describe("Saved SQL route", () => {
       await expect(trueLiteral).not.toHaveAttribute("aria-expanded", "true");
       await trueLiteral.click();
       await tree.getByLabel("Expression value").selectOption("literal");
-      await tree.getByLabel("Value type").selectOption("boolean");
+      await tree.getByRole("region", { name: "Value", exact: true })
+        .getByRole("combobox", { name: "Value type", exact: true })
+        .selectOption("boolean");
       await tree.getByRole("combobox", { name: "Value" }).selectOption(
         "false",
       );
