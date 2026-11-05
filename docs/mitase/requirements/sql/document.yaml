@@ -150,8 +150,9 @@ requirements:
           support guarded inverse edits, and preserve incomplete or
           planner-invalid drafts for correction. The editor does not claim executor admission;
           planning remains authoritative for physical type and operator
-          validity. Parameter values remain exact decimal strings across the
-          protocol.
+          validity. Each registered aggregate's typed FILTER condition belongs
+          to that function's AST FILTER, including in nested aggregate calls.
+          Parameter values remain exact decimal strings across the protocol.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
