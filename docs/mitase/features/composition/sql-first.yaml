@@ -729,6 +729,10 @@ features:
                 criterion: REQ-COMP-009#criterion.single-typed-variable-graph
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
 
           - id: shared-argument-browser-persistence
             adapter: typescript
