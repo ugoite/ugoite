@@ -272,9 +272,10 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("@smoke SQL Workspace creates, runs, saves, and reloads the exact EXISTS query", async ({ page }) => {
-    const existsSql = "SELECT 1 WHERE EXISTS (SELECT 1)";
-    const queryName = `Exists round trip ${Date.now()}`;
+  test("@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored EXISTS query", async ({ page }) => {
+    const initialSql = "SELECT 1 WHERE EXISTS (SELECT 1)";
+    const editedSql = "SELECT 1 WHERE EXISTS (SELECT 1 WHERE FALSE)";
+    const queryName = `Exists edit round trip ${Date.now()}`;
     let savedSqlId: string | undefined;
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
@@ -284,8 +285,39 @@ test.describe("Saved SQL route", () => {
         name: "SQL",
         exact: true,
       });
-      await sqlEditor.fill(existsSql);
-      await expect(sqlEditor).toContainText(existsSql);
+      await sqlEditor.fill(initialSql);
+      await expect(sqlEditor).toContainText(initialSql);
+      await page.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      await page.getByRole("button", { name: "SQL tree", exact: true })
+        .click();
+      const tree = page.getByRole("dialog", { name: "SQL tree" });
+      await tree.locator(
+        '[role=treeitem]:has(code[aria-label="SELECT: SELECT 1"])',
+      ).click();
+      await tree.getByRole("button", { name: "Add filter clause" }).click();
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await tree.getByRole("treeitem", { name: /TRUE/ }).click();
+      await tree.getByLabel("Expression value").selectOption("literal");
+      await tree.getByLabel("Value type").selectOption("boolean");
+      await tree.getByRole("combobox", { name: "Value" }).selectOption(
+        "false",
+      );
+      const editedPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === editedSql
+      );
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(sqlEditor.locator(".cm-content")).toHaveText(editedSql);
+      const editedPlanResponse = await editedPlan;
+      expect(editedPlanResponse.ok(), await editedPlanResponse.text()).toBe(
+        true,
+      );
+
+      await page.getByRole("button", { name: "SQL", exact: true }).click();
+      await expect(sqlEditor).toContainText(editedSql);
 
       const firstRun = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
@@ -300,7 +332,7 @@ test.describe("Saved SQL route", () => {
         rows: Record<string, unknown>[];
       };
       expect(firstOutput.columns).toHaveLength(1);
-      expect(firstOutput.rows).toEqual([{ [firstOutput.columns[0]]: 1 }]);
+      expect(firstOutput.rows).toEqual([]);
 
       await page.getByLabel("Query name").fill(queryName);
       const createSavedQuery = page.waitForResponse((response) =>
@@ -317,16 +349,26 @@ test.describe("Saved SQL route", () => {
         new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
       );
 
+      const reloadPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === editedSql
+      );
       await page.reload({ waitUntil: "domcontentloaded" });
+      const reloadPlanResponse = await reloadPlan;
+      expect(reloadPlanResponse.ok(), await reloadPlanResponse.text()).toBe(
+        true,
+      );
       await expect(page.getByRole("heading", { level: 1, name: queryName }))
         .toBeVisible();
       await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
-        .toContainText(existsSql);
+        .toContainText(editedSql);
       const persisted = await page.request.get(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
       );
       expect(persisted.ok()).toBe(true);
-      expect((await persisted.json() as { sql: string }).sql).toBe(existsSql);
+      expect((await persisted.json() as { sql: string }).sql).toBe(editedSql);
 
       const reloadRun = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
@@ -341,7 +383,7 @@ test.describe("Saved SQL route", () => {
         rows: Record<string, unknown>[];
       };
       expect(reloadOutput.columns).toHaveLength(1);
-      expect(reloadOutput.rows).toEqual([{ [reloadOutput.columns[0]]: 1 }]);
+      expect(reloadOutput.rows).toEqual([]);
       await expect(
         page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
       ).toBeVisible();

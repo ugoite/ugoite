@@ -198,6 +198,20 @@
       ]
     },
     {
+      "id": "exists-nested-where-false",
+      "sql": "SELECT 1 WHERE EXISTS (SELECT 1 WHERE FALSE)",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": []
+    },
+    {
       "id": "in-projection-rejected",
       "sql": "SELECT 1 IN (SELECT 1) AS value",
       "context": "authorized-empty-relations",

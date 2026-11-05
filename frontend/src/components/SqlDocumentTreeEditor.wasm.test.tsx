@@ -157,6 +157,95 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(restored.document.source).toBe(initial);
   });
 
+  it("edits an SQL-authored EXISTS subquery through the tree and restores it with WASM undo", async () => {
+    const initial = "SELECT 1 WHERE EXISTS (SELECT 1)";
+    const initialDocument = await parseSqlDocument(initial);
+    const subquery = initialDocument.nodes.find((node) =>
+      node.kind === "subquery_expression"
+    );
+    const nestedQuery = initialDocument.nodes.find((node) =>
+      node.kind === "query" && node.parent === subquery?.id
+    );
+    const nestedSelect = initialDocument.nodes.find((node) =>
+      node.kind === "select" && node.parent === nestedQuery?.id &&
+      node.range && initial.slice(node.range.start, node.range.end) ===
+        "SELECT 1"
+    );
+    expect(nestedSelect).toBeDefined();
+    const addWhere = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: initialDocument.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "add_where_clause",
+        node_id: nestedSelect!.id,
+        expected_kind: "select",
+      }],
+    });
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const nestedSelectItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(nestedSelect!.id),
+    );
+    expect(nestedSelectItem).toBeDefined();
+    fireEvent.click(nestedSelectItem!);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add filter clause" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const withWhere = "SELECT 1 WHERE EXISTS (SELECT 1 WHERE TRUE)";
+    await waitFor(() => expect(sql()).toBe(withWhere));
+    const whereDocument = await parseSqlDocument(sql());
+    const truth = whereDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.range &&
+      sql().slice(node.range.start, node.range.end) === "TRUE"
+    );
+    expect(truth).toBeDefined();
+    const replaceTruth = await applySqlDocumentSemanticEditTransaction(
+      sql(),
+      {
+        contract_version: whereDocument.contract_version,
+        expected_source: sql(),
+        edits: [{
+          kind: "replace_literal",
+          node_id: truth!.id,
+          expected_kind: "literal_expression",
+          literal: { kind: "boolean", value: false },
+        }],
+      },
+    );
+    const truthItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(truth!.id)
+    );
+    expect(truthItem).toBeDefined();
+    fireEvent.click(truthItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "literal" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "boolean" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Value" }), {
+      target: { value: "false" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const editedSql = "SELECT 1 WHERE EXISTS (SELECT 1 WHERE FALSE)";
+    await waitFor(() => expect(sql()).toBe(editedSql));
+    const edited = await parseSqlDocument(sql());
+    expect(edited.diagnostics).toEqual([]);
+    const restoredPredicate = await applySqlDocumentEditTransaction(
+      sql(),
+      replaceTruth.undo,
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      restoredPredicate.document.source,
+      addWhere.undo,
+    );
+    expect(restored.document.source).toBe(initial);
+  });
+
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
     const initial = "SELECT ARRAY[4, 9]";
     const document = await parseSqlDocument(initial);
