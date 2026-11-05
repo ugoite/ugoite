@@ -565,13 +565,15 @@ test.describe("Saved SQL route", () => {
       await nestedSelect.click();
       await tree.getByRole("button", { name: "Add filter clause" }).click();
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      const whereTrue = tree.locator(
-        '[role="treeitem"]:has(> code[aria-label$="WHERE TRUE"])',
-      );
-      const trueLiteral = whereTrue.locator(
-        '[role="treeitem"]:has(> code[aria-label="Value: TRUE"]):not(:has([role="treeitem"]))',
-      );
-      await expect(trueLiteral).toHaveCount(1);
+      const trueLiteral = tree.getByRole("treeitem", {
+        name: "Value Value: TRUE",
+        exact: true,
+      }).last();
+      await expect(tree.getByRole("treeitem", {
+        name: "Value Value: TRUE",
+        exact: true,
+      })).toHaveCount(2);
+      await expect(trueLiteral).not.toHaveAttribute("aria-expanded", "true");
       await trueLiteral.click();
       await tree.getByLabel("Expression value").selectOption("literal");
       await tree.getByLabel("Value type").selectOption("boolean");
