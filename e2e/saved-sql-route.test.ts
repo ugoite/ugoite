@@ -1397,15 +1397,33 @@ test.describe("Saved SQL route", () => {
 
       await openAndClose("Arguments");
     } finally {
-      if (savedSqlId) {
-        await request.delete(
-          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        );
-      }
-      if (entryId) {
-        await request.delete(
-          getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
-        );
+      const cleanupResults = await Promise.all([
+        ...(savedSqlId
+          ? [{
+            resource: "Saved SQL",
+            path: `/spaces/${spaceId}/sql/${savedSqlId}`,
+            response: request.delete(
+              getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+            ),
+          }]
+          : []),
+        ...(entryId
+          ? [{
+            resource: "Entry",
+            path: `/spaces/${spaceId}/entries/${entryId}`,
+            response: request.delete(
+              getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
+            ),
+          }]
+          : []),
+      ]);
+      for (const cleanup of cleanupResults) {
+        const response = await cleanup.response;
+        const body = await response.text();
+        expect(
+          response.ok(),
+          `DELETE ${cleanup.path} (${cleanup.resource}) returned HTTP ${response.status()}: ${body}`,
+        ).toBe(true);
       }
     }
   });
