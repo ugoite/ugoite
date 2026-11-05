@@ -1439,7 +1439,9 @@ test.describe("Saved SQL route", () => {
         "SELECT COUNT(*)",
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        /WHERE\s+(?:\("_ugoite_id"\s*=\s*\$entry_id(?![A-Za-z0-9_])\)|"_ugoite_id"\s*=\s*\$entry_id(?![A-Za-z0-9_]))/,
+        new RegExp(
+          `WHERE\\s+\\(*\\s*"_ugoite_id"\\s*=\\s*\\$entry_id\\s*\\)*\\s+AND\\s+\\(*\\s*"_ugoite_id"\\s*=\\s*'${entryId}'\\s*\\)*`,
+        ),
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'GROUP BY "_ugoite_id"',
@@ -1449,6 +1451,12 @@ test.describe("Saved SQL route", () => {
       );
       await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
       const retainedArguments = await open("Arguments");
+      await expect(
+        retainedArguments.getByRole("checkbox", {
+          name: "Default for entry_id",
+          exact: true,
+        }),
+      ).toBeChecked();
       await expect(
         retainedArguments.getByRole("textbox", {
           name: "Default for entry_id",
