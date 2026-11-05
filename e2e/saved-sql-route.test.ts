@@ -297,7 +297,11 @@ test.describe("Saved SQL route", () => {
       ).click();
       await tree.getByRole("button", { name: "Add filter clause" }).click();
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      await tree.getByRole("treeitem", { name: /TRUE/ }).click();
+      const trueLiteral = tree.locator(
+        '[role="treeitem"]:has(> code[aria-label="Value: TRUE"])',
+      );
+      await expect(trueLiteral).toHaveCount(1);
+      await trueLiteral.click();
       await tree.getByLabel("Expression value").selectOption("literal");
       await tree.getByLabel("Value type").selectOption("boolean");
       await tree.getByRole("combobox", { name: "Value" }).selectOption(
