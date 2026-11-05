@@ -250,15 +250,6 @@ requirements:
                 criterion: REQ-FE-063#criterion.shared-structure-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable" } }
-          - id: browser-complex-authorized-sql-form-bound-actions
-            adapter: typescript
-            path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-063 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-063#criterion.shared-structure-actions
-                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable" } }
           - id: typed-default-create
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
@@ -357,6 +348,10 @@ requirements:
         kind: behavior
         statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: shared-workspace-actions
+        kind: behavior
+        statement: The saved SQL detail route presents the shared SQL Workspace's Form, Columns, Filter, Sort, Structure, and Arguments actions for an authorized Form-bound query; opening and closing these actions leaves the query text unchanged.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: form-binding-identifiers
         kind: behavior
         statement: Saved SQL Form-binding status uses the saved and current human-readable Form names. Immutable Form IDs are available only inside a closed per-binding technical-details disclosure and stay out of the default visible and accessible text.
@@ -385,7 +380,7 @@ requirements:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, shared workspace actions, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
@@ -476,6 +471,15 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline" } }
+          - id: browser-shared-workspace-actions
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.shared-workspace-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable" } }
 
   - id: REQ-FE-080
     title: Shared SQL Workspace

@@ -1496,7 +1496,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable", async ({ page, request }) => {
+  test("REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable", async ({ page, request }) => {
     const timestamp = Date.now();
     const queryName = `Complex Form query ${timestamp}`;
     const formName = `SQL_Workspace_Alternate_${timestamp}`;
