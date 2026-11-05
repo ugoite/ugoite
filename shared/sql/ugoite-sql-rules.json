@@ -802,7 +802,28 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL Workspace creates, runs, saves, and reloads the exact EXISTS query"
+              "@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored EXISTS query"
+            ]
+          ]
+        },
+        {
+          "id": "existing-exists-subquery-edit",
+          "selectors": [
+            [
+              "crates/ugoite-iceberg/src/query_context.rs",
+              "shared_sql_admission_corpus_records_each_runtime_stage"
+            ],
+            [
+              "shared/sql/sql-admission-corpus.json",
+              "exists-nested-where-false"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "edits an SQL-authored EXISTS subquery through the tree and restores it with WASM undo"
+            ],
+            [
+              "e2e/saved-sql-route.test.ts",
+              "@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored EXISTS query"
             ]
           ]
         },
