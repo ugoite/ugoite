@@ -292,13 +292,23 @@ test.describe("Saved SQL route", () => {
       await page.getByRole("button", { name: "SQL tree", exact: true })
         .click();
       const tree = page.getByRole("dialog", { name: "SQL tree" });
-      await tree.locator(
+      const nestedSelect = tree.locator(
         '[role=treeitem]:has(code[aria-label="SELECT: SELECT 1"])',
-      ).click();
+      );
+      await nestedSelect.click();
       await tree.getByRole("button", { name: "Add filter clause" }).click();
+      const nestedSelectId = await nestedSelect.getAttribute(
+        "data-sql-document-node",
+      );
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      const trueLiteral = tree.locator(
-        '[role="treeitem"]:has(> code[aria-label="Value: TRUE"])',
+      const refreshedNestedSelect = tree.locator(
+        `[role="treeitem"][data-sql-document-node="${nestedSelectId}"]`,
+      );
+      const whereTrue = refreshedNestedSelect.locator(
+        '[role="treeitem"]:has(> code[aria-label$="WHERE TRUE"])',
+      );
+      const trueLiteral = whereTrue.locator(
+        '[role="treeitem"]:has(> code[aria-label="Value: TRUE"]):not(:has([role="treeitem"]))',
       );
       await expect(trueLiteral).toHaveCount(1);
       await trueLiteral.click();
