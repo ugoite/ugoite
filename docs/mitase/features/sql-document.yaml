@@ -941,6 +941,11 @@ features:
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
             selector: { kind: test, name: constructs a parameter LIMIT through the actual WASM tree editor }
             claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: constructs a parameter LIMIT through the actual WASM tree editor } } }]
+          - id: limit-root-cte-query-preservation-ui-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: preserves the full CTE query when editing the root LIMIT through actual WASM }
+            claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.relational-constructors, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: preserves the full CTE query when editing the root LIMIT through actual WASM } } }]
           - id: cte-alias-tree-ui-wasm
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
