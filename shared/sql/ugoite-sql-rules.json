@@ -789,7 +789,7 @@
           "selectors": [
             [
               "e2e/saved-sql-route.test.ts",
-              "REQ-FE-063 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable"
+              "REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable"
             ]
           ]
         },
