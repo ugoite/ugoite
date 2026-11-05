@@ -430,15 +430,18 @@ test.describe("Saved SQL route", () => {
         .click();
       const tree = page.getByRole("dialog", { name: "SQL tree" });
       const nestedSelect = tree.locator(
-        '[role=treeitem]:has(code[aria-label="SELECT: SELECT 1"])',
+        '[role=treeitem]:has(> code[aria-label="SELECT: SELECT 1"])',
       );
-      const nestedLiteral = nestedSelect.getByRole("treeitem", {
-        name: /Value: 1/,
-      });
+      const nestedLiteral = nestedSelect.locator(
+        '[role=treeitem]:has(> code[aria-label="Value: 1"])',
+      );
+      await expect(nestedLiteral).toHaveCount(1);
       await nestedLiteral.click();
       await tree.getByLabel("Expression value").selectOption("literal");
       await tree.getByLabel("Value type").selectOption("number");
-      await tree.getByRole("combobox", { name: "Value" }).selectOption("2");
+      const numberInput = tree.getByLabel("Number", { exact: true });
+      await expect(numberInput).toHaveCount(1);
+      await numberInput.fill("2");
       const editedPlan = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname ===

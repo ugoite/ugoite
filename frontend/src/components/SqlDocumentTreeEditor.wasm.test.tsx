@@ -298,7 +298,7 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.change(screen.getByLabelText("Value type"), {
       target: { value: "number" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Value" }), {
+    fireEvent.input(screen.getByLabelText("Number"), {
       target: { value: "2" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
