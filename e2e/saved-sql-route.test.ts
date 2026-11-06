@@ -579,9 +579,9 @@ test.describe("Saved SQL route", () => {
       await tree.getByRole("region", { name: "Value", exact: true })
         .getByRole("combobox", { name: "Value type", exact: true })
         .selectOption("boolean");
-      await tree.getByRole("combobox", { name: "Value" }).selectOption(
-        "false",
-      );
+      await tree.getByRole("region", { name: "Value", exact: true })
+        .getByRole("combobox", { name: "Value", exact: true })
+        .selectOption("false");
       const editedPlan = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname ===
