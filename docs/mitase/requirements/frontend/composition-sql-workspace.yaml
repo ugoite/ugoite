@@ -190,9 +190,10 @@ requirements:
           continuation request in both saved runtime and Design; page responses
           are not browser-sliced or aggregated. The SQL result Criterion remains
           unverified: the coverage does not distinguish unavailable data from
-          an execution error. The defensive scalar_column_count_mismatch
-          validator is not reachable through a valid Composition save/run path
-          (issue #4810). The broader
+          an execution error. UI evidence for the defensive
+          scalar_column_count_mismatch state remains unverified; source review
+          found its validator is not reachable through a valid Composition
+          save/run path (issue #4810). The broader
           Composition SQL argument requirement also remains unverified because
           no current test covers host-side variable and Input creation in the
           same draft update.
