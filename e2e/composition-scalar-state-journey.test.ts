@@ -491,12 +491,23 @@ async function openOwnerPage(
   browser: Browser,
   context: BrowserContext,
   seed: SeedState,
+  edit = false,
 ) {
   const freshContext = await browser.newContext({
     storageState: await context.storageState(),
   });
   const page = await freshContext.newPage();
   await openSavedComposition(page, seed);
+  if (edit) {
+    await page.goto(
+      getFrontendUrl(
+        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}/edit`,
+      ),
+      { waitUntil: "domcontentloaded" },
+    );
+    await expect(page.locator(".compositionGraphDesignValue").first())
+      .toBeVisible({ timeout: scalarResultTimeoutMs });
+  }
   return { freshContext, page };
 }
 
@@ -536,112 +547,159 @@ test.describe("Composition scalar state journey", () => {
 
   test("scalar_result_distinguishes_zero_rows_null_and_zero", async ({ browser, context }) => {
     test.setTimeout(120_000);
-    const { freshContext: aggregateContext, page: aggregatePage } =
-      await openOwnerPage(browser, context, seeds.aggregates);
-    try {
-      const nullOutput = metricOutput(aggregatePage, "null_result");
-      await expect(nullOutput).toHaveText(
-        await aggregatePage.locator("html").getAttribute("lang").then((
-          locale,
-        ) => locale === "ja" ? "データなし" : "No data"),
-        { timeout: scalarResultTimeoutMs },
-      );
-      await expect(metricOutput(aggregatePage, "zero_result")).toHaveText("0", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await expect(nullOutput).not.toHaveText("0", {
-        timeout: scalarResultTimeoutMs,
-      });
-    } finally {
-      await aggregateContext.close();
-    }
+    const observations: Array<unknown> = [];
+    for (const edit of [false, true]) {
+      const { freshContext: aggregateContext, page: aggregatePage } =
+        await openOwnerPage(browser, context, seeds.aggregates, edit);
+      let aggregateStates: { null: string | null; zero: string | null };
+      try {
+        const nullOutput = metricOutput(aggregatePage, "null_result");
+        await expect(nullOutput).toHaveText(
+          await aggregatePage.locator("html").getAttribute("lang").then((
+            locale,
+          ) => locale === "ja" ? "データなし" : "No data"),
+          { timeout: scalarResultTimeoutMs },
+        );
+        const zeroOutput = metricOutput(aggregatePage, "zero_result");
+        await expect(zeroOutput).toHaveText("0", {
+          timeout: scalarResultTimeoutMs,
+        });
+        await expect(nullOutput).not.toHaveText("0", {
+          timeout: scalarResultTimeoutMs,
+        });
+        aggregateStates = {
+          null: await nullOutput.textContent(),
+          zero: await zeroOutput.textContent(),
+        };
+      } finally {
+        await aggregateContext.close();
+      }
 
-    const { freshContext, page } = await openOwnerPage(
-      browser,
-      context,
-      seeds.emptyScalar,
-    );
-    try {
-      const minimumInput = page.getByRole("textbox", {
-        name: "minimum",
-        exact: true,
-      });
-      await expect(minimumInput).toHaveValue("10");
-      await expect(metricOutput(page, "zero_rows")).toHaveText("10", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await minimumInput.fill("-1");
-      const zeroRowsSection = page.getByRole("region", {
-        name: "scalar_states",
-        exact: true,
-      });
-      await expect(zeroRowsSection.getByRole("alert")).toContainText(
-        await page.locator("html").getAttribute("lang").then((locale) =>
-          locale === "ja"
-            ? "指標の結果がありません。"
-            : "The metric returned no rows."
-        ),
-        { timeout: scalarResultTimeoutMs },
+      const { freshContext, page } = await openOwnerPage(
+        browser,
+        context,
+        seeds.emptyScalar,
+        edit,
       );
-      await expect(page.getByRole("region", {
-        name: "zero_rows",
-        exact: true,
-      })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
-      await minimumInput.fill("10");
-      await expect(metricOutput(page, "zero_rows")).toHaveText("10", {
-        timeout: scalarResultTimeoutMs,
-      });
+      try {
+        const minimumInput = page.getByRole("textbox", {
+          name: "minimum",
+          exact: true,
+        });
+        await expect(minimumInput).toHaveValue("10");
+        const zeroRowsOutput = metricOutput(page, "zero_rows");
+        await expect(zeroRowsOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
+        await minimumInput.fill("-1");
+        const zeroRowsSection = page.getByRole("region", {
+          name: "scalar_states",
+          exact: true,
+        });
+        const zeroRowsAlert = zeroRowsSection.getByRole("alert");
+        await expect(zeroRowsAlert).toContainText(
+          await page.locator("html").getAttribute("lang").then((locale) =>
+            locale === "ja"
+              ? "指標の結果がありません。"
+              : "The metric returned no rows."
+          ),
+          { timeout: scalarResultTimeoutMs },
+        );
+        const zeroRowsMessage = await zeroRowsAlert.textContent();
+        const zeroRowsMetric = page.getByRole("region", {
+          name: "zero_rows",
+          exact: true,
+        });
+        await expect(zeroRowsMetric).toHaveCount(0, {
+          timeout: scalarResultTimeoutMs,
+        });
+        const zeroRowsMetricCount = await zeroRowsMetric.count();
+        await minimumInput.fill("10");
+        await expect(zeroRowsOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
 
-      const maximumInput = page.getByRole("textbox", {
-        name: "maximum",
-        exact: true,
-      });
-      await expect(maximumInput).toHaveValue("10");
-      await expect(metricOutput(page, "multiple_rows")).toHaveText("10", {
-        timeout: scalarResultTimeoutMs,
-      });
-      const failedEvaluation = page.waitForResponse((response) => {
-        if (
-          response.request().method() !== "POST" ||
-          !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-        ) return false;
-        return response.request().postDataJSON().variables?.maximum === 20;
-      });
-      await maximumInput.fill("20");
-      const result = await (await failedEvaluation).json();
-      expect(result.ok).toBe(false);
-      expect(result.query_diagnostics).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          variable_id: "multiple_rows",
-          result_diagnostic: expect.objectContaining({
+        const maximumInput = page.getByRole("textbox", {
+          name: "maximum",
+          exact: true,
+        });
+        await expect(maximumInput).toHaveValue("10");
+        const multipleRowsOutput = metricOutput(page, "multiple_rows");
+        await expect(multipleRowsOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
+        const failedEvaluation = page.waitForResponse((response) => {
+          if (
+            response.request().method() !== "POST" ||
+            !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+          ) return false;
+          return response.request().postDataJSON().variables?.maximum === 20;
+        });
+        await maximumInput.fill("20");
+        const result = await (await failedEvaluation).json();
+        expect(result.ok).toBe(false);
+        const multipleRowsDiagnostic = result.query_diagnostics.find((
+          diagnostic: { variable_id: string },
+        ) => diagnostic.variable_id === "multiple_rows");
+        expect(
+          multipleRowsDiagnostic?.result_diagnostic?.result_diagnostic?.code,
+        )
+          .toBe("scalar_multiple_rows");
+        expect(result.query_diagnostics).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            variable_id: "multiple_rows",
             result_diagnostic: expect.objectContaining({
-              code: "scalar_multiple_rows",
+              result_diagnostic: expect.objectContaining({
+                code: "scalar_multiple_rows",
+              }),
             }),
           }),
-        }),
-      ]));
-      const multipleRowsSection = page.getByRole("region", {
-        name: "scalar_states",
-        exact: true,
-      });
-      await expect(multipleRowsSection.getByRole("alert")).toContainText(
-        await page.locator("html").getAttribute("lang").then((locale) =>
-          locale === "ja"
-            ? "指標の結果が複数行です。"
-            : "The metric returned more than one row."
-        ),
-        { timeout: scalarResultTimeoutMs },
-      );
-      await expect(page.getByRole("region", {
-        name: "multiple_rows",
-        exact: true,
-      })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
-      await maximumInput.fill("10");
-      await expect(metricOutput(page, "multiple_rows")).toHaveText("10", {
-        timeout: scalarResultTimeoutMs,
-      });
-    } finally {
-      await freshContext.close();
+        ]));
+        const multipleRowsSection = page.getByRole("region", {
+          name: "scalar_states",
+          exact: true,
+        });
+        const multipleRowsAlert = multipleRowsSection.getByRole("alert");
+        await expect(multipleRowsAlert).toContainText(
+          await page.locator("html").getAttribute("lang").then((locale) =>
+            locale === "ja"
+              ? "指標の結果が複数行です。"
+              : "The metric returned more than one row."
+          ),
+          { timeout: scalarResultTimeoutMs },
+        );
+        const multipleRowsMessage = await multipleRowsAlert.textContent();
+        const multipleRowsMetric = page.getByRole("region", {
+          name: "multiple_rows",
+          exact: true,
+        });
+        await expect(multipleRowsMetric).toHaveCount(0, {
+          timeout: scalarResultTimeoutMs,
+        });
+        const multipleRowsMetricCount = await multipleRowsMetric.count();
+        await maximumInput.fill("10");
+        await expect(multipleRowsOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
+        observations.push({
+          aggregate: aggregateStates,
+          zeroRows: {
+            initial: "10",
+            emptyMessage: zeroRowsMessage,
+            metricCountAfterEmpty: zeroRowsMetricCount,
+          },
+          multipleRows: {
+            initial: "10",
+            diagnostic: multipleRowsDiagnostic.result_diagnostic
+              .result_diagnostic.code,
+            message: multipleRowsMessage,
+            metricCountAfterFailure: multipleRowsMetricCount,
+          },
+        });
+      } finally {
+        await freshContext.close();
+      }
     }
+    expect(observations[1]).toEqual(observations[0]);
   });
 });
