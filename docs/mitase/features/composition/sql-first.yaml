@@ -341,7 +341,7 @@ features:
       - id: graph-workspace-read-verification
         role: verification
         facet: verification
-        responsibility: Verify explicit count and paging, obsolete-result suppression, and browser pinning before an independent inline copy.
+        responsibility: Verify explicit count and paging, obsolete-result suppression, Form schema drift recovery, and browser pinning before an independent inline copy.
         targets:
           - id: selected-sql-only
             adapter: typescript
@@ -388,6 +388,15 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" } }
+          - id: form-schema-drift-recovery
+            adapter: typescript
+            path: e2e/composition-form-schema-drift.test.ts
+            selector: { kind: test, name: "Composition fails closed after a Form schema evolves and saves a repaired revision" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver, FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-form-schema-drift.test.ts, test: "Composition fails closed after a Form schema evolves and saves a repaired revision" } }
           - id: saved-composition-components-reference-variables
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts

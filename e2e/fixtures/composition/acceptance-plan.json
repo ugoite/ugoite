@@ -70,6 +70,11 @@
           "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
           "kind": "test",
           "name": "portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement"
+        },
+        {
+          "path": "e2e/composition-form-schema-drift.test.ts",
+          "kind": "test",
+          "name": "Composition fails closed after a Form schema evolves and saves a repaired revision"
         }
       ]
     },
