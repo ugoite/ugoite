@@ -220,7 +220,13 @@ export function createCompositionDesignEvaluation(options: {
             (node) => node.id,
           ),
         );
-        setError(t("composition.queryFailed"));
+        setError(
+          response.diagnostics?.some((diagnostic) =>
+              diagnostic.code === "query_unavailable"
+            )
+            ? t("composition.bindingSourceUnavailable")
+            : t("composition.queryFailed"),
+        );
       }
     } catch {
       if (!current()) return;
