@@ -212,7 +212,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("@smoke SQL tree reorders ARRAY elements and the saved query returns the new order", async ({ page, request }) => {
+  test("@smoke SQL tree edits and executes a SQL-authored ARRAY literal draft", async ({ page, request }) => {
     const name = `Array order ${Date.now()}`;
     const created = await request.post(
       getBackendUrl(`/spaces/${spaceId}/sql`),
