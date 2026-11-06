@@ -4,6 +4,10 @@ import {
   getDefaultSpaceId,
   getFrontendUrl,
 } from "./lib/client.ts";
+import {
+  completeCompositionGraphYaml,
+  saveCompositionGraph,
+} from "./lib/composition-graph.ts";
 
 test.use({
   launchOptions: {
@@ -289,4 +293,194 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
     screenshot,
   };
   console.log(`NATIVE_ZOOM_EVIDENCE ${JSON.stringify(report)}`);
+});
+
+test("U-04 partial evidence: Composition runtime remains usable at native 200% zoom", async ({ page, request }) => {
+  const spaceId = await getDefaultSpaceId(request);
+  const name = `Native zoom runtime ${crypto.randomUUID().slice(0, 8)}`;
+  const graphYaml = await completeCompositionGraphYaml(request, spaceId, {
+    name,
+    variables: [
+      {
+        id: "first_amount",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 1 },
+      },
+      {
+        id: "second_amount",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 2 },
+      },
+      {
+        id: "total",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $first_amount + $second_amount AS total",
+          arguments: [
+            { name: "first_amount", variable: "first_amount" },
+            { name: "second_amount", variable: "second_amount" },
+          ],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "first_input", kind: "input", variable: "first_amount" },
+      { id: "second_input", kind: "input", variable: "second_amount" },
+      { id: "total_metric", kind: "metric", variable: "total" },
+    ],
+    rows: [
+      {
+        id: "first_input_row",
+        items: [{ kind: "component", component: "first_input" }],
+      },
+      {
+        id: "second_input_row",
+        items: [{ kind: "component", component: "second_input" }],
+      },
+      {
+        id: "result",
+        items: [{ kind: "component", component: "total_metric" }],
+      },
+    ],
+  });
+  const saved = await saveCompositionGraph(request, spaceId, graphYaml);
+
+  const buildInfoResponse = await page.request.get(
+    getFrontendUrl("/build-info.json"),
+  );
+  expect(buildInfoResponse.ok()).toBe(true);
+  const buildInfo = await buildInfoResponse.json() as { source_sha?: string };
+  expect(buildInfo.source_sha).toBe(Deno.env.get("UGOITE_SOURCE_SHA"));
+  const backendSourceSha = Deno.env.get("UGOITE_BACKEND_SOURCE_SHA");
+  expect(backendSourceSha).toMatch(/^[0-9a-f]{40}$/);
+
+  await page.goto(
+    getFrontendUrl(
+      `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}`,
+    ),
+    { waitUntil: "domcontentloaded" },
+  );
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const inputs = page.locator(".compositionGraphInput input");
+  const firstInput = inputs.nth(0);
+  const secondInput = inputs.nth(1);
+  await expect(inputs).toHaveCount(2);
+  await expect(firstInput).toHaveAccessibleName("first_amount");
+  await expect(secondInput).toHaveAccessibleName("second_amount");
+  const metric = page.locator(".compositionGraphMetric strong");
+  await expect(metric).toHaveText("3", { timeout: 30_000 });
+
+  const beforeNativeZoom = await measure(page);
+  expect(beforeNativeZoom.innerWidth).toBeGreaterThanOrEqual(1200);
+  expect(beforeNativeZoom.innerWidth).toBeLessThanOrEqual(1300);
+  expect(beforeNativeZoom.devicePixelRatio).toBe(1);
+  expect(beforeNativeZoom.rootZoom).toBe("1");
+  expect(beforeNativeZoom.visualViewportScale).toBe(1);
+
+  await page.bringToFront();
+  const visibleBrowserWindows = (await runXdotool([
+    "search",
+    "--onlyvisible",
+    "--class",
+    "chromium",
+  ])).split(/\s+/).filter(Boolean);
+  const focusedWindow = await runXdotool(["getwindowfocus"]);
+  expect(visibleBrowserWindows).toContain(focusedWindow);
+  for (let step = 0; step < 5; step++) {
+    await runXdotool(["key", "--clearmodifiers", "ctrl+plus"]);
+    await page.waitForTimeout(300);
+  }
+
+  const afterNativeZoom = await measure(page);
+  expect(afterNativeZoom.innerWidth).toBe(640);
+  expect(afterNativeZoom.devicePixelRatio).toBe(2);
+  expect(afterNativeZoom.rootZoom).toBe("1");
+  expect(afterNativeZoom.visualViewportScale).toBe(1);
+  expect(afterNativeZoom.horizontalOverflow).toBe(false);
+  await expect(firstInput).toBeVisible();
+  await expect(secondInput).toBeVisible();
+  const firstInputBox = await firstInput.boundingBox();
+  const secondInputBox = await secondInput.boundingBox();
+  expect(firstInputBox).toBeTruthy();
+  expect(secondInputBox).toBeTruthy();
+  expect(firstInputBox!.height).toBeGreaterThanOrEqual(44);
+  expect(secondInputBox!.height).toBeGreaterThanOrEqual(44);
+
+  await firstInput.focus();
+  await expect(firstInput).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(secondInput).toBeFocused();
+  await firstInput.fill("4");
+  await expect(firstInput).toHaveValue("4");
+  await expect(secondInput).toHaveValue("2");
+  await expect(metric).toHaveText("6", { timeout: 30_000 });
+
+  const afterInputChange = await measure(page);
+  expect(afterInputChange.innerWidth).toBe(640);
+  expect(afterInputChange.devicePixelRatio).toBe(2);
+  expect(afterInputChange.horizontalOverflow).toBe(false);
+  await expect(metric).toBeVisible();
+  await expect(metric).toBeInViewport({ ratio: 0.9 });
+  await expect(firstInput).toBeInViewport({ ratio: 0.9 });
+  await expect(secondInput).toBeInViewport({ ratio: 0.9 });
+
+  const evidenceDir = "../docs/architecture/testing/evidence";
+  await Deno.mkdir(evidenceDir, { recursive: true });
+  const screenshots = {
+    firstInput: `${evidenceDir}/composition-runtime-native-zoom-200-first-input.png`,
+    secondInput: `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
+    metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
+  };
+  await firstInput.scrollIntoViewIfNeeded();
+  await expect(firstInput).toBeInViewport({ ratio: 0.9 });
+  await page.screenshot({ path: screenshots.firstInput });
+  await secondInput.scrollIntoViewIfNeeded();
+  await expect(secondInput).toBeInViewport({ ratio: 0.9 });
+  await page.screenshot({ path: screenshots.secondInput });
+  await metric.scrollIntoViewIfNeeded();
+  await expect(metric).toBeInViewport({ ratio: 0.9 });
+  await page.screenshot({ path: screenshots.metric });
+  const report = {
+    sourceSha: buildInfo.source_sha,
+    backendSourceSha,
+    chromiumVersion: page.context().browser()?.version(),
+    nativeShortcut: "Ctrl+Plus x5 via xdotool",
+    initialViewport:
+      `${beforeNativeZoom.innerWidth}x${beforeNativeZoom.innerHeight} CSS px; DPR 1`,
+    zoomedViewport:
+      `${afterNativeZoom.innerWidth}x${afterNativeZoom.innerHeight} CSS px; DPR 2`,
+    cssZoom: "1",
+    visualViewportScale: 1,
+    horizontalOverflow: false,
+    zoomedDocumentScrollWidth: afterInputChange.documentScrollWidth,
+    zoomedBodyScrollWidth: afterInputChange.bodyScrollWidth,
+    inputs: [
+      {
+        name: "first_amount",
+        box: firstInputBox,
+      },
+      {
+        name: "second_amount",
+        box: secondInputBox,
+      },
+    ],
+    tabOrder: ["first_amount", "second_amount"],
+    metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
+    beforeNativeZoom,
+    afterNativeZoom,
+    afterInputChange,
+    screenshots,
+  };
+  console.log(`NATIVE_ZOOM_RUNTIME_EVIDENCE ${JSON.stringify(report)}`);
 });
