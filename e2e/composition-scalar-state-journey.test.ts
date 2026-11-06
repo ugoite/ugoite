@@ -16,6 +16,7 @@ import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
 } from "./lib/composition-graph.ts";
+import { parse as parseYaml } from "yaml";
 
 type SavedSqlRevision = {
   entryId: string;
@@ -504,6 +505,208 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     await waitForServers(request);
     seeds = await seedScalarStateComposition(request);
+  });
+
+  test("changing one Metric reference preserves its shared query and sibling", async ({ browser, context, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const compositionName = `Shared scalar metrics ${suffix}`;
+    const sharedSql = await createSavedSql(
+      request,
+      spaceId,
+      `Shared scalar ${suffix}`,
+      "SELECT CAST(10 AS BIGINT) AS value",
+    );
+    const alternativeSql = await createSavedSql(
+      request,
+      spaceId,
+      `Alternative scalar ${suffix}`,
+      "SELECT CAST(20 AS BIGINT) AS value",
+    );
+    const savedSqlQuery = (savedSql: SavedSqlRevision) => ({
+      kind: "saved_sql" as const,
+      entry_id: savedSql.entryId,
+      revision_id: savedSql.revisionId,
+      column: "value",
+      arguments: [],
+      form_bindings: [],
+      schema_fingerprint: "",
+    });
+    const yaml = await completeCompositionGraphYaml(request, spaceId, {
+      name: compositionName,
+      variables: [
+        {
+          id: "shared_value",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: savedSqlQuery(sharedSql),
+        },
+        {
+          id: "alternative_value",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: savedSqlQuery(alternativeSql),
+        },
+      ],
+      components: [
+        { id: "metric_one", kind: "metric", variable: "shared_value" },
+        { id: "metric_two", kind: "metric", variable: "shared_value" },
+      ],
+      rows: [{
+        id: "metrics",
+        items: ["metric_one", "metric_two"].map((component) => ({
+          kind: "component" as const,
+          component,
+        })),
+      }],
+    });
+    const initial = await saveCompositionSeed(
+      request,
+      spaceId,
+      yaml,
+      compositionName,
+    );
+    const initialRevisionResponse = await request.get(
+      getBackendUrl(
+        `/spaces/${spaceId}/compositions/${initial.compositionId}/history/${initial.compositionRevisionId}`,
+      ),
+    );
+    expect(initialRevisionResponse.ok()).toBe(true);
+    const initialRevision = await initialRevisionResponse.json() as {
+      fields: Record<string, unknown>;
+    };
+    const initialSpec = parseYaml(String(initialRevision.fields["spec"])) as {
+      spec?: {
+        variables?: Array<{ id?: string }>;
+        components?: Array<{ id?: string; variable?: string }>;
+      };
+    };
+    expect((initialSpec.spec?.variables ?? []).map(({ id }) => id).sort())
+      .toEqual(["alternative_value", "shared_value"]);
+    expect((initialSpec.spec?.components ?? []).map(({ id, variable }) => [
+      id,
+      variable,
+    ])).toEqual([
+      ["metric_one", "shared_value"],
+      ["metric_two", "shared_value"],
+    ]);
+
+    const ownerContext = await browser.newContext({
+      storageState: await context.storageState(),
+    });
+    let editedRevisionId = "";
+    try {
+      const page = await ownerContext.newPage();
+      await page.goto(
+        getFrontendUrl(
+          `/spaces/${spaceId}/compositions/${initial.compositionId}/${initial.compositionRevisionId}/edit`,
+        ),
+        { waitUntil: "domcontentloaded" },
+      );
+      await expect(
+        page.getByRole("group", { name: "Add to design", exact: true })
+          .first(),
+      ).toBeVisible({ timeout: 30_000 });
+      const firstMetric = page.locator(
+        '.compositionGraphDesignValue[data-component-id="metric_one"] button.compositionGraphSelect',
+      );
+      await expect(firstMetric).toHaveAttribute(
+        "aria-label",
+        "metric, shared_value",
+      );
+      await firstMetric.click();
+      await page.getByRole("button", {
+        name: "Change variable, shared_value",
+        exact: true,
+      }).click();
+      const metricPicker = page.getByRole("dialog", { name: "Metric" });
+      await metricPicker.getByRole("tab", {
+        name: "Variables",
+        exact: true,
+      }).click();
+      await metricPicker.getByRole("button", {
+        name: "alternative_value",
+        exact: true,
+      }).click();
+      await expect(metricPicker).toHaveCount(0);
+      await expect(page.locator(
+        '.compositionGraphDesignValue[data-component-id="metric_one"] button.compositionGraphSelect',
+      )).toHaveAttribute("aria-label", "metric, alternative_value");
+      await expect(page.locator(
+        '.compositionGraphDesignValue[data-component-id="metric_two"] button.compositionGraphSelect',
+      )).toHaveAttribute("aria-label", "metric, shared_value");
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(
+          `/spaces/${spaceId}/compositions/${initial.compositionId}/[^/]+$`,
+        ),
+        { timeout: 30_000 },
+      );
+      editedRevisionId = new URL(page.url()).pathname.split("/").at(-1)!;
+      expect(editedRevisionId).not.toBe(initial.compositionRevisionId);
+
+      const editedRevisionResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${spaceId}/compositions/${initial.compositionId}/history/${editedRevisionId}`,
+        ),
+      );
+      expect(editedRevisionResponse.ok()).toBe(true);
+      const editedRevision = await editedRevisionResponse.json() as {
+        fields: Record<string, unknown>;
+      };
+      const editedSpec = parseYaml(String(editedRevision.fields["spec"])) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: { entry_id?: string; revision_id?: string };
+          }>;
+          components?: Array<{ id?: string; variable?: string }>;
+        };
+      };
+      const variables = editedSpec.spec?.variables ?? [];
+      expect(variables.map(({ id }) => id).sort()).toEqual([
+        "alternative_value",
+        "shared_value",
+      ]);
+      expect(variables.find(({ id }) => id === "shared_value")?.query)
+        .toMatchObject({
+          entry_id: sharedSql.entryId,
+          revision_id: sharedSql.revisionId,
+        });
+      expect(variables.find(({ id }) => id === "alternative_value")?.query)
+        .toMatchObject({
+          entry_id: alternativeSql.entryId,
+          revision_id: alternativeSql.revisionId,
+        });
+      expect((editedSpec.spec?.components ?? []).map(({ id, variable }) => [
+        id,
+        variable,
+      ])).toEqual([
+        ["metric_one", "alternative_value"],
+        ["metric_two", "shared_value"],
+      ]);
+
+      await openSavedComposition(page, {
+        ...initial,
+        compositionRevisionId: editedRevisionId,
+      });
+      await expect(metricOutput(page, "alternative_value")).toHaveText("20", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(metricOutput(page, "shared_value")).toHaveText("10", {
+        timeout: scalarResultTimeoutMs,
+      });
+    } finally {
+      await ownerContext.close();
+    }
   });
 
   test("sql_aggregates_preserve_null_and_empty_semantics", async ({ browser, context }) => {
