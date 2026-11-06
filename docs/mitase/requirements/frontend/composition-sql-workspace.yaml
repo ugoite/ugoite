@@ -179,7 +179,17 @@ requirements:
       - id: graph-draft-and-atomic-bindings
         role: verification
         facet: verification
-        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. The broader Composition SQL argument requirement remains unverified because no current test covers host-side variable and Input creation in the same draft update.
+        responsibility: >-
+          Verify strict graph-only serialization, typed bindings, atomic Form and
+          Saved SQL insertion, explicit aggregate choice, and reference-only
+          rebinding. The Table/Metric SQL result criterion remains unverified:
+          the Saved SQL picker case covers source binding, and the Composition
+          journey checks one successful-value example, but no current test
+          distinguishes empty, NULL, cardinality, unavailable, and
+          execution-error states or verifies bounded table results without
+          browser-side aggregation. The broader Composition SQL argument
+          requirement also remains unverified because no current test covers
+          host-side variable and Input creation in the same draft update.
         targets:
           - id: graph-draft-shape
             adapter: typescript
@@ -213,10 +223,8 @@ requirements:
             path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
             selector: { kind: test, name: "pins exact Saved SQL revision and chosen scalar column" }
             claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "pins exact Saved SQL revision and chosen scalar column" } }
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
           - id: query-workspace-and-evaluation
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -280,7 +288,5 @@ requirements:
                 criterion: REQ-FE-079#criterion.design-components-use-semantic-values
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
