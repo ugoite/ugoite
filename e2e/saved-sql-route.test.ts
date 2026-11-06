@@ -322,13 +322,14 @@ test.describe("Saved SQL route", () => {
         response.request().postDataJSON().sql === editedSql
       );
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      await expect(sqlEditor.locator(".cm-content")).toHaveText(editedSql);
+      await expect(sqlEditor).toHaveText(editedSql);
       const editedPlanResponse = await editedPlan;
       expect(editedPlanResponse.ok(), await editedPlanResponse.text()).toBe(
         true,
       );
 
-      await page.getByRole("button", { name: "SQL", exact: true }).click();
+      await tree.getByRole("button", { name: "Close", exact: true }).first()
+        .click();
       await expect(sqlEditor).toContainText(editedSql);
 
       const firstRun = page.waitForResponse((response) =>
