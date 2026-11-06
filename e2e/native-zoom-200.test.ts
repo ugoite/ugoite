@@ -521,6 +521,9 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   const metricResultScreenshotBounds = await assertFullyWithinViewport(
     metricResult,
   );
+  await expect(metricResult.locator("strong")).toHaveText("6");
+  const metricScreenshotText = await metricResult.locator("strong").innerText();
+  expect(metricScreenshotText).toBe("6");
   await metricResult.screenshot({ path: screenshots.metricResult });
   const report = {
     sourceSha: buildInfo.source_sha,
@@ -557,6 +560,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     metricResultScreenshotViewportIntersection:
       metricResultScreenshotIntersection,
     metricResultScreenshotViewportBounds: metricResultScreenshotBounds,
+    metricScreenshotText,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
