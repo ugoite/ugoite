@@ -432,6 +432,21 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     expect(intersection.height).toBeGreaterThan(0);
     return intersection;
   };
+  const assertFullyWithinViewport = async (
+    locator: import("@playwright/test").Locator,
+  ) => {
+    const bounds = await locator.boundingBox();
+    expect(bounds).toBeTruthy();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+      afterNativeZoom.innerWidth,
+    );
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
+      afterNativeZoom.innerHeight,
+    );
+    return bounds;
+  };
   const firstInputIntersection = await assertIntersectsViewport(firstInput);
   const secondInputIntersection = await assertIntersectsViewport(secondInput);
   const firstInputBox = await firstInput.boundingBox();
@@ -491,14 +506,19 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await secondInput.focus();
   await expect(secondInput).toBeFocused();
   await page.screenshot({ path: screenshots.secondInput });
-  await metric.evaluate((element) =>
+  const metricResult = page.locator(".compositionGraphMetric");
+  await metricResult.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
   );
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric, fullPage: true });
-  const metricResult = metric.locator("..");
+  await expect(metric).toHaveText("6");
+  await expect(metricResult).toContainText("6");
   const metricResultScreenshotIntersection = await assertIntersectsViewport(
+    metricResult,
+  );
+  const metricResultScreenshotBounds = await assertFullyWithinViewport(
     metricResult,
   );
   await metricResult.screenshot({ path: screenshots.metricResult });
@@ -536,6 +556,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     metricScreenshotViewportIntersection: metricScreenshotIntersection,
     metricResultScreenshotViewportIntersection:
       metricResultScreenshotIntersection,
+    metricResultScreenshotViewportBounds: metricResultScreenshotBounds,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
