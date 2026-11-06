@@ -481,7 +481,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await page.screenshot({ path: screenshots.secondInput });
   await metric.scrollIntoViewIfNeeded();
   await expect(metric).toBeInViewport({ ratio: 0.9 });
-  await firstInput.focus();
+  const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric });
   const report = {
     sourceSha: buildInfo.source_sha,
@@ -512,6 +512,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     tabOrder: ["first_amount", "second_amount"],
     metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
     metricViewportIntersection: metricIntersection,
+    metricScreenshotViewportIntersection: metricScreenshotIntersection,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
