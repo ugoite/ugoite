@@ -469,17 +469,29 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
       `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
     metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
   };
-  await firstInput.scrollIntoViewIfNeeded();
+  await firstInput.evaluate((element) =>
+    element.scrollIntoView({ block: "center", inline: "nearest" })
+  );
   await expect(firstInput).toBeInViewport({ ratio: 0.9 });
+  const firstInputScreenshotIntersection = await assertIntersectsViewport(
+    firstInput,
+  );
   await firstInput.focus();
   await expect(firstInput).toBeFocused();
   await page.screenshot({ path: screenshots.firstInput });
-  await secondInput.scrollIntoViewIfNeeded();
+  await secondInput.evaluate((element) =>
+    element.scrollIntoView({ block: "center", inline: "nearest" })
+  );
   await expect(secondInput).toBeInViewport({ ratio: 0.9 });
+  const secondInputScreenshotIntersection = await assertIntersectsViewport(
+    secondInput,
+  );
   await secondInput.focus();
   await expect(secondInput).toBeFocused();
   await page.screenshot({ path: screenshots.secondInput });
-  await metric.scrollIntoViewIfNeeded();
+  await metric.evaluate((element) =>
+    element.scrollIntoView({ block: "center", inline: "nearest" })
+  );
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric });
@@ -502,11 +514,13 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
         name: "first_amount",
         box: firstInputBox,
         viewportIntersection: firstInputIntersection,
+        screenshotViewportIntersection: firstInputScreenshotIntersection,
       },
       {
         name: "second_amount",
         box: secondInputBox,
         viewportIntersection: secondInputIntersection,
+        screenshotViewportIntersection: secondInputScreenshotIntersection,
       },
     ],
     tabOrder: ["first_amount", "second_amount"],
