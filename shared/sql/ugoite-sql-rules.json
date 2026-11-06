@@ -803,6 +803,19 @@
           ]
         },
         {
+          "id": "cte-alias-authorized-result",
+          "selectors": [
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "renames a CTE output column and its binding through the actual WASM tree editor"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn cte_output_column_alias_rename_executes_with_authored_result_name"
+            ]
+          ]
+        },
+        {
           "id": "array-literal-construction",
           "selectors": [
             [
@@ -1020,6 +1033,10 @@
             [
               "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
               "renames a CTE output column and its binding through the actual WASM tree editor"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn cte_output_column_alias_rename_executes_with_authored_result_name"
             ]
           ]
         }

@@ -4960,6 +4960,65 @@ async fn projection_reorder_keeps_authorized_grouping_and_sort_meaning() -> anyh
 }
 
 #[tokio::test]
+async fn cte_output_column_alias_rename_executes_with_authored_result_name() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentIdentifier,
+        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(970)),
+        "memory://authorized-cte-output-column-alias",
+    )
+    .await?;
+    let tasks = form(971, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 972, 973, "row").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[972]))
+        .await?;
+
+    let source = "WITH c (old_name) AS (SELECT 1) SELECT c.old_name FROM c";
+    let document = parse_sql_document(source);
+    let cte = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::CommonTableExpression)
+        .expect("the SQL Document exposes the CTE");
+    let renamed = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetRelationColumnAliases {
+                node_id: cte.id,
+                expected_kind: cte.kind,
+                aliases: vec![SqlDocumentIdentifier {
+                    value: "new_name".to_owned(),
+                    quote_style: None,
+                }],
+            }],
+        },
+    )?;
+    assert_eq!(
+        renamed.document.to_sql(),
+        "WITH c (new_name) AS (SELECT 1) SELECT c.new_name FROM c"
+    );
+
+    let batches = context.execute(renamed.document.to_sql()).await?;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    assert_eq!(batches[0].schema().field(0).name(), "new_name");
+    let result = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the CTE output value remains Int64");
+    assert_eq!(result.values(), &[1]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{
         apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentIdentifier,
