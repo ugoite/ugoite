@@ -410,6 +410,30 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   expect(afterNativeZoom.horizontalOverflow).toBe(false);
   await expect(firstInput).toBeVisible();
   await expect(secondInput).toBeVisible();
+  const assertIntersectsViewport = async (
+    locator: import("@playwright/test").Locator,
+  ) => {
+    const intersection = await locator.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const left = Math.max(0, rect.left);
+      const top = Math.max(0, rect.top);
+      const right = Math.min(innerWidth, rect.right);
+      const bottom = Math.min(innerHeight, rect.bottom);
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top),
+      };
+    });
+    expect(intersection.width).toBeGreaterThan(0);
+    expect(intersection.height).toBeGreaterThan(0);
+    return intersection;
+  };
+  const firstInputIntersection = await assertIntersectsViewport(firstInput);
+  const secondInputIntersection = await assertIntersectsViewport(secondInput);
   const firstInputBox = await firstInput.boundingBox();
   const secondInputBox = await secondInput.boundingBox();
   expect(firstInputBox).toBeTruthy();
@@ -434,22 +458,30 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   await expect(firstInput).toBeInViewport({ ratio: 0.9 });
   await expect(secondInput).toBeInViewport({ ratio: 0.9 });
+  const metricIntersection = await assertIntersectsViewport(metric);
 
   const evidenceDir = "../docs/architecture/testing/evidence";
   await Deno.mkdir(evidenceDir, { recursive: true });
   const screenshots = {
-    firstInput: `${evidenceDir}/composition-runtime-native-zoom-200-first-input.png`,
-    secondInput: `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
+    firstInput:
+      `${evidenceDir}/composition-runtime-native-zoom-200-first-input.png`,
+    secondInput:
+      `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
     metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
   };
   await firstInput.scrollIntoViewIfNeeded();
   await expect(firstInput).toBeInViewport({ ratio: 0.9 });
+  await firstInput.focus();
+  await expect(firstInput).toBeFocused();
   await page.screenshot({ path: screenshots.firstInput });
   await secondInput.scrollIntoViewIfNeeded();
   await expect(secondInput).toBeInViewport({ ratio: 0.9 });
+  await secondInput.focus();
+  await expect(secondInput).toBeFocused();
   await page.screenshot({ path: screenshots.secondInput });
   await metric.scrollIntoViewIfNeeded();
   await expect(metric).toBeInViewport({ ratio: 0.9 });
+  await firstInput.focus();
   await page.screenshot({ path: screenshots.metric });
   const report = {
     sourceSha: buildInfo.source_sha,
@@ -469,14 +501,17 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
       {
         name: "first_amount",
         box: firstInputBox,
+        viewportIntersection: firstInputIntersection,
       },
       {
         name: "second_amount",
         box: secondInputBox,
+        viewportIntersection: secondInputIntersection,
       },
     ],
     tabOrder: ["first_amount", "second_amount"],
     metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
+    metricViewportIntersection: metricIntersection,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
