@@ -659,6 +659,100 @@ test.describe("Composition Studio Journey", () => {
       await buildContext.close();
     }
 
+    const currentSourceResponse = await request.get(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/${seed.savedSqlId}`),
+    );
+    expect(currentSourceResponse.ok()).toBe(true);
+    const currentSource = await currentSourceResponse.json() as {
+      name: string;
+      kind: string;
+      sql: string;
+      revision_id: string;
+    };
+    expect(currentSource.revision_id).toBe(seed.savedSqlRevisionId);
+    const revisedSourceSql = currentSource.sql.replace(
+      " AS total,",
+      " * 2 AS total,",
+    );
+    expect(revisedSourceSql).not.toBe(currentSource.sql);
+    const sourceUpdate = await request.put(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/${seed.savedSqlId}`),
+      {
+        data: {
+          name: currentSource.name,
+          kind: currentSource.kind,
+          sql: revisedSourceSql,
+          variables: [
+            {
+              type: "date",
+              name: "month_start",
+              description: "First date included in this month.",
+            },
+            {
+              type: "date",
+              name: "month_end",
+              description: "First date excluded from this month.",
+            },
+          ],
+          parent_revision_id: currentSource.revision_id,
+        },
+      },
+    );
+    expect(sourceUpdate.ok(), await sourceUpdate.text()).toBe(true);
+    const updatedSource = await sourceUpdate.json() as {
+      revision_id: string;
+    };
+    expect(updatedSource.revision_id).not.toBe(seed.savedSqlRevisionId);
+
+    const latestSourceResponse = await request.get(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/${seed.savedSqlId}`),
+    );
+    expect(latestSourceResponse.ok()).toBe(true);
+    expect(await latestSourceResponse.json()).toMatchObject({
+      revision_id: updatedSource.revision_id,
+      sql: revisedSourceSql,
+    });
+    const latestSourceResultResponse = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/sql/query`),
+      {
+        data: {
+          sql: revisedSourceSql,
+          parameters: {
+            month_start: seed.monthStart,
+            month_end: seed.monthEnd,
+          },
+          parameter_types: { month_start: "date", month_end: "date" },
+          saved_sql: {
+            id: seed.savedSqlId,
+            revision_id: updatedSource.revision_id,
+          },
+          limit: 100,
+        },
+      },
+    );
+    expect(latestSourceResultResponse.ok(), await latestSourceResultResponse.text())
+      .toBe(true);
+    const latestSourceResult = await latestSourceResultResponse.json() as {
+      columns: string[];
+      rows: Array<Record<string, unknown>>;
+    };
+    expect(latestSourceResult.columns).toEqual(["total", "quantity"]);
+    expect(latestSourceResult.rows).toEqual([{ total: 40, quantity: 3 }]);
+
+    const stillPinnedResponse = await request.get(
+      getBackendUrl(
+        `/spaces/${seed.spaceId}/compositions/${compositionId}/history/${firstRevisionId}`,
+      ),
+    );
+    expect(stillPinnedResponse.ok()).toBe(true);
+    const stillPinned = await stillPinnedResponse.json() as StudioRawRevision;
+    expect(String(stillPinned.fields["spec"])).toContain(
+      `revision_id: ${seed.savedSqlRevisionId}`,
+    );
+    expect(String(stillPinned.fields["spec"])).not.toContain(
+      `revision_id: ${updatedSource.revision_id}`,
+    );
+
     const journeyContext = await openOwnerContext(browser, storageState);
     try {
       const page = await journeyContext.newPage();
