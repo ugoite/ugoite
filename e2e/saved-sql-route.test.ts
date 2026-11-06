@@ -1173,7 +1173,7 @@ test.describe("Saved SQL route", () => {
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         new RegExp(
-          `WHERE\\s+\\(*\\s*"_ugoite_id"\\s*=\\s*\\$entry_id\\s*\\)*\\s+AND\\s+\\(*\\s*"_ugoite_id"\\s*=\\s*'${entryId}'\\s*\\)*`,
+          `WHERE\\s+\\(*\\s*(?:"_ugoite_id"|_ugoite_id)\\s*=\\s*\\$entry_id\\s*\\)*\\s+AND\\s+\\(*\\s*(?:"_ugoite_id"|_ugoite_id)\\s*=\\s*'${entryId}'\\s*\\)*`,
         ),
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
