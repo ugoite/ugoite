@@ -695,16 +695,18 @@ test.describe("Saved SQL route", () => {
       await page.getByRole("button", { name: "SQL tree", exact: true })
         .click();
       const tree = page.getByRole("dialog", { name: "SQL tree" });
-      const nestedSelect = tree.locator(
-        '[role=treeitem]:has(> code[aria-label="SELECT: SELECT 1"])',
-      );
-      const nestedLiteral = nestedSelect.locator(
-        '[role=treeitem]:has(> code[aria-label="Value: 1"])',
-      );
-      await expect(nestedLiteral).toHaveCount(1);
+      const nestedLiterals = tree.getByRole("treeitem", {
+        name: "Value Value: 1",
+        exact: true,
+      });
+      await expect(nestedLiterals).toHaveCount(2);
+      const nestedLiteral = nestedLiterals.last();
       await nestedLiteral.click();
       await tree.getByLabel("Expression value").selectOption("literal");
-      await tree.getByLabel("Value type").selectOption("number");
+      await tree.getByRole("combobox", {
+        name: "Value type",
+        exact: true,
+      }).selectOption("number");
       const numberInput = tree.getByLabel("Number", { exact: true });
       await expect(numberInput).toHaveCount(1);
       await numberInput.fill("2");
@@ -715,13 +717,14 @@ test.describe("Saved SQL route", () => {
         response.request().postDataJSON().sql === editedSql
       );
       await tree.getByRole("button", { name: "Apply", exact: true }).click();
-      await expect(sqlEditor.locator(".cm-content")).toHaveText(editedSql);
+      await expect(sqlEditor).toHaveText(editedSql);
       const editedPlanResponse = await editedPlan;
       expect(editedPlanResponse.ok(), await editedPlanResponse.text()).toBe(
         true,
       );
 
-      await page.getByRole("button", { name: "SQL", exact: true }).click();
+      await tree.getByRole("button", { name: "Close", exact: true }).first()
+        .click();
       await expect(sqlEditor).toContainText(editedSql);
 
       const firstRun = page.waitForResponse((response) =>
