@@ -304,6 +304,13 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+          - id: composition-source-unavailable-clears-runtime-and-design-results
+            adapter: typescript
+            path: e2e/composition-source-acl-isolation.test.ts
+            selector: { kind: test, name: "evaluate rechecks Form and exact Saved SQL access after revocation" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
           - id: bounded-composition-table-pages
             adapter: typescript
             path: e2e/composition-table-metric-pagination.test.ts
