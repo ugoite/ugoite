@@ -494,7 +494,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   );
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
-  await page.screenshot({ path: screenshots.metric });
+  await page.screenshot({ path: screenshots.metric, fullPage: true });
   const report = {
     sourceSha: buildInfo.source_sha,
     backendSourceSha,
@@ -531,6 +531,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     afterNativeZoom,
     afterInputChange,
     screenshots,
+    metricScreenshotMode: "full page; native zoom viewport recorded above",
   };
   console.log(`NATIVE_ZOOM_RUNTIME_EVIDENCE ${JSON.stringify(report)}`);
 });
