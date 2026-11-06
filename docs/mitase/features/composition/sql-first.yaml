@@ -240,6 +240,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+      - id: text-style-persistence-evidence
+        role: evidence
+        facet: frontend
+        responsibility: Provide partial browser evidence for the composition-text-inspector target by persisting and rendering one selected non-default literal Text style; this does not establish that all four styles remain distinct.
+        targets:
+          - id: mobile-heading-style-persistence
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "unnamed mobile Composition keeps Text focus and inserts existing data before naming" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-text-inspector-literal-editing
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend

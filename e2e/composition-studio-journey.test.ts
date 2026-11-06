@@ -2562,6 +2562,13 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   await text.focus();
   await text.pressSequentially("Daily report");
   await expect(text).toHaveValue("Daily report");
+  const textStyle = page.getByRole("combobox", {
+    name: "Text style",
+    exact: true,
+  });
+  await expect(textStyle).toHaveValue("body");
+  await textStyle.selectOption("heading");
+  await expect(textStyle).toHaveValue("heading");
   expect(
     await original!.evaluate((element) =>
       element.isConnected && element === document.activeElement
@@ -2626,10 +2633,29 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {
     timeout: 30_000,
   });
+  const savedRevision = revisionFromUrl(page.url());
+  const savedResponse = await request.get(
+    getBackendUrl(
+      `/spaces/${spaceId}/compositions/${savedRevision.compositionId}/history/${savedRevision.revisionId}`,
+    ),
+  );
+  expect(savedResponse.ok()).toBe(true);
+  const savedEntry = await savedResponse.json() as StudioRawRevision;
+  const savedDocument = parseYaml(
+    String(savedEntry.fields["spec"]),
+  ) as {
+    spec?: { components?: Array<{ kind?: string; style?: string }> };
+  };
+  expect(savedDocument.spec?.components?.find((component) =>
+    component.kind === "text"
+  )?.style).toBe("heading");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Daily report", { exact: true })).toBeVisible({
-    timeout: 30_000,
+  const reopenedText = page.getByRole("heading", {
+    name: "Daily report",
+    exact: true,
   });
+  await expect(reopenedText).toBeVisible({ timeout: 30_000 });
+  await expect(reopenedText).toHaveClass(/compositionGraphText--heading/);
   await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
     "1",
     "42",
