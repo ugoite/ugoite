@@ -957,47 +957,6 @@ test.describe("Composition Studio Journey", () => {
         .replace(/\p{M}/gu, "")
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "");
-      const replacementFormName = `StudioReplacement${crypto.randomUUID().slice(0, 8)}`;
-      const replacementFormResponse = await request.post(
-        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
-        {
-          data: {
-            name: replacementFormName,
-            version: 1,
-            template: `# ${replacementFormName}\n\n## Label\n`,
-            fields: { Label: { type: "string", required: true } },
-          },
-        },
-      );
-      expect([200, 201]).toContain(replacementFormResponse.status());
-      const replacementEntryResponse = await request.post(
-        getBackendUrl(`/spaces/${seed.spaceId}/entries`),
-        {
-          data: {
-            form: replacementFormName,
-            fields: { Label: "Replacement Form row" },
-          },
-        },
-      );
-      expect(replacementEntryResponse.status()).toBe(201);
-      const replacementFormsResponse = await request.get(
-        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
-      );
-      expect(replacementFormsResponse.ok()).toBe(true);
-      const replacementForms = await replacementFormsResponse.json() as Array<{
-        id?: string;
-        name?: string;
-      }>;
-      const replacementForm = replacementForms.find((candidate) =>
-        candidate.name === replacementFormName
-      );
-      expect(replacementForm?.id).toBeTruthy();
-      const replacementSlug = replacementFormName.normalize("NFKD")
-        .toLowerCase()
-        .replace(/\p{M}/gu, "")
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
-
       await page.goto(
         getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
@@ -1166,14 +1125,6 @@ test.describe("Composition Studio Journey", () => {
       expect(savedYaml).toContain(String(form?.id));
       const savedDocument = parseYaml(savedYaml) as {
         spec?: {
-          variables?: Array<{
-            id?: string;
-            query?: {
-              kind?: string;
-              sql?: string;
-              form_bindings?: Array<{ relation: string; form_id: string }>;
-            };
-          }>;
           components?: Array<{
             id?: string;
             kind?: string;
@@ -1269,10 +1220,156 @@ test.describe("Composition Studio Journey", () => {
       await expect(reopenedRuntimeBlocks.nth(1).getByRole("table"))
         .toContainText(seed.purposes[1]);
 
-      // Changing one placed Table chooses another Form-backed variable while
-      // preserving the original query variable and the Metric reference.
+    } finally {
+      await ownerContext.close();
+    }
+  });
+
+  test("Changing a Form-backed Table source preserves the Metric and query through save and reopen", async ({ browser, context, request }) => {
+    const storageState = await context.storageState();
+    const ownerContext = await openOwnerContext(browser, storageState);
+    try {
+      const formsResponse = await request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+      );
+      expect(formsResponse.ok()).toBe(true);
+      const forms = await formsResponse.json() as Array<{
+        id?: string;
+        name?: string;
+      }>;
+      const form = forms.find((candidate) => candidate.name === seed.formName);
+      expect(form?.id).toBeTruthy();
+      const formSlug = seed.formName.normalize("NFKD").toLowerCase()
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      const replacementFormName = `StudioReplacement${crypto.randomUUID().slice(0, 8)}`;
+      const replacementFormResponse = await request.post(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+        {
+          data: {
+            name: replacementFormName,
+            version: 1,
+            template: `# ${replacementFormName}\n\n## Label\n`,
+            fields: { Label: { type: "string", required: true } },
+          },
+        },
+      );
+      expect([200, 201]).toContain(replacementFormResponse.status());
+      const replacementEntryResponse = await request.post(
+        getBackendUrl(`/spaces/${seed.spaceId}/entries`),
+        {
+          data: {
+            form: replacementFormName,
+            fields: { Label: "Replacement Form row" },
+          },
+        },
+      );
+      expect(replacementEntryResponse.status()).toBe(201);
+      const replacementFormsResponse = await request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+      );
+      expect(replacementFormsResponse.ok()).toBe(true);
+      const replacementForms = await replacementFormsResponse.json() as Array<{
+        id?: string;
+        name?: string;
+      }>;
+      const replacementForm = replacementForms.find((candidate) =>
+        candidate.name === replacementFormName
+      );
+      expect(replacementForm?.id).toBeTruthy();
+      const replacementSlug = replacementFormName.normalize("NFKD")
+        .toLowerCase()
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+
+      const page = await ownerContext.newPage();
+      await page.goto(
+        getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
+        { waitUntil: "domcontentloaded" },
+      );
+      await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+      await expect(page.getByRole("complementary", { name: "Inspector" }))
+        .toHaveCount(0);
+      await page.getByLabel("Name", { exact: true }).fill(
+        `${seed.toolName} Form source change`,
+      );
+      const palette = page.getByRole("group", { name: "Add to design" });
+      for (const name of ["Table", "Metric"]) {
+        await expect(palette.getByRole("button", { name, exact: true }))
+          .toBeVisible();
+      }
+      await palette.getByRole("button", { name: "Table", exact: true }).click();
+      const tablePicker = page.getByRole("dialog", {
+        name: "Table",
+        exact: true,
+      });
+      await tablePicker.getByRole("tab", { name: "Forms", exact: true })
+        .click();
+      await tablePicker.getByRole("button", {
+        name: seed.formName,
+        exact: true,
+      }).click();
+      await expect(tablePicker).toHaveCount(0);
+      await palette.getByRole("button", { name: "Metric", exact: true }).click();
+      const metricPicker = page.getByRole("dialog", {
+        name: "Metric",
+        exact: true,
+      });
+      await metricPicker.getByRole("tab", { name: "Forms", exact: true })
+        .click();
+      await metricPicker.getByRole("button", {
+        name: seed.formName,
+        exact: true,
+      }).click();
+      await metricPicker.getByRole("combobox", {
+        name: "Aggregation",
+        exact: true,
+      }).selectOption("sum");
+      await metricPicker.getByRole("combobox", {
+        name: "Column",
+        exact: true,
+      }).selectOption({ label: "Amount" });
+      await metricPicker.getByRole("button", { name: "Add", exact: true })
+        .click();
+      await expect(metricPicker).toHaveCount(0);
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
+        { timeout: 30_000 },
+      );
+      const saved = revisionFromUrl(page.url());
+      const savedDocumentResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+        ),
+      );
+      expect(savedDocumentResponse.ok()).toBe(true);
+      const savedRevision = await savedDocumentResponse.json() as StudioRawRevision;
+      const savedDocument = parseYaml(
+        String(savedRevision.fields["spec"]),
+      ) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
+          components?: Array<{
+            id?: string;
+            kind?: string;
+            variable?: string;
+          }>;
+        };
+      };
+      const compositionId = saved.compositionId;
+      const initialRevisionId = saved.revisionId;
       const savedEditUrl =
-        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit`;
+        `/spaces/${seed.spaceId}/compositions/${compositionId}/${initialRevisionId}/edit`;
       await page.goto(getFrontendUrl(savedEditUrl), {
         waitUntil: "domcontentloaded",
       });
@@ -1318,12 +1415,12 @@ test.describe("Composition Studio Journey", () => {
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(
-          `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/[^/]+$`,
+          `/spaces/${seed.spaceId}/compositions/${compositionId}/[^/]+$`,
         ),
         { timeout: 30_000 },
       );
       const rebound = revisionFromUrl(page.url());
-      expect(rebound.revisionId).not.toBe(saved.revisionId);
+      expect(rebound.revisionId).not.toBe(initialRevisionId);
 
       const reboundRevisionResponse = await request.get(
         getBackendUrl(

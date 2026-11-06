@@ -236,7 +236,7 @@ features:
           - id: form-picker-table-reference-change
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts
-            selector: { kind: test, name: "Form bindings create variable-backed displays with explicit aggregation" }
+            selector: { kind: test, name: "Changing a Form-backed Table source preserves the Metric and query through save and reopen" }
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-source-change-is-explicit
