@@ -63,6 +63,18 @@ scalar corpus uses an explicitly empty authorized relation environment;
 non-empty Form data, Entry isolation and edit-generated SQL remain covered in
 `crates/ugoite-iceberg/tests/authorized_query.rs`.
 
+One existing-query edit slice is also verified end to end: SQL text
+`SELECT 1 WHERE EXISTS (SELECT 1)` is loaded into the tree, the nested SELECT
+receives a WHERE clause through its existing tree action, and its seeded TRUE
+literal is changed to FALSE through the expression inspector. The exact result
+`SELECT 1 WHERE EXISTS (SELECT 1 WHERE FALSE)` is accepted by every Rust corpus
+stage and executes with zero rows; the WASM-backed editor test verifies undo
+restores the original SQL, and the Saved SQL browser journey verifies planning,
+execution, save/reload and the same zero-row result. This proves only this
+bounded EXISTS edit shape. It does not establish editing or meaning agreement
+across the full admitted SQL grammar; S-02 and `coverage_complete: false`
+remain unchanged.
+
 The separate
 [`sql-document-parser-parity.json`](../../../shared/sql/sql-document-parser-parity.json)
 corpus establishes parser parity only. Both parser entry points use
