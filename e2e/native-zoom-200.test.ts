@@ -468,8 +468,8 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     secondInput:
       `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
     metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
-    metricValue:
-      `${evidenceDir}/composition-runtime-native-zoom-200-metric-value.png`,
+    metricResult:
+      `${evidenceDir}/composition-runtime-native-zoom-200-metric-result.png`,
   };
   await firstInput.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
@@ -497,10 +497,11 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric, fullPage: true });
-  await metric.screenshot({ path: screenshots.metricValue });
-  const metricValueScreenshotIntersection = await assertIntersectsViewport(
-    metric,
+  const metricResult = metric.locator("..");
+  const metricResultScreenshotIntersection = await assertIntersectsViewport(
+    metricResult,
   );
+  await metricResult.screenshot({ path: screenshots.metricResult });
   const report = {
     sourceSha: buildInfo.source_sha,
     backendSourceSha,
@@ -533,8 +534,8 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
     metricViewportIntersection: metricIntersection,
     metricScreenshotViewportIntersection: metricScreenshotIntersection,
-    metricValueScreenshotViewportIntersection:
-      metricValueScreenshotIntersection,
+    metricResultScreenshotViewportIntersection:
+      metricResultScreenshotIntersection,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
