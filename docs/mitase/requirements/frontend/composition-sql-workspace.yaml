@@ -311,3 +311,7 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+              - kind: evidences
+                anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
