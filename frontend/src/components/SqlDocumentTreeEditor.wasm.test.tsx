@@ -11,6 +11,41 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("edits a directly written CAST to DECIMAL(4, 2) through actual WASM", async () => {
+    const initial = "SELECT CAST(7 AS DECIMAL)";
+    const document = await parseSqlDocument(initial);
+    const cast = document.nodes.find((node) =>
+      node.kind === "cast_expression"
+    );
+    expect(cast).toBeDefined();
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const castItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(cast!.id)
+    );
+    expect(castItem).toBeDefined();
+
+    fireEvent.click(castItem!);
+    fireEvent.change(screen.getByLabelText("Cast target type"), {
+      target: { value: "decimal" },
+    });
+    fireEvent.input(screen.getByLabelText("Type precision"), {
+      target: { value: "4" },
+    });
+    fireEvent.input(screen.getByLabelText("Type scale"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT CAST(7 AS DECIMAL(4, 2))")
+    );
+    const edited = await parseSqlDocument(sql());
+    expect(edited.status).toBe("parsed");
+    expect(edited.diagnostics).toEqual([]);
+  });
+
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
     const initial = "SELECT ARRAY[4, 9]";
     const document = await parseSqlDocument(initial);

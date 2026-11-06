@@ -3305,6 +3305,75 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
 }
 
 #[tokio::test]
+async fn parameterized_cast_target_edit_executes_exact_decimal_result() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentCastTarget,
+        SqlDocumentCastType, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+        SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(950)),
+        "memory://authorized-parameterized-cast-target",
+    )
+    .await?;
+    let tasks = form(951, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 952, 953, "row").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[952]))
+        .await?;
+
+    let source = "SELECT CAST(7 AS DECIMAL) FROM tasks";
+    let document = parse_sql_document(source);
+    let cast = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::CastExpression)
+        .expect("the SQL Document exposes the directly written CAST");
+    let edited = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetParameterizedCastTarget {
+                node_id: cast.id,
+                expected_kind: cast.kind,
+                target: SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Decimal,
+                    precision: Some("4".to_owned()),
+                    scale: Some("2".to_owned()),
+                    length: None,
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        edited.document.to_sql(),
+        "SELECT CAST(7 AS DECIMAL(4, 2)) FROM tasks"
+    );
+
+    let batches = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    assert_eq!(
+        batches[0].column(0).data_type(),
+        &arrow_schema::DataType::Decimal128(4, 2)
+    );
+    assert_eq!(
+        batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Decimal128Array>()
+            .expect("DECIMAL(4, 2) returns Decimal128")
+            .value(0),
+        700,
+        "7 is returned as 7.00 with precision 4 and scale 2"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn typed_sql_document_nested_structure_edits_execute_authorized_queries() -> anyhow::Result<()>
 {
     use ugoite_domain::sql_document::{
