@@ -45,6 +45,8 @@ spec:
           - kind: component
             component: note
 "#;
+const REMOVED_SOURCE_COMPOSITION_FIXTURE: &str =
+    include_str!("../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
 
 #[derive(Default)]
 struct SqlExportGate {
@@ -2475,93 +2477,12 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     // A prereplacement source-shaped Composition is still a raw Entry. Keep
     // its exact carrier available through history and export while the typed
     // query path rejects it; this is deliberately not a legacy reader.
-    let legacy_yaml = r#"format: ugoite.composition
-format_version: 1
-kind: dashboard
-name: Monthly expenses
-tags: []
-spec:
-  variables:
-    - id: month_start
-      type: date
-      required: true
-      format: year-month
-    - id: month_end
-      type: date
-      required: true
-      format: year-month
-  sources:
-    - id: expense_rows
-      kind: entry_query
-      form_id: "00000000-0000-7000-8000-000000000010"
-      field_schema:
-        - field_id: 100
-          field_type: date
-        - field_id: 101
-          field_type: string
-        - field_id: 102
-          field_type: double
-      query:
-        filters:
-          - field_id: 100
-            operator: gte
-            value:
-              variable: month_start
-          - field_id: 100
-            operator: lt
-            value:
-              variable: month_end
-        sort:
-          - field_id: 100
-            direction: desc
-        projection:
-          kind: fields
-          fields: [100, 101, 102]
-    - id: month_total
-      kind: saved_sql
-      entry_id: "00000000-0000-7000-8000-000000000020"
-      revision_id: "00000000-0000-7000-8000-000000000021"
-      expected_result:
-        - name: total
-          type: float
-      variables:
-        month_start:
-          variable: month_start
-        month_end:
-          variable: month_end
-  components:
-    - id: month_start_input
-      kind: input
-      variable: month_start
-    - id: month_end_input
-      kind: input
-      variable: month_end
-    - id: total
-      kind: metric
-      source: month_total
-      column: total
-    - id: transactions
-      kind: table
-      source: expense_rows
-  layout:
-    kind: flow
-    rows:
-      - id: main
-        items:
-          - kind: component
-            component: month_start_input
-          - kind: component
-            component: month_end_input
-          - kind: component
-            component: total
-          - kind: component
-            component: transactions
-"#;
+    let legacy_yaml = REMOVED_SOURCE_COMPOSITION_FIXTURE;
     let legacy = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),
         RawCompositionSeed {
-            name: "Monthly expenses".to_string(),
+            name: "Removed prerelease source grammar recovery candidate".to_string(),
             kind: "dashboard".to_string(),
             tags: Vec::new(),
             format_version: 1,
