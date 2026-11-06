@@ -8,7 +8,7 @@ Composition runtime with two Inputs and a Metric. It does not complete U-04.
 ## Run
 
 - Test: `U-04 partial evidence: Composition runtime remains usable at native 200% zoom`
-- Test/frontend source SHA: `17aa1cf6b3ec9af977d569f8810b79e544c992ed`
+- Test/frontend source SHA: `2f69a1f02c1fd7fe5fb8ac55a0db6b46dfd525b7`
 - Backend binary source SHA: `6e3a542d94ad5457fe03edacab027d278e6c04d5`
 - Chromium: headed `148.0.7778.0` under Xvfb
 - Native zoom: five `Ctrl+Plus` key presses sent to the focused Chromium window
@@ -60,7 +60,9 @@ screenshots and rerunning at the source SHA above, the DOM assertion still read
 image also does not clearly show the expected Metric result. This confirms an
 unresolved rendered-result/evidence mismatch. The screenshots do not prove that
 the updated `6` is visibly rendered at native 200% zoom; this criterion remains
-an evidence failure and is not claimed complete.
+an evidence failure and is not claimed complete. Follow-up issue #4846 tracks
+this DOM-versus-screenshot discrepancy. U-04 and the broader requirement remain
+partial.
 
 ## Limits
 
