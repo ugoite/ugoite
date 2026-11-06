@@ -1,4 +1,6 @@
-# Composition native 200% zoom evidence (2026-11-06)
+---
+title: "Composition native 200% zoom evidence"
+---
 
 This is partial desktop evidence for acceptance item U-04. It covers one saved
 Composition Design journey at actual Chromium browser zoom; it does not complete
