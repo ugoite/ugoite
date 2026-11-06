@@ -246,6 +246,75 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     expect(restored.document.source).toBe(initial);
   });
 
+  it("edits an SQL-authored scalar subquery literal through the tree and restores it with WASM undo", async () => {
+    const initial = "SELECT (SELECT 1) AS value";
+    const initialDocument = await parseSqlDocument(initial);
+    const subquery = initialDocument.nodes.find((node) =>
+      node.kind === "subquery_expression"
+    );
+    expect(subquery).toBeDefined();
+    const nestedQuery = initialDocument.nodes.find((node) =>
+      node.kind === "query" && node.parent === subquery!.id
+    );
+    expect(nestedQuery).toBeDefined();
+    const nestedSelect = initialDocument.nodes.find((node) =>
+      node.kind === "select" && node.parent === nestedQuery!.id
+    );
+    expect(nestedSelect).toBeDefined();
+    const nestedSelectList = initialDocument.nodes.find((node) =>
+      node.kind === "select_list" && node.parent === nestedSelect!.id
+    );
+    expect(nestedSelectList).toBeDefined();
+    const nestedItem = initialDocument.nodes.find((node) =>
+      node.kind === "select_item" && node.parent === nestedSelectList!.id
+    );
+    expect(nestedItem).toBeDefined();
+    const nestedLiteral = initialDocument.nodes.find((node) =>
+      node.kind === "literal_expression" && node.parent === nestedItem!.id &&
+      node.range && initial.slice(node.range.start, node.range.end) === "1"
+    );
+    expect(nestedLiteral).toBeDefined();
+    const edit = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: initialDocument.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_literal",
+        node_id: nestedLiteral!.id,
+        expected_kind: "literal_expression",
+        literal: { kind: "number", value: "2" },
+      }],
+    });
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const literalItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(nestedLiteral!.id)
+    );
+    expect(literalItem).toBeDefined();
+    fireEvent.click(literalItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "literal" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "number" },
+    });
+    fireEvent.input(screen.getByLabelText("Number"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const editedSql = "SELECT (SELECT 2) AS value";
+    await waitFor(() => expect(sql()).toBe(editedSql));
+    expect(edit.document.source).toBe(editedSql);
+    const edited = await parseSqlDocument(sql());
+    expect(edited.diagnostics).toEqual([]);
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      edit.undo,
+    );
+    expect(restored.document.source).toBe(initial);
+  });
+
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
     const initial = "SELECT ARRAY[4, 9]";
     const document = await parseSqlDocument(initial);

@@ -39,6 +39,24 @@
       ]
     },
     {
+      "id": "scalar-subquery-nested-literal-edit",
+      "sql": "SELECT (SELECT 2) AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "2"
+        ]
+      ]
+    },
+    {
       "id": "cte",
       "sql": "WITH c AS (SELECT 1 AS value) SELECT value FROM c",
       "context": "authorized-empty-relations",
