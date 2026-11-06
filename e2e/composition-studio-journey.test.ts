@@ -957,6 +957,46 @@ test.describe("Composition Studio Journey", () => {
         .replace(/\p{M}/gu, "")
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "");
+      const replacementFormName = `StudioReplacement${crypto.randomUUID().slice(0, 8)}`;
+      const replacementFormResponse = await request.post(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+        {
+          data: {
+            name: replacementFormName,
+            version: 1,
+            template: `# ${replacementFormName}\n\n## Label\n`,
+            fields: { Label: { type: "string", required: true } },
+          },
+        },
+      );
+      expect([200, 201]).toContain(replacementFormResponse.status());
+      const replacementEntryResponse = await request.post(
+        getBackendUrl(`/spaces/${seed.spaceId}/entries`),
+        {
+          data: {
+            form: replacementFormName,
+            fields: { Label: "Replacement Form row" },
+          },
+        },
+      );
+      expect(replacementEntryResponse.status()).toBe(201);
+      const replacementFormsResponse = await request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+      );
+      expect(replacementFormsResponse.ok()).toBe(true);
+      const replacementForms = await replacementFormsResponse.json() as Array<{
+        id?: string;
+        name?: string;
+      }>;
+      const replacementForm = replacementForms.find((candidate) =>
+        candidate.name === replacementFormName
+      );
+      expect(replacementForm?.id).toBeTruthy();
+      const replacementSlug = replacementFormName.normalize("NFKD")
+        .toLowerCase()
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
 
       await page.goto(
         getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
@@ -1126,6 +1166,14 @@ test.describe("Composition Studio Journey", () => {
       expect(savedYaml).toContain(String(form?.id));
       const savedDocument = parseYaml(savedYaml) as {
         spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
           components?: Array<{
             id?: string;
             kind?: string;
@@ -1220,6 +1268,128 @@ test.describe("Composition Studio Journey", () => {
         .toContainText(seed.purposes[0], { timeout: 30_000 });
       await expect(reopenedRuntimeBlocks.nth(1).getByRole("table"))
         .toContainText(seed.purposes[1]);
+
+      // Changing one placed Table chooses another Form-backed variable while
+      // preserving the original query variable and the Metric reference.
+      const savedEditUrl =
+        `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit`;
+      await page.goto(getFrontendUrl(savedEditUrl), {
+        waitUntil: "domcontentloaded",
+      });
+      const sourceTableButton = page.getByRole("button", {
+        name: `table, ${formSlug}_rows`,
+        exact: true,
+      });
+      await expect(sourceTableButton).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("button", {
+        name: `metric, ${formSlug}_sum_amount`,
+        exact: true,
+      })).toBeVisible();
+      await sourceTableButton.click();
+      const inspector = page.getByRole("complementary", {
+        name: "Selected component",
+        exact: true,
+      });
+      await inspector.getByRole("button", {
+        name: `Change variable, ${formSlug}_rows`,
+        exact: true,
+      }).click();
+      const rebindPicker = page.getByRole("dialog", {
+        name: "Table",
+        exact: true,
+      });
+      await rebindPicker.getByRole("tab", {
+        name: "Forms",
+        exact: true,
+      }).click();
+      await rebindPicker.getByRole("button", {
+        name: replacementFormName,
+        exact: true,
+      }).click();
+      await expect(rebindPicker).toHaveCount(0, { timeout: 30_000 });
+      await expect(page.getByRole("button", {
+        name: `table, ${replacementSlug}_rows`,
+        exact: true,
+      })).toBeVisible();
+      await expect(page.getByRole("button", {
+        name: `metric, ${formSlug}_sum_amount`,
+        exact: true,
+      })).toBeVisible();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(
+          `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/[^/]+$`,
+        ),
+        { timeout: 30_000 },
+      );
+      const rebound = revisionFromUrl(page.url());
+      expect(rebound.revisionId).not.toBe(saved.revisionId);
+
+      const reboundRevisionResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${rebound.compositionId}/history/${rebound.revisionId}`,
+        ),
+      );
+      expect(reboundRevisionResponse.ok()).toBe(true);
+      const reboundRevision = await reboundRevisionResponse.json() as StudioRawRevision;
+      const reboundSpec = parseYaml(
+        String(reboundRevision.fields["spec"]),
+      ) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
+          components?: Array<{
+            id?: string;
+            kind?: string;
+            variable?: string;
+          }>;
+        };
+      };
+      const reboundVariables = reboundSpec.spec?.variables ?? [];
+      const originalFormQuery = reboundVariables.find((variable) =>
+        variable.id === `${formSlug}_rows`
+      );
+      const originalSavedFormQuery = savedDocument.spec?.variables?.find(
+        (variable) => variable.id === `${formSlug}_rows`,
+      );
+      expect(originalFormQuery?.query).toMatchObject({
+        kind: "inline_sql",
+        sql: `SELECT * FROM ${sqlIdentifier(seed.formName)}`,
+        form_bindings: [{ relation: seed.formName, form_id: form!.id! }],
+      });
+      expect(originalFormQuery?.query).toEqual(originalSavedFormQuery?.query);
+      expect(reboundVariables.some((variable) =>
+        variable.id === `${replacementSlug}_rows` &&
+        variable.query?.form_bindings?.some((binding) =>
+          binding.relation === replacementFormName &&
+          binding.form_id === replacementForm!.id
+        )
+      )).toBe(true);
+      const reboundComponents = reboundSpec.spec?.components ?? [];
+      expect(reboundComponents.map(({ id, kind }) => `${kind}:${id}`).sort())
+        .toEqual((savedDocument.spec?.components ?? [])
+          .map(({ id, kind }) => `${kind}:${id}`)
+          .sort());
+      expect(reboundComponents.find((component) =>
+        component.kind === "metric"
+      )?.variable).toBe(`${formSlug}_sum_amount`);
+      expect(reboundComponents.find((component) =>
+        component.kind === "table"
+      )?.variable).toBe(`${replacementSlug}_rows`);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("region", {
+        name: `${formSlug}_sum_amount`,
+        exact: true,
+      })).toContainText("50", { timeout: 30_000 });
+      await expect(page.getByRole("table", {
+        name: `${replacementSlug}_rows results`,
+      })).toContainText("Replacement Form row", { timeout: 30_000 });
     } finally {
       await ownerContext.close();
     }
