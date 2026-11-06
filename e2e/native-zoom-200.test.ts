@@ -468,6 +468,8 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     secondInput:
       `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
     metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
+    metricValue:
+      `${evidenceDir}/composition-runtime-native-zoom-200-metric-value.png`,
   };
   await firstInput.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
@@ -495,6 +497,10 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await expect(metric).toBeInViewport({ ratio: 0.9 });
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric, fullPage: true });
+  await metric.screenshot({ path: screenshots.metricValue });
+  const metricValueScreenshotIntersection = await assertIntersectsViewport(
+    metric,
+  );
   const report = {
     sourceSha: buildInfo.source_sha,
     backendSourceSha,
@@ -527,11 +533,14 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
     metricViewportIntersection: metricIntersection,
     metricScreenshotViewportIntersection: metricScreenshotIntersection,
+    metricValueScreenshotViewportIntersection:
+      metricValueScreenshotIntersection,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
     screenshots,
-    metricScreenshotMode: "full page; native zoom viewport recorded above",
+    metricScreenshotMode:
+      "full-page supplement; metric-value element capture after ordinary scroll; zoomed viewport recorded above",
   };
   console.log(`NATIVE_ZOOM_RUNTIME_EVIDENCE ${JSON.stringify(report)}`);
 });
