@@ -86,6 +86,133 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("REQ-FE-080: Saved SQL Run applies a declared default and preserves an unset parameter", async ({ page, request }) => {
+    const name = `Transient integer parameter ${Date.now()}`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: "SELECT $value AS result",
+          variables: [{
+            name: "value",
+            type: "integer",
+            description: "Value returned by the Saved SQL query.",
+            default: 7,
+          }],
+        },
+      },
+    );
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+    const variablesPath = `/spaces/${spaceId}/sql/${savedSqlId}/variables`;
+    const queryRequests: Array<{
+      parameters: Record<string, unknown>;
+      parameter_types: Record<string, string>;
+    }> = [];
+    page.on("request", (outgoing) => {
+      if (
+        outgoing.method() === "POST" &&
+        new URL(outgoing.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query`
+      ) queryRequests.push(outgoing.postDataJSON());
+    });
+
+    try {
+      const savedSqlLoad = page.waitForResponse((response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/${savedSqlId}`
+      );
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const savedSqlResponse = await savedSqlLoad;
+      expect(savedSqlResponse.ok()).toBe(true);
+      await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+      await page.getByRole("link", { name: "Open Variables", exact: true })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`${variablesPath}$`));
+      const valueInput = page.getByRole("textbox", {
+        name: "value integer",
+        exact: true,
+      });
+      await expect(valueInput).toHaveValue("7");
+      expect(queryRequests).toEqual([]);
+
+      const defaultRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      const defaultResponse = await defaultRun;
+      expect(defaultResponse.ok(), await defaultResponse.text()).toBe(true);
+      expect(queryRequests).toMatchObject([{
+        parameters: { value: 7 },
+        parameter_types: { value: "integer" },
+      }]);
+      const defaultResult = await defaultResponse.json() as {
+        columns: string[];
+        rows: Array<Record<string, unknown>>;
+      };
+      expect(defaultResult.columns).toEqual(["result"]);
+      expect(defaultResult.rows).toEqual([{ result: 7 }]);
+      await expect(page.getByRole("table", { name: "SQL results" }))
+        .toContainText("7");
+
+      const reloadedSavedSql = page.waitForResponse((response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/${savedSqlId}`
+      );
+      await page.goto(getFrontendUrl(variablesPath), {
+        waitUntil: "domcontentloaded",
+      });
+      const reloadedSavedSqlResponse = await reloadedSavedSql;
+      expect(reloadedSavedSqlResponse.ok()).toBe(true);
+      const unsetInput = page.getByRole("textbox", {
+        name: "value integer",
+        exact: true,
+      });
+      await expect(unsetInput).toHaveValue("7");
+      await unsetInput.fill("");
+      const unsetRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      const unsetResponse = await unsetRun;
+      expect(unsetResponse.ok(), await unsetResponse.text()).toBe(true);
+      expect(queryRequests).toMatchObject([
+        {
+          parameters: { value: 7 },
+          parameter_types: { value: "integer" },
+        },
+        {
+          parameters: { value: null },
+          parameter_types: { value: "integer" },
+        },
+      ]);
+      const unsetResult = await unsetResponse.json() as {
+        columns: string[];
+        rows: Array<Record<string, unknown>>;
+      };
+      expect(unsetResult.columns).toEqual(["result"]);
+      expect(unsetResult.rows).toHaveLength(1);
+      expect(unsetResult.rows[0]?.result ?? null).toBeNull();
+      await expect(page.getByRole("table", { name: "SQL results" }))
+        .toContainText("—");
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("invalid SQL draft shows a diagnostic, blocks unsafe actions, and keeps comments through repair", async ({ page, request }) => {
     const name = `Invalid SQL draft ${Date.now()}`;
     const rowsSql = Array.from(
