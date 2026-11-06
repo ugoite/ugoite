@@ -3374,6 +3374,75 @@ async fn parameterized_cast_target_edit_executes_exact_decimal_result() -> anyho
 }
 
 #[tokio::test]
+async fn timestamp_cast_precision_edit_executes_exact_millisecond_result() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentCastTarget,
+        SqlDocumentCastType, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+        SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(960)),
+        "memory://authorized-timestamp-cast-precision",
+    )
+    .await?;
+    let tasks = form(961, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 962, 963, "row").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[962]))
+        .await?;
+
+    let source = "SELECT CAST('2026-01-02 03:04:05.123000' AS TIMESTAMP) FROM tasks";
+    let document = parse_sql_document(source);
+    let cast = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::CastExpression)
+        .expect("the SQL Document exposes the directly written CAST");
+    let edited = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetParameterizedCastTarget {
+                node_id: cast.id,
+                expected_kind: cast.kind,
+                target: SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Timestamp,
+                    precision: Some("3".to_owned()),
+                    scale: None,
+                    length: None,
+                },
+            }],
+        },
+    )?;
+    assert_eq!(
+        edited.document.to_sql(),
+        "SELECT CAST('2026-01-02 03:04:05.123000' AS TIMESTAMP(3)) FROM tasks"
+    );
+
+    let batches = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    assert_eq!(
+        batches[0].column(0).data_type(),
+        &arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Millisecond, None)
+    );
+    assert_eq!(
+        batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::TimestampMillisecondArray>()
+            .expect("TIMESTAMP(3) returns millisecond timestamps")
+            .value(0),
+        1_767_323_045_123,
+        "the timestamp is preserved to exactly 123 milliseconds"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn typed_sql_document_nested_structure_edits_execute_authorized_queries() -> anyhow::Result<()>
 {
     use ugoite_domain::sql_document::{

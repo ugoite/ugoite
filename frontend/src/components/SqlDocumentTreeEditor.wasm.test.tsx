@@ -11,6 +11,40 @@ import {
 import { SqlDocumentTreeEditor } from "./SqlDocumentTreeEditor";
 
 describe("SqlDocumentTreeEditor actual WASM interactions", () => {
+  it("edits a directly written CAST to TIMESTAMP(3) through actual WASM", async () => {
+    const initial = "SELECT CAST('2026-01-02 03:04:05.123000' AS TIMESTAMP)";
+    const document = await parseSqlDocument(initial);
+    const cast = document.nodes.find((node) =>
+      node.kind === "cast_expression"
+    );
+    expect(cast).toBeDefined();
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const castItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(cast!.id)
+    );
+    expect(castItem).toBeDefined();
+
+    fireEvent.click(castItem!);
+    fireEvent.change(screen.getByLabelText("Cast target type"), {
+      target: { value: "timestamp" },
+    });
+    fireEvent.input(screen.getByLabelText("Type precision"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(sql()).toBe(
+        "SELECT CAST('2026-01-02 03:04:05.123000' AS TIMESTAMP(3))",
+      )
+    );
+    const edited = await parseSqlDocument(sql());
+    expect(edited.status).toBe("parsed");
+    expect(edited.diagnostics).toEqual([]);
+  });
+
   it("edits a directly written CAST to DECIMAL(4, 2) through actual WASM", async () => {
     const initial = "SELECT CAST(7 AS DECIMAL)";
     const document = await parseSqlDocument(initial);
