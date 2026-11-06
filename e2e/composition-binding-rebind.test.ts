@@ -438,6 +438,218 @@ test("Composition rebinds one shared Form table to exact Saved SQL and reopens b
   expect(savedSqlSourcesAfter).toEqual(savedSqlSourcesBefore);
 });
 
+test("Composition removes one of two shared Metrics and reopens the remaining reference", async ({ page, request }) => {
+  await waitForServers(request);
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const spaceResponse = await request.post(getBackendUrl("/spaces"), {
+    data: {
+      slug: `composition-shared-metric-${suffix}`,
+      name: `Composition shared Metric ${suffix}`,
+    },
+  });
+  expect([200, 201]).toContain(spaceResponse.status());
+  const space = await spaceResponse.json() as { space_uid?: string };
+  expect(space.space_uid).toBeTruthy();
+  const spaceId = space.space_uid!;
+
+  const formName = `SharedMetric${suffix}`;
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Amount\n`,
+        fields: { Amount: { type: "integer", required: true } },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+  for (const amount of [10, 20, 30]) {
+    const entry = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      { data: { form: formName, fields: { Amount: amount } } },
+    );
+    expect(entry.status()).toBe(201);
+  }
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as FormSummary[];
+  const form = forms.find((candidate) => candidate.name === formName);
+  expect(form?.sql_relation).toBeTruthy();
+  const amountColumn = form?.fields?.Amount?.sql_column;
+  expect(amountColumn).toBeTruthy();
+
+  const savedSqlName = `Shared count ${suffix}`;
+  const sqlResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/sql`),
+    {
+      data: {
+        name: savedSqlName,
+        kind: "user-query",
+        sql: `SELECT COUNT(*) AS total, SUM(${
+          sqlIdentifier(amountColumn!)
+        }) AS amount_sum FROM ${sqlIdentifier(form!.sql_relation!)}`,
+        variables: [],
+      },
+    },
+  );
+  expect([200, 201]).toContain(sqlResponse.status());
+  const savedSql = await sqlResponse.json() as SavedSql;
+  expect(savedSql.id).toBeTruthy();
+  expect(savedSql.revision_id).toBeTruthy();
+
+  const compositionName = `Shared Metric deletion ${suffix}`;
+  await page.goto(
+    getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+    { waitUntil: "domcontentloaded" },
+  );
+  await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill(compositionName);
+
+  const variableId = `${slug(savedSqlName)}_total`;
+  const palette = page.getByRole("group", { name: "Add to design" });
+  await palette.getByRole("button", { name: "Metric", exact: true })
+    .click();
+  const savedSqlPicker = page.getByRole("dialog", {
+    name: "Metric",
+    exact: true,
+  });
+  await savedSqlPicker.getByRole("tab", {
+    name: "Saved SQL",
+    exact: true,
+  }).click();
+  await savedSqlPicker.getByRole("button", {
+    name: savedSqlName,
+    exact: true,
+  }).click();
+  await savedSqlPicker.getByRole("button", {
+    name: "total",
+    exact: true,
+  }).click();
+  await expect(savedSqlPicker).toHaveCount(0);
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "3",
+  ]);
+
+  await palette.getByRole("button", { name: "Metric", exact: true })
+    .click();
+  const variablePicker = page.getByRole("dialog", {
+    name: "Metric",
+    exact: true,
+  });
+  await variablePicker.getByRole("tab", {
+    name: "Variables",
+    exact: true,
+  }).click();
+  await variablePicker.getByRole("button", {
+    name: variableId,
+    exact: true,
+  }).click();
+  await expect(variablePicker).toHaveCount(0);
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "3",
+    "3",
+  ]);
+  for (const componentId of ["component_1", "component_2"]) {
+    await expect(
+      page.locator(
+        `.compositionGraphValue[data-component-id="${componentId}"] button`,
+      ),
+    ).toHaveAccessibleName(`metric, ${variableId}`);
+  }
+
+  const removedMetric = page.locator(
+    '.compositionGraphValue[data-component-id="component_2"]',
+  );
+  await removedMetric.getByRole("button", {
+    name: `metric, ${variableId}`,
+    exact: true,
+  }).click();
+  const inspector = page.getByRole("complementary", {
+    name: "Selected component",
+    exact: true,
+  });
+  await inspector.getByRole("button", {
+    name: `Remove ${variableId}`,
+    exact: true,
+  }).click();
+  await expect(removedMetric).toHaveCount(0);
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "3",
+  ]);
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/spaces/${spaceId}/compositions/[^/]+/[^/]+$`),
+  );
+  const saved = page.url().match(/\/compositions\/([^/]+)\/([^/]+)$/);
+  expect(saved).toBeTruthy();
+  const compositionId = saved![1];
+  const revisionId = saved![2];
+  const revisionResponse = await request.get(
+    getBackendUrl(
+      `/spaces/${spaceId}/compositions/${compositionId}/history/${revisionId}`,
+    ),
+  );
+  expect(revisionResponse.ok()).toBe(true);
+  const revision = await revisionResponse.json() as SavedRevision;
+  expect(revision.revision).toMatchObject({
+    entry_id: compositionId,
+    revision_id: revisionId,
+  });
+  const document = parseYaml(String(revision.fields["spec"])) as {
+    spec?: {
+      variables?: Array<{
+        id?: string;
+        kind?: string;
+        query?: {
+          kind?: string;
+          entry_id?: string;
+          revision_id?: string;
+          column?: string;
+        };
+      }>;
+      components?: Array<{
+        id?: string;
+        kind?: string;
+        variable?: string;
+      }>;
+    };
+  };
+  const sharedVariables = (document.spec?.variables ?? []).filter((node) =>
+    node.id === variableId
+  );
+  expect(document.spec?.variables).toHaveLength(1);
+  expect(sharedVariables).toHaveLength(1);
+  expect(sharedVariables[0]).toMatchObject({
+    id: variableId,
+    kind: "query",
+    query: {
+      kind: "saved_sql",
+      entry_id: savedSql.id,
+      revision_id: savedSql.revision_id,
+      column: "total",
+    },
+  });
+  expect(document.spec?.components).toEqual([{
+    id: "component_1",
+    kind: "metric",
+    variable: variableId,
+  }]);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", {
+    level: 1,
+    name: compositionName,
+  })).toBeVisible();
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "3",
+  ]);
+});
+
 test("Composition shared query edits update every display", async ({ page, request }) => {
   test.setTimeout(120_000);
   await waitForServers(request);
