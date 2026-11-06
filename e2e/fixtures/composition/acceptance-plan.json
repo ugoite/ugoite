@@ -251,10 +251,16 @@
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
           "name": "Composition Studio text remains readable when the system color mode changes"
+        },
+        {
+          "path": "e2e/native-zoom-200.test.ts",
+          "kind": "test",
+          "name": "U-04 partial evidence: Composition Design remains usable at native 200% zoom"
         }
       ],
       "manual_evidence_gaps": [
-        "Actual browser 200% zoom and iPhone Safari device verification"
+        "Only one saved Composition Design journey at actual 200% zoom in Linux Chromium is evidenced; runtime, other Composition states, and available modes remain unverified.",
+        "iPhone Safari device verification"
       ]
     },
     {
