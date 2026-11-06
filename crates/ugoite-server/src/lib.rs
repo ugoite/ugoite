@@ -14848,6 +14848,57 @@ mod authentication_regression_tests {
         include_str!("../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
 
     #[tokio::test]
+    async fn composition_save_rejects_prerelease_source_shape_without_side_effects(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-removed-source-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351299);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-removed-source", owner_id, "Save test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let forms_before = serde_json::to_value(state.service.list_forms(&space_id).await?)?;
+        let entries_before = serde_json::to_value(state.service.list_entries(&space_id).await?)?;
+        let request = Request::post(format!("/spaces/{space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("idempotency-key", "prerelease-source-rejection")
+            .body(Body::from(serde_json::to_vec(&json!({
+                "yaml": REMOVED_SOURCE_GRAMMAR_TEST_YAML
+            }))?))?;
+
+        let (status, body) = route_json(route.clone(), request).await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "invalid_composition");
+
+        let (list_status, list) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/compositions?limit=10")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(list_status, StatusCode::OK, "{list}");
+        assert_eq!(list["items"], json!([]));
+        assert_eq!(
+            serde_json::to_value(state.service.list_forms(&space_id).await?)?,
+            forms_before,
+            "rejected source-shaped input must not initialize the Composition registry"
+        );
+        assert_eq!(
+            serde_json::to_value(state.service.list_entries(&space_id).await?)?,
+            entries_before,
+            "rejected source-shaped input must not append an Entry"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
@@ -15073,17 +15124,6 @@ mod authentication_regression_tests {
             let (status, _) = route_json(owner_route.clone(), post_save(body)?).await?;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         }
-        let (removed_grammar_status, removed_grammar_body) = route_json(
-            owner_route.clone(),
-            post_save(json!({"yaml": REMOVED_SOURCE_GRAMMAR_TEST_YAML}))?,
-        )
-        .await?;
-        assert_eq!(
-            removed_grammar_status,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "{removed_grammar_body}"
-        );
-        assert_eq!(removed_grammar_body["code"], "invalid_composition");
         let (empty_status, empty_page) = route_json(
             owner_route.clone(),
             Request::get(format!("/spaces/{space_id}/compositions?limit=1")).body(Body::empty())?,
