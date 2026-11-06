@@ -179,7 +179,24 @@ requirements:
       - id: graph-draft-and-atomic-bindings
         role: verification
         facet: verification
-        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. Also verify that a SQL argument declaration can be explicitly bound to a Design Input in the same graph draft. Existing renderer and journey tests partially distinguish an empty Table, NULL scalar, scalar zero, zero-row scalar, and multiple-row scalar. The scalar-state journey compares those scalar displays between the saved runtime and reopened Design preview. The Table pagination journey checks bounded rows and the server continuation request in both saved runtime and Design; page responses are not browser-sliced or aggregated. The SQL result criterion remains partially unverified: the coverage does not distinguish unavailable data from an execution error. The defensive scalar_column_count_mismatch validator is not reachable through a valid Composition save/run path (issue #4810). Other required, default, unused, unbound, and incompatible argument cases remain an explicit verification gap.
+        responsibility: >-
+          Verify strict graph-only serialization, typed bindings, atomic Form
+          and Saved SQL insertion, explicit aggregate choice, and reference-only
+          rebinding. Existing renderer and journey tests partially distinguish
+          an empty Table, NULL scalar, scalar zero, zero-row scalar, and
+          multiple-row scalar. The scalar-state journey compares those scalar
+          displays between the saved runtime and reopened Design preview. The
+          Table pagination journey checks bounded rows and the server
+          continuation request in both saved runtime and Design; page responses
+          are not browser-sliced or aggregated. The SQL result Criterion remains
+          unverified: the coverage does not distinguish unavailable data from
+          an execution error. UI evidence for the defensive
+          scalar_column_count_mismatch state remains unverified; source review
+          found its validator is not reachable through a valid Composition
+          save/run path (issue #4810). The broader
+          Composition SQL argument requirement also remains unverified because
+          no current test covers host-side variable and Input creation in the
+          same draft update.
         targets:
           - id: graph-draft-shape
             adapter: typescript
