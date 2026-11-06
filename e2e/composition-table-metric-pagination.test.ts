@@ -314,6 +314,131 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(input).toHaveValue("0");
     await uiExpect(metric).toHaveText("102");
     expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
+
+    // Reopen the same revision in Design. The graph preview uses its own
+    // authorized evaluation path, but the table still receives only one
+    // bounded page. Keep the server exchanges so this proves the browser did
+    // not fetch and slice the remaining rows itself.
+    type EvaluationRequest = {
+      variables?: Record<string, unknown>;
+      page?: { variable_id?: string; cursor?: string };
+      requested_queries?: string[];
+    };
+    type EvaluationResponse = {
+      ok: boolean;
+      computed_query_ids: string[];
+      query_results: Record<string, {
+        value: { kind: string; rows?: unknown[][] };
+        has_more: boolean;
+        next?: string;
+      }>;
+    };
+    const designPageRequests: EvaluationRequest[] = [];
+    page.on("request", (outgoing) => {
+      if (
+        outgoing.method() !== "POST" ||
+        !new URL(outgoing.url()).pathname.endsWith(
+          `/spaces/${seed.spaceId}/compositions/evaluate`,
+        )
+      ) return;
+      const body = outgoing.postDataJSON() as EvaluationRequest;
+      if (body.page) designPageRequests.push(body);
+    });
+
+    const designInitialResponse = page.waitForResponse((incoming) =>
+      incoming.request().method() === "POST" &&
+      new URL(incoming.url()).pathname.endsWith(
+        `/spaces/${seed.spaceId}/compositions/evaluate`,
+      )
+    );
+    await page.goto(getFrontendUrl(`${path}/edit`), {
+      waitUntil: "domcontentloaded",
+    });
+    const initialDesignEvaluation = await (await designInitialResponse)
+      .json() as EvaluationResponse;
+    expect(initialDesignEvaluation.ok).toBe(true);
+    const initialDesignTable =
+      initialDesignEvaluation.query_results.paged_rows;
+    expect(initialDesignTable.value.kind).toBe("table");
+    expect(initialDesignTable.value.rows).toHaveLength(100);
+    expect(initialDesignTable.has_more).toBe(true);
+    expect(initialDesignTable.next).toBeTruthy();
+    expect(designPageRequests).toHaveLength(0);
+
+    const designInput = page.getByRole("textbox", {
+      name: "minimum_amount",
+      exact: true,
+    });
+    const designMetric = page.locator(".compositionGraphMetric strong");
+    const designTable = page.getByRole("table");
+    await uiExpect(designInput).toHaveValue("1");
+    await uiExpect(designMetric).toHaveText("101");
+    await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
+
+    const zeroInputEvaluation = page.waitForResponse((incoming) => {
+      if (
+        incoming.request().method() !== "POST" ||
+        !new URL(incoming.url()).pathname.endsWith(
+          `/spaces/${seed.spaceId}/compositions/evaluate`,
+        )
+      ) return false;
+      const body = incoming.request().postDataJSON() as EvaluationRequest;
+      return !body.page && body.variables?.minimum_amount === 0;
+    });
+    await designInput.fill("0");
+    const zeroDesignEvaluation = await (await zeroInputEvaluation)
+      .json() as EvaluationResponse;
+    expect(zeroDesignEvaluation.ok).toBe(true);
+    const zeroDesignTable = zeroDesignEvaluation.query_results.paged_rows;
+    expect(zeroDesignTable.value.rows).toHaveLength(100);
+    expect(zeroDesignTable.has_more).toBe(true);
+    await uiExpect(designInput).toHaveValue("0");
+    await uiExpect(designMetric).toHaveText("102");
+    await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
+    expect(designPageRequests).toHaveLength(0);
+
+    const nextDesignPageResponse = page.waitForResponse((incoming) => {
+      if (
+        incoming.request().method() !== "POST" ||
+        !new URL(incoming.url()).pathname.endsWith(
+          `/spaces/${seed.spaceId}/compositions/evaluate`,
+        )
+      ) return false;
+      const body = incoming.request().postDataJSON() as EvaluationRequest;
+      return body.page?.variable_id === "paged_rows";
+    });
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    const nextDesignEvaluation = await (await nextDesignPageResponse)
+      .json() as EvaluationResponse;
+    const requestedPage = designPageRequests.at(-1);
+    expect(designPageRequests).toHaveLength(1);
+    expect(requestedPage).toMatchObject({
+      requested_queries: ["paged_rows"],
+      page: {
+        variable_id: "paged_rows",
+        cursor: zeroDesignTable.next,
+      },
+    });
+    expect(nextDesignEvaluation.ok).toBe(true);
+    expect(nextDesignEvaluation.computed_query_ids).toEqual(["paged_rows"]);
+    const nextDesignTable = nextDesignEvaluation.query_results.paged_rows;
+    expect(nextDesignTable.value.kind).toBe("table");
+    expect(nextDesignTable.value.rows).toHaveLength(2);
+    expect(JSON.stringify(nextDesignTable.value.rows)).toContain("Pager-100");
+    expect(JSON.stringify(nextDesignTable.value.rows)).toContain("Pager-101");
+    expect(nextDesignTable.has_more).toBe(false);
+    await uiExpect(designTable.locator("tbody tr")).toHaveCount(2);
+    await uiExpect(designTable).toContainText("Pager-100");
+    await uiExpect(designTable).toContainText("Pager-101");
+    await uiExpect(designInput).toHaveValue("0");
+    await uiExpect(designMetric).toHaveText("102");
+
+    await page.getByRole("button", { name: "Previous", exact: true }).click();
+    await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
+    await uiExpect(designTable).toContainText("Pager-000");
+    await uiExpect(designInput).toHaveValue("0");
+    await uiExpect(designMetric).toHaveText("102");
+    expect(designPageRequests).toHaveLength(1);
   });
 
   test("Studio counts the pinned Table SQL separately and preserves its source while paging", async ({ page, request }) => {
