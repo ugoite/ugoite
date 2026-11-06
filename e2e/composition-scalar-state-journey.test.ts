@@ -349,6 +349,114 @@ async function seedScalarStateComposition(
   return { aggregates, emptyScalar };
 }
 
+async function seedScalarCastFailureComposition(
+  request: APIRequestContext,
+): Promise<SeedState> {
+  const spaceId = await createSpace(request);
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const formName = `ScalarCast${suffix}`;
+  const compositionName = `Scalar cast failure ${suffix}`;
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Amount\n`,
+        fields: {
+          Amount: { type: "double", required: false },
+          "Numeric text": { type: "string", required: false },
+        },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as Array<{
+    name?: string;
+    sql_relation?: string;
+    fields?: Record<string, { sql_column?: string }>;
+  }>;
+  const form = forms.find((candidate) => candidate.name === formName);
+  const relation = form?.sql_relation;
+  const amountColumn = form?.fields?.Amount?.sql_column;
+  const numericTextColumn = form?.fields?.["Numeric text"]?.sql_column;
+  expect(relation).toBeTruthy();
+  expect(amountColumn).toBeTruthy();
+  expect(numericTextColumn).toBeTruthy();
+  for (const fields of [
+    { Amount: 10, "Numeric text": "10" },
+    { Amount: 20, "Numeric text": "not-a-number" },
+  ]) {
+    const entryResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      { data: { form: formName, fields } },
+    );
+    expect(entryResponse.status()).toBe(201);
+  }
+
+  const amount = sqlIdentifier(amountColumn!);
+  const numericText = sqlIdentifier(numericTextColumn!);
+  const table = sqlIdentifier(relation!);
+  const castFailureSql = await createSavedSql(
+    request,
+    spaceId,
+    `Scalar cast failure ${suffix}`,
+    `SELECT CAST(${numericText} AS BIGINT) AS value ` +
+      `FROM ${table} WHERE ${amount} = $maximum`,
+    [{
+      name: "maximum",
+      type: "integer",
+      description: "Amount whose text value is cast to an integer.",
+    }],
+  );
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: compositionName,
+    variables: [
+      {
+        id: "maximum",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 10 },
+      },
+      {
+        id: "cast_failure",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: castFailureSql.entryId,
+          revision_id: castFailureSql.revisionId,
+          label_source: "variable",
+          column: "value",
+          arguments: [{ name: "maximum", variable: "maximum" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "maximum_input", kind: "input", variable: "maximum" },
+      { id: "cast_failure", kind: "metric", variable: "cast_failure" },
+    ],
+    rows: [{
+      id: "values",
+      items: ["maximum_input", "cast_failure"].map((component) => ({
+        kind: "component" as const,
+        component,
+      })),
+    }],
+  });
+  return await saveCompositionSeed(request, spaceId, yaml, compositionName);
+}
+
 async function saveCompositionSeed(
   request: APIRequestContext,
   spaceId: string,
@@ -513,12 +621,20 @@ async function openOwnerPage(
 }
 
 test.describe("Composition scalar state journey", () => {
-  let seeds: { aggregates: SeedState; emptyScalar: SeedState };
+  let seeds: {
+    aggregates: SeedState;
+    emptyScalar: SeedState;
+    castFailure: SeedState;
+  };
 
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    seeds = await seedScalarStateComposition(request);
+    const scalarSeeds = await seedScalarStateComposition(request);
+    seeds = {
+      ...scalarSeeds,
+      castFailure: await seedScalarCastFailureComposition(request),
+    };
   });
 
   test("changing one Metric reference preserves its shared query and sibling", async ({ browser, context, request }) => {
@@ -904,5 +1020,71 @@ test.describe("Composition scalar state journey", () => {
       }
     }
     expect(observations[1]).toEqual(observations[0]);
+  });
+
+  test("scalar_cast_execution_failure_remains_distinct_from_source_unavailability", async ({ browser, context }) => {
+    test.setTimeout(120_000);
+    for (const edit of [false, true]) {
+      const { freshContext, page } = await openOwnerPage(
+        browser,
+        context,
+        seeds.castFailure,
+        edit,
+      );
+      try {
+        const maximumInput = page.getByRole("textbox", {
+          name: "maximum",
+          exact: true,
+        });
+        const castOutput = metricOutput(page, "cast_failure");
+        await expect(maximumInput).toHaveValue("10");
+        await expect(castOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
+
+        const failedEvaluation = page.waitForResponse((response) => {
+          if (
+            response.request().method() !== "POST" ||
+            !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+          ) return false;
+          return response.request().postDataJSON().variables?.maximum === 20;
+        });
+        await maximumInput.fill("20");
+        const failureResponse = await failedEvaluation;
+        expect(failureResponse.status()).toBe(422);
+        const failureBody = await failureResponse.json();
+        expect(failureBody.code).toBe("INVALID_INPUT");
+        expect(failureBody.message).toContain("SQL query execution failed");
+        expect(JSON.stringify(failureBody)).not.toContain("query_unavailable");
+
+        const errorAlert = page.getByRole("alert").first();
+        await expect(errorAlert).toBeVisible({
+          timeout: scalarResultTimeoutMs,
+        });
+        const alertText = (await page.getByRole("alert").allTextContents())
+          .join(" ");
+        expect(alertText).not.toContain("This source is unavailable");
+        expect(alertText).not.toContain("データソースを利用できない");
+        await expect(castOutput).toHaveCount(0, {
+          timeout: scalarResultTimeoutMs,
+        });
+
+        const repairedEvaluation = page.waitForResponse((response) => {
+          if (
+            response.request().method() !== "POST" ||
+            !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+          ) return false;
+          return response.request().postDataJSON().variables?.maximum === 10;
+        });
+        await maximumInput.fill("10");
+        const repairedResponse = await repairedEvaluation;
+        expect(repairedResponse.ok()).toBe(true);
+        await expect(castOutput).toHaveText("10", {
+          timeout: scalarResultTimeoutMs,
+        });
+      } finally {
+        await freshContext.close();
+      }
+    }
   });
 });
