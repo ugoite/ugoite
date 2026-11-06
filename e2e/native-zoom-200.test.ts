@@ -485,8 +485,12 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
     metricViewport:
       `${evidenceDir}/composition-runtime-native-zoom-200-metric-viewport.png`,
+    metricViewportDevice:
+      `${evidenceDir}/composition-runtime-native-zoom-200-metric-viewport-device.png`,
     metricResult:
       `${evidenceDir}/composition-runtime-native-zoom-200-metric-result.png`,
+    metricResultDevice:
+      `${evidenceDir}/composition-runtime-native-zoom-200-metric-result-device.png`,
   };
   await firstInput.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
@@ -523,6 +527,10 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   const metricScreenshotIntersection = await assertIntersectsViewport(metric);
   await page.screenshot({ path: screenshots.metric, fullPage: true });
   await page.screenshot({ path: screenshots.metricViewport });
+  await page.screenshot({
+    path: screenshots.metricViewportDevice,
+    scale: "device",
+  });
   await expect(metric).toHaveText("6");
   await expect(metricResult).toContainText("6");
   const metricResultScreenshotIntersection = await assertIntersectsViewport(
@@ -535,6 +543,10 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   const metricScreenshotText = await metricResult.locator("strong").innerText();
   expect(metricScreenshotText).toBe("6");
   await metricResult.screenshot({ path: screenshots.metricResult });
+  await metricResult.screenshot({
+    path: screenshots.metricResultDevice,
+    scale: "device",
+  });
   const report = {
     sourceSha: buildInfo.source_sha,
     backendSourceSha,
@@ -577,7 +589,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     screenshots,
     metricPaintText,
     metricScreenshotMode:
-      "two animation frames after ordinary scroll; full-page supplement, viewport capture, and Metric result capture",
+      "two animation frames after ordinary scroll; full-page, CSS-scale viewport/result, and device-scale viewport/result captures",
   };
   console.log(`NATIVE_ZOOM_RUNTIME_EVIDENCE ${JSON.stringify(report)}`);
 });
