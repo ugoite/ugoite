@@ -184,13 +184,16 @@ requirements:
           and Saved SQL insertion, explicit aggregate choice, and reference-only
           rebinding. Existing renderer and journey tests partially distinguish
           an empty Table, NULL scalar, scalar zero, zero-row scalar, and
-          multiple-row scalar, and cover bounded cursor transitions. The
-          scalar-state journey compares those scalar displays between the saved
-          runtime and reopened Design preview. The SQL result Criterion remains
-          unverified: the coverage does not distinguish an unavailable result
-          from an execution error, does not exercise the
-          scalar_column_count_mismatch UI state, and does not establish bounded
-          Table output without browser-side aggregation. The broader
+          multiple-row scalar. The scalar-state journey compares those scalar
+          displays between the saved runtime and reopened Design preview. The
+          Table pagination journey checks bounded rows and the server
+          continuation request in both saved runtime and Design; page responses
+          are not browser-sliced or aggregated. The SQL result Criterion remains
+          unverified: the coverage does not distinguish unavailable data from
+          an execution error. UI evidence for the defensive
+          scalar_column_count_mismatch state remains unverified; source review
+          found its validator is not reachable through a valid Composition
+          save/run path (issue #4810). The broader
           Composition SQL argument requirement also remains unverified because
           no current test covers host-side variable and Input creation in the
           same draft update.
@@ -298,6 +301,13 @@ requirements:
             adapter: typescript
             path: e2e/composition-scalar-state-journey.test.ts
             selector: { kind: test, name: "scalar_result_distinguishes_zero_rows_null_and_zero" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+          - id: bounded-composition-table-pages
+            adapter: typescript
+            path: e2e/composition-table-metric-pagination.test.ts
+            selector: { kind: test, name: "Table pagination leaves the SQL Metric and typed Input unchanged" }
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
