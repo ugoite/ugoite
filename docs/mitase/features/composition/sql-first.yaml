@@ -649,10 +649,8 @@ features:
             path: e2e/native-zoom-200.test.ts
             selector: { kind: test, name: "U-04 partial evidence: Composition runtime remains usable at native 200% zoom" }
             claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/native-zoom-200.test.ts, test: "U-04 partial evidence: Composition runtime remains usable at native 200% zoom" } }
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-runtime-input-accessibility
 
 
 
