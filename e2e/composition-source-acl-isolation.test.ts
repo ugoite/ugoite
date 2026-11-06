@@ -34,7 +34,7 @@ type EvaluationBody = {
   ok: boolean;
   authorization_fingerprint?: string;
   query_results?: Record<string, unknown>;
-  diagnostics?: Array<{ code?: string }>;
+  diagnostics?: Array<{ variable_id?: string; code?: string }>;
   query_diagnostics?: Array<{ variable_id: string; code?: string }>;
 };
 
@@ -293,6 +293,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
 
     const { target: viewerContext, page, close } =
       await openIsolatedPasskeyPage(browser);
+    let closeEditor: (() => Promise<void>) | undefined;
     try {
       await page.goto(invitationUrl!);
       await page.getByRole("button", { name: "Accept invitation" }).click();
@@ -329,6 +330,30 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       const metric = page.locator(".compositionGraphMetric strong");
       await expect(metric).toHaveText(seed.protectedValue);
 
+      const editorInvitation = await request.post(
+        getBackendUrl(`/spaces/${seed.spaceId}/members/invitations`),
+        { data: { label: `ACL editor ${suffix}`, role: "editor" } },
+      );
+      expect(editorInvitation.status()).toBe(201);
+      const editorInvitationUrl =
+        (await editorInvitation.json() as { invitation_url?: string })
+          .invitation_url;
+      expect(editorInvitationUrl).toBeTruthy();
+      const editor = await openIsolatedPasskeyPage(browser);
+      closeEditor = editor.close;
+      const designPage = editor.page;
+      await designPage.goto(editorInvitationUrl!);
+      await designPage.getByRole("button", { name: "Accept invitation" })
+        .click();
+      await expect(designPage).toHaveURL(/\/spaces$/);
+      await designPage.goto(getFrontendUrl(
+        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}/edit`,
+      ), { waitUntil: "domcontentloaded" });
+      await expect(designPage.locator(".compositionGraphDesignValue").first())
+        .toBeVisible({ timeout: 30_000 });
+      const designMetric = designPage.locator(".compositionGraphMetric strong");
+      await expect(designMetric).toHaveText(seed.protectedValue);
+
       const compositionRead = await viewerContext.request.get(
         getBackendUrl(
           `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
@@ -349,6 +374,12 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           const body = JSON.parse(bodyText) as EvaluationBody;
           expect(body.ok).toBe(false);
           expect(body.query_results ?? {}).toEqual({});
+          expect(body.diagnostics).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+              code: "query_unavailable",
+              variable_id: METRIC_QUERY_ID,
+            }),
+          ]));
         }
         expect(responseContainsText(bodyText, resourceId)).toBe(false);
         if (policyKind === "form") {
@@ -388,6 +419,45 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           return false;
         }
       }, { timeout: 40_000 });
+      const unavailableRuntimeEvaluation = page.waitForResponse(async (response) => {
+        if (
+          response.url() !==
+            getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`) ||
+          response.request().method() !== "POST"
+        ) return false;
+        try {
+          const body = await response.json() as EvaluationBody;
+          return body.diagnostics?.some((diagnostic) =>
+            diagnostic.code === "query_unavailable" &&
+            diagnostic.variable_id === METRIC_QUERY_ID
+          ) ?? false;
+        } catch {
+          return false;
+        }
+      });
+      const unavailableDesignEvaluation = designPage.waitForResponse(
+        async (response) => {
+          if (
+            response.url() !==
+              getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`) ||
+            response.request().method() !== "POST"
+          ) return false;
+          const requestBody = response.request().postDataJSON();
+          if (
+            requestBody.target?.kind !== "draft" ||
+            requestBody.variables?.[VARIABLE_ID] !== "revoked-source-probe"
+          ) return false;
+          try {
+            const body = await response.json() as EvaluationBody;
+            return body.diagnostics?.some((diagnostic) =>
+              diagnostic.code === "query_unavailable" &&
+              diagnostic.variable_id === METRIC_QUERY_ID
+            ) ?? false;
+          } catch {
+            return false;
+          }
+        },
+      );
       const formPolicyResponse = await request.put(
         getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
         {
@@ -418,10 +488,40 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect(changedSnapshot.valid_for_ms).toBeGreaterThan(0);
       expect(changedSnapshot.valid_for_ms).toBeLessThanOrEqual(30_000);
       expect(changedSnapshot).not.toHaveProperty("query_results");
+      const unavailableRuntimeBody = await (
+        await unavailableRuntimeEvaluation
+      ).json() as EvaluationBody;
+      expect(unavailableRuntimeBody.query_results).toEqual({});
+      await expect(page.getByRole("alert")).toContainText(
+        await page.locator("html").getAttribute("lang").then((locale) =>
+          locale === "ja"
+            ? "このデータソースを利用できないか、アクセス権が変更された可能性があります。"
+            : "This source is unavailable or access may have changed."
+        ),
+      );
       await expect(page.locator("body")).not.toContainText(
         seed.protectedValue,
         { timeout: 10_000 },
       );
+      await expect(metric).toHaveCount(0);
+      const designInput = designPage.getByRole("textbox", {
+        name: VARIABLE_ID,
+        exact: true,
+      });
+      await expect(designInput).toHaveValue("match");
+      await designInput.fill("revoked-source-probe");
+      const unavailableDesignBody = await (
+        await unavailableDesignEvaluation
+      ).json() as EvaluationBody;
+      expect(unavailableDesignBody.query_results).toEqual({});
+      await expect(designPage.getByRole("alert")).toContainText(
+        await designPage.locator("html").getAttribute("lang").then((locale) =>
+          locale === "ja"
+            ? "このデータソースを利用できないか、アクセス権が変更された可能性があります。"
+            : "This source is unavailable or access may have changed."
+        ),
+      );
+      await expect(designMetric).toHaveCount(0);
       await assertRevokedEvaluation("form", seed.formId);
 
       const restoreFormPolicy = await request.put(
@@ -456,6 +556,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect(savedSqlPolicyResponse.status()).toBe(200);
       await assertRevokedEvaluation("saved_sql", seed.savedSqlId);
     } finally {
+      await closeEditor?.();
       await close();
     }
   });
