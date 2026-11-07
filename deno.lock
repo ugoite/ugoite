@@ -14,7 +14,7 @@
     "npm:@codemirror/autocomplete@^6.20.2": "6.20.3",
     "npm:@codemirror/commands@^6.11.1": "6.11.1",
     "npm:@codemirror/lang-sql@^6.10.0": "6.10.0",
-    "npm:@codemirror/language@^6.12.3": "6.12.3",
+    "npm:@codemirror/language@^6.13.1": "6.13.1",
     "npm:@codemirror/lint@^6.9.6": "6.9.7",
     "npm:@codemirror/state@^6.6.0": "6.7.6",
     "npm:@codemirror/view@^6.43.0": "6.43.1",
@@ -1312,10 +1312,11 @@
         "@lezer/lr"
       ]
     },
-    "@codemirror/language@6.12.3": {
-      "integrity": "sha512-QwCZW6Tt1siP37Jet9Tb02Zs81TQt6qQrZR2H+eGMcFsL1zMrk2/b9CLC7/9ieP1fjIUMgviLWMmgiHoJrj+ZA==",
+    "@codemirror/language@6.13.1": {
+      "integrity": "sha512-zfvU2r3TyylQLMj/te+5CnQ0rSqZi8B1oTCBbQkagcLW4Xc6imab6qN+pEJhsuNOLaJqiRyBXp9UhWA1DhVvDw==",
       "dependencies": [
         "@codemirror/state",
+        "@codemirror/streamparser",
         "@codemirror/view",
         "@lezer/common",
         "@lezer/highlight",
@@ -1336,6 +1337,9 @@
       "dependencies": [
         "@marijn/find-cluster-break"
       ]
+    },
+    "@codemirror/streamparser@6.0.0": {
+      "integrity": "sha512-JTFPF6xrfjt0mnfGPgzcLiMwYmvIyNaoizp8BYzv8FE8KrT6GBGDZ190rtt+O7Wke3gG/MFHyiY9YGNeimof4w=="
     },
     "@codemirror/view@6.43.1": {
       "integrity": "sha512-+BIjw/AG3tDQ4pJgTLPYdAW25eDE66YsvM4LKyVPgGzVgZ4a9Wj1SRX8kPVKgBDdPt8oHtZ15F0qx7p0oOHdHw==",
@@ -9436,7 +9440,7 @@
           "npm:@codemirror/autocomplete@^6.20.2",
           "npm:@codemirror/commands@^6.11.1",
           "npm:@codemirror/lang-sql@^6.10.0",
-          "npm:@codemirror/language@^6.12.3",
+          "npm:@codemirror/language@^6.13.1",
           "npm:@codemirror/lint@^6.9.6",
           "npm:@codemirror/state@^6.6.0",
           "npm:@codemirror/view@^6.43.0",
