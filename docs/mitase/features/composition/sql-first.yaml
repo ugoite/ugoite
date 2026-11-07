@@ -382,6 +382,16 @@ features:
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
 
+          - id: shared-query-edit-updates-displays
+            adapter: typescript
+            path: e2e/composition-binding-rebind.test.ts
+            selector: { kind: test, name: Composition shared query edits update every display }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.display-components-reference-variables
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-binding-rebind.test.ts, test: Composition shared query edits update every display } }
+
           - id: shared-form-focus-after-parse
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx
