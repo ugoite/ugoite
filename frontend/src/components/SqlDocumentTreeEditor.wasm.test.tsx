@@ -1816,6 +1816,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       node.semantic.literal_kind === "number"
     );
     expect(value).toBeDefined();
+  it("preserves the full CTE query when editing the root LIMIT through actual WASM", async () => {
+    const initial = 'WITH q AS (SELECT * FROM "Task") SELECT * FROM q';
+    const document = await parseSqlDocument(initial);
+    const rootQuery = document.nodes.find((node) =>
+      node.kind === "query" && node.range?.start === 0 &&
+      node.range.end === initial.length
+    );
+    expect(rootQuery).toBeDefined();
     const expected = await applySqlDocumentSemanticEditTransaction(initial, {
       contract_version: document.contract_version,
       expected_source: initial,
@@ -1866,6 +1874,27 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.change(screen.getByLabelText("Type"), {
       target: { value: "integer" },
     });
+        kind: "set_limit_value",
+        node_id: rootQuery!.id,
+        expected_kind: "query",
+        value: 7,
+      }],
+    });
+    expect(expected.document.source).toBe(
+      'WITH q AS (SELECT * FROM "Task") SELECT * FROM q LIMIT 7',
+    );
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const queryItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(rootQuery!.id)
+    );
+    expect(queryItem).toBeDefined();
+    fireEvent.click(queryItem!);
+    fireEvent.input(screen.getByLabelText("Limit"), {
+      target: { value: "7" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set row limit" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() => expect(sql()).toBe(expected.document.source));
@@ -1873,6 +1902,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       'SELECT amount >= $minimum AS matches FROM "Expenses"',
     );
     expect(changes).toEqual(["argument", "sql"]);
+      'WITH q AS (SELECT * FROM "Task") SELECT * FROM q LIMIT 7',
+    );
     const restored = await applySqlDocumentEditTransaction(
       sql(),
       expected.undo,
