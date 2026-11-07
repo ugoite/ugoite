@@ -184,6 +184,12 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
         waitUntil: "domcontentloaded",
       });
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      await expect(editor).toHaveText("SELECT 1");
+      await editor.click();
+      await editor.press("ControlOrMeta+A");
+      await editor.pressSequentially("SELECT *");
+      await expect(editor).toHaveText("SELECT *");
       await page.getByRole("button", { name: "Form", exact: true }).click();
       await page.getByRole("dialog", { name: "Form", exact: true }).getByRole(
         "button",
@@ -211,7 +217,6 @@ test.describe("Saved SQL route", () => {
         await expect(remove).toHaveCount(0);
       }
       await expect(resultFields.getByRole("listitem")).toHaveText([/Name/]);
-      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
       const outputAlias = columns.getByRole("textbox", {
         name: "Output name for result 1",
         exact: true,
