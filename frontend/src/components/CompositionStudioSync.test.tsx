@@ -35,6 +35,7 @@ const {
   canonicalizeMock,
   parseInputMock,
   saveMock,
+  compositionFormQuerySqlMock,
   formReferenceGateMock,
   routePathMock,
 } = vi.hoisted(
@@ -49,6 +50,7 @@ const {
     canonicalizeMock: vi.fn(),
     parseInputMock: vi.fn(),
     saveMock: vi.fn(),
+    compositionFormQuerySqlMock: vi.fn(),
     formReferenceGateMock: vi.fn(),
     routePathMock: { value: "/spaces/space-1/compositions/new" },
   }),
@@ -68,8 +70,13 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/lib/ugoite-client", async (importOriginal) => {
   const actual = await importOriginal<typeof UgoiteClient>();
+  compositionFormQuerySqlMock.mockImplementation(
+    actual.compositionFormQuerySql,
+  );
   return {
-    compositionFormQuerySql: actual.compositionFormQuerySql,
+    compositionFormQuerySql: (
+      ...args: Parameters<typeof actual.compositionFormQuerySql>
+    ) => compositionFormQuerySqlMock(...args),
     parseSqlDocument: actual.parseSqlDocument,
     applySqlDocumentSemanticEditTransaction:
       actual.applySqlDocumentSemanticEditTransaction,
@@ -281,6 +288,7 @@ describe("CompositionStudio graph surface", () => {
       composition_id: "composition-1",
       revision_id: "revision-1",
     });
+    compositionFormQuerySqlMock.mockClear();
     evaluateMock.mockImplementation((
       _spaceId: string,
       request: { evaluation_id: string; requested_queries?: string[] },
@@ -1237,6 +1245,8 @@ describe("CompositionStudio graph surface", () => {
   });
 
   it("creates a Form-backed table query and component in one picker selection", async () => {
+    const rustOwnedSql = 'SELECT 37 AS rust_authority FROM "Receipts"';
+    compositionFormQuerySqlMock.mockResolvedValueOnce({ sql: rustOwnedSql });
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "Receipts",
@@ -1292,10 +1302,16 @@ describe("CompositionStudio graph surface", () => {
     const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
     expect(authored.spec.variables[0].query).toMatchObject({
       kind: "inline_sql",
-      sql: 'SELECT * FROM "Receipts"',
+      sql: rustOwnedSql,
       form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
       schema_fingerprint: "",
     });
+    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
+      "Receipts",
+      undefined,
+    );
+    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
+    expect(previewInput.spec.variables[0].query.sql).toBe(rustOwnedSql);
     expect(authored.spec.components).toHaveLength(1);
     expect(authored.spec.components[0]).toMatchObject({
       kind: "table",
