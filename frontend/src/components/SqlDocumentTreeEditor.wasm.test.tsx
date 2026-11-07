@@ -42,6 +42,33 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
         "SELECT CAST('2026-01-02 03:04:05.123000' AS TIMESTAMP(3))",
       )
     );
+  it("applies a row limit to a filtered and sorted query without dropping clauses", async () => {
+    const initial =
+      'SELECT "Entry"."field_100" FROM "Entry" WHERE field_100 = $body_value ORDER BY field_100 DESC';
+    const document = await parseSqlDocument(initial);
+    const query = document.nodes.find((node) => node.kind === "query");
+    expect(query).toBeDefined();
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const queryItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(query!.id),
+    );
+    expect(queryItem).toBeDefined();
+    fireEvent.click(queryItem!);
+    fireEvent.input(screen.getByLabelText("Limit"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set row limit" }));
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect(apply).toBeEnabled();
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(sql()).toMatch(/LIMIT\s+1/));
+    expect(sql()).toContain('FROM "Entry"');
+    expect(sql()).toContain("$body_value");
+    expect(sql()).toContain("WHERE field_100 = $body_value");
+    expect(sql()).toContain("ORDER BY field_100 DESC");
     const edited = await parseSqlDocument(sql());
     expect(edited.status).toBe("parsed");
     expect(edited.diagnostics).toEqual([]);

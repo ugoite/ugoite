@@ -770,44 +770,99 @@ test.describe("Saved SQL route", () => {
       waitUntil: "domcontentloaded",
     });
 
-    const editor = page.locator(".ui-sql-editor");
-    const editorContent = editor.locator(".cm-content");
-    await expect(editorContent).toContainText("SELECT 1");
-    await editorContent.click();
-    await page.keyboard.press("Control+A");
+    const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await expect(editor).toHaveText("SELECT 1");
+    await editor.click();
+    await editor.press("ControlOrMeta+A");
     await page.keyboard.press("Backspace");
-    await expect(editorContent).toHaveText("");
+    await expect(editor).toHaveText("");
 
     const toolbar = page.getByRole("group", { name: "SQL", exact: true });
-    for (
-      const [action, dialogName] of [
-        ["Form", "Form"],
-        ["Columns", "Columns"],
-        ["Filter", "Filter"],
-        ["Sort", "Sort"],
-      ] as const
-    ) {
-      const button = toolbar.getByRole("button", { name: action, exact: true });
-      await expect(button).toBeEnabled();
-      await button.click();
-      const dialog = page.getByRole("dialog", { name: dialogName });
-      await expect(dialog).toBeVisible();
-      if (action === "Form") {
-        await expect(dialog.getByRole("button", { name: "Entry", exact: true }))
-          .toBeVisible();
-      }
-      await dialog.getByRole("button", { name: "Close", exact: true }).last()
-        .click();
-      await expect(dialog).toHaveCount(0);
-      await expect(editor).toHaveText("");
-    }
+    await toolbar.getByRole("button", { name: "Form", exact: true }).click();
+    const formDialog = page.getByRole("dialog", { name: "Form", exact: true });
+    await formDialog.getByRole("button", { name: "Entry", exact: true })
+      .click();
+    await expect(editor).toHaveText('SELECT * FROM "Entry"');
 
-    const structure = toolbar.getByRole("button", {
-      name: "Structure",
+    await toolbar.getByRole("button", { name: "Columns", exact: true })
+      .click();
+    const columns = page.getByRole("dialog", {
+      name: "Columns",
       exact: true,
     });
-    await expect(structure).toBeEnabled();
-    await structure.click();
+    await columns.getByRole("button", { name: "Choose fields", exact: true })
+      .click();
+    const fields = columns.getByRole("list", { name: "Result fields" });
+    await expect(fields.getByText("Body", { exact: true })).toBeVisible();
+    const fieldNames = await fields.locator(".sql-columns-editor__name")
+      .allTextContents();
+    expect(fieldNames).toContain("Body");
+    for (const name of fieldNames.filter((name) => name !== "Body")) {
+      const remove = columns.getByRole("button", {
+        name: `Remove ${name}`,
+        exact: true,
+      });
+      await remove.click();
+      await expect(remove).toHaveCount(0);
+    }
+    await expect(fields.getByRole("listitem")).toHaveText([/Body/]);
+    await expect(editor).toContainText('FROM "Entry"');
+    await expect(editor).not.toContainText("*");
+    const selectedProjection = (await editor.innerText()).match(
+      /^SELECT\s+([\s\S]+?)\s+FROM\s+"Entry"/,
+    )?.[1];
+    expect(selectedProjection).toBeTruthy();
+    await columns.locator("footer").getByRole("button", { name: "Close" })
+      .click();
+
+    await toolbar.getByRole("button", { name: "Filter", exact: true })
+      .click();
+    const filter = page.getByRole("dialog", { name: "Filter", exact: true });
+    await filter.getByRole("combobox", {
+      name: "Column for new filter",
+    }).selectOption({ label: "Body" });
+    await filter.getByRole("combobox", { name: "Operator" }).selectOption(
+      "eq",
+    );
+    await filter.getByRole("combobox", { name: "Value source" }).selectOption(
+      "argument",
+    );
+    await filter.getByRole("textbox", { name: "New argument name" }).fill(
+      "body_value",
+    );
+    await filter.getByRole("textbox", { name: "Default value (optional)" })
+      .fill("initial body");
+    await filter.getByRole("button", { name: "Add filter", exact: true })
+      .click();
+    await expect(editor).toContainText('FROM "Entry"');
+    await expect(editor).not.toContainText("*");
+    await expect(editor).toContainText(selectedProjection!);
+    await expect(editor).toContainText("WHERE");
+    await expect(editor).toContainText("$body_value");
+    await filter.locator("footer").getByRole("button", { name: "Close" })
+      .click();
+
+    await toolbar.getByRole("button", { name: "Sort", exact: true }).click();
+    const sort = page.getByRole("dialog", { name: "Sort", exact: true });
+    await sort.getByRole("combobox", { name: "Column" }).selectOption({
+      label: "Body",
+    });
+    await sort.getByRole("combobox", { name: "Direction" }).selectOption(
+      "desc",
+    );
+    await sort.getByRole("button", { name: "Add sort", exact: true }).click();
+    await expect(editor).toContainText('FROM "Entry"');
+    await expect(editor).not.toContainText("*");
+    await expect(editor).toContainText(selectedProjection!);
+    await expect(editor).toContainText("$body_value");
+    await expect(editor).toContainText("WHERE");
+    await expect(editor).toContainText("ORDER BY");
+    await expect(editor).toContainText("DESC");
+    await sort.locator("footer").getByRole("button", { name: "Close" })
+      .click();
+
+    await toolbar.getByRole("button", { name: "Structure", exact: true })
+      .click();
     const structureOptions = page.getByRole("group", {
       name: "Structure options",
     });
@@ -815,27 +870,57 @@ test.describe("Saved SQL route", () => {
       name: "SQL tree",
       exact: true,
     }).click();
-    await expect(page.getByRole("dialog", { name: "SQL tree" }))
-      .toBeVisible();
-    await page.getByRole("dialog", { name: "SQL tree" })
-      .getByRole("button", { name: "Close", exact: true }).last().click();
-    await expect(editor).toHaveText("");
+    const tree = page.getByRole("dialog", { name: "SQL tree", exact: true });
+    await tree.getByText("Query", { exact: true }).click();
+    const limit = tree.getByLabel("Limit", { exact: true });
+    await expect(limit).toBeVisible();
+    await limit.fill("1");
+    await tree.getByRole("button", { name: "Set row limit", exact: true })
+      .click();
+    await tree.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect(editor).toContainText('FROM "Entry"');
+    await expect(editor).not.toContainText("*");
+    await expect(editor).toContainText(selectedProjection!);
+    await expect(editor).toContainText("$body_value");
+    await expect(editor).toContainText("WHERE");
+    await expect(editor).toContainText("ORDER BY");
+    await expect(editor).toContainText("DESC");
+    await expect(editor).toContainText(/LIMIT\s+1/);
+    await tree.locator("footer").getByRole("button", { name: "Close" })
+      .click();
 
     const argumentsAction = toolbar.getByRole("button", {
       name: "Arguments",
       exact: true,
     });
-    await expect(argumentsAction).toBeEnabled();
     await argumentsAction.click();
-    const argumentsDialog = page.getByRole("dialog", { name: "Arguments" });
-    await expect(argumentsDialog).toBeVisible();
-    await expect(argumentsDialog.getByLabel("Argument name", { exact: true }))
-      .toBeVisible();
-    await argumentsDialog.getByRole("button", {
-      name: "Close",
+    const argumentsDialog = page.getByRole("dialog", {
+      name: "Arguments",
       exact: true,
-    }).last().click();
-    await expect(editor).toHaveText("");
+    });
+    await expect(argumentsDialog.getByRole("listitem")).toHaveCount(1);
+    await expect(argumentsDialog.getByRole("combobox", {
+      name: "Type for body_value",
+      exact: true,
+    })).toHaveValue("string");
+    const argumentDefault = argumentsDialog.getByRole("textbox", {
+      name: "Default for body_value",
+      exact: true,
+    });
+    await expect(argumentDefault).toHaveValue("initial body");
+    await argumentDefault.fill("updated body");
+    await expect(argumentDefault).toHaveValue("updated body");
+    await expect(editor).toContainText('FROM "Entry"');
+    await expect(editor).not.toContainText("*");
+    await expect(editor).toContainText(selectedProjection!);
+    await expect(editor).toContainText("$body_value");
+    await expect(editor).toContainText("WHERE");
+    await expect(editor).toContainText("ORDER BY");
+    await expect(editor).toContainText("DESC");
+    await expect(editor).toContainText(/LIMIT\s+1/);
+    await argumentsDialog.locator("footer").getByRole("button", {
+      name: "Close",
+    }).click();
   });
 
   test("REQ-FE-064 @smoke: a Form query exposes every shared SQL action", async ({ page, request }) => {
