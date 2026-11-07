@@ -5316,6 +5316,72 @@ async fn typed_sql_document_aliased_array_append_executes_authorized_query() -> 
 }
 
 #[tokio::test]
+async fn typed_sql_document_aliased_array_removal_executes_authorized_query() -> anyhow::Result<()>
+{
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(939)),
+        "memory://authorized-aliased-array-removal",
+    )
+    .await?;
+    let tasks = form(940, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    let revision = revision(&tasks, 941, 942, "one row");
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.aliased-array-removal-entry",
+            &revision,
+        )?)?
+        .append_revisions(tasks.id, vec![revision])
+        .await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[941]))
+        .await?;
+
+    let source = "SELECT ARRAY[4] AS values_out, 7 AS untouched FROM tasks";
+    let document = parse_sql_document(source);
+    let element = document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::LiteralExpression
+                && node.range.and_then(|range| document.source_slice(range)) == Some("4")
+        })
+        .expect("the direct aliased ARRAY element is represented");
+    let removed = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                node_id: element.id,
+                expected_kind: element.kind,
+            }],
+        },
+    )?;
+    assert_eq!(
+        removed.document.to_sql(),
+        "SELECT ARRAY[] AS values_out, 7 AS untouched FROM tasks"
+    );
+    let rows = context.execute(removed.document.to_sql()).await?;
+    let batch = rows.first().expect("the removed ARRAY query returns a row");
+    assert_eq!(batch.schema().field(0).name(), "values_out");
+    let values = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("the aliased ARRAY returns a list")
+        .value(0);
+    assert_eq!(values.len(), 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query(
 ) -> anyhow::Result<()> {
     use ugoite_domain::sql_document::{

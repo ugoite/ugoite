@@ -4733,6 +4733,58 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_aliased_array_element_remove_has_wasm_parity() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "SELECT ARRAY[4] AS values_out, 7 AS untouched";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let element = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::LiteralExpression
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("4")
+            })
+            .expect("the direct aliased ARRAY element is represented");
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                node_id: element.id,
+                expected_kind: element.kind,
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .expect("native alias-preserving removal succeeds");
+        assert_eq!(
+            native.document.source,
+            "SELECT ARRAY[] AS values_out, 7 AS untouched"
+        );
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": &transaction },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        let undo_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": { "current_source": native.document.source, "transaction": &native.undo },
+        });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], source);
+    }
+
+    #[test]
     fn sql_document_nested_comment_alias_edit_matches_native_and_undoes_exactly() {
         use ugoite_domain::sql_document::{
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,

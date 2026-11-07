@@ -36,31 +36,21 @@ features:
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
             selector: { kind: symbol, name: SqlDocumentSemanticEdit }
-            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.typed-expression-attributes }, { kind: satisfies, criterion: REQ-SQL-001#criterion.relational-constructors }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }]
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.typed-expression-attributes }, { kind: satisfies, criterion: REQ-SQL-001#criterion.relational-constructors }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal }]
       - id: typed-expression-attributes
         role: implementation
         facet: core
-        responsibility: Apply typed source-aware semantic edits for named Struct-field access with escaped SQL string literals, parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles and predicate edits, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, fixed-bound one-based slice construction or terminal literal-bound updates, adjacent direct ARRAY literal element moves in complete unaliased or aliased projection items, and typed literal append in eligible complete aliased projection items while retaining untouched source and guarded undo; aliased ARRAY removal and composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
+        responsibility: Apply typed source-aware semantic edits for named Struct-field access with escaped SQL string literals, parameterized CAST targets, unary and binary operators, simple CASE operands, admitted predicate forms, typed temporal or hex literals, registered aggregate FILTER toggles and predicate edits, GROUP BY structures, admitted relation edits, LIMIT values and expressions, CTE or derived-table output aliases, fixed-bound one-based slice construction or terminal literal-bound updates, adjacent direct ARRAY literal element moves in complete unaliased or aliased projection items, typed literal append in eligible complete aliased projection items, and selected direct ARRAY element removal in complete aliased projection items while retaining untouched source and guarded undo; composite ROLLUP/CUBE forms remain source-backed and read-only when controls cannot preserve their boundaries.
         targets:
           - id: semantic-expression-edits
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
             selector: { kind: symbol, name: apply_sql_document_semantic_edit_transaction }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.typed-expression-attributes
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.relational-constructors
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.typed-expression-attributes }, { kind: satisfies, criterion: REQ-SQL-001#criterion.relational-constructors }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }]
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Render node-scoped named Struct-field access, typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle and simple comparison predicates in its existing shared condition editor, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, controls to construct fixed-bound one-based slices, edit prepopulated terminal literal slice bounds, move eligible direct ARRAY elements one position up or down in complete aliased or unaliased projection items, and append a typed literal to eligible complete aliased ARRAY projection items while keeping aliased removal unavailable.
+        responsibility: Render node-scoped named Struct-field access, typed CAST attributes, unary and binary operator controls, simple-versus-searched CASE operands, admitted predicate constructors, typed temporal or hex literal controls, a registered-aggregate FILTER toggle and simple comparison predicates in its existing shared condition editor, editable GROUP BY controls, relational joins, LIMIT values and expressions, CTE or derived-table output aliases, controls to construct fixed-bound one-based slices, edit prepopulated terminal literal slice bounds, move eligible direct ARRAY elements one position up or down in complete aliased or unaliased projection items, append a typed literal to eligible complete aliased ARRAY projection items, and enable the existing selected-element Remove action for eligible complete aliased ARRAY projection items.
         targets:
           - id: tree-editor-controls
             adapter: typescript
@@ -75,6 +65,7 @@ features:
                 criterion: REQ-SQL-001#criterion.array-element-indexing
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }
+              - { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
               - { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }
@@ -640,28 +631,13 @@ features:
       - id: projection-position-protocol
         role: implementation
         facet: wasm
-        responsibility: Dispatch bounded guarded SQL Document semantic edits, including escaped named Struct-field access, projection-position, predicate, grouping, relational, LIMIT, output-alias, fixed-bound array-slice construction or bound-update, adjacent direct ARRAY literal element move operations for complete aliased or unaliased projection items, and eligible direct ARRAY literal appends to complete aliased projection items, through the portable Rust/WASM protocol.
+        responsibility: Dispatch bounded guarded SQL Document semantic edits, including escaped named Struct-field access, projection-position, predicate, grouping, relational, LIMIT, output-alias, fixed-bound array-slice construction or bound-update, adjacent direct ARRAY literal element move operations for complete aliased or unaliased projection items, eligible direct ARRAY literal appends and selected-element removals in complete aliased projection items, through the portable Rust/WASM protocol.
         targets:
           - id: semantic-edit-action
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: symbol, name: invoke_sql_document_semantic_edit_transaction }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.projection-position-bindings
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.typed-expression-attributes
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.relational-constructors
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.projection-alias-binding-safety }
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-element-indexing
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.array-slicing
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }
-              - { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }
+            claims: [{ kind: satisfies, criterion: REQ-SQL-001#criterion.projection-position-bindings }, { kind: satisfies, criterion: REQ-SQL-001#criterion.typed-expression-attributes }, { kind: satisfies, criterion: REQ-SQL-001#criterion.relational-constructors }, { kind: satisfies, criterion: REQ-SQL-001#criterion.projection-alias-binding-safety }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-element-indexing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slicing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-slice-bound-editing }, { kind: satisfies, criterion: REQ-SQL-001#criterion.struct-field-access-construction }, { kind: satisfies, criterion: REQ-SQL-001#criterion.array-literal-element-reordering }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending }, { kind: satisfies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal }]
       - id: projection-position-verification
         role: verification
         facet: verification
@@ -910,6 +886,10 @@ features:
           - { id: aliased-array-append-actual-wasm-ui, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: appends a direct ARRAY literal in an aliased projection through actual WASM }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action, FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: appends a direct ARRAY literal in an aliased projection through actual WASM } } }] }
           - { id: aliased-array-append-ambiguous-alias-ui, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: does not offer aliased ARRAY append when the alias contains a closing bracket }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: does not offer aliased ARRAY append when the alias contains a closing bracket } } }] }
           - { id: aliased-array-append-authorized-execution, adapter: rust, path: crates/ugoite-iceberg/tests/authorized_query.rs, selector: { kind: test, name: typed_sql_document_aliased_array_append_executes_authorized_query }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-appending, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_aliased_array_append_executes_authorized_query } } }] }
+          - { id: aliased-array-remove-native, adapter: rust, path: crates/ugoite-domain/src/sql_document.rs, selector: { kind: test, name: tests::semantic_array_element_removal_preserves_aliased_projection_and_undo }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_array_element_removal_preserves_aliased_projection_and_undo } } }] }
+          - { id: aliased-array-remove-wasm-parity, adapter: rust, path: crates/ugoite-wasm/src/lib.rs, selector: { kind: test, name: tests::sql_document_aliased_array_element_remove_has_wasm_parity }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::sql_document_aliased_array_element_remove_has_wasm_parity } } }] }
+          - { id: aliased-array-remove-actual-wasm-ui, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: removes direct ARRAY elements from an aliased projection through actual WASM }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal, covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action, FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: removes direct ARRAY elements from an aliased projection through actual WASM } } }] }
+          - { id: aliased-array-remove-authorized-execution, adapter: rust, path: crates/ugoite-iceberg/tests/authorized_query.rs, selector: { kind: test, name: typed_sql_document_aliased_array_removal_executes_authorized_query }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.aliased-array-literal-element-removal, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: typed_sql_document_aliased_array_removal_executes_authorized_query } } }] }
           - { id: struct-field-native, adapter: rust, path: crates/ugoite-domain/src/sql_document.rs, selector: { kind: test, name: tests::semantic_struct_field_access_escapes_literals_and_guards_undo }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.struct-field-access-construction, covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_document::tests::semantic_struct_field_access_escapes_literals_and_guards_undo } } }] }
           - { id: struct-field-actual-wasm-browser, adapter: typescript, path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx, selector: { kind: test, name: adds a named Struct field through the actual WASM tree editor }, claims: [{ kind: verifies, criterion: REQ-SQL-001#criterion.struct-field-access-construction, covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls, FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action], runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: adds a named Struct field through the actual WASM tree editor } } }] }
           - id: relational-join-native
