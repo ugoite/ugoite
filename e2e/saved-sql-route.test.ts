@@ -675,6 +675,135 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored scalar subquery", async ({ page }) => {
+    const initialSql = "SELECT (SELECT 1) AS value";
+    const editedSql = "SELECT (SELECT 2) AS value";
+    const queryName = `Scalar subquery edit round trip ${Date.now()}`;
+    let savedSqlId: string | undefined;
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+        waitUntil: "domcontentloaded",
+      });
+      const sqlEditor = page.getByRole("textbox", {
+        name: "SQL",
+        exact: true,
+      });
+      await sqlEditor.fill(initialSql);
+      await expect(sqlEditor).toContainText(initialSql);
+      await page.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      await page.getByRole("button", { name: "SQL tree", exact: true })
+        .click();
+      const tree = page.getByRole("dialog", { name: "SQL tree" });
+      const nestedLiterals = tree.getByRole("treeitem", {
+        name: "Value Value: 1",
+        exact: true,
+      });
+      await expect(nestedLiterals).toHaveCount(2);
+      const nestedLiteral = nestedLiterals.last();
+      await nestedLiteral.click();
+      await tree.getByLabel("Expression value").selectOption("literal");
+      await tree.getByRole("combobox", {
+        name: "Value type",
+        exact: true,
+      }).selectOption("number");
+      const numberInput = tree.getByLabel("Number", { exact: true });
+      await expect(numberInput).toHaveCount(1);
+      await numberInput.fill("2");
+      const editedPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === editedSql
+      );
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(sqlEditor).toHaveText(editedSql);
+      const editedPlanResponse = await editedPlan;
+      expect(editedPlanResponse.ok(), await editedPlanResponse.text()).toBe(
+        true,
+      );
+
+      await tree.getByRole("button", { name: "Close", exact: true }).first()
+        .click();
+      await expect(sqlEditor).toContainText(editedSql);
+
+      const firstRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const firstResult = await firstRun;
+      expect(firstResult.ok(), await firstResult.text()).toBe(true);
+      const firstOutput = await firstResult.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(firstOutput.columns).toHaveLength(1);
+      expect(firstOutput.rows).toEqual([{ [firstOutput.columns[0]]: 2 }]);
+
+      await page.getByLabel("Query name").fill(queryName);
+      const createSavedQuery = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const created = await createSavedQuery;
+      expect([200, 201], await created.text()).toContain(created.status());
+      savedSqlId = (await created.json() as { id: string }).id;
+      await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/sql$`));
+      await page.getByRole("link", { name: new RegExp(queryName) }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
+      );
+
+      const reloadPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === editedSql
+      );
+      await page.reload({ waitUntil: "domcontentloaded" });
+      const reloadPlanResponse = await reloadPlan;
+      expect(reloadPlanResponse.ok(), await reloadPlanResponse.text()).toBe(
+        true,
+      );
+      await expect(page.getByRole("heading", { level: 1, name: queryName }))
+        .toBeVisible();
+      await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+        .toContainText(editedSql);
+      const persisted = await page.request.get(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+      expect(persisted.ok()).toBe(true);
+      expect((await persisted.json() as { sql: string }).sql).toBe(editedSql);
+
+      const reloadRun = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const reloadResult = await reloadRun;
+      expect(reloadResult.ok(), await reloadResult.text()).toBe(true);
+      const reloadOutput = await reloadResult.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(reloadOutput.columns).toHaveLength(1);
+      expect(reloadOutput.rows).toEqual([{ [reloadOutput.columns[0]]: 2 }]);
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      ).toBeVisible();
+    } finally {
+      if (savedSqlId) {
+        await page.request.delete(
+          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+      }
+    }
+  });
+
   test("@smoke SQL tree authors IN and NOT IN and records HTTP 422 planning rejections", async ({ page }) => {
     const inSql = "SELECT (1) IN (SELECT 1)";
     const notInSql = "SELECT (1) NOT IN (SELECT 1)";
