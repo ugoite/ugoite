@@ -248,6 +248,19 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" } }
+          - id: same-name-explicit-argument-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "does not bind a same-named Design Input to a SQL argument implicitly" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.single-typed-variable-graph
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
           - id: mode-and-insertion
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
