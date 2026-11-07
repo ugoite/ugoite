@@ -223,9 +223,15 @@ test.describe("Saved SQL route", () => {
         name: "Output name for result 1",
         exact: true,
       });
+      const projectionBeforeAlias = (await editor.innerText()).match(
+        /SELECT\s+(.+?)\s+FROM\s/i,
+      )?.[1];
+      expect(projectionBeforeAlias).toBeDefined();
       await outputAlias.fill("old_name");
       await outputAlias.press("Tab");
-      await expect(editor).toContainText(/SELECT\s+"Name"\s+AS\s+"old_name"/);
+      await expect.poll(async () =>
+        (await editor.innerText()).match(/SELECT\s+(.+?)\s+FROM\s/i)?.[1]
+      ).toBe(`${projectionBeforeAlias} AS "old_name"`);
       await columns.locator("footer").getByRole("button", {
         name: "Close",
         exact: true,
@@ -256,7 +262,9 @@ test.describe("Saved SQL route", () => {
       await expect(renamedAlias).toHaveValue("old_name");
       await renamedAlias.fill("new_name");
       await renamedAlias.press("Tab");
-      await expect(editor).toContainText(/SELECT\s+"Name"\s+AS\s+"new_name"/);
+      await expect.poll(async () =>
+        (await editor.innerText()).match(/SELECT\s+(.+?)\s+FROM\s/i)?.[1]
+      ).toBe(`${projectionBeforeAlias} AS "new_name"`);
       await expect(editor).toContainText(/ORDER BY\s+"?new_name"?/i);
       await expect(editor).not.toContainText(/ORDER BY\s+"?old_name"?/i);
       const renamedSql = await editor.innerText();
