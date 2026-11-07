@@ -162,6 +162,18 @@ features:
                 anchor: REQ-FE-080#criterion.safe-structured-operations
               - kind: evidences
                 anchor: REQ-FE-080#criterion.human-form-name-binding
+      - id: saved-sql-transient-parameter-evidence
+        role: evidence
+        facet: frontend
+        responsibility: Record one Saved SQL browser journey showing a declared integer default and an explicitly unset parameter flowing through the route's Run action.
+        targets:
+          - id: saved-sql-default-and-unset-run
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-080: Saved SQL Run applies a declared default and preserves an unset parameter" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.transient-typed-parameters
       - id: form-picker-verification
         role: verification
         facet: verification
