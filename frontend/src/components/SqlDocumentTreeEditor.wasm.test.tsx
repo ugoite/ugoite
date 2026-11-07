@@ -910,6 +910,57 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     );
   });
 
+  it("appends a direct ARRAY literal in an aliased projection through actual WASM", async () => {
+    const initial = "SELECT ARRAY[4] AS values_out /* keep */";
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const document = await parseSqlDocument(initial);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    const projection = document.nodes.find((node) => node.id === array?.parent);
+    expect(projection?.semantic?.kind).toBe("projection_alias");
+    const projectionItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(projection!.id),
+    );
+    expect(projectionItem).toBeDefined();
+    fireEvent.click(projectionItem!);
+    fireEvent.change(screen.getByLabelText("Expression value"), {
+      target: { value: "array" },
+    });
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "number" },
+    });
+    fireEvent.input(screen.getByLabelText("Number"), {
+      target: { value: "9" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sql()).toBe("SELECT ARRAY[4, 9] AS values_out /* keep */")
+    );
+  });
+
+  it("does not offer aliased ARRAY append when the alias contains a closing bracket", async () => {
+    const initial = 'SELECT ARRAY[4] AS "values]"';
+    const document = await parseSqlDocument(initial);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    const projection = document.nodes.find((node) => node.id === array?.parent);
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const projectionItem = (await screen.findAllByRole("treeitem")).find(
+      (item) => item.dataset.sqlDocumentNode === String(projection!.id),
+    );
+    expect(projectionItem).toBeDefined();
+    fireEvent.click(projectionItem!);
+    expect(
+      (screen.getByLabelText("Expression value") as HTMLSelectElement)
+        .querySelector('option[value="array"]'),
+    ).toBeNull();
+    expect(sql()).toBe(initial);
+  });
+
   it("hides ARRAY element removal when comments make the edit unsafe", async () => {
     const source = "SELECT ARRAY[4 /* keep inside */]";
     const document = await parseSqlDocument(source);

@@ -1684,7 +1684,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     nodeById().get(caseOperandNodeId() ?? -1);
   const isArrayLiteralProjectionItem = (node: SqlDocumentNode) =>
     node.kind === "select_item" &&
-    node.semantic?.kind !== "projection_alias" &&
+    !(node.semantic?.kind === "projection_alias" &&
+      node.semantic.alias.value.includes("]")) &&
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.semantic?.kind === "array_literal"
     );

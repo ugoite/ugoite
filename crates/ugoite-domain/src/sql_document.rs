@@ -6473,48 +6473,154 @@ fn wrap_expression_in_array(
 
 fn append_array_literal_element(
     document: &SqlDocument,
-    array: &SqlDocumentNode,
+    projection: &SqlDocumentNode,
     literal: &SqlDocumentSemanticLiteral,
 ) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
-    if array.kind != SqlDocumentNodeKind::SelectItem || array.semantic.is_some() {
+    if projection.kind != SqlDocumentNodeKind::SelectItem
+        || !matches!(
+            projection.semantic.as_ref(),
+            None | Some(SqlDocumentNodeData::ProjectionAlias { .. })
+        )
+    {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
-    let range = array
-        .range
-        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
-    if range_has_comment(document, range) {
+    if matches!(
+        projection.semantic.as_ref(),
+        Some(SqlDocumentNodeData::ProjectionAlias { alias }) if alias.value.contains(']')
+    ) {
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
     }
-    let source = document
-        .source_slice(range)
+    let projection_range = projection
+        .range
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
-    let is_array_literal = document.nodes.iter().any(|node| {
-        node.parent == Some(array.id)
-            && matches!(
-                node.semantic.as_ref(),
-                Some(SqlDocumentNodeData::ArrayLiteral)
-            )
-    });
-    if !is_array_literal {
-        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    if range_has_comment(document, projection_range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
     }
+    let projection_source = document
+        .source_slice(projection_range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let array_literals = document
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.parent == Some(projection.id)
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::ArrayLiteral)
+                )
+        })
+        .collect::<Vec<_>>();
+    let [array_literal] = array_literals.as_slice() else {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    };
+    let closing_bracket =
+        array_literal_closing_bracket(document, projection, array_literal, projection_range)?;
     let (literal, _) = render_semantic_literal(literal)?;
-    let closing_bracket = source
-        .rfind(']')
-        .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
-    let mut replacement = String::with_capacity(source.len() + literal.len() + 2);
-    replacement.push_str(&source[..closing_bracket]);
-    replacement.push_str(", ");
-    replacement.push_str(&literal);
-    replacement.push_str(&source[closing_bracket..]);
-    if parse_sql_document(&format!("SELECT {replacement}")).status != SqlDocumentStatus::Parsed {
+    let has_elements = document
+        .nodes
+        .iter()
+        .any(|node| node.parent == Some(array_literal.id) && node.range.is_some());
+    let inserted_literal = if has_elements {
+        format!(", {literal}]")
+    } else {
+        format!("{literal}]")
+    };
+    let expected_text = document
+        .source_slice(closing_bracket)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if expected_text != "]" {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let start = closing_bracket.start - projection_range.start;
+    let end = closing_bracket.end - projection_range.start;
+    let mut changed_projection = String::with_capacity(
+        projection_source.len() + inserted_literal.len().saturating_sub(expected_text.len()),
+    );
+    changed_projection.push_str(&projection_source[..start]);
+    changed_projection.push_str(&inserted_literal);
+    changed_projection.push_str(&projection_source[end..]);
+    let changed_status = parse_sql_document(&format!("SELECT {changed_projection}")).status;
+    if changed_status != SqlDocumentStatus::Parsed {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
     Ok(SqlDocumentEdit {
-        range,
-        expected_text: source.to_owned(),
-        replacement,
+        range: closing_bracket,
+        expected_text: expected_text.to_owned(),
+        replacement: inserted_literal,
     })
+}
+
+fn array_literal_closing_bracket(
+    document: &SqlDocument,
+    projection: &SqlDocumentNode,
+    array_literal: &SqlDocumentNode,
+    projection_range: SqlSourceRange,
+) -> Result<SqlSourceRange, SqlDocumentEditError> {
+    if projection.range != Some(projection_range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let array_range = array_literal
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let first_token_index = document
+        .tokens
+        .iter()
+        .position(|token| token.range.start >= projection_range.start)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let array_token_index = skip_trivia_tokens(&document.tokens, first_token_index);
+    let array_token = document
+        .tokens
+        .get(array_token_index)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if array_token.kind != SqlDocumentTokenKind::Word
+        || document
+            .source_slice(array_token.range)
+            .is_none_or(|text| !text.eq_ignore_ascii_case("ARRAY"))
+    {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let open_index = skip_trivia_tokens(&document.tokens, array_token_index + 1);
+    let has_open_bracket = document.tokens.get(open_index).is_some_and(|token| {
+        token.kind == SqlDocumentTokenKind::Punctuation
+            && document.source_slice(token.range) == Some("[")
+    });
+    if !has_open_bracket {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let open_end = document.tokens[open_index].range.end;
+
+    // `Expr::Array` may have an incomplete span that starts at its first
+    // element. Match bracket tokens from the verified direct ARRAY literal;
+    // aliases containing `]` are rejected before this token scan.
+    let mut depth = 0_usize;
+    for token in document.tokens.iter().skip(open_index) {
+        if token.range.start >= projection_range.end {
+            break;
+        }
+        if token.kind != SqlDocumentTokenKind::Punctuation {
+            continue;
+        }
+        match document.source_slice(token.range) {
+            Some("[") => {
+                depth = depth
+                    .checked_add(1)
+                    .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+            }
+            Some("]") => {
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+                if depth == 0 {
+                    if array_range.start < open_end || array_range.start >= token.range.start {
+                        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+                    }
+                    return Ok(token.range);
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(SqlDocumentEditError::NodeRangeUnavailable)
 }
 
 fn remove_array_literal_element(
@@ -19687,7 +19793,7 @@ mod tests {
             array_source
         );
 
-        let aliased_source = "SELECT ARRAY[4] AS values_out";
+        let aliased_source = "SELECT ARRAY[4] /* keep inside */ AS values_out";
         let aliased_document = parse_sql_document(aliased_source);
         let aliased_item = aliased_document
             .nodes
@@ -19708,7 +19814,7 @@ mod tests {
                     }],
                 ),
             ),
-            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
         );
         assert_eq!(
             apply_sql_document_edit_transaction(&wrapped.document.source, &wrapped.undo)
@@ -19762,6 +19868,75 @@ mod tests {
             ),
             Err(SqlDocumentEditError::NodeRangeUnavailable)
         );
+    }
+
+    #[test]
+    fn semantic_array_element_append_preserves_aliased_projection_and_undo() {
+        for (source, expected) in [
+            (
+                "SELECT ARRAY[4] AS values_out /* outside */",
+                "SELECT ARRAY[4, 9] AS values_out /* outside */",
+            ),
+            (
+                "SELECT ARRAY[4] AS values_out",
+                "SELECT ARRAY[4, 9] AS values_out",
+            ),
+        ] {
+            let document = parse_sql_document(source);
+            let projection = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .expect("the complete aliased ARRAY projection is represented");
+            let appended = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                        node_id: projection.id,
+                        expected_kind: projection.kind,
+                        literal: SqlDocumentSemanticLiteral::Number {
+                            value: "9".to_owned(),
+                        },
+                    }],
+                ),
+            )
+            .expect("a direct aliased ARRAY accepts a typed literal append");
+            assert_eq!(appended.document.source, expected);
+            let restored =
+                apply_sql_document_edit_transaction(&appended.document.source, &appended.undo)
+                    .expect("aliased ARRAY append has an exact inverse");
+            assert_eq!(restored.document.source, source);
+        }
+    }
+
+    #[test]
+    fn semantic_array_element_append_fails_closed_for_empty_or_ambiguous_aliased_array() {
+        for source in [
+            "SELECT ARRAY[] AS empty_values",
+            "SELECT ARRAY[4] AS \"values]\"",
+        ] {
+            let document = parse_sql_document(source);
+            let projection = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .expect("the aliased projection is represented");
+            assert!(apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::AppendArrayLiteralElement {
+                        node_id: projection.id,
+                        expected_kind: projection.kind,
+                        literal: SqlDocumentSemanticLiteral::Number {
+                            value: "9".to_owned(),
+                        },
+                    }],
+                ),
+            )
+            .is_err());
+        }
     }
 
     #[test]
