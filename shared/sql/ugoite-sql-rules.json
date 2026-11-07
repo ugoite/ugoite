@@ -960,6 +960,15 @@
           ]
         },
         {
+          "id": "typed-operator-authorized-results",
+          "selectors": [
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_not_bitwise_and_shift_edits_execute_authorized_results"
+            ]
+          ]
+        },
+        {
           "id": "nested-scopes",
           "selectors": [
             [
