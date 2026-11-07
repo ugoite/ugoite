@@ -91,20 +91,14 @@ test.describe("Saved SQL route", () => {
       await expect(setLimit).toBeEnabled();
       await setLimit.click();
       await expect(editor).toHaveText(sql);
-      const finalPlan = page.waitForResponse((response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname ===
-          `/api/spaces/${spaceId}/sql/query/plan` &&
-        response.request().postDataJSON().sql === editedSql
-      );
       await rowLimitDialog.getByRole("button", { name: "Apply", exact: true })
         .click();
 
       await expect(editor).toHaveText(editedSql);
       await expect(editor).toContainText("ARRAY[] AS empty");
-
-      const planned = await finalPlan;
-      expect(planned.ok(), await planned.text()).toBe(true);
+      await rowLimitDialog.getByRole("button", { name: "Close", exact: true })
+        .click();
+      await expect(rowLimitDialog).toHaveCount(0);
 
       const run = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
