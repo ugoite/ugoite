@@ -650,7 +650,7 @@
           "limits": [
             "Typed literals, identifiers, operators, registered aggregates, casts, CASE, predicates and subquery seeds.",
             "A selected complete projection expression can receive a positive one-based Int64 array index, a fully bounded one-based slice, or a named Struct field subscript through typed Rust operations; DataFusion checks the actual source type and field/index/slice during authorized planning/execution. Struct field names are emitted as escaped SQL string literals in bracket subscripts. Selecting an existing terminal slice with two signed-i64 literal bounds prepopulates both fields and lets the user replace either or both without reauthoring the access expression. The inspector clears pending construction values on source/selection changes, excludes aliased projection rows, and preserves aliases when an exact child expression is edited. Dot-style field access and complete collection access chains remain unsupported.",
-            "The inspector can wrap a selected typed expression in a one-element ARRAY literal and append typed literal elements to an unaliased complete projection item containing an ARRAY; every element remains editable through ordinary expression operations and append order is retained. A selected direct element can be removed, including the sole element to produce ARRAY[]. A selected eligible direct element can move one position up or down within an unaliased ARRAY literal in a complete projection item, preserving intervening punctuation and whitespace; boundary moves, comment-bearing projection items, and unsupported source ranges fail closed. New fixed-bound slice construction requires positive integer literal bounds with start <= end; empty, reversed, overflowing, injected, and comment-bearing operand edits fail closed. Existing terminal slice bound edits replace only the literal source ranges and preserve surrounding comments. Comments inside the selected ARRAY span and aliased ARRAY edits fail closed. Array literal AST ranges that do not cover their full source can otherwise be edited only through an unaliased complete projection-item range; aliased incomplete ranges fail closed. Omitted-bound and dynamic-bound slices, strides, trailing access after a slice, reordering elements outside the eligible direct-element case, nested array/map access chains, arbitrary access keys and general collection construction remain explicit gaps.",
+            "The inspector can wrap a selected typed expression in a one-element ARRAY literal and append typed literal elements to an unaliased complete projection item containing an ARRAY; every element remains editable through ordinary expression operations and append order is retained. A selected direct element can be removed, including the sole element to produce ARRAY[]. A selected eligible direct element can move one position up or down within an unaliased or aliased ARRAY literal in a complete projection item, preserving intervening punctuation, whitespace, and the projection alias; boundary moves, comment-bearing projection items, and unsupported source ranges fail closed. New fixed-bound slice construction requires positive integer literal bounds with start <= end; empty, reversed, overflowing, injected, and comment-bearing operand edits fail closed. Existing terminal slice bound edits replace only the literal source ranges and preserve surrounding comments. Comments inside the selected ARRAY span and aliased ARRAY append/removal edits fail closed; direct-element moves are allowed in complete aliased projection items. Array literal AST ranges may be incomplete when child element spans remain available; selected moves require valid adjacent element ranges and the complete aliased or unaliased projection-item span, and unavailable or ambiguous spans fail closed. Omitted-bound and dynamic-bound slices, strides, trailing access after a slice, reordering elements outside the eligible direct-element case, nested array/map access chains, arbitrary access keys and general collection construction remain explicit gaps.",
             "Unmodeled expression source is preserved; unsupported semantic fields and arbitrary construction remain explicit gaps."
           ]
         }
@@ -745,8 +745,8 @@
       "verification_gaps": [
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
-        "One-based array indexing, fully bounded one-based array-slice construction, and named Struct-field subscript construction have typed native/WASM/DOM edits; terminal existing slices with two simple decimal integer bounds parseable as i64 can be edited in place, preserving comments and source around the literals. An authorized Form ObjectList execution fixture verifies array indexing, the [1:2] result order, and editing to [2:2] yielding Grace; the same authorized Struct fixture verifies `field_101[1]['name']` returns Ada. Struct-field edits escape single quotes in field names and preserve source outside the selected expression. Omitted-bound or dynamic-bound slices, non-literal bounds, strides, a slice followed by another access in the same chain, dot-style Struct fields, map/dynamic keys, full array-literal range editing, aliased array edits, reordering elements outside eligible direct elements of unaliased ARRAY literals in complete projection items (including comment-bearing items), and broader admitted collection construction remain gaps. ARRAY construction by wrapping a typed expression, appending typed literal elements in order to an unaliased complete projection, selected element removal including empty ARRAY construction, ordinary typed element editing, and eligible direct-element reordering remain verified through native, WASM, DOM and authorized execution paths.",
-        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Directly authored DECIMAL(4, 2) and TIMESTAMP(3) targets each have actual-WASM and authorized-result evidence; planner validity for other authored type parameters remains authoritative.",
+        "One-based array indexing, fully bounded one-based array-slice construction, and named Struct-field subscript construction have typed native/WASM/DOM edits; terminal existing slices with two simple decimal integer bounds parseable as i64 can be edited in place, preserving comments and source around the literals. An authorized Form ObjectList execution fixture verifies array indexing, the [1:2] result order, and editing to [2:2] yielding Grace; the same authorized Struct fixture verifies `field_101[1]['name']` returns Ada. Struct-field edits escape single quotes in field names and preserve source outside the selected expression. Omitted-bound or dynamic-bound slices, non-literal bounds, strides, a slice followed by another access in the same chain, dot-style Struct fields, map/dynamic keys, full array-literal range editing, aliased ARRAY append/removal, reordering elements outside eligible direct elements in unaliased or aliased complete projection items (including comment-bearing items), and broader admitted collection construction remain gaps. ARRAY construction by wrapping a typed expression, appending typed literal elements in order to an unaliased complete projection, selected element removal including empty ARRAY construction, ordinary typed element editing, and eligible direct-element reordering in complete unaliased projections and complete aliased projections without comments remains verified through native, WASM, DOM and authorized execution paths.",
+        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT, bitwise AND/OR, and left/right shifts have semantic edit and WASM parity tests; authorized execution asserts NOT TRUE = FALSE, 5 & 1 = 1, 5 | 1 = 5, 5 << 1 = 10, and 5 >> 1 = 2. Directly authored DECIMAL(4, 2) and TIMESTAMP(3) targets each have actual-WASM and authorized-result evidence; planner validity for other authored type parameters remains authoritative.",
         "Aggregate ordered argument clauses remain read-only and are outside the enabled aggregate registry.",
         "The active tree exposes LEFT/RIGHT SEMI and ANTI joins admitted by DataFusion; directionless SEMI/ANTI spellings are not offered. LIMIT accepts typed literals, named parameters, and same-query expressions. CTE and derived-table output aliases can be added or renamed with exact binding checks; nested CTE shadowing is respected and ambiguous unqualified references fail closed."
       ],
@@ -836,7 +836,7 @@
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
+              "async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query"
             ],
             [
               "crates/ugoite-wasm/src/lib.rs",
@@ -869,7 +869,7 @@
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
+              "async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query"
             ]
           ]
         },
@@ -890,7 +890,7 @@
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
+              "async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query"
             ]
           ]
         },
@@ -911,7 +911,7 @@
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
-              "async fn typed_sql_document_existing_array_slice_bounds_edit_and_execute_authorized_query"
+              "async fn typed_sql_document_array_slice_bounds_and_aliased_reorder_execute_authorized_query"
             ]
           ]
         },

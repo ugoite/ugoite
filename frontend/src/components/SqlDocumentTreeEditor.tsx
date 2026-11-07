@@ -1688,7 +1688,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.semantic?.kind === "array_literal"
     );
-  const isArrayLiteralElement = (node: SqlDocumentNode) => {
+  const arrayLiteralProjectionForElement = (node: SqlDocumentNode) => {
     const array = node.parent === null
       ? undefined
       : nodeById().get(node.parent);
@@ -1696,18 +1696,29 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       ? undefined
       : nodeById().get(array.parent);
     const projectionRange = projection?.range;
-    return array?.semantic?.kind === "array_literal" &&
-      projection?.kind === "select_item" &&
-      projection.semantic === null && projectionRange !== null &&
-      projectionRange !== undefined &&
-      !document()?.tokens.some((token) =>
+    if (
+      array?.semantic?.kind !== "array_literal" ||
+      projection?.kind !== "select_item" || projectionRange === null ||
+      projectionRange === undefined ||
+      document()?.tokens.some((token) =>
         token.kind === "comment" &&
         token.range.start < projectionRange.end &&
         projectionRange.start < token.range.end
-      );
+      )
+    ) return undefined;
+    return projection;
   };
+  const isArrayLiteralReorderElement = (node: SqlDocumentNode) => {
+    const projection = arrayLiteralProjectionForElement(node);
+    return projection?.semantic === null ||
+      projection?.semantic?.kind === "projection_alias";
+  };
+  const isArrayLiteralElement = (node: SqlDocumentNode) =>
+    arrayLiteralProjectionForElement(node)?.semantic === null;
   const arrayElementCanMove = (node: SqlDocumentNode, moveUp: boolean) => {
-    if (!isArrayLiteralElement(node) || node.range === null) return false;
+    if (!isArrayLiteralReorderElement(node) || node.range === null) {
+      return false;
+    }
     const siblings = (childrenByParent().get(node.parent ?? -1) ?? [])
       .filter((child) => child.range !== null);
     const index = siblings.findIndex((child) => child.id === node.id);
@@ -4242,7 +4253,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                       </div>
                     </Show>
                     <Show when={isExpressionKind(node().kind)}>
-                      <Show when={isArrayLiteralElement(node())}>
+                      <Show when={isArrayLiteralReorderElement(node())}>
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"
@@ -4289,6 +4300,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                         >
                           {t("sqlPage.structure.documentMoveArrayElementDown")}
                         </button>
+                      </Show>
+                      <Show when={isArrayLiteralElement(node())}>
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"

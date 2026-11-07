@@ -117,10 +117,12 @@ DataFusion's SQL planner does not admit them.
 
 The expression inspector can wrap a typed expression in a one-element
 `ARRAY[...]` literal, append typed literal elements in order, move a selected
-direct element one position up or down, and remove a selected direct element
-from an unaliased complete projection item. Moving preserves the exact comma
-separator trivia between the two expressions; comment-bearing projections and
-unrecognized separators fail closed. Removing the
+direct element one position up or down in a complete unaliased or aliased
+projection item, and remove a selected direct element from an unaliased
+complete projection item. Moving preserves the exact comma separator trivia
+between the two expressions and leaves the projection alias intact;
+comment-bearing projections and unrecognized separators fail closed. Appending
+and removing remain unavailable for aliased projections. Removing the
 sole element retains `ARRAY[]`, which the authorized executor returns as a
 zero-element list. Rust marks parsed ARRAY nodes with typed `array_literal`
 metadata, which the inspector uses to offer append, reorder, and removal actions only for
@@ -138,8 +140,8 @@ and authorized-executor tests cover constructing and executing
 `(field_101)[1:2]` over a two-element authorized ObjectList. It also constructs
 `(field_101[1])['name']`, which returns the authorized Struct's `name` value;
 field names containing single quotes are escaped as SQL string literals.
-Editing aliased or comment-bearing array spans fails closed. Omitted-bound
-slices, dynamic slice bounds, dot-style Struct access, editing array literals whose
+Aliased ARRAY append/removal and comment-bearing array spans fail closed.
+Omitted-bound slices, dynamic slice bounds, dot-style Struct access, editing array literals whose
 parser range is incomplete, and other collection constructors remain gaps
 under #4565. Direct bound editing does not yet cover omitted or dynamic bounds,
 strides, or a slice followed by another access in the same expression chain.

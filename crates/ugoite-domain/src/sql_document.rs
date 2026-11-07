@@ -6640,7 +6640,10 @@ fn move_array_literal_element(
         .filter(|node| {
             node.id == projection_id
                 && node.kind == SqlDocumentNodeKind::SelectItem
-                && node.semantic.is_none()
+                && matches!(
+                    node.semantic.as_ref(),
+                    None | Some(SqlDocumentNodeData::ProjectionAlias { .. })
+                )
         })
         .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
     let projection_range = projection
@@ -19929,6 +19932,43 @@ mod tests {
     }
 
     #[test]
+    fn semantic_array_element_move_preserves_projection_alias_and_undo() {
+        let source = "SELECT ARRAY[1,  2, 3] AS ordered_values, 7 AS untouched";
+        let document = parse_sql_document(source);
+        let second = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .is_some_and(|parent| {
+                        matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                    })
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("2")
+            })
+            .expect("second array element in an aliased projection");
+        let moved = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                    node_id: second.id,
+                    expected_kind: second.kind,
+                    move_up: true,
+                }],
+            ),
+        )
+        .expect("a direct array member can move inside a complete aliased projection");
+        assert_eq!(
+            moved.document.source,
+            "SELECT ARRAY[2,  1, 3] AS ordered_values, 7 AS untouched"
+        );
+        let restored = apply_sql_document_edit_transaction(&moved.document.source, &moved.undo)
+            .expect("aliased array move has an exact guarded inverse");
+        assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
     fn semantic_array_element_move_rejects_boundaries_and_comments() {
         let boundary_source = "SELECT ARRAY[1, 2]";
         let document = parse_sql_document(boundary_source);
@@ -19988,6 +20028,37 @@ mod tests {
             )
             .unwrap_err(),
             SqlDocumentEditError::NodeRangeUnavailable,
+        );
+
+        let aliased_commented_source = "SELECT ARRAY[1, /* keep */ 2] AS ordered_values";
+        let document = parse_sql_document(aliased_commented_source);
+        let second = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .is_some_and(|parent| {
+                        matches!(parent.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                    })
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("2")
+            })
+            .expect("second aliased array element");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                aliased_commented_source,
+                &semantic_transaction(
+                    aliased_commented_source,
+                    vec![SqlDocumentSemanticEdit::MoveArrayLiteralElement {
+                        node_id: second.id,
+                        expected_kind: second.kind,
+                        move_up: true,
+                    }],
+                )
+            )
+            .unwrap_err(),
+            SqlDocumentEditError::NodeRangeUnavailable,
+            "comments in the complete aliased projection keep the move disabled"
         );
     }
 
