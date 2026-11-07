@@ -18841,6 +18841,33 @@ mod tests {
     }
 
     #[test]
+    fn semantic_limit_preserves_nulls_last_after_sort_direction() {
+        let source = "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST";
+        let document = parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is represented");
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetLimitValue {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    value: 1,
+                }],
+            ),
+        );
+        assert!(result.is_ok(), "semantic edit failed: {result:?}");
+        assert_eq!(
+            result.unwrap().document.source,
+            "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST LIMIT 1"
+        );
+    }
+
+    #[test]
     fn semantic_limit_accepts_parameters_and_same_scope_expressions() {
         let source = "SELECT 1 + 2 FROM tasks";
         let document = parse_sql_document(source);
