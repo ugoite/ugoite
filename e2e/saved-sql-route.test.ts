@@ -156,6 +156,180 @@ test.describe("Saved SQL route", () => {
     },
   );
 
+  test(
+    "A07 @smoke: renaming a projected alias updates ORDER BY and survives save and reopen",
+    async ({ page, request }) => {
+      test.setTimeout(120_000);
+      const formName = `AliasOrder${crypto.randomUUID().slice(0, 8)}`;
+      const form = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/forms`),
+        {
+          data: {
+            name: formName,
+            version: 1,
+            template: `# ${formName}\n\n## Name\n`,
+            fields: { Name: { type: "string", required: true } },
+          },
+        },
+      );
+      expect([200, 201]).toContain(form.status());
+      for (const Name of ["Charlie", "Alpha", "Bravo"]) {
+        const entry = await request.post(
+          getBackendUrl(`/spaces/${spaceId}/entries`),
+          { data: { form: formName, fields: { Name } } },
+        );
+        expect(entry.status()).toBe(201);
+      }
+
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+        waitUntil: "domcontentloaded",
+      });
+      await page.getByRole("button", { name: "Form", exact: true }).click();
+      await page.getByRole("dialog", { name: "Form", exact: true }).getByRole(
+        "button",
+        { name: formName, exact: true },
+      ).click();
+
+      await page.getByRole("button", { name: "Columns", exact: true }).click();
+      const columns = page.getByRole("dialog", {
+        name: "Columns",
+        exact: true,
+      });
+      await columns.getByRole("button", { name: "Choose fields", exact: true })
+        .click();
+      const resultFields = columns.getByRole("list", {
+        name: "Result fields",
+      });
+      const labels = await resultFields.locator(".sql-columns-editor__name")
+        .allTextContents();
+      for (const label of labels.filter((label) => label !== "Name")) {
+        const remove = columns.getByRole("button", {
+          name: `Remove ${label}`,
+          exact: true,
+        });
+        await remove.click();
+        await expect(remove).toHaveCount(0);
+      }
+      await expect(resultFields.getByRole("listitem")).toHaveText([/Name/]);
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      const outputAlias = columns.getByRole("textbox", {
+        name: "Output name for result 1",
+        exact: true,
+      });
+      await outputAlias.fill("old_name");
+      await outputAlias.press("Tab");
+      await expect(editor).toContainText(/SELECT\s+"Name"\s+AS\s+"old_name"/);
+      await columns.locator("footer").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
+
+      await page.getByRole("button", { name: "Sort", exact: true }).click();
+      const sort = page.getByRole("dialog", { name: "Sort", exact: true });
+      await sort.getByRole("combobox", { name: "Column" }).selectOption({
+        label: "old_name",
+      });
+      await sort.getByRole("combobox", { name: "Direction" }).selectOption(
+        "asc",
+      );
+      await sort.getByRole("button", { name: "Add sort", exact: true }).click();
+      await expect(editor).toContainText(/ORDER BY\s+"?old_name"?/i);
+      await sort.locator("footer").getByRole("button", { name: "Close" })
+        .click();
+
+      await page.getByRole("button", { name: "Columns", exact: true }).click();
+      const renameColumns = page.getByRole("dialog", {
+        name: "Columns",
+        exact: true,
+      });
+      const renamedAlias = renameColumns.getByRole("textbox", {
+        name: "Output name for result 1",
+        exact: true,
+      });
+      await expect(renamedAlias).toHaveValue("old_name");
+      await renamedAlias.fill("new_name");
+      await renamedAlias.press("Tab");
+      await expect(editor).toContainText(/SELECT\s+"Name"\s+AS\s+"new_name"/);
+      await expect(editor).toContainText(/ORDER BY\s+"?new_name"?/i);
+      await expect(editor).not.toContainText(/ORDER BY\s+"?old_name"?/i);
+      const renamedSql = await editor.innerText();
+      await renameColumns.locator("footer").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
+
+      const queryResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const queryResponse = await queryResponsePromise;
+      expect(queryResponse.ok(), await queryResponse.text()).toBe(true);
+      const result = await queryResponse.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(result.columns).toEqual(["new_name"]);
+      expect(result.rows.map((row) => row.new_name)).toEqual([
+        "Alpha",
+        "Bravo",
+        "Charlie",
+      ]);
+
+      await page.getByLabel("Query name", { exact: true }).fill(
+        `Alias ordering ${formName}`,
+      );
+      let savedSqlId: string | undefined;
+      const saveResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const saveResponse = await saveResponsePromise;
+      try {
+        const saveBody = await saveResponse.json() as { id?: string };
+        savedSqlId = saveBody.id;
+        expect([200, 201], JSON.stringify(saveBody)).toContain(
+          saveResponse.status(),
+        );
+        if (!savedSqlId) throw new Error("Saved SQL response omitted its id");
+
+        const readback = await request.get(
+          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+        expect(readback.ok(), await readback.text()).toBe(true);
+        expect((await readback.json() as { sql: string }).sql).toBe(renamedSql);
+
+        await page.goto(
+          getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+          { waitUntil: "domcontentloaded" },
+        );
+        await expect(editor).toHaveText(renamedSql);
+        await page.getByRole("button", { name: "Columns", exact: true })
+          .click();
+        const reopenedColumns = page.getByRole("dialog", {
+          name: "Columns",
+          exact: true,
+        });
+        await expect(
+          reopenedColumns.getByRole("textbox", {
+            name: "Output name for result 1",
+            exact: true,
+          }),
+        ).toHaveValue("new_name");
+        await expect(editor).toContainText(/ORDER BY\s+"?new_name"?/i);
+        await page.keyboard.press("Escape");
+      } finally {
+        if (savedSqlId) {
+          await request.delete(
+            getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+          );
+        }
+      }
+    },
+  );
+
   test("REQ-FE-061: saved SQL route shows its empty state and keeps current navigation", async ({ page }) => {
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql`), {
       waitUntil: "domcontentloaded",

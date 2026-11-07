@@ -195,6 +195,11 @@
           "path": "e2e/saved-sql-route.test.ts",
           "kind": "test",
           "name": "A07 @smoke: code-edited aliased ARRAY survives a scoped SQL structure edit and save"
+        },
+        {
+          "path": "e2e/saved-sql-route.test.ts",
+          "kind": "test",
+          "name": "A07 @smoke: renaming a projected alias updates ORDER BY and survives save and reopen"
         }
       ]
     },
