@@ -180,6 +180,11 @@
         {
           "path": "frontend/src/components/SQLWorkspace.test.tsx",
           "kind": "file"
+        },
+        {
+          "path": "e2e/saved-sql-route.test.ts",
+          "kind": "test",
+          "name": "A07 @smoke: code-edited aliased ARRAY survives a scoped SQL structure edit and save"
         }
       ]
     },
