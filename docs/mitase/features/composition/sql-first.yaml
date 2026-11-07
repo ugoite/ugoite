@@ -205,7 +205,7 @@ features:
       - id: scalar-cardinality-browser-verification
         role: verification
         facet: verification
-        responsibility: Verify that the Browser reports a scalar cardinality failure when user input makes a previously valid scalar query return multiple rows, clears the invalid metric, and restores it after the user repairs the input.
+        responsibility: Verify scalar cardinality failure and repair, plus one admitted Saved SQL CAST execution failure clearing the stale Metric in saved runtime and Design preview while remaining distinct from source unavailability.
         targets:
           - id: scalar-cardinality-diagnostic-and-repair
             adapter: typescript
@@ -244,6 +244,13 @@ features:
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "creates a Form-backed table query and component in one picker selection" } }
+          - id: scalar-cast-execution-failure
+            adapter: typescript
+            path: e2e/composition-scalar-state-journey.test.ts
+            selector: { kind: test, name: scalar_cast_execution_failure_remains_distinct_from_source_unavailability }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.query-results-validated-before-preview
       - id: composition-raw-recovery-verification
         role: verification
         facet: verification
