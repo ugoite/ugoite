@@ -34,6 +34,7 @@ import { t } from "~/lib/i18n";
 import { parseVariableGraphInput } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { subscribeToCompositionAccessChanges } from "~/lib/composition-access-changes";
 import {
   spaceCompositionEditPath,
   spaceCompositionHistoryPath,
@@ -259,6 +260,7 @@ export default function CompositionRevisionRoute() {
   const recheckAccess = async (
     expected: AccessLease,
     gateImmediately: boolean,
+    forceFresh = false,
   ) => {
     if (
       expected.routeKey !== routeKey() ||
@@ -281,7 +283,16 @@ export default function CompositionRevisionRoute() {
     if (gateImmediately || startedAt >= expected.expiresAt) {
       setAccessSnapshotBlocked(true);
     }
-    if (gateImmediately && accessCheckPending === expected) {
+    if (forceFresh && accessCheckPending === expected) {
+      // Every observed same-Space authority mutation must establish its own
+      // post-signal check. A prior gate-immediate response may predate the
+      // latest mutation, even when it began in this same visible epoch.
+      accessCheckGeneration++;
+      accessCheckPending = undefined;
+      accessCheckAbort?.abort();
+      accessCheckAbort = undefined;
+      accessCheckPendingResumeEpoch = undefined;
+    } else if (gateImmediately && accessCheckPending === expected) {
       if (accessCheckPendingResumeEpoch === accessResumeEpoch) return;
       // A response started before the page returned may already be stale.
       // Invalidate it and require a request whose authority check starts now.
@@ -446,6 +457,20 @@ export default function CompositionRevisionRoute() {
     accessSuspensions.delete(reason);
     if (!accessIsSuspended()) onAccessResume();
   };
+
+  const onCompositionAccessChange = (changedSpaceId: string) => {
+    if (changedSpaceId !== params.space_id) return;
+    const lease = accessLease;
+    if (!lease) {
+      clearVisibleResults();
+      if (!accessIsSuspended()) void evaluate();
+      return;
+    }
+    setAccessSnapshotBlocked(true);
+    if (!accessIsSuspended()) void recheckAccess(lease, true, true);
+  };
+
+  onCleanup(subscribeToCompositionAccessChanges(onCompositionAccessChange));
 
   const onVisibilityChange = () => {
     if (document.visibilityState === "hidden") onAccessSuspend("hidden");
