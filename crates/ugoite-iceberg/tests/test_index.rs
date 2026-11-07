@@ -296,6 +296,18 @@ fn sql_template_normalization_ignores_literals_identifiers_and_comments() -> any
         index::normalize_sql_template(sql)?,
         "SELECT '{{literal}}', \"{{identifier}}\", $native -- {{comment}}\nFROM table WHERE id = $actual"
     );
+    assert_eq!(
+        index::normalize_sql_template("SELECT $one, {{bad-name}}, {{two}}")
+            .unwrap_err()
+            .to_string(),
+        "SQL template variable name must match [A-Za-z_][A-Za-z0-9_]*"
+    );
+    assert_eq!(
+        index::normalize_sql_template("SELECT {{missing")
+            .unwrap_err()
+            .to_string(),
+        "SQL template variable is missing closing braces"
+    );
     assert!(index::validate_sql_syntax("SELECTE broken").is_err());
     assert!(index::validate_sql_syntax("SELEC broken").is_err());
     assert!(index::validate_sql_syntax("").is_err());

@@ -451,6 +451,19 @@ export type SqlDocumentSourceRange = {
   end: number;
 };
 
+/** Compact tuple: original byte start/end and normalized replacement byte length. */
+export type SqlTemplateReplacement = [number, number, number];
+
+export type SqlTemplateNormalization = {
+  sql: string;
+  parameters: string[];
+  replacements: SqlTemplateReplacement[];
+  error?: {
+    code: "missing_closing_braces" | "invalid_parameter_name";
+    range: SqlDocumentSourceRange;
+  };
+};
+
 export type SqlDocumentTokenKind =
   | "trivia"
   | "comment"
@@ -1433,6 +1446,15 @@ export type SqlDocumentEditErrorCode =
 export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
   await invokeProtocol<SqlDocument>({
     action: "domain.parse_sql_document",
+    value: { sql },
+  });
+
+/** Normalize SQL template markers through the Rust domain authority. */
+export const normalizeSqlTemplate = async (
+  sql: string,
+): Promise<SqlTemplateNormalization> =>
+  await invokeProtocol<SqlTemplateNormalization>({
+    action: "domain.normalize_sql_template",
     value: { sql },
   });
 

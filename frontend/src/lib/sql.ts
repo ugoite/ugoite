@@ -2,14 +2,14 @@ import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import { isReservedMetadataForm } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
-import { parseSqlDocument } from "./ugoite-client/protocol";
+import { normalizeSqlTemplate, parseSqlDocument, UgoiteApiError } from "./ugoite-client/protocol";
 import type {
   SqlDocument,
   SqlDocumentDiagnostic,
-  SqlDocumentToken,
   SqlStructureColumnType,
   SqlStructureContext,
   SqlStructureVariableType,
+  SqlTemplateNormalization,
 } from "./ugoite-client";
 
 type SqlStructureAggregateFunction =
@@ -386,12 +386,6 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
   return schema;
 }
 
-type SqlDocumentLexeme = SqlDocumentToken & {
-  start: number;
-  end: number;
-  text: string;
-};
-
 function utf8ByteToUtf16Offsets(source: string): Map<number, number> {
   const offsets = new Map<number, number>([[0, 0]]);
   let byteOffset = 0;
@@ -411,118 +405,75 @@ function utf8ByteToUtf16Offsets(source: string): Map<number, number> {
   return offsets;
 }
 
-function sqlDocumentLexemes(
-  source: string,
-  document: SqlDocument,
-): SqlDocumentLexeme[] {
-  const byteToUtf16 = utf8ByteToUtf16Offsets(source);
-  const bytes = new TextEncoder().encode(source);
-  const decoder = new TextDecoder();
-  return document.tokens.flatMap((token) => {
-    const start = byteToUtf16.get(token.range.start);
-    const end = byteToUtf16.get(token.range.end);
-    if (start === undefined || end === undefined) return [];
-    return [{
-      ...token,
-      start,
-      end,
-      text: decoder.decode(bytes.subarray(token.range.start, token.range.end)),
-    }];
-  });
-}
-
-type SqlParameterReference = {
+type SqlParameterReplacement = {
   name: string;
   start: number;
   end: number;
-  replacement?: string;
+  normalizedStart: number;
+  normalizedEnd: number;
+  replacement: string;
 };
-
-function parameterReferences(
-  source: string,
-  lexemes: readonly SqlDocumentLexeme[],
-): SqlParameterReference[] {
-  const references: SqlParameterReference[] = [];
-  for (let index = 0; index < lexemes.length; index += 1) {
-    const token = lexemes[index];
-    if (token.kind === "placeholder") {
-      const match = /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(token.text);
-      if (match && !/[A-Za-z0-9_$]/.test(source[token.start - 1] ?? "")) {
-        references.push({ name: match[1], start: token.start, end: token.end });
-      }
-      continue;
-    }
-
-    // `{{name}}` is a Saved SQL editor convenience. Rust's SQL tokenizer
-    // classifies the surrounding braces and identifier; this adapter only
-    // translates that explicit token sequence into the executor's `$name`
-    // syntax. Quoted text and comments never produce a brace token.
-    if (token.text !== "{" || token.kind !== "punctuation") continue;
-    const match = /^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/.exec(
-      source.slice(token.start),
-    );
-    if (!match) continue;
-    const end = token.start + match[0].length;
-    const enclosed = lexemes.filter((candidate) =>
-      candidate.start >= token.start && candidate.end <= end
-    );
-    const significant = enclosed.filter((candidate) =>
-      candidate.kind !== "trivia"
-    );
-    const name = match[1];
-    if (
-      significant.map((candidate) => candidate.text).join("") !==
-        `{{${name}}}` ||
-      significant.some((candidate) =>
-        candidate.kind !== "punctuation" && candidate.kind !== "word"
-      )
-    ) continue;
-    references.push({
-      name,
-      start: token.start,
-      end,
-      replacement: `$${name}`,
-    });
-  }
-  return references.sort((left, right) => left.start - right.start);
-}
 
 type NormalizedSqlDocument = {
   source: string;
   sql: string;
   variables: SqlVariable[];
   document: SqlDocument;
-  replacements: SqlParameterReference[];
+  replacements: SqlParameterReplacement[];
 };
 
 export async function normalizeSqlDocument(
   sql: string,
   existingVariables: SqlVariable[] = [],
 ): Promise<NormalizedSqlDocument> {
-  const sourceDocument = await parseSqlDocument(sql);
-  const references = parameterReferences(
-    sql,
-    sqlDocumentLexemes(sql, sourceDocument),
-  );
-  const replacements = references.filter((reference) =>
-    reference.replacement !== undefined
-  );
-  let normalizedSql = sql;
-  for (const reference of [...replacements].reverse()) {
-    normalizedSql = normalizedSql.slice(0, reference.start) +
-      reference.replacement + normalizedSql.slice(reference.end);
+  let normalized: SqlTemplateNormalization;
+  try {
+    normalized = await normalizeSqlTemplate(sql);
+  } catch (error) {
+    // The browser SQL Document limit is explicit; preserve its existing
+    // TooLarge diagnostics and empty parameter discovery for oversized drafts.
+    if (!(error instanceof UgoiteApiError) || error.kind !== "sql_template_normalization" || error.code !== "source_too_large") {
+      throw error;
+    }
+    const document = await parseSqlDocument(sql);
+    return { source: sql, sql, variables: [], document, replacements: [] };
+  }
+  const normalizedSql = normalized.sql;
+  const sourceByteToUtf16 = utf8ByteToUtf16Offsets(sql);
+  const normalizedByteToUtf16 = utf8ByteToUtf16Offsets(normalizedSql);
+  const replacements: SqlParameterReplacement[] = [];
+  let byteShift = 0;
+  for (const replacement of normalized.replacements) {
+    const [sourceStartByte, sourceEndByte, normalizedLengthByte] = replacement;
+    const normalizedStartByte = sourceStartByte - byteShift;
+    const normalizedEndByte = normalizedStartByte + normalizedLengthByte;
+    const start = sourceByteToUtf16.get(sourceStartByte);
+    const end = sourceByteToUtf16.get(sourceEndByte);
+    const normalizedStart = normalizedByteToUtf16.get(normalizedStartByte);
+    const normalizedEnd = normalizedByteToUtf16.get(normalizedEndByte);
+    if (start !== undefined && end !== undefined && normalizedStart !== undefined && normalizedEnd !== undefined) {
+      const replacementText = normalizedSql.slice(normalizedStart, normalizedEnd);
+      replacements.push({
+        name: replacementText.slice(1),
+        start,
+        end,
+        normalizedStart,
+        normalizedEnd,
+        replacement: replacementText,
+      });
+    }
+    byteShift += sourceEndByte - sourceStartByte - normalizedLengthByte;
   }
   const document = normalizedSql === sql
-    ? sourceDocument
+    ? await parseSqlDocument(sql)
     : await parseSqlDocument(normalizedSql);
-  const names = [...new Set(references.map((reference) => reference.name))];
   const existingByName = new Map(
     existingVariables.map((variable) => [variable.name, variable]),
   );
   return {
     source: sql,
     sql: normalizedSql,
-    variables: names.map((name) =>
+    variables: normalized.parameters.map((name) =>
       existingByName.get(name) ?? {
         type: "string",
         name,
@@ -728,15 +679,14 @@ function diagnosticForSqlDocument(
   const toSourceOffset = (offset: number): number => {
     let shift = 0;
     for (const replacement of normalized.replacements) {
-      const normalizedStart = replacement.start - shift;
-      const normalizedEnd = normalizedStart +
-        (replacement.replacement?.length ?? 0);
-      if (offset <= normalizedStart) return offset + shift;
-      if (offset <= normalizedEnd) {
-        return offset === normalizedEnd ? replacement.end : replacement.start;
+      if (offset <= replacement.normalizedStart) return offset + shift;
+      if (offset <= replacement.normalizedEnd) {
+        return offset === replacement.normalizedEnd
+          ? replacement.end
+          : replacement.start;
       }
       shift += replacement.end - replacement.start -
-        (replacement.replacement?.length ?? 0);
+        (replacement.normalizedEnd - replacement.normalizedStart);
     }
     return offset + shift;
   };
