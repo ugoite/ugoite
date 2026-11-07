@@ -138,6 +138,8 @@ try {
     args: [
       "test",
       "--locked",
+      "--features",
+      "test-support",
       "-p",
       "ugoite-iceberg",
       "--test",
