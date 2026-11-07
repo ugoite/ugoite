@@ -277,6 +277,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+      - id: shared-metric-delete-evidence
+        role: evidence
+        facet: frontend
+        responsibility: Provide partial Browser evidence that removing one of two Metrics sharing the same Saved SQL-derived scalar query variable preserves the remaining reference and query through save and reopen.
+        targets:
+          - id: remove-one-shared-metric
+            adapter: typescript
+            path: e2e/composition-binding-rebind.test.ts
+            selector: { kind: test, name: "Composition removes one of two shared Metrics and reopens the remaining reference" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.display-components-reference-variables
       - id: text-style-persistence-evidence
         role: evidence
         facet: frontend

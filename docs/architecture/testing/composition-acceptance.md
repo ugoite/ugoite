@@ -28,6 +28,13 @@ Mitase bindings locate the code and verification targets.
 | Shared SQL Workspace           | `/sql/new`, Saved SQL editing, and Composition query variables share the SQL Document editor, formatter, typed operations, and diagnostics. Every executor-admitted read-only construct has a GUI operation and round-trip evidence; unsupported constructs fail closed.                                      | The merged SQL Document workspace is shared by standalone SQL and Composition. Complete construct authoring remains unverified under #4565; the live SQL capability matrix retains its bounded evidence and gaps.                                                                                        |
 | Knowledge and recovery         | Save appends an Entry revision. Exact-revision inspection and restore keep their existing meaning. Invalid or old Composition bytes can be inspected as raw history but cannot be silently converted or executed.                                                                                             | The candidate retains raw history and append-only Entry handling and adds strict old-grammar rejection. The nine cross-adapter tests pass locally, including portable protocol, server authorization, and local/remote CLI behavior. Required CI remains pending on the final candidate.                 |
 
+The Design bindings path now has partial browser evidence under
+[#4848](https://github.com/ugoite/ugoite/issues/4848): one of two Metrics
+sharing the same Saved SQL-derived scalar query variable is removed through the
+existing UI, then the remaining reference and value are checked after save and
+reopen. Query edit propagation and other component kinds remain outside this
+slice; complete acceptance and required CI remain pending.
+
 ## Required journey evidence
 
 Required CI must confirm strict Domain and WASM parity, query type inference,
