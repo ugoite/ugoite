@@ -222,10 +222,8 @@ requirements:
             path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
             selector: { kind: test, name: "pins exact Saved SQL revision and chosen scalar column" }
             claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "pins exact Saved SQL revision and chosen scalar column" } }
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
           - id: query-workspace-and-evaluation
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -324,3 +322,14 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "invalid_raw_input_blocks_query_and_stale_result" } }
+          - id: composition-design-and-runtime-semantic-values
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio builds a reusable tool from existing knowledge" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.design-components-use-semantic-values
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results

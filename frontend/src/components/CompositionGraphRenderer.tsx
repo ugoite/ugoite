@@ -33,6 +33,21 @@ export interface CompositionGraphRendererProps {
 const literalValue = (value: CompositionLiteral | undefined): unknown =>
   !value || value.kind === "null" ? null : value.value;
 
+const evaluatedInputValue = (
+  value: unknown,
+  type: CompositionScalarType,
+): unknown => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  // The REST response uses JSON values, while exact-integer decoding can
+  // preserve a typed integer literal. Keep JSON objects opaque.
+  if (type === "json") return value;
+  const literal = value as { kind?: unknown; value?: unknown };
+  if (literal.kind === "null") return null;
+  return literal.kind === type && "value" in value ? literal.value : value;
+};
+
 const variableValue = (
   draft: CompositionGraphDraft,
   evaluation: CompositionEvaluationResponse | undefined,
@@ -47,11 +62,42 @@ const variableValue = (
   if (node.kind === "input") {
     if (preferRawInput && Object.hasOwn(rawInputs, id)) return rawInputs[id];
     if (unavailableInputIds.has(id)) return undefined;
-    return literalValue(evaluation?.variable_values[id] ?? node.default);
+    const values = evaluation?.variable_values;
+    return values && Object.hasOwn(values, id)
+      ? evaluatedInputValue(values[id], node.value_type.scalar_type)
+      : literalValue(node.default);
   }
   if (unavailableInputIds.has(id)) return undefined;
   const result = evaluation?.query_results[id]?.value;
   return result?.kind === "scalar" ? literalValue(result.value) : undefined;
+};
+
+const metricInputValue = (
+  draft: CompositionGraphDraft,
+  evaluation: CompositionEvaluationResponse | undefined,
+  rawInputs: Readonly<Record<string, string>>,
+  id: string,
+  unavailableInputIds: ReadonlySet<string>,
+): unknown => {
+  const node = draft.variables.find((candidate) => candidate.id === id);
+  const value = variableValue(
+    draft,
+    evaluation,
+    rawInputs,
+    id,
+    unavailableInputIds,
+    true,
+  );
+  if (
+    node?.kind === "input" && node.value_type.scalar_type === "integer" &&
+    typeof value === "number" && !Number.isSafeInteger(value)
+  ) {
+    // Bare JSON numbers beyond 2^53-1 already lost precision. A declared
+    // default is not evidence of the evaluated value, so hide instead of
+    // substituting a different number.
+    return undefined;
+  }
+  return value;
 };
 
 const inputType = (type: CompositionScalarType): string =>
@@ -86,7 +132,7 @@ const queryError = (
   return key ? t(key) : t("composition.queryFailed");
 };
 
-/** Render evaluated graph values and current raw input in directly bound Text; no source or SQL reads occur here. */
+/** Render evaluated values and raw direct bindings without issuing source reads. */
 export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
   const componentById = (id: string) =>
     props.draft.components.find((component) => component.id === id);
@@ -278,18 +324,31 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                         </p>
                                       );
                                   }
-                                  const value = evaluated()?.kind === "scalar"
-                                    ? literalValue(evaluated()!.value)
-                                    : variableValue(
+                                  const unavailableInputIds = new Set([
+                                    ...Object.keys(props.inputStates),
+                                    ...props.blockedQueryIds,
+                                  ]);
+                                  const result = evaluated();
+                                  let value: unknown;
+                                  if (result?.kind === "scalar") {
+                                    value = literalValue(result.value);
+                                  } else if (entry().kind === "metric") {
+                                    value = metricInputValue(
                                       props.draft,
                                       props.evaluation,
                                       props.rawInputs,
                                       variableId() ?? "",
-                                      new Set([
-                                        ...Object.keys(props.inputStates),
-                                        ...props.blockedQueryIds,
-                                      ]),
+                                      unavailableInputIds,
                                     );
+                                  } else {
+                                    value = variableValue(
+                                      props.draft,
+                                      props.evaluation,
+                                      props.rawInputs,
+                                      variableId() ?? "",
+                                      unavailableInputIds,
+                                    );
+                                  }
                                   const displayValue = value === null
                                     ? t("composition.metricNoData")
                                     : safeText(value);

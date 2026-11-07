@@ -177,7 +177,8 @@ export interface CompositionEvaluationResponse {
   computed_query_ids: string[];
   composition_revision?: { entry_id: string; revision_id: string };
   draft_fingerprint?: string;
-  variable_values: Record<string, CompositionLiteral>;
+  /** JSON response values; protocol decoding may tag exact integers. */
+  variable_values: Record<string, unknown>;
   queries: CompositionGraphPreviewQuery[];
   component_bindings: Array<{
     component_id: string;

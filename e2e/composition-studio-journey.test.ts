@@ -544,6 +544,66 @@ async function openToolFromSavedTools(
   return path;
 }
 
+type CompositionSemanticValues = {
+  inputs: Record<string, string>;
+  text: string;
+  table: { headings: string[]; rows: string[][] };
+  metrics: string[];
+};
+
+function normalizeSemanticText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+async function expectCompositionSemanticValues(
+  page: Page,
+  expected: CompositionSemanticValues,
+): Promise<void> {
+  const table = page.locator(".compositionGraphTableViewport")
+    .getByRole("table");
+  await expect(table).toBeVisible({ timeout: 30_000 });
+  await expect(table.locator("tbody tr")).toHaveCount(
+    expected.table.rows.length,
+    { timeout: 30_000 },
+  );
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveCount(
+    expected.metrics.length,
+    { timeout: 30_000 },
+  );
+
+  const inputs = Object.fromEntries(
+    await Promise.all(
+      Object.keys(expected.inputs).map(async (name) => [
+        name,
+        await page.getByLabel(name, { exact: true })
+          .and(page.locator("input")).inputValue(),
+      ]),
+    ),
+  );
+  const headings = (await table.getByRole("columnheader").allTextContents())
+    .map(normalizeSemanticText);
+  const rows = await table.locator("tbody tr").evaluateAll((tableRows) =>
+    tableRows.map((row) =>
+      Array.from(row.querySelectorAll("td"), (cell) => cell.textContent ?? "")
+    )
+  );
+  const metrics = (await page.locator(".compositionGraphMetric strong")
+    .allTextContents()).map(normalizeSemanticText);
+  const text = normalizeSemanticText(
+    await page.getByText(expected.text, { exact: true }).innerText(),
+  );
+
+  expect({
+    inputs,
+    text,
+    table: {
+      headings,
+      rows: rows.map((row) => row.map(normalizeSemanticText)),
+    },
+    metrics,
+  }).toEqual(expected);
+}
+
 async function openOwnerContext(
   browser: Browser,
   storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
@@ -566,6 +626,19 @@ test.describe("Composition Studio Journey", () => {
     let compositionId = "";
     let firstRevisionId = "";
     let editedRevisionId = "";
+    const semanticValues: CompositionSemanticValues = {
+      inputs: {
+        month_start: seed.monthStart,
+        month_end: seed.monthEnd,
+        report_title: "January expenses",
+      },
+      text: "January expenses",
+      table: {
+        headings: ["total", "quantity"],
+        rows: [[seed.expectedTotal, seed.expectedQuantity]],
+      },
+      metrics: [seed.expectedTotal, seed.expectedQuantity],
+    };
 
     const buildContext = await openOwnerContext(browser, storageState);
     try {
@@ -629,6 +702,7 @@ test.describe("Composition Studio Journey", () => {
         ".compositionGraphCanvas .compositionGraphDesignValue",
       );
       await expect(canvasBlocks).toHaveCount(7);
+      await expectCompositionSemanticValues(page, semanticValues);
 
       // Save once: exactly one publication.
       await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -804,6 +878,7 @@ test.describe("Composition Studio Journey", () => {
       await expect(savedTable).toContainText(seed.expectedQuantity, {
         timeout: 30_000,
       });
+      await expectCompositionSemanticValues(page, semanticValues);
 
       // A Text-only input update does not recompute a query variable.
       await expect.poll(() => evaluatePayloads.length).toBeGreaterThan(0);
