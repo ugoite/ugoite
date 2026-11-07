@@ -96,8 +96,10 @@ test.describe("Saved SQL route", () => {
 
       await expect(editor).toHaveText(editedSql);
       await expect(editor).toContainText("ARRAY[] AS empty");
-      await rowLimitDialog.getByRole("button", { name: "Close", exact: true })
-        .click();
+      await rowLimitDialog.locator("header").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
       await expect(rowLimitDialog).toHaveCount(0);
 
       const run = page.waitForResponse((response) =>
