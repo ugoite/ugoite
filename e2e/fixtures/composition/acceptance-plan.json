@@ -109,6 +109,16 @@
       "requirement": "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
       "selectors": [
         {
+          "path": "e2e/sql-filter-arguments.test.ts",
+          "kind": "test",
+          "name": "A05 @smoke: named LIMIT argument applies its integer default and saved override"
+        },
+        {
+          "path": "e2e/sql-filter-arguments.test.ts",
+          "kind": "test",
+          "name": "A05 @smoke: saved SQL reapplies its integer default after reopening"
+        },
+        {
           "path": "crates/ugoite-core/src/composition_query.rs",
           "kind": "test",
           "name": "missing_values_and_type_mismatches_are_stable"
