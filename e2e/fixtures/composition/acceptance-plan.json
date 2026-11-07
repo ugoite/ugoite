@@ -246,6 +246,9 @@
           "kind": "test",
           "name": "scalar_result_distinguishes_zero_rows_null_and_zero"
         }
+      ],
+      "manual_evidence_gaps": [
+        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Ordinary Form schema drift is rejected earlier as `query_schema_changed`; reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. A09 and SQL S-02 remain partial."
       ]
     },
     {
