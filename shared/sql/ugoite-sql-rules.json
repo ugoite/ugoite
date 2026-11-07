@@ -756,6 +756,19 @@
       },
       "evidence": [
         {
+          "id": "exists-subquery-round-trip",
+          "selectors": [
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "authors the exact EXISTS seed through the inspector and restores it with WASM undo"
+            ],
+            [
+              "e2e/saved-sql-route.test.ts",
+              "@smoke SQL Workspace creates, runs, saves, and reloads the exact EXISTS query"
+            ]
+          ]
+        },
+        {
           "id": "common-toolbar",
           "selectors": [
             [

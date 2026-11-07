@@ -259,6 +259,57 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       )
     );
     await waitFor(() => expect(document.activeElement).toBe(aggregateAddCondition()));
+  it("authors the exact EXISTS seed through the inspector and restores it with WASM undo", async () => {
+    const initial = "SELECT 1 WHERE TRUE";
+    const initialDocument = await parseSqlDocument(initial);
+    const truth = initialDocument.nodes.find((node) =>
+      node.range && initial.slice(node.range.start, node.range.end) === "TRUE"
+    );
+    expect(truth).toBeDefined();
+    const expected = await applySqlDocumentSemanticEditTransaction(initial, {
+      contract_version: initialDocument.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_expression_with_exists_subquery",
+        node_id: truth!.id,
+        expected_kind: truth!.kind,
+      }],
+    });
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const truthItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(truth!.id)
+    );
+    expect(truthItem).toBeDefined();
+    fireEvent.click(truthItem!);
+    fireEvent.click(screen.getByRole("button", { name: "Use EXISTS" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const existsSql = "SELECT 1 WHERE EXISTS (SELECT 1)";
+    await waitFor(() => expect(sql()).toBe(existsSql));
+    const edited = await parseSqlDocument(sql());
+    const exists = edited.nodes.find((node) =>
+      node.kind === "subquery_expression"
+    );
+    expect(exists).toBeDefined();
+    const existsQuery = edited.nodes.find((node) =>
+      node.kind === "query" && node.parent === exists!.id
+    );
+    expect(existsQuery).toBeDefined();
+    expect(
+      edited.nodes.some((node) =>
+        node.kind === "select" && node.parent === existsQuery!.id &&
+        node.range &&
+        sql().slice(node.range.start, node.range.end) === "SELECT 1"
+      ),
+    ).toBe(true);
+
+    const restored = await applySqlDocumentEditTransaction(
+      sql(),
+      expected.undo,
+    );
+    expect(restored.document.source).toBe(initial);
   });
 
   it("edits ARRAY elements entered directly as SQL through actual WASM", async () => {
