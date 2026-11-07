@@ -143,6 +143,7 @@ async function seedReceiptComposition(
           kind: "saved_sql",
           entry_id: savedSql.id!,
           revision_id: savedSql.revision_id!,
+          label_source: "variable",
           column: "total",
           arguments: [],
         },

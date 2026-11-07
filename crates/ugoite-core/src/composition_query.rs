@@ -13,6 +13,8 @@ use chrono::{DateTime, Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use ugoite_domain::composition::VariableGraphSavedSqlLabelSource;
 use ugoite_domain::composition::{
     compile_variable_graph, validate_variable_graph_result, variable_graph_literal_matches,
     CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
@@ -963,6 +965,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
             entry_id,
             revision_id,
             column,
+            ..
         } => {
             let (Some(entry_id), Some(revision_id)) = (entry_id.as_deref(), revision_id.as_deref())
             else {
@@ -1256,6 +1259,7 @@ pub fn validate_variable_graph_sql_page(
             entry_id: Some(entry_id),
             revision_id: Some(revision_id),
             column,
+            ..
         } if request.saved_sql.as_ref().is_some_and(|saved_sql| {
             saved_sql.id == *entry_id && saved_sql.revision_id == *revision_id
         }) =>
@@ -2057,6 +2061,7 @@ mod tests {
                 entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
                 revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                 column: Some("total".to_owned()),
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2136,6 +2141,7 @@ mod tests {
                 entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
                 revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                 column: None,
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2171,6 +2177,7 @@ mod tests {
                 entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
                 revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                 column: Some("total".to_owned()),
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2435,6 +2442,7 @@ mod tests {
                 entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
                 revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                 column: Some("total".to_owned()),
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2608,6 +2616,7 @@ mod tests {
                 entry_id: None,
                 revision_id: None,
                 column: None,
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2626,6 +2635,7 @@ mod tests {
                 entry_id: Some("not-a-uuid".to_owned()),
                 revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
                 column: None,
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),

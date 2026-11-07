@@ -321,6 +321,7 @@ describe("CompositionStudio graph surface", () => {
         kind: "saved_sql",
         entry_id: "saved-1",
         revision_id: "revision-pinned",
+        label_source: "source",
         arguments: [],
       },
     };
@@ -1672,6 +1673,7 @@ describe("CompositionStudio graph surface", () => {
       kind: "saved_sql",
       entry_id: "sql-1",
       revision_id: "sql-rev-2",
+      label_source: "source",
     });
     expect(authored.spec.components).toHaveLength(1);
     expect(authored.spec.components[0]).toMatchObject({

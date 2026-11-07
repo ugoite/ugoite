@@ -96,7 +96,19 @@ pub enum VariableGraphQueryDefinition {
         /// Optional output column selected for scalar query results.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         column: Option<String>,
+        /// Whether a display uses the source column label or the variable name.
+        label_source: VariableGraphSavedSqlLabelSource,
     },
+}
+
+/// Explicit UI label owner for an exact Saved SQL query variable.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableGraphSavedSqlLabelSource {
+    /// Show the selected Saved SQL output column when one is selected.
+    Source,
+    /// Show the user's variable name, regardless of source column or ID shape.
+    Variable,
 }
 
 /// A scalar's domain type and nullability.
@@ -505,6 +517,7 @@ pub fn compile_variable_graph(
                         entry_id,
                         revision_id,
                         column,
+                        label_source: _,
                     } => {
                         if !entry_id.as_deref().is_some_and(valid_saved_sql_identity)
                             || !revision_id.as_deref().is_some_and(valid_saved_sql_identity)
@@ -1315,6 +1328,7 @@ mod tests {
             entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
             revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
             column: Some("total".to_owned()),
+            label_source: VariableGraphSavedSqlLabelSource::Source,
         });
         assert!(compile_variable_graph(&graph(vec![saved_sql])).is_ok());
     }
@@ -1367,6 +1381,7 @@ mod tests {
                 entry_id,
                 revision_id,
                 column: None,
+                label_source: VariableGraphSavedSqlLabelSource::Variable,
             });
             assert_eq!(
                 compile_variable_graph(&graph(vec![invalid])).expect_err("bad identity"),
@@ -1388,6 +1403,7 @@ mod tests {
             entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
             revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
             column: Some("  ".to_owned()),
+            label_source: VariableGraphSavedSqlLabelSource::Source,
         });
         assert_eq!(
             compile_variable_graph(&graph(vec![invalid])).expect_err("blank output column"),
@@ -1401,6 +1417,7 @@ mod tests {
             entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
             revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
             column: Some("total".to_owned()),
+            label_source: VariableGraphSavedSqlLabelSource::Source,
         });
         let VariableGraphNodeKind::Query { returns, .. } = &mut table.kind else {
             unreachable!("helper constructs a query node")
@@ -1517,6 +1534,41 @@ mod tests {
             .is_err()
         );
 
+        let generated_label =
+            serde_json::from_value::<VariableGraphQueryDefinition>(serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002",
+                "column": "total",
+                "label_source": "source"
+            }))
+            .expect("Saved SQL label ownership is explicit in the graph contract");
+        assert!(matches!(
+            generated_label,
+            VariableGraphQueryDefinition::SavedSql {
+                label_source: VariableGraphSavedSqlLabelSource::Source,
+                ..
+            }
+        ));
+        for invalid_label_source in [
+            serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002"
+            }),
+            serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002",
+                "label_source": "identifier_pattern"
+            }),
+        ] {
+            assert!(
+                serde_json::from_value::<VariableGraphQueryDefinition>(invalid_label_source)
+                    .is_err()
+            );
+        }
+
         for unknown in [
             serde_json::json!({
                 "kind": "inline_sql",
@@ -1527,6 +1579,7 @@ mod tests {
                 "kind": "saved_sql",
                 "entry_id": "00000000-0000-0000-0000-000000000001",
                 "revision_id": "00000000-0000-0000-0000-000000000002",
+                "label_source": "variable",
                 "latest": true
             }),
         ] {
@@ -1534,7 +1587,7 @@ mod tests {
         }
 
         let missing_ids = serde_json::from_value::<VariableGraphQueryDefinition>(
-            serde_json::json!({ "kind": "saved_sql" }),
+            serde_json::json!({ "kind": "saved_sql", "label_source": "variable" }),
         )
         .expect("draft Saved SQL payload is decoded for stable domain diagnostics");
         assert_eq!(
@@ -1544,6 +1597,15 @@ mod tests {
                 VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
                 "result"
             )]
+        );
+
+        assert!(
+            serde_json::from_value::<VariableGraphQueryDefinition>(serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002"
+            }))
+            .is_err()
         );
 
         let missing_query = serde_json::json!({

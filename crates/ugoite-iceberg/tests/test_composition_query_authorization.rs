@@ -10,7 +10,8 @@ use ugoite_domain::composition::{
     CompositionResultFieldType, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind,
     FlowRow, VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphNode,
     VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphResultType, VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor,
+    VariableGraphScalarType,
 };
 use ugoite_domain::identity::{
     AccessPolicy, Action, Grant, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -269,6 +270,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
                         entry_id: sql["id"].as_str().map(str::to_owned),
                         revision_id: sql["revision_id"].as_str().map(str::to_owned),
                         column: Some(column.to_string()),
+                        label_source: VariableGraphSavedSqlLabelSource::Source,
                     },
                     arguments,
                     form_bindings: Vec::new(),
@@ -902,6 +904,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
                             entry_id: saved_sql["id"].as_str().map(str::to_owned),
                             revision_id: saved_sql["revision_id"].as_str().map(str::to_owned),
                             column: Some("total".to_string()),
+                            label_source: VariableGraphSavedSqlLabelSource::Source,
                         },
                         arguments: Vec::new(),
                         form_bindings: Vec::new(),

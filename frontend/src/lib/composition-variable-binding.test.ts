@@ -39,6 +39,7 @@ const scalarNode: CompositionVariableNode = {
     entry_id: "saved-entry",
     revision_id: "saved-revision",
     column: "total",
+    label_source: "source",
     arguments: [],
   },
 };
@@ -196,7 +197,7 @@ describe("strict variable-only Composition bindings", () => {
       }],
     });
     expect(JSON.stringify(inserted)).not.toContain("source_id");
-    expect(JSON.stringify(inserted)).not.toContain('"source"');
+    expect(inserted?.components[0]).not.toHaveProperty("source");
   });
 
   it("rejects a table/scalar shape mismatch without changing the draft", () => {
@@ -362,6 +363,21 @@ describe("strict variable-only Composition bindings", () => {
       kind: "input",
       variable: "report_day",
     });
+  });
+
+  it("marks a renamed Saved SQL binding as using the variable label", () => {
+    const from = "total";
+    const to = "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_total";
+    const renamed = renameCompositionVariable(
+      { ...createCompositionGraphDraft(), variables: [scalarNode] },
+      from,
+      to,
+    );
+    const node = renamed?.variables[0];
+    expect(node?.id).toBe(to);
+    expect(node?.kind === "query" && node.query.kind === "saved_sql"
+      ? node.query.label_source
+      : undefined).toBe("variable");
   });
 
   it("reports non-placed components and incompatible bindings", () => {

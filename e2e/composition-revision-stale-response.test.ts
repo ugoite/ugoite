@@ -72,6 +72,7 @@ function compositionGraph(
           kind: "saved_sql",
           entry_id: savedSqlId,
           revision_id: savedSqlRevisionId,
+          label_source: "variable",
           column: "total",
           arguments: [{ name: "start_date", variable: "cutoff_date" }],
           form_bindings: [],

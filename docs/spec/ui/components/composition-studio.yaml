@@ -59,6 +59,7 @@ The picker has one modal focus owner. Full rows select candidates; Escape closes
 ## Names and state
 
 Composition name, variable name, SQL output alias, Form field name, Text content, and accessible name each appear where they carry meaning. Binding-only UUIDs are not ordinary primary-path labels. There are no Composition tags, source aliases, or editable component labels.
+Saved SQL metric label selection follows the explicit `label_source` contract in [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md); it is not inferred from variable ID format.
 
 A new Composition can preview and insert existing Forms or exact Saved SQL before it is named. Authoring probes use a transient nonempty document title; the editor name remains untouched, and an unnamed definition still cannot be saved. Text editing retains its input node, focus, selection and composition session while its live definition changes.
 

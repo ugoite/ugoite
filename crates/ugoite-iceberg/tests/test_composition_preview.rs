@@ -17,8 +17,8 @@ use ugoite_domain::composition::{
     CompositionFormat, CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem,
     FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphFormBinding,
     VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
-    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
-    VariableGraphScalarType, VariableGraphValidatedResult,
+    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphSavedSqlLabelSource,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -1032,6 +1032,7 @@ async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Re
                                     entry_id: Some(entry_id.clone()),
                                     revision_id: Some(revision_id.to_string()),
                                     column: Some("total".to_string()),
+                                    label_source: VariableGraphSavedSqlLabelSource::Source,
                                 },
                                 arguments: vec![VariableGraphArgumentBinding {
                                     name: "minimum".to_string(),
@@ -1694,6 +1695,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                                 entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
                                 revision_id: Some(RevisionId::from_uuid(revision_id).to_string()),
                                 column: Some("total".to_string()),
+                                label_source: VariableGraphSavedSqlLabelSource::Source,
                             },
                             arguments: vec![VariableGraphArgumentBinding {
                                 name: "minimum".to_string(),
@@ -2229,6 +2231,7 @@ async fn portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_colum
                 entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
                 revision_id: Some(revision.to_owned()),
                 column: Some("a\"b".to_owned()),
+                label_source: VariableGraphSavedSqlLabelSource::Source,
             },
             arguments: Vec::new(),
             form_bindings: Vec::new(),

@@ -65,6 +65,13 @@ revision ID, never a moving "latest" reference. The server derives Form bindings
 and the result descriptor on commit; client-provided derived metadata is not
 trusted.
 
+A Saved SQL query variable carries a required `label_source`: `source` presents
+the selected output column (or the neutral metric-preview label when no column
+is selected), and `variable` presents the variable's current name. Rename
+switches the label source to `variable`. This field is presentation metadata;
+it does not affect planning or evaluation, and the renderer never infers it from
+the variable ID format.
+
 Each query declares an explicit map from SQL parameter name to Composition
 variable ID. SQL parameters and Composition variables are distinct concepts;
 matching names never bind implicitly. Initial query arguments accept scalar
