@@ -171,3 +171,176 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
     reopenedArgs.getByRole("textbox", { name: "Default for minimum" }),
   ).toHaveValue("10");
 });
+
+test(
+  "A05 @smoke: named LIMIT argument applies its integer default and saved override",
+  async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await waitForServers(request);
+    const spaceId = await getDefaultSpaceId(request);
+    const formName = `LimitArgs${crypto.randomUUID().slice(0, 8)}`;
+    const formResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: formName,
+          version: 1,
+          template: `# ${formName}\n\n## amount\n`,
+          fields: {
+            amount: { type: "integer", required: true, label: "Amount" },
+          },
+        },
+      },
+    );
+    expect([200, 201]).toContain(formResponse.status());
+    for (const amount of [1, 2, 3]) {
+      const entry = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/entries`),
+        { data: { form: formName, fields: { amount } } },
+      );
+      expect(entry.status()).toBe(201);
+    }
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsResponse.ok()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      name: string;
+      sql_relation?: string;
+    }>;
+    const relation = forms.find((form) => form.name === formName)?.sql_relation;
+    if (!relation) throw new Error(`Form ${formName} has no SQL relation`);
+    const sql =
+      `SELECT "amount" FROM "${relation}" ORDER BY "amount" ASC LIMIT $take`;
+
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await editor.fill(sql);
+    await expect(editor).toHaveText(sql);
+    await page.getByLabel("Query name", { exact: true }).fill(
+      `Named limit ${formName}`,
+    );
+
+    await page.getByRole("button", { name: "Arguments", exact: true }).click();
+    const args = page.getByRole("dialog", { name: "Arguments", exact: true });
+    await args.getByRole("textbox", { name: "Argument name", exact: true })
+      .fill("take");
+    await args.getByRole("button", { name: "Add argument", exact: true })
+      .click();
+    await args.getByRole("combobox", { name: "Type for take", exact: true })
+      .selectOption("integer");
+    await args.getByRole("checkbox", { name: "Default for take", exact: true })
+      .check();
+    await args.getByRole("textbox", { name: "Default for take", exact: true })
+      .fill("1");
+    await expect(editor).toContainText("LIMIT $take");
+    await args.locator("footer").getByRole("button", { name: "Close" })
+      .click();
+
+    const runAndExpectAmounts = async (
+      take: number,
+      expectedAmounts: number[],
+    ) => {
+      const responsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const response = await responsePromise;
+      const requestBody = response.request().postDataJSON() as {
+        parameters: Record<string, unknown>;
+        parameter_types: Record<string, string>;
+      };
+      expect(requestBody).toMatchObject({
+        parameters: { take },
+        parameter_types: { take: "integer" },
+      });
+      expect(response.ok(), await response.text()).toBe(true);
+      const result = await response.json() as {
+        rows: Record<string, unknown>[];
+      };
+      expect(result.rows.map((row) => row.amount)).toEqual(expectedAmounts);
+    };
+
+    await expect(page.getByRole("textbox", { name: "take", exact: true }))
+      .toHaveValue("1");
+    await runAndExpectAmounts(1, [1]);
+    const takeInput = page.getByRole("textbox", { name: "take", exact: true });
+    await takeInput.fill("2");
+    await runAndExpectAmounts(2, [1, 2]);
+
+    let savedSqlId: string | undefined;
+    const saveResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const saveResponse = await saveResponsePromise;
+    try {
+      const saveBody = await saveResponse.json() as { id?: string };
+      savedSqlId = saveBody.id;
+      expect([200, 201], JSON.stringify(saveBody)).toContain(
+        saveResponse.status(),
+      );
+      if (!savedSqlId) throw new Error("Saved SQL response omitted its id");
+
+      const readback = await request.get(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+      expect(readback.ok(), await readback.text()).toBe(true);
+      const saved = await readback.json() as {
+        sql: string;
+        variables: Array<{ name: string; type: string; default?: number }>;
+      };
+      expect(saved.sql).toContain("LIMIT $take");
+      expect(saved.variables).toContainEqual(expect.objectContaining({
+        name: "take",
+        type: "integer",
+        default: 1,
+      }));
+
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(editor).toContainText("LIMIT $take");
+      await page.getByRole("button", { name: "Arguments", exact: true })
+        .click();
+      const reopenedArgs = page.getByRole("dialog", {
+        name: "Arguments",
+        exact: true,
+      });
+      await expect(
+        reopenedArgs.getByRole("combobox", {
+          name: "Type for take",
+          exact: true,
+        }),
+      ).toHaveValue("integer");
+      await expect(
+        reopenedArgs.getByRole("textbox", {
+          name: "Default for take",
+          exact: true,
+        }),
+      ).toHaveValue("1");
+      await reopenedArgs.locator("footer").getByRole("button", {
+        name: "Close",
+      })
+        .click();
+
+      const reopenedTakeInput = page.getByRole("textbox", {
+        name: "take",
+        exact: true,
+      });
+      await reopenedTakeInput.fill("2");
+      await runAndExpectAmounts(2, [1, 2]);
+    } finally {
+      if (savedSqlId) {
+        await request.delete(
+          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+      }
+    }
+  },
+);
