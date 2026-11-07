@@ -56,7 +56,7 @@ test.describe("Saved SQL route", () => {
 
       const treeDialog = page.getByRole("dialog", { name: "SQL tree" });
       const aliasedProjection = treeDialog.getByRole("treeitem", {
-        name: /Select item: ARRAY\[\] AS empty/,
+        name: /Selected expression: ARRAY\[\] AS empty/,
       });
       await aliasedProjection.click();
       const expressionKind = treeDialog.getByRole("combobox", {
