@@ -7,6 +7,7 @@
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts entry-query-late-response.test.ts",
     "composition-metric": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-metric-journey.test.ts composition-table-metric-pagination.test.ts",
     "composition-binding-rebind": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-binding-rebind.test.ts",
+    "composition-form-schema-drift": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-form-schema-drift.test.ts",
     "composition-source-acl-isolation": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-source-acl-isolation.test.ts",
     "native-zoom-200": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test native-zoom-200.test.ts --headed",
     "composition-golden": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-golden-journey.test.ts",
