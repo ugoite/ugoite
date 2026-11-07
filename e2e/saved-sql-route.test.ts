@@ -16,6 +16,146 @@ test.describe("Saved SQL route", () => {
     spaceId = await getDefaultSpaceId(request);
   });
 
+  test(
+    "A07 @smoke: code-edited aliased ARRAY survives a scoped SQL structure edit and save",
+    async ({ page, request }) => {
+      const name = `A07 aliased ARRAY ${Date.now()}`;
+      const sql = "SELECT ARRAY[] AS empty";
+      const editedSql = `${sql} LIMIT 1`;
+      let savedSqlId: string | undefined;
+
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+        waitUntil: "domcontentloaded",
+      });
+
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      const initialPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === sql
+      );
+      await editor.fill(sql);
+      const initialPlanResponse = await initialPlan;
+      expect(initialPlanResponse.ok(), await initialPlanResponse.text()).toBe(
+        true,
+      );
+      await expect(editor).toHaveText(sql);
+      await page.getByLabel("Query name", { exact: true }).fill(name);
+
+      const toolbar = page.getByRole("group", { name: "SQL", exact: true });
+      await toolbar.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      const structureOptions = page.getByRole("group", {
+        name: "Structure options",
+      });
+      await structureOptions.getByRole("button", {
+        name: "SQL tree",
+        exact: true,
+      }).click();
+
+      const treeDialog = page.getByRole("dialog", { name: "SQL tree" });
+      const aliasedProjection = treeDialog.getByRole("treeitem", {
+        name: /Selected expression: ARRAY\[\] AS empty/,
+      });
+      await aliasedProjection.click();
+      const expressionKind = treeDialog.getByRole("combobox", {
+        name: "Expression value",
+        exact: true,
+      });
+      await expect(expressionKind).toBeVisible();
+      await expect(
+        expressionKind.getByRole("option", { name: "ARRAY literal" }),
+      ).toHaveCount(0);
+      await treeDialog.getByRole("button", { name: "Close", exact: true })
+        .last().click();
+
+      await toolbar.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      const rowLimitAction = page.getByRole("group", {
+        name: "Structure options",
+      }).getByRole("button", { name: "Row limit", exact: true });
+      await expect(rowLimitAction).toBeEnabled();
+      await rowLimitAction.click();
+
+      const rowLimitDialog = page.getByRole("dialog", { name: "Row limit" });
+      const tree = rowLimitDialog.getByRole("tree", {
+        name: "SQL syntax tree",
+      });
+      await tree.getByRole("treeitem", { name: /Query/ }).click();
+      await rowLimitDialog.getByLabel("Limit", { exact: true }).fill("1");
+      const setLimit = rowLimitDialog.getByRole("button", {
+        name: "Set row limit",
+        exact: true,
+      });
+      await expect(setLimit).toBeEnabled();
+      await setLimit.click();
+      await expect(editor).toHaveText(sql);
+      await rowLimitDialog.getByRole("button", { name: "Apply", exact: true })
+        .click();
+
+      await expect(editor).toHaveText(editedSql);
+      await expect(editor).toContainText("ARRAY[] AS empty");
+      await rowLimitDialog.locator("header").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
+      await expect(rowLimitDialog).toHaveCount(0);
+
+      const run = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query`
+      );
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      const runResponse = await run;
+      expect(runResponse.ok(), await runResponse.text()).toBe(true);
+      const result = await runResponse.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(result.columns).toEqual(["empty"]);
+      expect(result.rows).toEqual([{ empty: [] }]);
+
+      const saveResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const saveResponse = await saveResponsePromise;
+      try {
+        const saveBody = await saveResponse.json() as { id?: string };
+        savedSqlId = saveBody.id;
+        expect([200, 201], JSON.stringify(saveBody)).toContain(
+          saveResponse.status(),
+        );
+        if (!savedSqlId) throw new Error("Saved SQL response omitted its id");
+
+        const readback = await request.get(
+          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+        expect(readback.ok(), await readback.text()).toBe(true);
+        expect((await readback.json() as { sql: string }).sql).toBe(editedSql);
+
+        await page.goto(
+          getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+          {
+            waitUntil: "domcontentloaded",
+          },
+        );
+        await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+          .toHaveText(editedSql);
+      } finally {
+        if (savedSqlId) {
+          await request.delete(
+            getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+          );
+        }
+      }
+    },
+  );
+
   test("REQ-FE-061: saved SQL route shows its empty state and keeps current navigation", async ({ page }) => {
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql`), {
       waitUntil: "domcontentloaded",
