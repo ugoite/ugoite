@@ -864,3 +864,15 @@ features:
                 criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "unnamed mobile Composition keeps Text focus and inserts existing data before naming" } }
+      - id: source-unavailable-browser-verification
+        role: evidence
+        facet: verification
+        responsibility: Record partial browser evidence for the existing Composition result renderer when an ACL-revoked SQL source clears stale runtime and Design results and uses the existing source-unavailable message.
+        targets:
+          - id: revoked-form-source-runtime-and-design-state
+            adapter: typescript
+            path: e2e/composition-source-acl-isolation.test.ts
+            selector: { kind: test, name: "evaluate rechecks Form and exact Saved SQL access after revocation" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results

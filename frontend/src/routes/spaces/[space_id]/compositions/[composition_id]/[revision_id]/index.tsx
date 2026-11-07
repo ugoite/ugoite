@@ -63,6 +63,17 @@ interface GraphTablePageState {
   index: number;
 }
 
+const compositionEvaluationErrorMessage = (
+  response: CompositionEvaluationResponse,
+): string =>
+  response.diagnostics?.some((diagnostic) =>
+      diagnostic.code === "query_unavailable"
+    ) || response.query_diagnostics?.some((diagnostic) =>
+      diagnostic.code === "query_unavailable"
+    )
+    ? t("composition.bindingSourceUnavailable")
+    : t("composition.queryFailed");
+
 interface AccessLease {
   routeKey: string;
   resumeEpoch: number;
@@ -716,7 +727,7 @@ export default function CompositionRevisionRoute() {
         response: responseToShow,
         error: response.ok || diagnosticsAreComponentScoped
           ? undefined
-          : t("composition.queryFailed"),
+          : compositionEvaluationErrorMessage(responseToShow),
       });
       const revisionRef = response.composition_revision;
       const authFingerprint = response.authorization_fingerprint;
@@ -753,7 +764,7 @@ export default function CompositionRevisionRoute() {
         clearVisibleResults();
         setEvaluation({
           status: "error",
-          error: t("composition.queryFailed"),
+          error: compositionEvaluationErrorMessage(responseToShow),
           response: {
             ...responseToShow,
             query_results: {},
