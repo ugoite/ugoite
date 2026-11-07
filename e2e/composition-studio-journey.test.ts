@@ -1225,6 +1225,166 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
+  test(
+    "A06: Form picker authors an AVG Metric bound to Form identity and an exact Composition revision",
+    async ({ browser, context, request }) => {
+      test.setTimeout(120_000);
+      const formsResponse = await request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+      );
+      expect(formsResponse.ok()).toBe(true);
+      const forms = await formsResponse.json() as Array<{
+        id?: string;
+        name?: string;
+        fields?: Record<string, { sql_column?: string }>;
+      }>;
+      const form = forms.find((candidate) => candidate.name === seed.formName);
+      expect(form?.id).toBeTruthy();
+      const amountColumn = form?.fields?.Amount?.sql_column;
+      expect(amountColumn).toBeTruthy();
+      const formSlug = seed.formName.normalize("NFKD").toLowerCase()
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      const metricVariableId = `${formSlug}_avg_amount`;
+      const storageState = await context.storageState();
+      const ownerContext = await openOwnerContext(browser, storageState);
+
+      try {
+        const page = await ownerContext.newPage();
+        await page.goto(
+          getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
+          { waitUntil: "domcontentloaded" },
+        );
+        await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+        await page.getByLabel("Name", { exact: true }).fill(
+          `${seed.toolName} AVG picker`,
+        );
+
+        await page.getByRole("group", { name: "Add to design" })
+          .getByRole("button", { name: "Metric", exact: true }).click();
+        const metricPicker = page.getByRole("dialog", {
+          name: "Metric",
+          exact: true,
+        });
+        await metricPicker.getByRole("tab", { name: "Forms", exact: true })
+          .click();
+        await metricPicker.getByRole("button", {
+          name: seed.formName,
+          exact: true,
+        }).click();
+        await metricPicker.getByRole("combobox", {
+          name: "Aggregation",
+          exact: true,
+        }).selectOption("avg");
+        await metricPicker.getByRole("combobox", {
+          name: "Column",
+          exact: true,
+        }).selectOption({ label: "Amount" });
+        await metricPicker.getByRole("button", { name: "Add", exact: true })
+          .click();
+        await expect(metricPicker).toHaveCount(0);
+
+        const designMetric = page.getByRole("region", {
+          name: metricVariableId,
+          exact: true,
+        });
+        await expect(designMetric).toContainText("25", { timeout: 30_000 });
+        await page.getByRole("button", { name: "Save", exact: true }).click();
+        await expect(page).toHaveURL(
+          new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
+          { timeout: 30_000 },
+        );
+        const saved = revisionFromUrl(page.url());
+        const revisionResponse = await request.get(
+          getBackendUrl(
+            `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+          ),
+        );
+        expect(revisionResponse.ok()).toBe(true);
+        const revision = await revisionResponse.json() as StudioRawRevision;
+        const savedSpec = parseYaml(String(revision.fields["spec"])) as {
+          spec?: {
+            variables?: Array<{
+              id?: string;
+              kind?: string;
+              query?: {
+                kind?: string;
+                sql?: string;
+                form_bindings?: Array<{ relation: string; form_id: string }>;
+              };
+            }>;
+            components?: Array<
+              Record<string, unknown> & {
+                id?: string;
+                kind?: string;
+                variable?: string;
+              }
+            >;
+          };
+        };
+        const metricVariable = savedSpec.spec?.variables?.find((variable) =>
+          variable.id === metricVariableId
+        );
+        expect(metricVariable?.kind).toBe("query");
+        expect(metricVariable?.query).toMatchObject({
+          kind: "inline_sql",
+          sql: `SELECT AVG(${sqlIdentifier(amountColumn!)}) AS value FROM ${
+            sqlIdentifier(seed.formName)
+          }`,
+          form_bindings: [{
+            relation: seed.formName,
+            form_id: form!.id!,
+          }],
+        });
+        const metricComponent = savedSpec.spec?.components?.find((component) =>
+          component.kind === "metric"
+        );
+        expect(metricComponent?.variable).toBe(metricVariableId);
+        expect(Object.keys(metricComponent ?? {}).sort()).toEqual([
+          "id",
+          "kind",
+          "variable",
+        ]);
+
+        const exactRevisionEditUrl =
+          `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit`;
+        await page.goto(getFrontendUrl(exactRevisionEditUrl), {
+          waitUntil: "domcontentloaded",
+        });
+        await expect(page).toHaveURL(
+          new RegExp(
+            `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}/edit$`,
+          ),
+        );
+        await expect(page.getByRole("button", {
+          name: `metric, ${metricVariableId}`,
+          exact: true,
+        })).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByRole("region", {
+          name: metricVariableId,
+          exact: true,
+        })).toContainText("25", { timeout: 30_000 });
+
+        await page.goto(
+          getFrontendUrl(
+            `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}`,
+          ),
+          { waitUntil: "domcontentloaded" },
+        );
+        await expect(page).toHaveURL(
+          new RegExp(
+            `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/${saved.revisionId}$`,
+          ),
+        );
+        await expect(page.locator(".compositionGraphMetric strong"))
+          .toHaveText("25", { timeout: 30_000 });
+      } finally {
+        await ownerContext.close();
+      }
+    },
+  );
+
   test("Changing a Form-backed Table source preserves the Metric and query through save and reopen", async ({ browser, context, request }) => {
     const storageState = await context.storageState();
     const ownerContext = await openOwnerContext(browser, storageState);

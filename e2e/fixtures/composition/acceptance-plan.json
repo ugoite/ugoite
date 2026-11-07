@@ -166,6 +166,11 @@
         {
           "path": "crates/ugoite-iceberg/src/service/composition_metric_query.rs",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "A06: Form picker authors an AVG Metric bound to Form identity and an exact Composition revision"
         }
       ]
     },
