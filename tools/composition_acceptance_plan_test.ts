@@ -81,8 +81,8 @@ Deno.test(
     assertEquals(
       plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
       [
-        "Only one saved Composition Design journey at actual 200% zoom in Linux Chromium is evidenced; runtime, other Composition states, and available modes remain unverified.",
-        "iPhone Safari device verification",
+        "One saved Composition Design journey and one runtime journey at actual 200% zoom in Linux Chromium are evidenced; other Composition states and available modes remain unverified.",
+        "iPhone Safari device verification is excluded from the current task scope.",
       ],
     );
     assertEquals(

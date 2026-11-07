@@ -256,11 +256,16 @@
           "path": "e2e/native-zoom-200.test.ts",
           "kind": "test",
           "name": "U-04 partial evidence: Composition Design remains usable at native 200% zoom"
+        },
+        {
+          "path": "e2e/native-zoom-200.test.ts",
+          "kind": "test",
+          "name": "U-04 partial evidence: Composition runtime remains usable at native 200% zoom"
         }
       ],
       "manual_evidence_gaps": [
-        "Only one saved Composition Design journey at actual 200% zoom in Linux Chromium is evidenced; runtime, other Composition states, and available modes remain unverified.",
-        "iPhone Safari device verification"
+        "One saved Composition Design journey and one runtime journey at actual 200% zoom in Linux Chromium are evidenced; other Composition states and available modes remain unverified.",
+        "iPhone Safari device verification is excluded from the current task scope."
       ]
     },
     {

@@ -427,7 +427,7 @@ features:
       - id: graph-workspace-read-verification
         role: verification
         facet: verification
-        responsibility: Verify typed SQL argument declarations bind explicitly to graph inputs in the picker, alongside explicit count and paging, obsolete-result suppression, and browser pinning before an independent inline copy.
+        responsibility: Verify typed SQL argument declarations bind explicitly to graph inputs in the picker, alongside explicit count and paging, obsolete-result suppression, browser pinning before an independent inline copy, and runtime Input control behavior at native 200% Chromium zoom.
         targets:
           - id: access-change-broadcast
             adapter: typescript
@@ -667,6 +667,14 @@ features:
                 criterion: REQ-COMP-009#criterion.display-components-reference-variables
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-binding-rebind.test.ts, test: Composition shared query edits update every display } }
+          - id: runtime-input-native-200-zoom
+            adapter: typescript
+            path: e2e/native-zoom-200.test.ts
+            selector: { kind: test, name: "U-04 partial evidence: Composition runtime remains usable at native 200% zoom" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-runtime-input-accessibility
+
 
 
           - id: shared-form-focus-after-parse
