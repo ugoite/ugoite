@@ -75,9 +75,37 @@ documents device scale as one screenshot pixel per device pixel
 ([screenshot API](https://playwright.dev/docs/api/class-page#page-screenshot));
 the unchanged dimensions therefore leave the capture behavior unresolved. These
 artifacts do not determine whether Chromium's native-zoom rendering or the
-Playwright capture path causes the mismatch; an independent OS-level screen
-capture is not available in this runner. Follow-up issue #4846 tracks the
-discrepancy. U-04 and the broader requirement remain partial.
+Playwright capture path causes the mismatch. The #4846 follow-up below adds a
+synchronous independent screen capture. U-04 and the broader requirement remain
+partial.
+
+## #4846 synchronous capture (2026-11-07)
+
+The warmed `native-zoom-200` task passed both selectors (Design 12.8s, runtime
+6.9s) with frontend source SHA `90432ed49d0c93a9957d0edfd91782b2d7714e12`,
+backend binary source SHA `badf5a000e34ccfc2ff6cf1870becd835c713c46`, and headed
+Chromium `148.0.7778.0`. The runtime reported a `640x556` CSS-pixel viewport,
+DPR `2`, no horizontal overflow, two 44px Inputs, and Tab order `first_amount` →
+`second_amount`. After changing `first_amount` from `1` to `4`, the scoped
+Metric DOM text and the value after two animation frames were both `6`. The
+result container was reported fully within the viewport at
+`x=24, y=296.6, width=592, height=60.6`.
+
+To identify the actual displayed value, the test temporarily captured the
+1600x1400 Xvfb root window synchronously after ordinary scrolling and the scoped
+DOM `6` assertion, before any Playwright screenshots. That capture shows both
+Inputs (`4` and `2`) and the Metric labeled `total` displaying `6`:
+
+![Synchronous Xvfb root-window capture after scrolling to the Metric](evidence/composition-runtime-native-zoom-200-xvfb-root.png)
+
+This establishes that the visible Metric was `6` in this run. Playwright's
+result-element screenshot still showed `4`, and its viewport screenshots omitted
+the Metric. An earlier asynchronous root-window watcher also captured a
+different page state and showed the first Input's `4`; it is excluded from the
+evidence. The user-visible runtime result is established by the synchronous
+capture, while Playwright's native-zoom screenshot path remains unreliable for
+this element; the internal cause of that CDP discrepancy remains unknown. No
+product/layout change was made. U-04 and the broader requirement remain partial.
 
 ## Limits
 
