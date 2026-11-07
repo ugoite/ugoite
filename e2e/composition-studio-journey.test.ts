@@ -4,6 +4,7 @@ import {
   type BrowserContext,
   expect,
   type Page,
+  type Request,
   test,
 } from "@playwright/test";
 import {
@@ -2378,25 +2379,68 @@ test.describe("Composition Studio Journey", () => {
           kind: "user-query",
           sql: `SELECT ${sqlIdentifier(nameColumn!)} AS merchant FROM ${
             sqlIdentifier(sqlRelation!)
-          } ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
-          variables: [],
+          } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum ORDER BY ${
+            sqlIdentifier(amountColumn!)
+          } ASC`,
+          variables: [{
+            type: "integer",
+            name: "minimum",
+            description: "Minimum amount included in the independent table.",
+          }],
         },
       },
     );
     expect([200, 201]).toContain(independentSql.status());
 
-    const evaluationRequests: Array<Record<string, unknown>> = [];
+    type EvaluationExchange = {
+      evaluationId: string;
+      request: Record<string, unknown>;
+      response?: Record<string, unknown>;
+      failure?: string;
+    };
+    const evaluationExchanges = new Map<string, EvaluationExchange[]>();
+    const exchangeByRequest = new WeakMap<Request, EvaluationExchange>();
     page.on("request", (outgoing) => {
       if (
         new URL(outgoing.url()).pathname.endsWith("/compositions/evaluate")
       ) {
+        let body: Record<string, unknown> = {};
         try {
-          evaluationRequests.push(
-            outgoing.postDataJSON() as Record<string, unknown>,
-          );
+          body = outgoing.postDataJSON() as Record<string, unknown>;
         } catch {
-          evaluationRequests.push({});
+          // Keep malformed requests in the trace so the matching assertions
+          // below fail instead of silently omitting them.
         }
+        const exchange = {
+          evaluationId: typeof body.evaluation_id === "string"
+            ? body.evaluation_id
+            : "",
+          request: body,
+        };
+        const exchangesForId = evaluationExchanges.get(exchange.evaluationId) ??
+          [];
+        exchangesForId.push(exchange);
+        evaluationExchanges.set(exchange.evaluationId, exchangesForId);
+        exchangeByRequest.set(outgoing, exchange);
+      }
+    });
+    page.on("response", async (incoming) => {
+      if (
+        new URL(incoming.url()).pathname.endsWith("/compositions/evaluate")
+      ) {
+        const exchange = exchangeByRequest.get(incoming.request());
+        if (!exchange) return;
+        try {
+          exchange.response = await incoming.json() as Record<string, unknown>;
+        } catch {
+          exchange.response = {};
+        }
+      }
+    });
+    page.on("requestfailed", (outgoing) => {
+      const exchange = exchangeByRequest.get(outgoing);
+      if (exchange) {
+        exchange.failure = outgoing.failure()?.errorText ?? "request failed";
       }
     });
 
@@ -2408,11 +2452,19 @@ test.describe("Composition Studio Journey", () => {
       `Design dependency preview ${suffix}`,
     );
     await addStudioTypedInput(page, "minimum", "integer", "0");
+    await addStudioTypedInput(page, "independent_minimum", "integer", "0");
     await addStudioInput(page, "minimum");
+    await addStudioInput(page, "independent_minimum");
     await addMetricDisplay(page, dependentSqlName, "matching_count", {
       minimum: "minimum",
     });
-    await addCanvasDisplay(page, "Table", independentSqlName);
+    await addCanvasDisplay(
+      page,
+      "Table",
+      independentSqlName,
+      undefined,
+      { minimum: "independent_minimum" },
+    );
 
     const dependentVariableId = `${
       savedSqlVariablePrefix(dependentSqlName)
@@ -2427,27 +2479,135 @@ test.describe("Composition Studio Journey", () => {
     });
     await expect(dependentMetric).toHaveText("2", { timeout: 30_000 });
     await expect(independentTable).toContainText("Independent row 000");
-    const firstPageRequest = evaluationRequests.at(-1);
-    expect(firstPageRequest?.requested_queries).toEqual(
-      expect.arrayContaining([dependentVariableId, independentTableVariableId]),
+    await expect(page.getByRole("textbox", {
+      name: "independent_minimum",
+      exact: true,
+    })).toHaveValue("0");
+    const successfulEvaluationFor = (variableId: string) =>
+      [...evaluationExchanges.entries()].flatMap(([evaluationId, exchanges]) =>
+        exchanges.filter((exchange) => {
+          const requested = exchange.request.requested_queries;
+          const computed = exchange.response?.computed_query_ids;
+          return exchange.evaluationId === evaluationId &&
+            exchange.failure === undefined &&
+            Array.isArray(requested) && requested.includes(variableId) &&
+            exchange.response?.ok === true &&
+            exchange.response.evaluation_id === evaluationId &&
+            Array.isArray(computed) && computed.includes(variableId);
+        })
+      )[0];
+    await expect.poll(() =>
+      Boolean(
+        successfulEvaluationFor(dependentVariableId) &&
+          successfulEvaluationFor(independentTableVariableId),
+      )
+    ).toBe(true);
+    const initialDependentExchange =
+      successfulEvaluationFor(dependentVariableId)!;
+    const initialTableExchange =
+      successfulEvaluationFor(independentTableVariableId)!;
+    const initialDependentEvaluation = initialDependentExchange.response!;
+    const initialEvaluation = initialTableExchange.response!;
+    expect(initialDependentExchange.evaluationId).toBeTruthy();
+    expect(initialTableExchange.evaluationId).toBeTruthy();
+    expect([...evaluationExchanges.keys()].every(Boolean)).toBe(true);
+    expect(initialDependentEvaluation.evaluation_id).toBe(
+      initialDependentExchange.evaluationId,
+    );
+    expect(initialDependentEvaluation.computed_query_ids).toContain(
+      dependentVariableId,
+    );
+    expect(initialDependentEvaluation.query_results).toHaveProperty(
+      dependentVariableId,
+    );
+    expect(initialDependentEvaluation.publication_fingerprint).toBe(
+      initialEvaluation.publication_fingerprint,
+    );
+    expect(initialDependentEvaluation.authorization_fingerprint).toBe(
+      initialEvaluation.authorization_fingerprint,
+    );
+    expect(initialEvaluation.evaluation_id).toBe(
+      initialTableExchange.evaluationId,
+    );
+    expect(initialEvaluation.computed_query_ids).toContain(
+      independentTableVariableId,
+    );
+    expect(initialEvaluation.publication_fingerprint).toBeTruthy();
+    expect(initialEvaluation.authorization_fingerprint).toBeTruthy();
+    expect(initialEvaluation.query_results).toHaveProperty(
+      independentTableVariableId,
     );
 
     await expect(independentTable.locator("tbody tr")).toHaveCount(2);
     await expect(independentTable).toContainText("Independent row 001");
-    const beforeInputChange = evaluationRequests.length;
+    const independentRowsBefore = await independentTable.locator("tbody tr")
+      .allTextContents();
+    const evaluationIdsBeforeInputChange = new Set(
+      evaluationExchanges.keys(),
+    );
 
     await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
     await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
-    await expect.poll(() => evaluationRequests.length).toBe(
-      beforeInputChange + 1,
+    const changedInputAttempts = () =>
+      [...evaluationExchanges.entries()]
+        .filter(([evaluationId]) =>
+          !evaluationIdsBeforeInputChange.has(evaluationId)
+        )
+        .flatMap(([, exchanges]) => exchanges)
+        .filter((exchange) =>
+          exchange.request.variables !== null &&
+          typeof exchange.request.variables === "object" &&
+          (exchange.request.variables as Record<string, unknown>).minimum ===
+            1 &&
+          JSON.stringify(exchange.request.requested_queries) ===
+            JSON.stringify([dependentVariableId]) &&
+          !Object.hasOwn(exchange.request, "page")
+        );
+    await expect.poll(() => {
+      const attempts = changedInputAttempts();
+      return attempts.length > 0 &&
+        attempts.every((exchange) =>
+          exchange.response !== undefined || exchange.failure !== undefined
+        );
+    }).toBe(true);
+    const changedInputExchange = changedInputAttempts().find((exchange) =>
+      exchange.failure === undefined && exchange.response?.ok === true &&
+        exchange.response.evaluation_id === exchange.evaluationId &&
+        Array.isArray(exchange.response.computed_query_ids) &&
+        exchange.response.computed_query_ids.includes(dependentVariableId)
     );
-    expect(evaluationRequests.at(-1)?.requested_queries).toEqual([
+    expect(changedInputExchange).toBeDefined();
+    expect(changedInputExchange!.evaluationId).toBeTruthy();
+    expect(changedInputExchange!.request.target).toEqual(
+      initialTableExchange.request.target,
+    );
+    const changedInputEvaluation = changedInputExchange!.response!;
+    expect(changedInputEvaluation.evaluation_id).toBe(
+      changedInputExchange!.evaluationId,
+    );
+    for (
+      const superseded of changedInputAttempts().filter((exchange) =>
+        exchange.failure !== undefined
+      )
+    ) {
+      expect(superseded.response).toBeUndefined();
+      expect(superseded.evaluationId).toBeTruthy();
+    }
+    expect(changedInputEvaluation.computed_query_ids).toEqual([
       dependentVariableId,
     ]);
-    expect(evaluationRequests.at(-1)).not.toHaveProperty("page");
-    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
-    await expect(independentTable).toContainText("Independent row 000");
-    await expect(independentTable).toContainText("Independent row 001");
+    expect(changedInputEvaluation.query_results).not.toHaveProperty(
+      independentTableVariableId,
+    );
+    expect(changedInputEvaluation.publication_fingerprint).toBe(
+      initialEvaluation.publication_fingerprint,
+    );
+    expect(changedInputEvaluation.authorization_fingerprint).toBe(
+      initialEvaluation.authorization_fingerprint,
+    );
+    await expect.poll(() =>
+      independentTable.locator("tbody tr").allTextContents()
+    ).toEqual(independentRowsBefore);
   });
 
   test("Pinned Saved SQL source supports an explicit inline copy and explicit counts", async ({ page, request }) => {
