@@ -8,7 +8,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -165,6 +165,47 @@ impl SqlQueryRequest {
         fingerprint(&bytes)
     }
 
+    /// Fingerprint parameters after the SQL adapter has resolved their
+    /// effective declared types. JSON transports may represent the same typed
+    /// floating-point zero as either `0` or `0.0`; normalize that coordinate
+    /// for Composition Count snapshots while retaining the declared type.
+    pub fn typed_parameter_fingerprint(
+        &self,
+        effective_types: &BTreeMap<String, String>,
+    ) -> Result<String, SqlQueryError> {
+        let mut parameters = self.parameters.clone();
+        for (name, value) in parameters.iter_mut() {
+            if matches!(
+                effective_types.get(name).map(String::as_str),
+                Some("float" | "double")
+            ) {
+                let Some(number) = value.as_number() else {
+                    continue;
+                };
+                let normalized = number.as_f64().and_then(Number::from_f64).ok_or_else(|| {
+                    SqlQueryError::Invalid(format!(
+                        "SQL parameter {name} is not a finite floating-point value"
+                    ))
+                })?;
+                *value = Value::Number(normalized);
+            }
+        }
+        let bytes = if self.form_binding_guards.is_empty() && self.binding_base.is_none() {
+            serde_json::to_vec(&(&parameters, effective_types))
+        } else if self.binding_base.is_none() {
+            serde_json::to_vec(&(&parameters, effective_types, &self.form_binding_guards))
+        } else {
+            serde_json::to_vec(&(
+                &parameters,
+                effective_types,
+                &self.binding_base,
+                &self.form_binding_guards,
+            ))
+        }
+        .map_err(SqlQueryError::Serialize)?;
+        fingerprint(&bytes)
+    }
+
     /// Fingerprint every client-held coordinate that distinguishes one page
     /// request, including a continuation token on later pages.
     pub fn execution_fingerprint(&self) -> Result<String, SqlQueryError> {
@@ -225,10 +266,25 @@ pub struct SqlQueryCountRequest {
     pub binding_base: Option<SavedSqlRevisionRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_binding_guards: Vec<SqlFormBindingGuard>,
+    /// Opaque server-issued Composition evaluation snapshot. The client never
+    /// selects a PublicationRef; the server verifies this token and current
+    /// authorization before using its pinned publication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition_count_snapshot: Option<String>,
 }
 
 impl SqlQueryCountRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
+        if self
+            .composition_count_snapshot
+            .as_ref()
+            .is_some_and(|token| token.is_empty() || token.len() > 16_384)
+        {
+            return Err(SqlQueryError::Invalid(
+                "Composition Count snapshot must be a non-empty token no longer than 16384 bytes"
+                    .to_string(),
+            ));
+        }
         SqlQueryRequest {
             sql: self.sql.clone(),
             parameters: self.parameters.clone(),
@@ -294,6 +350,7 @@ impl SqlQueryPlanRequest {
             saved_sql: self.saved_sql.clone(),
             binding_base: self.binding_base.clone(),
             form_binding_guards: self.form_binding_guards.clone(),
+            composition_count_snapshot: None,
         }
         .validate()
     }
@@ -333,6 +390,11 @@ pub struct SqlQueryPage {
     /// `columns`. Present only when requested by `include_exact_integer_values`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
+    /// Internal signed Count snapshot emitted only for Composition graph
+    /// queries. Composition evaluation transfers it into its graph result;
+    /// ordinary SQL page responses do not expose it.
+    #[serde(skip)]
+    pub composition_count_snapshot: Option<String>,
 }
 
 /// Result of one closed Saved SQL scalar probe.
@@ -411,6 +473,13 @@ pub struct SqlContinuation {
     pub parameter_fingerprint: String,
     pub authorization_fingerprint: String,
     pub offset: usize,
+    /// Server-issued purpose prevents a count snapshot from being reused as
+    /// a client-selected paging coordinate.
+    #[serde(default, skip_serializing_if = "SqlContinuationPurpose::is_page")]
+    pub purpose: SqlContinuationPurpose,
+    /// Composition whose access was checked when a Count snapshot was issued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition_entry_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -421,6 +490,20 @@ pub struct SqlContinuation {
     /// context before reading the pinned publication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_fingerprint: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlContinuationPurpose {
+    #[default]
+    Page,
+    CompositionCountSnapshot,
+}
+
+impl SqlContinuationPurpose {
+    fn is_page(purpose: &Self) -> bool {
+        *purpose == Self::Page
+    }
 }
 
 impl SqlContinuation {
@@ -451,6 +534,8 @@ impl SqlContinuation {
             parameter_fingerprint,
             authorization_fingerprint,
             offset,
+            purpose: SqlContinuationPurpose::Page,
+            composition_entry_id: None,
             saved_sql: None,
             binding_fingerprint: None,
             context_fingerprint: None,
@@ -655,7 +740,115 @@ mod tests {
     }
 
     #[test]
+    fn typed_count_fingerprint_normalizes_float_transport_but_preserves_page_coordinates() {
+        let count_request = |value: Value, parameter_type: &str| SqlQueryRequest {
+            sql: String::new(),
+            parameters: Map::from_iter([("minimum".to_string(), value)]),
+            parameter_types: BTreeMap::from([("minimum".to_string(), parameter_type.to_string())]),
+            saved_sql: Some(SavedSqlRevisionRef {
+                id: "saved-table".to_string(),
+                revision_id: "saved-revision".to_string(),
+            }),
+            ..SqlQueryRequest::default()
+        };
+        let rust_float = count_request(serde_json::json!(0.0), "float");
+        let browser_float = count_request(serde_json::json!(0), "float");
+        let typed_float_types = BTreeMap::from([("minimum".to_string(), "float".to_string())]);
+
+        assert_ne!(
+            rust_float
+                .parameter_fingerprint()
+                .expect("raw Rust fingerprint"),
+            browser_float
+                .parameter_fingerprint()
+                .expect("raw browser fingerprint"),
+            "existing ordinary paging fingerprints remain unchanged"
+        );
+        assert_eq!(
+            rust_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed Rust fingerprint"),
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed browser fingerprint")
+        );
+        assert_ne!(
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed float fingerprint"),
+            count_request(serde_json::json!(1), "float")
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("changed float fingerprint"),
+            "a changed typed parameter remains bound"
+        );
+        assert_ne!(
+            browser_float
+                .typed_parameter_fingerprint(&typed_float_types)
+                .expect("typed float fingerprint"),
+            count_request(serde_json::json!(0), "integer")
+                .typed_parameter_fingerprint(&BTreeMap::from([(
+                    "minimum".to_string(),
+                    "integer".to_string(),
+                )]))
+                .expect("typed integer fingerprint"),
+            "the declared SQL argument type remains bound"
+        );
+
+        let bound_request = SqlQueryRequest {
+            sql: "SELECT * FROM \"Expense\"".to_string(),
+            parameters: Map::from_iter([("minimum".to_string(), serde_json::json!(0))]),
+            parameter_types: BTreeMap::from([("minimum".to_string(), "float".to_string())]),
+            binding_base: Some(SavedSqlRevisionRef {
+                id: "base-query".to_string(),
+                revision_id: "base-revision".to_string(),
+            }),
+            form_binding_guards: vec![SqlFormBindingGuard {
+                name: "Expense".to_string(),
+                form_id: "form-a".to_string(),
+            }],
+            ..SqlQueryRequest::default()
+        };
+        let bound_types = BTreeMap::from([("minimum".to_string(), "float".to_string())]);
+        let original_bound_fingerprint = bound_request
+            .typed_parameter_fingerprint(&bound_types)
+            .expect("bound request fingerprint");
+        let changed_binding_base = SqlQueryRequest {
+            binding_base: Some(SavedSqlRevisionRef {
+                id: "base-query".to_string(),
+                revision_id: "different-revision".to_string(),
+            }),
+            ..bound_request.clone()
+        };
+        assert_ne!(
+            original_bound_fingerprint,
+            changed_binding_base
+                .typed_parameter_fingerprint(&bound_types)
+                .expect("changed binding-base fingerprint"),
+            "the binding-base revision remains bound"
+        );
+        let changed_form_guard = SqlQueryRequest {
+            form_binding_guards: vec![SqlFormBindingGuard {
+                name: "Expense".to_string(),
+                form_id: "different-form".to_string(),
+            }],
+            ..bound_request
+        };
+        assert_ne!(
+            original_bound_fingerprint,
+            changed_form_guard
+                .typed_parameter_fingerprint(&bound_types)
+                .expect("changed Form guard fingerprint"),
+            "the resolved Form identity remains bound"
+        );
+    }
+
+    #[test]
     fn continuation_round_trips_and_rejects_tampering() {
+        let signing_key = Uuid::new_v4().into_bytes();
+        let mut wrong_signing_key = Uuid::new_v4().into_bytes();
+        if wrong_signing_key == signing_key {
+            wrong_signing_key[0] ^= 1;
+        }
         let continuation = SqlContinuation::new(
             Uuid::parse_str("01900000-0000-7000-8000-000000000001")
                 .expect("space id")
@@ -667,20 +860,49 @@ mod tests {
             100,
         )
         .expect("continuation");
-        let encoded = continuation.encode(b"secret").expect("encode");
+        let encoded = continuation.encode(&signing_key).expect("encode");
         assert_eq!(
-            SqlContinuation::decode(&encoded, b"secret").expect("decode"),
+            SqlContinuation::decode(&encoded, &signing_key).expect("decode"),
             continuation
         );
         let mut tampered = encoded.clone();
         tampered.push('x');
         assert!(matches!(
-            SqlContinuation::decode(&tampered, b"secret"),
+            SqlContinuation::decode(&tampered, &signing_key),
             Err(SqlQueryError::Tampered | SqlQueryError::Invalid(_))
         ));
         assert!(matches!(
             continuation.authorize("different"),
             Err(SqlQueryError::AuthorizationChanged)
+        ));
+
+        let mut count_snapshot = continuation;
+        count_snapshot.purpose = SqlContinuationPurpose::CompositionCountSnapshot;
+        count_snapshot.composition_entry_id =
+            Some("01900000-0000-7000-8000-000000000002".to_string());
+        let encoded = count_snapshot
+            .encode(&signing_key)
+            .expect("encode count snapshot");
+        let decoded =
+            SqlContinuation::decode(&encoded, &signing_key).expect("decode count snapshot");
+        assert_eq!(
+            decoded.purpose,
+            SqlContinuationPurpose::CompositionCountSnapshot
+        );
+        assert_eq!(
+            decoded.composition_entry_id,
+            count_snapshot.composition_entry_id
+        );
+
+        let mut tampered_payload = decoded;
+        tampered_payload.purpose = SqlContinuationPurpose::Page;
+        let forged = tampered_payload
+            .encode(&signing_key)
+            .expect("test can sign a page-purpose token");
+        assert_ne!(forged, encoded, "purpose is covered by the signed payload");
+        assert!(matches!(
+            SqlContinuation::decode(&forged, &wrong_signing_key),
+            Err(SqlQueryError::Tampered | SqlQueryError::Invalid(_))
         ));
     }
 
@@ -709,6 +931,7 @@ mod tests {
             execution_id: None,
             request_fingerprint: None,
             exact_integer_rows: None,
+            composition_count_snapshot: None,
             result_schema: Some(vec![
                 SqlResultColumn {
                     name: "total".to_string(),
@@ -723,6 +946,16 @@ mod tests {
             ]),
         };
         let encoded = serde_json::to_value(&typed).expect("encode");
+        let mut internal_page = typed.clone();
+        internal_page.composition_count_snapshot = Some("opaque-internal-token".to_owned());
+        let serialized_internal_page =
+            serde_json::to_value(internal_page).expect("serialize internal SQL page");
+        assert!(serialized_internal_page
+            .get("composition_count_snapshot")
+            .is_none());
+        assert!(!serialized_internal_page
+            .to_string()
+            .contains("opaque-internal-token"));
         assert_eq!(encoded["result_schema"][0]["type"], "float");
         assert!(encoded.get("execution_id").is_none());
         assert!(encoded.get("request_fingerprint").is_none());
@@ -751,6 +984,7 @@ mod tests {
                 nullable: false,
             }]),
             exact_integer_rows: Some(vec![vec![Some(i64::MAX.to_string())]]),
+            composition_count_snapshot: None,
         };
         let exact_encoded = serde_json::to_value(&exact_integer_page).expect("encode exact page");
         assert_eq!(
@@ -796,6 +1030,7 @@ mod tests {
             request_fingerprint: Some("request-fingerprint".to_owned()),
             result_schema: None,
             exact_integer_rows: None,
+            composition_count_snapshot: None,
         };
         let encoded = serde_json::to_value(page).expect("encode public page");
         assert_eq!(

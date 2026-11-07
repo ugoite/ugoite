@@ -428,6 +428,8 @@ export interface SqlQueryCountRequest {
   saved_sql?: { id: string; revision_id: string };
   binding_base?: { id: string; revision_id: string };
   form_binding_guards?: SqlFormBinding[];
+  /** Opaque server-issued Composition evaluation snapshot. */
+  composition_count_snapshot?: string;
 }
 
 /** Request for authorized SQL planning without reading result rows. */

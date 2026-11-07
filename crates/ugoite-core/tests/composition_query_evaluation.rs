@@ -85,6 +85,7 @@ fn table_query(id: &str) -> VariableGraphNode {
 
 fn page(request: &SqlQueryRequest, rows: Vec<Value>) -> SqlQueryPage {
     SqlQueryPage {
+        composition_count_snapshot: None,
         columns: vec!["value".to_owned()],
         rows,
         has_more: false,
@@ -395,6 +396,7 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
     );
 
     let pinned_result = SqlQueryPage {
+        composition_count_snapshot: None,
         columns: vec!["total".to_owned()],
         rows: vec![json!({"total": 11})],
         has_more: false,
@@ -477,6 +479,7 @@ fn table_pages_are_validated_and_keep_bounded_continuation_metadata() {
         .compile_request("rows")
         .expect("table query request compiles");
     let first_page = SqlQueryPage {
+        composition_count_snapshot: None,
         columns: vec!["value".to_owned()],
         rows: vec![json!({"value": 1})],
         has_more: true,
@@ -533,6 +536,7 @@ fn table_pages_are_validated_and_keep_bounded_continuation_metadata() {
         VariableGraphQueryEvaluationDiagnosticCode::RequestDoesNotMatchGraph
     );
     let second_page = SqlQueryPage {
+        composition_count_snapshot: None,
         columns: vec!["value".to_owned()],
         rows: vec![json!({"value": 2})],
         has_more: false,

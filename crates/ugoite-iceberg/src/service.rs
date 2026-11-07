@@ -143,8 +143,8 @@ use ugoite_core::entry_query::{
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_core::sql_query::{
-    SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryPlan,
-    SqlQueryPlanRequest, SqlQueryRequest,
+    SqlContinuation, SqlContinuationPurpose, SqlQueryCountRequest, SqlQueryError, SqlQueryPage,
+    SqlQueryPlan, SqlQueryPlanRequest, SqlQueryRequest,
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::change_history::{
@@ -7153,6 +7153,16 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
+        if continuation.as_ref().is_some_and(|cursor| {
+            cursor.purpose != SqlContinuationPurpose::Page
+                || cursor.composition_entry_id.as_deref().is_some()
+        }) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL continuation is not a page cursor",
+            )
+            .into());
+        }
         let effective_parameter_types = prepared.parameter_types.clone();
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
@@ -7255,7 +7265,7 @@ impl UgoiteService {
                 .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
             let mut cursor = SqlContinuation::new(
                 space_uid.into(),
-                publication,
+                publication.clone(),
                 sql_fingerprint,
                 parameter_fingerprint,
                 LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
@@ -7281,6 +7291,7 @@ impl UgoiteService {
             request_fingerprint,
             result_schema: Some(result_schema),
             exact_integer_rows,
+            composition_count_snapshot: None,
         })
     }
 
@@ -7568,6 +7579,16 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
+        if continuation.as_ref().is_some_and(|cursor| {
+            cursor.purpose != SqlContinuationPurpose::Page
+                || cursor.composition_entry_id.as_deref() != composition_entry_id
+        }) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL continuation is not a page cursor for this Composition",
+            )
+            .into());
+        }
         let effective_parameter_types = prepared.parameter_types.clone();
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
@@ -7680,10 +7701,10 @@ impl UgoiteService {
                 .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
             let mut cursor = SqlContinuation::new(
                 state.space_uid.into(),
-                publication,
-                sql_fingerprint,
-                parameter_fingerprint,
-                authorization_fingerprint,
+                publication.clone(),
+                sql_fingerprint.clone(),
+                parameter_fingerprint.clone(),
+                authorization_fingerprint.clone(),
                 next_offset,
             )?;
             cursor.saved_sql = request.saved_sql.clone();
@@ -7693,10 +7714,41 @@ impl UgoiteService {
                 .map(saved_sql_binding_fingerprint)
                 .transpose()?;
             cursor.context_fingerprint = continuation_context_fingerprint.map(str::to_owned);
+            cursor.composition_entry_id = composition_entry_id.map(str::to_owned);
             Some(cursor.encode(&signing_key)?)
         } else {
             None
         };
+        let composition_count_snapshot =
+            match (pinned_publication, continuation_context_fingerprint) {
+                (Some(publication), Some(context_fingerprint)) => {
+                    let snapshot_parameter_fingerprint = SqlQueryRequest {
+                        parameter_types: effective_parameter_types.clone(),
+                        ..request.clone()
+                    }
+                    .typed_parameter_fingerprint(&effective_parameter_types)
+                    .map_err(sql_query_contract_error)?;
+                    let mut snapshot = SqlContinuation::new(
+                        state.space_uid.into(),
+                        publication.clone(),
+                        sql_fingerprint,
+                        snapshot_parameter_fingerprint,
+                        authorization_fingerprint,
+                        0,
+                    )?;
+                    snapshot.purpose = SqlContinuationPurpose::CompositionCountSnapshot;
+                    snapshot.saved_sql = request.saved_sql.clone();
+                    snapshot.binding_fingerprint = prepared
+                        .saved_revision
+                        .as_ref()
+                        .map(saved_sql_binding_fingerprint)
+                        .transpose()?;
+                    snapshot.context_fingerprint = Some(context_fingerprint.to_owned());
+                    snapshot.composition_entry_id = composition_entry_id.map(str::to_owned);
+                    Some(snapshot.encode(&signing_key)?)
+                }
+                _ => None,
+            };
         Ok(SqlQueryPage {
             columns,
             rows,
@@ -7706,6 +7758,7 @@ impl UgoiteService {
             request_fingerprint,
             result_schema: Some(result_schema),
             exact_integer_rows,
+            composition_count_snapshot,
         })
     }
 
@@ -7757,13 +7810,78 @@ impl UgoiteService {
             index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
                 |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
             )?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let composition_snapshot = request
+            .composition_count_snapshot
+            .as_deref()
+            .map(|token| {
+                SqlContinuation::decode(token, &signing_key).map_err(sql_query_contract_error)
+            })
+            .transpose()?;
+        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let count_query = SqlQueryRequest {
+            sql: request.sql.clone(),
+            parameters: request.parameters.clone(),
+            parameter_types: effective_parameter_types.clone(),
+            include_exact_integer_values: false,
+            limit: 1,
+            continuation: None,
+            execution_id: None,
+            saved_sql: request.saved_sql.clone(),
+            binding_base: request.binding_base.clone(),
+            form_binding_guards: request.form_binding_guards.clone(),
+        };
+        let sql_fingerprint = count_query
+            .sql_fingerprint(&normalized_sql)
+            .map_err(sql_query_contract_error)?;
+        let parameter_fingerprint = count_query
+            .typed_parameter_fingerprint(&effective_parameter_types)
+            .map_err(sql_query_contract_error)?;
+        if let Some(snapshot) = &composition_snapshot {
+            let space_uid = self.space_uid(space_id).await?;
+            if snapshot.purpose != SqlContinuationPurpose::CompositionCountSnapshot
+                || snapshot.offset != 0
+                || snapshot.space_id.as_uuid() != space_uid
+                || snapshot.context_fingerprint.is_none()
+                || snapshot.sql_fingerprint != sql_fingerprint
+                || snapshot.parameter_fingerprint != parameter_fingerprint
+                || snapshot.saved_sql != request.saved_sql
+                || snapshot.binding_fingerprint
+                    != saved_revision
+                        .as_ref()
+                        .map(saved_sql_binding_fingerprint)
+                        .transpose()?
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition Count snapshot does not match the SQL request",
+                )
+                .into());
+            }
+            snapshot
+                .authorize(&authorization_fingerprint)
+                .map_err(sql_query_contract_error)?;
+        }
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
+        let publication = match &composition_snapshot {
+            Some(snapshot) => snapshot.publication.clone(),
+            None => workspace.current_publication().await?,
+        };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         let named_scopes =
             Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+        if let Some(composition_entry_id) = composition_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.composition_entry_id.as_deref())
+        {
+            require_composition_entry_read_scope(
+                &named_scopes,
+                parse_entry_id(composition_entry_id)?,
+                composition_entry_id,
+            )?;
+        }
         let relation_scopes = forms
             .iter()
             .filter_map(|form| {

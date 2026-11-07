@@ -191,6 +191,7 @@ export interface CompositionEvaluationResponse {
     value: CompositionEvaluatedResult;
     has_more: boolean;
     next?: string;
+    count_snapshot?: string;
   }>;
   diagnostics?: Array<
     { code?: string; message?: string; variable_id?: string }

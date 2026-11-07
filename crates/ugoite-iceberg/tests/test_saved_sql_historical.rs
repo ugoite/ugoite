@@ -325,6 +325,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
         .count_sql(
             &expected.space_id,
             SqlQueryCountRequest {
+                composition_count_snapshot: None,
                 form_binding_guards: Vec::new(),
                 binding_base: None,
                 sql: String::new(),

@@ -343,6 +343,10 @@ pub struct CompositionGraphQueryResult {
     pub has_more: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<String>,
+    /// Opaque server-issued snapshot used to count this query result at the
+    /// same Publication as its first page and continuation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_snapshot: Option<String>,
     /// Exact base-10 integers for table cells, aligned with the typed rows.
     /// JSON numbers remain in `value` for portable scalar decoding; this
     /// companion preserves integers beyond JavaScript's safe range.
