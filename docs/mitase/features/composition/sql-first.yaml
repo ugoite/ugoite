@@ -242,6 +242,18 @@ features:
                     package: ugoite-cli
                     harness: test_journey_remote
                     test: test_cli_composition_unsupported_version_recovery_matches_core_remote
+      - id: explicit-form-source-change-evidence
+        role: evidence
+        facet: frontend
+        responsibility: Verify changing one placed Table through the Forms picker preserves the existing Metric reference and original Form-backed query variable through save and reopen.
+        targets:
+          - id: form-picker-table-reference-change
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Form bindings create variable-backed displays with explicit aggregation" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-079#criterion.composition-table-source-change-is-explicit
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend
