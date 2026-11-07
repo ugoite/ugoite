@@ -90,6 +90,12 @@ Deno.test(
       undefined,
     );
     assertEquals(
+      plan.criteria.find(({ id }) => id === "A03")?.manual_evidence_gaps,
+      [
+        "Browser evidence for rename plus same-name Form recreation remains unverified: native test portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement covers the immutable-ID behavior, but OpenAPI/server/UI expose no Form rename or delete operation and no E2E fixture provides RenameForm. Do not bypass app semantics or infer G-04 completion.",
+      ],
+    );
+    assertEquals(
       plan.criteria.find(({ id }) => id === "A04")?.manual_evidence_gaps,
       undefined,
     );
