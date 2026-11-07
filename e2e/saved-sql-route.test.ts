@@ -206,6 +206,8 @@ test.describe("Saved SQL route", () => {
       const resultFields = columns.getByRole("list", {
         name: "Result fields",
       });
+      await expect(resultFields.getByText("Name", { exact: true }))
+        .toBeVisible();
       const labels = await resultFields.locator(".sql-columns-editor__name")
         .allTextContents();
       for (const label of labels.filter((label) => label !== "Name")) {
