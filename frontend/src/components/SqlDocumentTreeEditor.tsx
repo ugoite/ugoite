@@ -1731,7 +1731,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       projection?.semantic?.kind === "projection_alias";
   };
   const isArrayLiteralElement = (node: SqlDocumentNode) =>
-    arrayLiteralProjectionForElement(node)?.semantic === null;
+    isArrayLiteralReorderElement(node);
   const arrayElementCanMove = (node: SqlDocumentNode, moveUp: boolean) => {
     if (!isArrayLiteralReorderElement(node) || node.range === null) {
       return false;

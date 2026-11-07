@@ -898,8 +898,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       }),
     ).toBeDisabled();
     expect(
-      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeEnabled();
 
     fireEvent.click(moveUp);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -938,6 +938,60 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     await waitFor(() =>
       expect(sql()).toBe("SELECT ARRAY[4, 9] AS values_out /* keep */")
     );
+  });
+
+  it("removes direct ARRAY elements from an aliased projection through actual WASM", async () => {
+    const initial = 'SELECT ARRAY[4,  9] AS "values]", 7 AS untouched';
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+
+    const selectElement = async (text: string) => {
+      const document = await parseSqlDocument(sql());
+      const element = document.nodes.find((node) =>
+        node.kind === "literal_expression" && node.range &&
+        sql().slice(node.range.start, node.range.end) === text &&
+        node.parent !== null &&
+        document.nodes.find((parent) => parent.id === node.parent)?.semantic
+            ?.kind === "array_literal"
+      );
+      expect(element).toBeDefined();
+      const item = (await screen.findAllByRole("treeitem")).find((node) =>
+        node.dataset.sqlDocumentNode === String(element!.id)
+      );
+      expect(item).toBeDefined();
+      fireEvent.click(item!);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove selected ARRAY element" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    };
+
+    await selectElement("4");
+    await waitFor(() =>
+      expect(sql()).toBe('SELECT ARRAY[9] AS "values]", 7 AS untouched')
+    );
+    await selectElement("9");
+    await waitFor(() =>
+      expect(sql()).toBe('SELECT ARRAY[] AS "values]", 7 AS untouched')
+    );
+  });
+
+  it("does not offer aliased ARRAY removal when the literal has no elements", async () => {
+    const source = "SELECT ARRAY[] AS values_out";
+    const document = await parseSqlDocument(source);
+    const array = document.nodes.find((node) =>
+      node.semantic?.kind === "array_literal"
+    );
+    expect(array).toBeDefined();
+    expect(document.nodes.some((node) => node.parent === array!.id)).toBe(
+      false,
+    );
+    render(() => (
+      <SqlDocumentTreeEditor sql={() => source} onSqlChange={() => {}} />
+    ));
+    expect(
+      screen.queryByRole("button", { name: "Remove selected ARRAY element" }),
+    ).toBeNull();
   });
 
   it("does not offer aliased ARRAY append when the alias contains a closing bracket", async () => {
@@ -1260,6 +1314,14 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       node.semantic.literal_kind === "number"
     );
     expect(value).toBeDefined();
+  it("preserves the full CTE query when editing the root LIMIT through actual WASM", async () => {
+    const initial = 'WITH q AS (SELECT * FROM "Task") SELECT * FROM q';
+    const document = await parseSqlDocument(initial);
+    const rootQuery = document.nodes.find((node) =>
+      node.kind === "query" && node.range?.start === 0 &&
+      node.range.end === initial.length
+    );
+    expect(rootQuery).toBeDefined();
     const expected = await applySqlDocumentSemanticEditTransaction(initial, {
       contract_version: document.contract_version,
       expected_source: initial,
@@ -1310,6 +1372,27 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     fireEvent.change(screen.getByLabelText("Type"), {
       target: { value: "integer" },
     });
+        kind: "set_limit_value",
+        node_id: rootQuery!.id,
+        expected_kind: "query",
+        value: 7,
+      }],
+    });
+    expect(expected.document.source).toBe(
+      'WITH q AS (SELECT * FROM "Task") SELECT * FROM q LIMIT 7',
+    );
+
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    const queryItem = (await screen.findAllByRole("treeitem")).find((item) =>
+      item.dataset.sqlDocumentNode === String(rootQuery!.id)
+    );
+    expect(queryItem).toBeDefined();
+    fireEvent.click(queryItem!);
+    fireEvent.input(screen.getByLabelText("Limit"), {
+      target: { value: "7" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set row limit" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() => expect(sql()).toBe(expected.document.source));
@@ -1317,6 +1400,8 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
       'SELECT amount >= $minimum AS matches FROM "Expenses"',
     );
     expect(changes).toEqual(["argument", "sql"]);
+      'WITH q AS (SELECT * FROM "Task") SELECT * FROM q LIMIT 7',
+    );
     const restored = await applySqlDocumentEditTransaction(
       sql(),
       expected.undo,

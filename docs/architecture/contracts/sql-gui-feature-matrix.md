@@ -118,17 +118,19 @@ DataFusion's SQL planner does not admit them.
 The expression inspector can wrap a typed expression in a one-element
 `ARRAY[...]` literal, append typed literal elements in order, move a selected
 direct element one position up or down in a complete unaliased or aliased
-projection item, and remove a selected direct element from an unaliased
-complete projection item. Moving preserves the exact comma separator trivia
-between the two expressions and leaves the projection alias intact;
-comment-bearing projections and unrecognized separators fail closed. The
-existing Add action can append a typed literal to a non-empty direct ARRAY in
-a complete aliased projection item. Rust locates the matching closing bracket
-from the direct ARRAY node and complete projection tokens, preserving quoted
-aliases that contain `]`, the alias, and all surrounding source bytes; the
-guarded undo restores the exact SQL. Empty aliased arrays, comments, quoted
-aliases containing `]`, and ambiguous shapes fail closed. Aliased removal
-remains unavailable. Removing the
+projection item, and remove a selected direct element from a complete
+unaliased or aliased projection item. Moving preserves the exact comma
+separator trivia between the two expressions and leaves the projection alias
+intact; comment-bearing projections and unrecognized separators fail closed.
+The existing Add action can append a typed literal to a non-empty direct ARRAY
+in a complete aliased projection item. Rust locates the matching closing
+bracket from the direct ARRAY node and complete projection tokens, preserving
+the alias and all surrounding source bytes; the guarded undo restores the
+exact SQL. The existing Remove action changes only the selected element and
+adjacent separator, or replaces only the ARRAY expression with `ARRAY[]` when
+removing its sole element, preserving the alias and surrounding SQL with a
+guarded exact undo. Comments, incomplete or ambiguous ranges, and unsupported
+shapes fail closed. Removing the
 sole element retains `ARRAY[]`, which the authorized executor returns as a
 zero-element list. Rust marks parsed ARRAY nodes with typed `array_literal`
 metadata, which the inspector uses to offer append, reorder, and removal actions only for

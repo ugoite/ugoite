@@ -6649,7 +6649,12 @@ fn remove_array_literal_element(
         .get(projection_id as usize)
         .filter(|node| node.id == projection_id)
         .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
-    if projection.kind != SqlDocumentNodeKind::SelectItem || projection.semantic.is_some() {
+    if projection.kind != SqlDocumentNodeKind::SelectItem
+        || !matches!(
+            projection.semantic.as_ref(),
+            None | Some(SqlDocumentNodeData::ProjectionAlias { .. })
+        )
+    {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
     let projection_range = projection
@@ -6678,7 +6683,35 @@ fn remove_array_literal_element(
     }
 
     let (range, replacement) = if elements.len() == 1 {
-        (projection_range, Some("ARRAY[]".to_owned()))
+        if matches!(
+            projection.semantic.as_ref(),
+            Some(SqlDocumentNodeData::ProjectionAlias { .. })
+        ) {
+            let closing_bracket =
+                array_literal_closing_bracket(document, projection, array, projection_range)?;
+            let first_token_index = document
+                .tokens
+                .iter()
+                .position(|token| token.range.start >= projection_range.start)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let array_start = document
+                .tokens
+                .get(skip_trivia_tokens(&document.tokens, first_token_index))
+                .map(|token| token.range.start)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if array_start >= closing_bracket.start {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            (
+                SqlSourceRange {
+                    start: array_start,
+                    end: closing_bracket.end,
+                },
+                Some("ARRAY[]".to_owned()),
+            )
+        } else {
+            (projection_range, Some("ARRAY[]".to_owned()))
+        }
     } else if selected_index == 0 {
         let next_range = elements[1]
             .range
@@ -20070,6 +20103,123 @@ mod tests {
             ),
             Err(SqlDocumentEditError::NodeRangeUnavailable)
         );
+    }
+
+    #[test]
+    fn semantic_array_element_removal_preserves_aliased_projection_and_undo() {
+        for (source, selected_text, expected) in [
+            (
+                "SELECT  ARRAY[4, 9, 16] AS ordered_values, 7 AS untouched",
+                "9",
+                "SELECT  ARRAY[4, 16] AS ordered_values, 7 AS untouched",
+            ),
+            (
+                "SELECT ARRAY[4] AS \"values]\" /* outside */",
+                "4",
+                "SELECT ARRAY[] AS \"values]\" /* outside */",
+            ),
+        ] {
+            let document = parse_sql_document(source);
+            let element = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::LiteralExpression
+                        && node.parent.is_some_and(|parent| {
+                            document.nodes.get(parent as usize).is_some_and(|array| {
+                                matches!(array.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                            })
+                        })
+                        && node.range.and_then(|range| document.source_slice(range))
+                            == Some(selected_text)
+                })
+                .expect("the direct ARRAY element is selectable");
+            let removed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                        node_id: element.id,
+                        expected_kind: element.kind,
+                    }],
+                ),
+            )
+            .expect("a selected element can be removed from a safe aliased ARRAY");
+            assert_eq!(removed.document.source, expected);
+            let restored =
+                apply_sql_document_edit_transaction(&removed.document.source, &removed.undo)
+                    .expect("aliased ARRAY removal has an exact guarded inverse");
+            assert_eq!(restored.document.source, source);
+        }
+
+        for source in [
+            "SELECT ARRAY[4 /* inside */] AS values_out",
+            "SELECT ARRAY[4, 9] /* in projection */ AS values_out",
+        ] {
+            let document = parse_sql_document(source);
+            let element = document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::LiteralExpression
+                        && node.parent.is_some_and(|parent| {
+                            document.nodes.get(parent as usize).is_some_and(|array| {
+                                matches!(array.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                            })
+                        })
+                })
+                .expect("the comment-bearing ARRAY element remains selectable");
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(
+                        source,
+                        vec![SqlDocumentSemanticEdit::RemoveArrayLiteralElement {
+                            node_id: element.id,
+                            expected_kind: element.kind,
+                        }],
+                    ),
+                ),
+                Err(SqlDocumentEditError::NodeRangeUnavailable)
+            );
+        }
+
+        let mut incomplete_document = parse_sql_document("SELECT ARRAY[4] AS values_out");
+        let element = incomplete_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::LiteralExpression
+                    && node
+                        .range
+                        .and_then(|range| incomplete_document.source_slice(range))
+                        == Some("4")
+            })
+            .expect("the direct ARRAY element is represented")
+            .clone();
+        let projection_id = incomplete_document
+            .nodes
+            .get(element.parent.unwrap() as usize)
+            .and_then(|array| array.parent)
+            .expect("the ARRAY has a projection parent");
+        incomplete_document.nodes[projection_id as usize].range = None;
+        assert_eq!(
+            remove_array_literal_element(&incomplete_document, &element),
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+
+        let empty_document = parse_sql_document("SELECT ARRAY[] AS values_out");
+        assert!(!empty_document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::LiteralExpression
+                && node.parent.is_some_and(|parent| {
+                    empty_document
+                        .nodes
+                        .get(parent as usize)
+                        .is_some_and(|array| {
+                            matches!(array.semantic, Some(SqlDocumentNodeData::ArrayLiteral))
+                        })
+                })
+        }));
     }
 
     #[test]
