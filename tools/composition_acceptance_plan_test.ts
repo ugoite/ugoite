@@ -109,6 +109,12 @@ Deno.test(
       ),
       "A09 must retain request-level exact revision and cardinality evidence",
     );
+    assertEquals(
+      plan.criteria.find(({ id }) => id === "A09")?.manual_evidence_gaps,
+      [
+        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Ordinary Form schema drift is rejected earlier as `query_schema_changed`; reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. A09 and SQL S-02 remain partial.",
+      ],
+    );
     for (const id of ["A02", "A04", "A08", "A10", "A11", "A12", "A13"]) {
       assert(
         plan.criteria.find((criterion) => criterion.id === id)?.selectors.some((
