@@ -2973,6 +2973,11 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           description: "",
         }
         : undefined;
+      // Atomicity: both host updates below run synchronously with no await
+      // between them, after the generation/source/scope staleness guard
+      // above. A veto (=== false) from onArgumentAdded skips onSqlChange,
+      // so the host never observes a declared argument without its SQL edit
+      // or vice versa.
       if (
         addedArgument &&
         props.onArgumentAdded?.(addedArgument) === false
