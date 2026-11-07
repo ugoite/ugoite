@@ -237,18 +237,10 @@ test.describe("Saved SQL route", () => {
         exact: true,
       }).click();
 
-      await page.getByRole("button", { name: "Sort", exact: true }).click();
-      const sort = page.getByRole("dialog", { name: "Sort", exact: true });
-      await sort.getByRole("combobox", { name: "Column" }).selectOption({
-        label: "old_name",
-      });
-      await sort.getByRole("combobox", { name: "Direction" }).selectOption(
-        "asc",
-      );
-      await sort.getByRole("button", { name: "Add sort", exact: true }).click();
+      const oldAliasSql = `${await editor.innerText()}\nORDER BY "old_name"`;
+      await editor.fill(oldAliasSql);
+      await expect(editor).toHaveText(oldAliasSql);
       await expect(editor).toContainText(/ORDER BY\s+"?old_name"?/i);
-      await sort.locator("footer").getByRole("button", { name: "Close" })
-        .click();
 
       await page.getByRole("button", { name: "Columns", exact: true }).click();
       const renameColumns = page.getByRole("dialog", {
