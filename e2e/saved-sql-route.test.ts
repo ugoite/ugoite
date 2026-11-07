@@ -621,6 +621,44 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("@smoke SQL tree authors IN and NOT IN and records HTTP 422 planning rejections", async ({ page }) => {
+    const inSql = "SELECT (1) IN (SELECT 1)";
+    const notInSql = "SELECT (1) NOT IN (SELECT 1)";
+    const assertRejectedForm = async (
+      choice: "in" | "not_in",
+      expectedSql: string,
+    ) => {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+        waitUntil: "domcontentloaded",
+      });
+      const editor = page.locator(".ui-sql-editor");
+      await expect(editor).toContainText("SELECT 1");
+      await page.getByRole("button", { name: "Structure", exact: true })
+        .click();
+      await page.getByRole("button", { name: "SQL tree", exact: true }).click();
+      const tree = page.getByRole("dialog", { name: "SQL tree" });
+      await tree.getByRole("treeitem", { name: /Value: 1/ }).first().click();
+      await tree.getByLabel("Subquery condition").selectOption(choice);
+      const plan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === expectedSql
+      );
+      await tree.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(editor.locator(".cm-content")).toHaveText(expectedSql);
+      const response = await plan;
+      expect(response.status()).toBe(422);
+      await expect(page.getByRole("button", { name: "Run Query", exact: true }))
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+    };
+
+    await assertRejectedForm("in", inSql);
+    await assertRejectedForm("not_in", notInSql);
+  });
+
   test("REQ-FE-063 @smoke: scalar SELECT without a Form can use SQL structure editing", async ({ page, request }) => {
     const name = `Scalar SQL ${Date.now()}`;
     const createResponse = await request.post(
