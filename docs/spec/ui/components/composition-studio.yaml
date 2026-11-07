@@ -8,7 +8,7 @@ title: "Composition Studio"
 
 The only mode controls are Design and Variables. The selected control owns its name; its panel does not repeat that name as a visible heading.
 
-Variables shows one typed graph. A row presents its meaningful variable name and kind icon. Adding a value, input, or SQL variable starts from +. A constant edits its typed literal, an input edits its type and default, and a query edits its SQL document in the shared Workspace. Query outputs show a table or scalar shape only when that distinction is unambiguous. The list has no common SQL subtitle, separate label field, or explanatory cards.
+Variables shows one typed graph. A row presents its meaningful variable name and kind icon. Adding a value, input, or SQL variable starts from +, asks for a unique nonblank variable name, and adds the graph node only after that name is submitted. The Design canvas uses the same in-place name prompt when adding its first Input; committing creates the named variable and its Input reference together. Cancel leaves the graph unchanged. While a name is pending, Save is unavailable. A constant edits its typed literal, an input edits its type and default, and a query edits its SQL document in the shared Workspace. Query outputs show a table or scalar shape only when that distinction is unambiguous. The list has no common SQL subtitle, separate label field, or explanatory cards.
 
 Desktop places the variable rail beside its editor. On narrow screens the rail is a drawer that closes after selection. Drawer, selection, loading, and diagnostics are transient Work.
 

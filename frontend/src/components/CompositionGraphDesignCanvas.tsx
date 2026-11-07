@@ -4,6 +4,7 @@ import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer"
 import { createCompositionDesignEvaluation } from "~/lib/composition-design-evaluation";
 import { UiIcon } from "~/components/UiIcon";
 import { CompositionVariableBindingPicker } from "~/components/CompositionVariableBindingPicker";
+import { CompositionVariableCreationForm } from "~/components/CompositionVariableCreationForm";
 import {
   appendCompositionGraphComponent,
   type BindingComponentKind,
@@ -37,7 +38,11 @@ export interface CompositionGraphDesignCanvasProps {
     session: CompositionBindingSession,
   ) => boolean | Promise<boolean>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
-  onCreateInput?: () => void;
+  pendingInputCreation?: boolean;
+  onRequestCreateInput?: () => void;
+  onCommitCreateInput?: (name: string) => boolean;
+  onCancelCreateInput?: () => void;
+  onFocusCreatedInput?: () => void;
   onEditVariable?: (id: string) => void;
   onSaveSnapshotReady?: (
     getter: () => {
@@ -350,6 +355,7 @@ export function CompositionGraphDesignCanvas(
     setPickerKind(props.initialSavedSqlBinding ? "table" : null);
   });
   let addButton: HTMLButtonElement | undefined;
+  let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
   const savedSqlChoices = () => {
     const exact = props.initialSavedSqlBinding;
@@ -561,15 +567,30 @@ export function CompositionGraphDesignCanvas(
           <Show
             when={props.draft.variables.some((node) => node.kind === "input")}
             fallback={
-              <button
-                type="button"
-                onClick={() => {
-                  props.onCreateInput?.();
-                }}
+              <Show
+                when={props.pendingInputCreation}
+                fallback={
+                  <button
+                    type="button"
+                    ref={(element) => addInputButton = element}
+                    onClick={() => props.onRequestCreateInput?.()}
+                  >
+                    <UiIcon name="canvas-input" />
+                    {t("composition.studioAddInput")}
+                  </button>
+                }
               >
-                <UiIcon name="canvas-input" />
-                {t("composition.studioAddInput")}
-              </button>
+                <CompositionVariableCreationForm
+                  existingNames={props.draft.variables.map((node) => node.id)}
+                  onCreate={(name) =>
+                    props.onCommitCreateInput?.(name) ?? false}
+                  onCancel={() => {
+                    props.onCancelCreateInput?.();
+                    queueMicrotask(() => addInputButton?.focus());
+                  }}
+                  focusAfterCreate={() => props.onFocusCreatedInput?.()}
+                />
+              </Show>
             }
           >
             <label class="compositionGraphInputChoice">
@@ -578,8 +599,7 @@ export function CompositionGraphDesignCanvas(
               <select
                 aria-label={t("composition.studioAddInput")}
                 value=""
-                onChange={(event) =>
-                  event.currentTarget.value &&
+                onChange={(event) => event.currentTarget.value &&
                   insertInput(event.currentTarget.value)}
               >
                 <option value="">—</option>

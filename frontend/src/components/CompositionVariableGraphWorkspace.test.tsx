@@ -11,12 +11,65 @@ import { describe, expect, it, vi } from "vitest";
 import { CompositionVariableGraphWorkspace } from "./CompositionVariableGraphWorkspace";
 import {
   type CompositionGraphDraft,
+  type CompositionVariableNode,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
+import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
 import { buildSqlSchema } from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 
 const { parseInputMock } = vi.hoisted(() => ({ parseInputMock: vi.fn() }));
+
+const creationProps = (
+  draft: () => CompositionGraphDraft,
+  setDraft: (next: CompositionGraphDraft) => void,
+  setSelected: (id: string | null) => void,
+) => {
+  const [pendingKind, setPendingKind] = createSignal<
+    CompositionVariableCreationKind | undefined
+  >();
+  const createNode = (kind: CompositionVariableCreationKind, id: string) =>
+    kind === "constant"
+      ? {
+        id,
+        kind,
+        value_type: { scalar_type: "string" as const, nullable: false },
+        value: { kind: "string" as const, value: "" },
+      }
+      : kind === "input"
+      ? {
+        id,
+        kind,
+        value_type: { scalar_type: "string" as const, nullable: false },
+        required: true,
+      }
+      : {
+        id,
+        kind,
+        returns: {
+          kind: "scalar" as const,
+          value_type: { scalar_type: "integer" as const, nullable: false },
+        },
+        query: { kind: "inline_sql" as const, sql: "SELECT 1", arguments: [] },
+      };
+  return {
+    pendingCreationKind: pendingKind,
+    onRequestCreation: setPendingKind,
+    onCommitCreation: (name: string) => {
+      const kind = pendingKind();
+      const id = name.trim();
+      if (!kind || !id || draft().variables.some((node) => node.id === id)) {
+        return false;
+      }
+      const node = createNode(kind, id) as CompositionVariableNode;
+      setDraft({ ...draft(), variables: [...draft().variables, node] });
+      setSelected(id);
+      setPendingKind(undefined);
+      return true;
+    },
+    onCancelCreation: () => setPendingKind(undefined),
+  };
+};
 
 vi.mock("~/lib/ugoite-client", () => ({
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
@@ -65,12 +118,13 @@ describe("CompositionVariableGraphWorkspace", () => {
     parseInputMock.mockReset();
   });
 
-  it("adds typed graph nodes through the variable rail", () => {
+  it("adds typed graph nodes through the variable rail", async () => {
     setLocale("en");
     const [draft, setDraft] = createSignal<CompositionGraphDraft>(
       createCompositionGraphDraft("Report"),
     );
     const [selected, setSelected] = createSignal<string | null>(null);
+    const creation = creationProps(draft, setDraft, setSelected);
     const onDraftChange = vi.fn(setDraft);
     render(() => (
       <CompositionVariableGraphWorkspace
@@ -78,6 +132,10 @@ describe("CompositionVariableGraphWorkspace", () => {
         selectedVariableId={selected()}
         onSelect={setSelected}
         onDraftChange={onDraftChange}
+        pendingCreationKind={creation.pendingCreationKind()}
+        onRequestCreation={creation.onRequestCreation}
+        onCommitCreation={creation.onCommitCreation}
+        onCancelCreation={creation.onCancelCreation}
         onRemove={(id) =>
           setDraft({
             ...draft(),
@@ -90,20 +148,28 @@ describe("CompositionVariableGraphWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
 
+    expect(draft().variables).toEqual([]);
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveFocus());
+    fireEvent.input(name, {
+      target: { value: "search_term" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
     expect(draft().variables).toEqual([{
-      id: "input_1",
+      id: "search_term",
       kind: "input",
       value_type: { scalar_type: "string", nullable: false },
       required: true,
     }]);
-    expect(selected()).toBe("input_1");
+    expect(selected()).toBe("search_term");
     expect(screen.getByRole("combobox", { name: "Type" })).toBeVisible();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
       target: { value: "date" },
     });
     expect(draft().variables[0]).toMatchObject({
-      id: "input_1",
+      id: "search_term",
       kind: "input",
       value_type: { scalar_type: "date", nullable: false },
     });
@@ -127,12 +193,18 @@ describe("CompositionVariableGraphWorkspace", () => {
         required: true,
       }],
     });
+    const [, setSelected] = createSignal<string | null>("input_1");
+    const creation = creationProps(draft, setDraft, setSelected);
     render(() => (
       <CompositionVariableGraphWorkspace
         draft={draft()}
         selectedVariableId="input_1"
-        onSelect={() => {}}
+        onSelect={setSelected}
         onDraftChange={setDraft}
+        pendingCreationKind={creation.pendingCreationKind()}
+        onRequestCreation={creation.onRequestCreation}
+        onCommitCreation={creation.onCommitCreation}
+        onCancelCreation={creation.onCancelCreation}
         onRemove={(id) =>
           setDraft((current) => ({
             ...current,
@@ -150,6 +222,10 @@ describe("CompositionVariableGraphWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "input_1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(draft().variables[0]).toMatchObject({
       id: "input_1",
       kind: "input",
@@ -216,12 +292,17 @@ describe("CompositionVariableGraphWorkspace", () => {
       createCompositionGraphDraft("Report"),
     );
     const [selected, setSelected] = createSignal<string | null>(null);
+    const creation = creationProps(draft, setDraft, setSelected);
     render(() => (
       <CompositionVariableGraphWorkspace
         draft={draft()}
         selectedVariableId={selected()}
         onSelect={setSelected}
         onDraftChange={setDraft}
+        pendingCreationKind={creation.pendingCreationKind()}
+        onRequestCreation={creation.onRequestCreation}
+        onCommitCreation={creation.onCommitCreation}
+        onCancelCreation={creation.onCancelCreation}
         onRemove={() => {}}
         sqlSchema={buildSqlSchema([])}
       />
@@ -229,13 +310,19 @@ describe("CompositionVariableGraphWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
-    fireEvent.input(screen.getByRole("textbox", { name: "Variable ID" }), {
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
       target: { value: "month_start" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     expect(draft().variables[0]?.id).toBe("month_start");
-    expect(selected()).toBe("month_start");
-    expect(screen.getByRole("button", { name: "month_start" }))
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
+      target: { value: "period_start" },
+    });
+
+    expect(draft().variables[0]?.id).toBe("period_start");
+    expect(selected()).toBe("period_start");
+    expect(screen.getByRole("button", { name: "period_start" }))
       .toBeVisible();
   });
 
@@ -417,6 +504,49 @@ describe("CompositionVariableGraphWorkspace", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Variables" })).toBeNull();
     expect(document.getElementById("app")).not.toHaveAttribute("inert");
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("moves from the mobile add menu into the name prompt", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>(
+      createCompositionGraphDraft("Report"),
+    );
+    const [selected, setSelected] = createSignal<string | null>(null);
+    const creation = creationProps(draft, setDraft, setSelected);
+    render(() => (
+      <div id="app">
+        <CompositionVariableGraphWorkspace
+          draft={draft()}
+          selectedVariableId={selected()}
+          onSelect={setSelected}
+          onDraftChange={setDraft}
+          pendingCreationKind={creation.pendingCreationKind()}
+          onRequestCreation={creation.onRequestCreation}
+          onCommitCreation={creation.onCommitCreation}
+          onCancelCreation={creation.onCancelCreation}
+          onRemove={() => {}}
+          sqlSchema={buildSqlSchema([])}
+        />
+      </div>
+    ));
+    const opener = screen.getByRole("button", { name: "Show variables" });
+    fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "Variables" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add variable" }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Input" }));
+
+    expect(screen.queryByRole("dialog", { name: "Variables" }))
+      .not.toBeInTheDocument();
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(document.getElementById("app")).not.toHaveAttribute("inert");
+    fireEvent.keyDown(name, { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Variable name" }))
+      .not.toBeInTheDocument();
+    expect(draft().variables).toHaveLength(0);
     await waitFor(() => expect(opener).toHaveFocus());
   });
 });

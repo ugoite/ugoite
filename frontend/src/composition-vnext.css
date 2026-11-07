@@ -124,6 +124,27 @@
 .compositionVariableEditorEmpty {
   min-height: 8rem;
 }
+.compositionVariableCreationForm {
+  display: grid;
+  gap: var(--ui-spacing-sm);
+  align-content: start;
+  max-width: 32rem;
+}
+.compositionVariableCreationForm label {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+}
+.compositionVariableCreationName {
+  min-height: 44px;
+}
+.compositionVariableCreationActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
+}
+.compositionVariableCreationActions button {
+  min-height: 44px;
+}
 .compositionVariableMobileOpen,
 .compositionVariableRailBackdrop {
   display: none;
@@ -205,6 +226,11 @@
 }
 .compositionGraphToolbar .studioMode {
   margin-top: 0;
+}
+.compositionGraphPendingModeNotice {
+  margin: 0;
+  color: var(--ui-muted-foreground);
+  font-size: var(--ui-font-size-sm);
 }
 .compositionGraphSave {
   min-height: 44px;
@@ -471,6 +497,10 @@
     overflow-y: auto;
     background: var(--ui-surface-1);
     box-shadow: var(--ui-shadow-lg);
+  }
+  .compositionVariableRail--mobile .compositionVariableAddMenu {
+    top: calc(100% + var(--ui-spacing-xs));
+    bottom: auto;
   }
   .compositionVariableRailBackdrop {
     position: fixed;

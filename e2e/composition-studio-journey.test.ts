@@ -388,7 +388,8 @@ async function addStudioTypedInput(
   await page.getByRole("button", { name: "Add variable", exact: true }).click();
   await page.getByRole("group", { name: "Add variable" })
     .getByRole("button", { name: "Input", exact: true }).click();
-  await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).fill(variableId);
+  await page.getByLabel("Variable name", { exact: true }).press("Enter");
   await page.getByLabel("Type", { exact: true }).selectOption(type);
   if (defaultValue) {
     await page.getByLabel("Default", { exact: true }).fill(defaultValue);
@@ -1590,6 +1591,126 @@ test.describe("Composition Studio Journey", () => {
       await page.keyboard.press("Escape");
       await expect(initialPicker).toHaveCount(0);
       await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
+      await page.getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: "Add variable", exact: true })
+        .click();
+      await page.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Value", exact: true }).click();
+      const pendingValueName = page.getByLabel("Variable name", { exact: true });
+      await expect(pendingValueName).toBeFocused();
+      await page.screenshot({
+        path: test.info().outputPath("variable-name-value-desktop.png"),
+        fullPage: true,
+      });
+      await pendingValueName.fill("floor_limit");
+      await pendingValueName.press("Enter");
+      await expect(page.getByRole("button", { name: "floor_limit", exact: true }))
+        .toBeVisible();
+      await expect(page.getByLabel("Value", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Add variable", exact: true })
+        .click();
+      await page.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Value", exact: true }).click();
+      const duplicateValueName = page.getByLabel("Variable name", { exact: true });
+      await duplicateValueName.fill("floor_limit");
+      await expect(page.getByText("A variable with this name already exists."))
+        .toBeVisible();
+      await expect(page.getByRole("button", { name: "Add", exact: true }))
+        .toBeDisabled();
+      await page.screenshot({
+        path: test.info().outputPath("variable-name-duplicate-desktop.png"),
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Remove floor_limit" }).click();
+      await page.getByRole("tablist", { name: "Studio mode" })
+        .getByRole("tab", { name: "Design", exact: true }).click();
+      await page.getByRole("button", { name: "Input", exact: true }).click();
+      const designPendingName = page.getByLabel("Variable name", { exact: true });
+      await expect(designPendingName).toBeFocused();
+      await designPendingName.fill("draft_label");
+      await expect(page.getByRole("tab", { name: "Variables", exact: true }))
+        .toBeDisabled();
+      await expect(designPendingName).toHaveValue("draft_label");
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toHaveAttribute("title", "Add or cancel the variable before saving.");
+      await expect(page.getByText(
+        "Finish or cancel adding this variable before switching modes.",
+        { exact: true },
+      )).toBeVisible();
+      await page.screenshot({
+        path: test.info().outputPath("variable-name-design-desktop.png"),
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      for (const width of [320, 375, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.getByRole("tablist", { name: "Studio mode" })
+          .getByRole("tab", { name: "Variables", exact: true }).click();
+        await page.getByRole("button", { name: "Show variables", exact: true })
+          .click();
+        await page.getByRole("button", { name: "Add variable", exact: true })
+          .click();
+        const mobileValueOption = page.getByRole("group", {
+          name: "Add variable",
+        }).getByRole("button", { name: "Value", exact: true });
+        await expect(mobileValueOption).toBeVisible();
+        const mobileValueBox = await mobileValueOption.boundingBox();
+        expect(mobileValueBox).not.toBeNull();
+        expect(mobileValueBox!.x).toBeGreaterThanOrEqual(0);
+        expect(mobileValueBox!.y).toBeGreaterThanOrEqual(0);
+        expect(mobileValueBox!.x + mobileValueBox!.width)
+          .toBeLessThanOrEqual(width);
+        expect(mobileValueBox!.y + mobileValueBox!.height)
+          .toBeLessThanOrEqual(844);
+        expect(
+          await page.evaluate(() =>
+            document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth
+          ),
+        ).toBe(true);
+        await mobileValueOption.click();
+        await expect(page.getByLabel("Variable name", { exact: true }))
+          .toBeFocused();
+        if (width === 390) {
+          await page.screenshot({
+            path: test.info().outputPath("variable-name-value-390px.png"),
+            fullPage: true,
+          });
+        }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("tablist", { name: "Studio mode" })
+          .getByRole("tab", { name: "Design", exact: true }).click();
+        await page.getByRole("button", { name: "Input", exact: true }).click();
+        await expect(page.getByLabel("Variable name", { exact: true }))
+          .toBeFocused();
+        if (width === 390) {
+          await page.screenshot({
+            path: test.info().outputPath("variable-name-design-390px.png"),
+            fullPage: true,
+          });
+        }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.getByRole("tablist", { name: "Studio mode" })
+        .getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: "Add variable", exact: true })
+        .click();
+      await page.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Input", exact: true }).click();
+      const pendingName = page.getByLabel("Variable name", { exact: true });
+      await expect(pendingName).toBeFocused();
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "input_1", exact: true }))
+        .toHaveCount(0);
+      await pendingName.fill("discarded");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+      await expect(page.getByRole("button", { name: "input_1", exact: true }))
+        .toHaveCount(0);
       await addStudioTypedInput(page, "minimum", "integer", "0");
       await addStudioInput(page, "minimum");
 
