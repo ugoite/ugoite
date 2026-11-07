@@ -92,7 +92,10 @@ const metricInputValue = (
     node?.kind === "input" && node.value_type.scalar_type === "integer" &&
     typeof value === "number" && !Number.isSafeInteger(value)
   ) {
-    return node.default !== undefined ? literalValue(node.default) : undefined;
+    // Bare JSON numbers beyond 2^53-1 already lost precision. A declared
+    // default is not evidence of the evaluated value, so hide instead of
+    // substituting a different number.
+    return undefined;
   }
   return value;
 };

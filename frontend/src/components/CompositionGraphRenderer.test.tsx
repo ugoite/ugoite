@@ -468,7 +468,7 @@ describe("CompositionGraphRenderer", () => {
       .toHaveTextContent("9007199254740993");
   });
 
-  it("uses an exact default or hides an unsafe bare integer Metric value", () => {
+  it("hides an unsafe bare integer Metric value instead of substituting default", () => {
     const directInputMetricDraft: CompositionGraphDraft = {
       ...draft,
       components: draft.components.map((component) =>
@@ -507,7 +507,9 @@ describe("CompositionGraphRenderer", () => {
       />
     ));
     expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent("9007199254740993");
+      .toHaveTextContent(/^minimum\s*$/);
+    expect(screen.queryByText("9007199254740993")).not.toBeInTheDocument();
+    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
     unmount();
 
     const noDefaultDraft = structuredClone(exactDefaultDraft);
@@ -554,7 +556,7 @@ describe("CompositionGraphRenderer", () => {
       .toHaveTextContent("42");
   });
 
-  it("renders no data for an unsafe integer with a nullable null default", () => {
+  it("hides an unsafe integer instead of reporting no data from a null default", () => {
     const nullableInputMetricDraft: CompositionGraphDraft = {
       ...draft,
       variables: draft.variables.map((node) =>
@@ -593,7 +595,7 @@ describe("CompositionGraphRenderer", () => {
     ));
 
     expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent("No data");
+      .toHaveTextContent(/^minimum\s*$/);
     expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
   });
 
