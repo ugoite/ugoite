@@ -237,7 +237,7 @@ test.describe("Saved SQL route", () => {
         exact: true,
       }).click();
 
-      const oldAliasSql = `${await editor.innerText()}\nORDER BY "old_name"`;
+      const oldAliasSql = `${await editor.innerText()} ORDER BY "old_name"`;
       await editor.fill(oldAliasSql);
       await expect(editor).toHaveText(oldAliasSql);
       await expect(editor).toContainText(/ORDER BY\s+"?old_name"?/i);
