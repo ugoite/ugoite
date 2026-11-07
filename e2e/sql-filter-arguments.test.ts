@@ -207,11 +207,16 @@ test(
     const forms = await formsResponse.json() as Array<{
       name: string;
       sql_relation?: string;
+      fields?: Record<string, { sql_column?: string }>;
     }>;
-    const relation = forms.find((form) => form.name === formName)?.sql_relation;
-    if (!relation) throw new Error(`Form ${formName} has no SQL relation`);
+    const form = forms.find((candidate) => candidate.name === formName);
+    const relation = form?.sql_relation;
+    const amountColumn = form?.fields?.amount?.sql_column;
+    if (!relation || !amountColumn) {
+      throw new Error(`Form ${formName} is missing its SQL schema`);
+    }
     const sql =
-      `SELECT "amount" FROM "${relation}" ORDER BY "amount" ASC LIMIT $take`;
+      `SELECT "${amountColumn}" FROM "${relation}" ORDER BY "${amountColumn}" ASC LIMIT $take`;
 
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
       waitUntil: "domcontentloaded",
@@ -238,11 +243,16 @@ test(
     await expect(editor).toContainText("LIMIT $take");
     await args.locator("footer").getByRole("button", { name: "Close" })
       .click();
+    const runButton = page.getByRole("button", {
+      name: "Run Query",
+      exact: true,
+    });
 
     const runAndExpectAmounts = async (
       take: number,
       expectedAmounts: number[],
     ) => {
+      await expect(runButton).toBeEnabled();
       const responsePromise = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
