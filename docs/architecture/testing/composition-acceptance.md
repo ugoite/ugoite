@@ -35,6 +35,12 @@ existing UI, then the remaining reference and value are checked after save and
 reopen. Query edit propagation and other component kinds remain outside this
 slice; complete acceptance and required CI remain pending.
 
+Issue [#4853](https://github.com/ugoite/ugoite/issues/4853) adds partial browser
+evidence for editing one shared query variable used by two Metrics: both saved
+references remain attached to that variable and both values update after save
+and reopen. This covers one inline-copy edit path; other edit types and
+component kinds remain outside this slice.
+
 ## Required journey evidence
 
 Required CI must confirm strict Domain and WASM parity, query type inference,
