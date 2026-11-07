@@ -245,6 +245,11 @@
           "path": "e2e/composition-scalar-state-journey.test.ts",
           "kind": "test",
           "name": "scalar_result_distinguishes_zero_rows_null_and_zero"
+        },
+        {
+          "path": "e2e/composition-binding-rebind.test.ts",
+          "kind": "test",
+          "name": "Composition edits one shared query and reopens both updated Metrics"
         }
       ],
       "manual_evidence_gaps": [

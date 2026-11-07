@@ -289,6 +289,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.display-components-reference-variables
+      - id: shared-metric-query-edit-evidence
+        role: evidence
+        facet: frontend
+        responsibility: Provide partial Browser evidence that editing one shared Saved SQL-derived scalar query variable in Composition Studio preserves both Metric references and updates both rendered values after save and reopen.
+        targets:
+          - id: edit-shared-query-for-two-metrics
+            adapter: typescript
+            path: e2e/composition-binding-rebind.test.ts
+            selector: { kind: test, name: "Composition edits one shared query and reopens both updated Metrics" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.display-components-reference-variables
       - id: text-style-persistence-evidence
         role: evidence
         facet: frontend
