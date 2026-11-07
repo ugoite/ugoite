@@ -272,7 +272,9 @@ test(
       const result = await response.json() as {
         rows: Record<string, unknown>[];
       };
-      expect(result.rows.map((row) => row.amount)).toEqual(expectedAmounts);
+      expect(result.rows.map((row) => row[amountColumn])).toEqual(
+        expectedAmounts,
+      );
     };
 
     await expect(page.getByRole("textbox", { name: "take", exact: true }))
