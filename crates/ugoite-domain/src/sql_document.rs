@@ -5755,7 +5755,14 @@ fn set_query_clause_value(
                     .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
                 return source_insertion(document, offset_start, format!("LIMIT {value} "));
             }
-            source_insertion(document, query_range.end, format!(" LIMIT {value}"))
+            let order_by = document.nodes.iter().find(|node| {
+                node.parent == Some(query.id) && node.kind == SqlDocumentNodeKind::OrderByClause
+            });
+            // Query spans can end before ORDER BY direction tokens such as DESC.
+            let insertion_offset = order_by
+                .and_then(|node| node.range)
+                .map_or(query_range.end, |range| range.end);
+            source_insertion(document, insertion_offset, format!(" LIMIT {value}"))
         }
         QueryClauseValue::Offset(value) => {
             if let Some(offset_clause) = offset_clause {
@@ -18803,6 +18810,60 @@ mod tests {
                 )
             ),
             Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+    }
+
+    #[test]
+    fn semantic_limit_preserves_form_generated_filter_and_sort_query() {
+        let source = "SELECT \"Entry\".\"field_100\" FROM \"Entry\" WHERE field_100 = $body_value ORDER BY field_100 DESC";
+        let document = parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is represented");
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetLimitValue {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    value: 1,
+                }],
+            ),
+        );
+        assert!(result.is_ok(), "semantic edit failed: {result:?}");
+        assert_eq!(
+            result.unwrap().document.source,
+            "SELECT \"Entry\".\"field_100\" FROM \"Entry\" WHERE field_100 = $body_value ORDER BY field_100 DESC LIMIT 1"
+        );
+    }
+
+    #[test]
+    fn semantic_limit_preserves_nulls_last_after_sort_direction() {
+        let source = "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST";
+        let document = parse_sql_document(source);
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .expect("the query is represented");
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::SetLimitValue {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    value: 1,
+                }],
+            ),
+        );
+        assert!(result.is_ok(), "semantic edit failed: {result:?}");
+        assert_eq!(
+            result.unwrap().document.source,
+            "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST LIMIT 1"
         );
     }
 

@@ -743,6 +743,7 @@
       "active_engine": "sql_document",
       "coverage_complete": false,
       "verification_gaps": [
+        "The REQ-FE-063 empty-draft browser journey applies Form, Columns, Filter, Sort, SQL tree, and Arguments edits to one relation-backed SELECT, including a declared argument used by the filter. This bounded journey does not cover the relation-free SELECT, broader simple-query, or complex admitted-SQL starting shapes required by S-04; those journeys remain tracked by #4590.",
         "IN and NOT IN subquery predicates have exact SQL-tree authoring and WASM undo evidence only. The Saved SQL browser E2E asserts that the exact plan request for each seed returns HTTP 422 and that Run and Save remain disabled; it does not attempt either action. The authorized Rust nested-structure fixture executes the IN seed `SELECT (1) IN (SELECT 1)` and asserts the planner rejection `Physical plan does not support logical expression InSubquery`; this is not a successful execution result. Neither IN nor NOT IN has successful execution, save, or reload evidence, and this does not complete S-02; broad admitted-SQL editor coverage remains tracked by #4565.",
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
@@ -756,6 +757,15 @@
         "version": "0.63.0"
       },
       "evidence": [
+        {
+          "id": "empty-sql-shared-actions",
+          "selectors": [
+            [
+              "e2e/saved-sql-route.test.ts",
+              "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable"
+            ]
+          ]
+        },
         {
           "id": "exists-subquery-round-trip",
           "selectors": [
