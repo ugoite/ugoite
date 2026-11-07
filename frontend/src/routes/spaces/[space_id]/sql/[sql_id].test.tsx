@@ -775,7 +775,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     });
     const rename = vi.spyOn(ugoiteClient, "renameSqlDocumentParameter")
       .mockImplementation(async (source, oldName, newName) => ({
-        contract_version: 26,
+        contract_version: 27,
         status: "parsed",
         source: source.replaceAll(`$${oldName}`, `$${newName}`),
         diagnostics: [],

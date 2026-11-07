@@ -79,7 +79,10 @@ type LeafDraft = {
   valueKind: "string" | "number" | "boolean" | "null";
   argument: string;
 };
-type GroupTarget = { parentNodeId: number | null; queryNodeId: number };
+type GroupTarget = {
+  parentNodeId: number | null;
+  scopeNodeId: number;
+};
 
 function selectAncestor(
   nodes: readonly { id: number; parent: number | null; kind: string }[],
@@ -343,11 +346,13 @@ export function SqlConditionWorkspace(props: Props) {
       if (emptyRoot && !addTarget()) {
         setAddTarget({
           parentNodeId: null,
-          queryNodeId: emptyRoot.query_node_id,
+          scopeNodeId: emptyRoot.scope_node_id,
         });
       } else if (
         addTarget() &&
-        !view.some((item) => item.query_node_id === addTarget()?.queryNodeId)
+        !view.some((item) =>
+          item.scope_node_id === addTarget()?.scopeNodeId
+        )
       ) {
         setAddTarget(null);
       }
@@ -425,6 +430,13 @@ export function SqlConditionWorkspace(props: Props) {
     );
     return matches.length === 1 ? matches[0] : undefined;
   };
+  const addConditionFocusKey = (
+    scope: SqlDocumentConditionScope,
+    parentNodeId: number | null = null,
+  ) =>
+    `add-filter:${scope.query_node_id}:${scope.scope_node_id}:${
+      parentNodeId ?? "root"
+    }`;
   const columnLabel = (scope: SqlDocumentConditionScope, name: string) =>
     contextFor(scope)?.columnLabels?.[name] ??
       (name === "_ugoite_id"
@@ -788,7 +800,7 @@ export function SqlConditionWorkspace(props: Props) {
         if (isGroup(node)) {
           const operator = groupDrafts()[node.node_id];
           if (operator && operator !== node.operator) {
-            restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
+            restoreFocusKey ??= addConditionFocusKey(scope);
             edits.push({
               kind: "set_filter_group_operator",
               node_id: node.node_id,
@@ -799,7 +811,7 @@ export function SqlConditionWorkspace(props: Props) {
           }
           node.children.forEach(visit);
         } else if (isComparison(node) && drafts()[node.node_id]) {
-          restoreFocusKey ??= `add-filter:${scope.query_node_id}:root`;
+          restoreFocusKey ??= addConditionFocusKey(scope);
           const built = makeCondition(
             draftFor(node),
             false,
@@ -852,10 +864,22 @@ export function SqlConditionWorkspace(props: Props) {
         qualifierByQuery()[scope.query_node_id] ?? null,
       );
       const targetKind: SqlDocumentNodeKind = parentNodeId === null
-        ? "select"
+        ? (scope.kind === "aggregate_filter" ? "where_clause" : "select")
         : nodeKindsById()[parentNodeId] ?? "binary_expression";
+      const aggregateSeed = scope.kind === "aggregate_filter" &&
+        parentNodeId === null && scope.expression?.kind === "advanced" &&
+        scope.expression.sql.trim().toUpperCase() === "TRUE";
       const edit: SqlDocumentSemanticEdit =
-        parentNodeId === null && built.condition.kind === "comparison"
+        aggregateSeed
+          ? {
+            kind: "update_filter_condition",
+            node_id: scope.expression!.node_id,
+            expected_kind: nodeKindsById()[scope.expression!.node_id] ??
+              "literal_expression",
+            condition: built.condition,
+          }
+          : parentNodeId === null && scope.kind !== "aggregate_filter" &&
+              built.condition.kind === "comparison"
           ? {
             kind: "add_filter_comparison",
             node_id: selectIdsByQuery()[scope.query_node_id],
@@ -866,7 +890,9 @@ export function SqlConditionWorkspace(props: Props) {
           }
           : {
             kind: "insert_filter_condition",
-            node_id: parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
+            node_id: parentNodeId ?? (scope.kind === "aggregate_filter"
+              ? scope.where_clause_node_id ?? scope.scope_node_id
+              : selectIdsByQuery()[scope.query_node_id]),
             expected_kind: targetKind,
             condition: built.condition,
           };
@@ -898,15 +924,31 @@ export function SqlConditionWorkspace(props: Props) {
         (isGroup(node) && node.children.some(containsNode));
     };
     const scope = conditions().find((item) => containsNode(item.expression));
-    const restoreFocusKey = scope
-      ? `add-filter:${scope.query_node_id}:root`
+    const restoreScope = scope?.kind === "aggregate_filter" &&
+        scope.expression?.node_id === nodeId
+      ? conditions().find((item) =>
+        item.query_node_id === scope.query_node_id && item.kind === "where"
+      )
+      : scope;
+    const restoreFocusKey = restoreScope
+      ? addConditionFocusKey(restoreScope)
       : undefined;
+    const removeEdit: SqlDocumentSemanticEdit =
+      scope?.kind === "aggregate_filter" &&
+          scope.expression?.node_id === nodeId
+        ? {
+          kind: "set_aggregate_filter",
+          node_id: scope.scope_node_id,
+          expected_kind: "function_expression",
+          enabled: false,
+        }
+        : {
+          kind: "remove_filter_condition",
+          node_id: nodeId,
+          expected_kind: nodeKindsById()[nodeId] ?? "binary_expression",
+        };
     await commit(
-      [{
-        kind: "remove_filter_condition",
-        node_id: nodeId,
-        expected_kind: nodeKindsById()[nodeId] ?? "binary_expression",
-      }],
+      [removeEdit],
       undefined,
       undefined,
       undefined,
@@ -918,7 +960,10 @@ export function SqlConditionWorkspace(props: Props) {
     scope: SqlDocumentConditionScope,
     parentNodeId: number | null = null,
   ) => {
-    const target = { parentNodeId, queryNodeId: scope.query_node_id };
+    const target = {
+      parentNodeId,
+      scopeNodeId: scope.scope_node_id,
+    };
     setAddTarget(target);
     setGroupTarget(target);
     setGroupConnector("and");
@@ -932,7 +977,7 @@ export function SqlConditionWorkspace(props: Props) {
     if (!target) return;
     try {
       const scope = conditions().find((item) =>
-        item.query_node_id === target.queryNodeId
+        item.scope_node_id === target.scopeNodeId
       );
       if (!scope) throw new Error(t("sqlPage.structure.editFailed"));
       const draft: LeafDraft = {
@@ -962,18 +1007,35 @@ export function SqlConditionWorkspace(props: Props) {
         scope,
         qualifierByQuery()[scope.query_node_id] ?? null,
       );
-      const edit: SqlDocumentSemanticEdit = {
+      const aggregateSeed = scope.kind === "aggregate_filter" &&
+        target.parentNodeId === null && scope.expression?.kind === "advanced" &&
+        scope.expression.sql.trim().toUpperCase() === "TRUE";
+      const edit: SqlDocumentSemanticEdit = aggregateSeed
+        ? {
+          kind: "update_filter_condition",
+          node_id: scope.expression!.node_id,
+          expected_kind: nodeKindsById()[scope.expression!.node_id] ??
+            "literal_expression",
+          condition: {
+            kind: "group",
+            operator: groupConnector(),
+            children: [first.condition, second.condition],
+          },
+        }
+        : {
         kind: "insert_filter_condition",
-        node_id: target.parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
+        node_id: target.parentNodeId ?? (scope.kind === "aggregate_filter"
+          ? scope.where_clause_node_id ?? scope.scope_node_id
+          : selectIdsByQuery()[scope.query_node_id]),
         expected_kind: target.parentNodeId === null
-          ? "select"
+          ? (scope.kind === "aggregate_filter" ? "where_clause" : "select")
           : nodeKindsById()[target.parentNodeId] ?? "binary_expression",
         condition: {
           kind: "group",
           operator: groupConnector(),
           children: [first.condition, second.condition],
         },
-      };
+        };
       const committed = await commit(
         [edit],
         first.created,
@@ -984,9 +1046,7 @@ export function SqlConditionWorkspace(props: Props) {
       if (!committed) return;
       setGroupTarget(null);
       setAddTarget(null);
-      const focusKey = `add-filter:${scope.query_node_id}:${
-        target.parentNodeId ?? "root"
-      }`;
+      const focusKey = addConditionFocusKey(scope, target.parentNodeId);
       setTimeout(() => {
         globalThis.document?.querySelector<HTMLElement>(
           `[data-condition-focus="${focusKey}"]`,
@@ -1138,7 +1198,7 @@ export function SqlConditionWorkspace(props: Props) {
           </div>
           <Show
             when={groupTarget()?.parentNodeId === node.node_id &&
-              groupTarget()?.queryNodeId === scope.query_node_id}
+              groupTarget()?.scopeNodeId === scope.scope_node_id}
           >
             <GroupComposer scope={scope} />
           </Show>
@@ -1435,9 +1495,9 @@ export function SqlConditionWorkspace(props: Props) {
     const target = () => addTarget();
     const expanded = () =>
       target()?.parentNodeId === p.parentNodeId &&
-      target()?.queryNodeId === p.scope.query_node_id &&
+      target()?.scopeNodeId === p.scope.scope_node_id &&
       !(groupTarget()?.parentNodeId === p.parentNodeId &&
-        groupTarget()?.queryNodeId === p.scope.query_node_id);
+        groupTarget()?.scopeNodeId === p.scope.scope_node_id);
     return (
       <div class="sql-condition-row sql-condition-row--add">
         <Show
@@ -1446,9 +1506,10 @@ export function SqlConditionWorkspace(props: Props) {
             <button
               type="button"
               class="ui-button ui-button-secondary"
-              data-condition-focus={`add-filter:${p.scope.query_node_id}:${
-                p.parentNodeId ?? "root"
-              }`}
+              data-condition-focus={addConditionFocusKey(
+                p.scope,
+                p.parentNodeId,
+              )}
               disabled={busy() || locked()}
               onClick={() => {
                 setNewColumn("");
@@ -1457,7 +1518,7 @@ export function SqlConditionWorkspace(props: Props) {
                 setGroupTarget(null);
                 setAddTarget({
                   parentNodeId: p.parentNodeId,
-                  queryNodeId: p.scope.query_node_id,
+                  scopeNodeId: p.scope.scope_node_id,
                 });
               }}
             >
@@ -1469,9 +1530,10 @@ export function SqlConditionWorkspace(props: Props) {
             <span>{t("sqlPage.structure.column")}</span>
             <select
               class="ui-input"
-              data-condition-focus={`add-filter:${p.scope.query_node_id}:${
-                p.parentNodeId ?? "root"
-              }`}
+              data-condition-focus={addConditionFocusKey(
+                p.scope,
+                p.parentNodeId,
+              )}
               aria-label={t("sqlPage.structure.addFilterColumn")}
               value={newColumn()}
               disabled={busy() || locked()}
@@ -1745,7 +1807,7 @@ export function SqlConditionWorkspace(props: Props) {
         <Show
           when={p.parentNodeId === null &&
             groupTarget()?.parentNodeId === p.parentNodeId &&
-            groupTarget()?.queryNodeId === p.scope.query_node_id}
+            groupTarget()?.scopeNodeId === p.scope.scope_node_id}
         >
           <GroupComposer scope={p.scope} />
         </Show>
@@ -2016,7 +2078,9 @@ export function SqlConditionWorkspace(props: Props) {
         {(scope) => (
           <section
             class="sql-condition-scope"
-            aria-label={t("sqlPage.structure.filters")}
+            aria-label={t(scope.kind === "aggregate_filter"
+              ? "sqlPage.structure.aggregateFilter"
+              : "sqlPage.structure.filters")}
           >
             <Show
               when={contextFor(scope)}

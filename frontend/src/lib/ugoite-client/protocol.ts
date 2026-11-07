@@ -703,6 +703,8 @@ export type SqlDocumentConditionNode =
   | { kind: "advanced"; node_id: number; sql: string };
 export type SqlDocumentConditionScope = {
   query_node_id: number;
+  kind: "where" | "aggregate_filter";
+  scope_node_id: number;
   where_clause_node_id: number | null;
   expression: SqlDocumentConditionNode | null;
 };

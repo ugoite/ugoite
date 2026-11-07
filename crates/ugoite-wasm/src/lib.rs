@@ -4176,8 +4176,9 @@ mod tests {
     #[test]
     fn sql_document_common_toolbar_semantic_operations_have_wasm_parity() {
         use ugoite_domain::sql_document::{
-            SqlDocumentAggregateFunction, SqlDocumentNodeData, SqlDocumentNodeKind,
-            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentAggregateFunction, SqlDocumentColumnReference, SqlDocumentFilterCondition,
+            SqlDocumentFilterOperator, SqlDocumentIdentifier, SqlDocumentNodeData,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
             SqlDocumentSemanticLiteral, SqlDocumentValueAccess, SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
@@ -4392,6 +4393,84 @@ mod tests {
             },
         );
         assert!(filter_seed.document.source.contains("FILTER (WHERE TRUE)"));
+        let filter_document =
+            ugoite_domain::sql_document::parse_sql_document(&filter_seed.document.source);
+        let filter_scope = filter_document
+            .conditions
+            .iter()
+            .find(|scope| {
+                scope.kind
+                    == ugoite_domain::sql_document::SqlDocumentConditionScopeKind::AggregateFilter
+            })
+            .expect("the aggregate FILTER seed has a typed scope");
+        let seed = match filter_scope.expression.as_ref().expect("filter expression") {
+            ugoite_domain::sql_document::SqlDocumentConditionNode::Advanced { node_id, .. } => {
+                filter_document
+                    .nodes
+                    .get(*node_id as usize)
+                    .expect("seed node")
+            }
+            _ => panic!("aggregate FILTER seed is advanced TRUE"),
+        };
+        let predicate = assert_parity(
+            &filter_seed.document.source,
+            SqlDocumentSemanticEdit::UpdateFilterCondition {
+                node_id: seed.id,
+                expected_kind: seed.kind,
+                condition: SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "field_100".to_owned(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Eq,
+                    value: Some(SqlDocumentSemanticLiteral::String {
+                        value: "food".to_owned(),
+                    }),
+                },
+            },
+        );
+        assert!(predicate
+            .document
+            .source
+            .contains("FILTER (WHERE field_100 = 'food')"));
+        let filtered_document =
+            ugoite_domain::sql_document::parse_sql_document(&predicate.document.source);
+        let filtered_scope = filtered_document
+            .conditions
+            .iter()
+            .find(|scope| {
+                scope.kind
+                    == ugoite_domain::sql_document::SqlDocumentConditionScopeKind::AggregateFilter
+            })
+            .expect("the aggregate FILTER remains a condition scope");
+        let filtered_root = match filtered_scope
+            .expression
+            .as_ref()
+            .expect("filter predicate")
+        {
+            ugoite_domain::sql_document::SqlDocumentConditionNode::Group { node_id, .. }
+            | ugoite_domain::sql_document::SqlDocumentConditionNode::Comparison {
+                node_id, ..
+            }
+            | ugoite_domain::sql_document::SqlDocumentConditionNode::Advanced { node_id, .. } => {
+                *node_id
+            }
+        };
+        let filtered_node = &filtered_document.nodes[filtered_root as usize];
+        let removed_filter = assert_parity(
+            &predicate.document.source,
+            SqlDocumentSemanticEdit::RemoveFilterCondition {
+                node_id: filtered_root,
+                expected_kind: filtered_node.kind,
+            },
+        );
+        assert_eq!(
+            removed_filter.document.source,
+            "SELECT SUM(amount) FROM \"G\""
+        );
         let average_document =
             ugoite_domain::sql_document::parse_sql_document(&average.document.source);
         let avg = average_document
