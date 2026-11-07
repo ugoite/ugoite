@@ -293,6 +293,25 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: aliased-array-literal-element-removal
+        kind: behavior
+        statement: >-
+          For an eligible direct element of exactly one ARRAY literal in a
+          complete aliased SELECT projection item, the SQL Document tree can
+          remove the selected element using its existing Remove action. The
+          edit changes only the selected element and adjacent separator, or
+          replaces only the ARRAY expression with ARRAY[] when removing its
+          sole element; it preserves the alias and all surrounding SQL bytes
+          and returns a guarded exact undo. Rust validates direct ARRAY
+          ownership and complete source ranges, and the equivalent WASM
+          operation returns the same edit. Comment-bearing, incomplete,
+          ambiguous, or unsupported projection items fail closed. For
+          executor-admitted queries, authorized planning and execution remain
+          authoritative for result types and values.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: relational-constructors
         kind: behavior
         statement: >-
