@@ -6,7 +6,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 
-test("SQL filter argument creation preserves typed declarations through undo, run, and save", async ({ page, request }) => {
+test("A05 @smoke: saved SQL reapplies its integer default after reopening", async ({ page, request }) => {
   test.setTimeout(120_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
@@ -170,4 +170,33 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
   await expect(
     reopenedArgs.getByRole("textbox", { name: "Default for minimum" }),
   ).toHaveValue("10");
+  await reopenedArgs.locator("footer").getByRole("button", {
+    name: "Close",
+    exact: true,
+  }).click();
+
+  const rerunResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql/query`
+  );
+  await page.getByRole("button", { name: "Run Query", exact: true }).click();
+  const rerunResponse = await rerunResponsePromise;
+  const rerunRequestBody = rerunResponse.request().postDataJSON() as {
+    parameters: Record<string, unknown>;
+    parameter_types: Record<string, string>;
+  };
+  expect(rerunRequestBody).toMatchObject({
+    parameters: { minimum: 10 },
+    parameter_types: { minimum: "integer" },
+  });
+  expect(rerunResponse.ok()).toBe(true);
+  await expect(page.getByRole("table")).toContainText("11", {
+    timeout: 30_000,
+  });
+  await expect(
+    page.getByRole("table").getByRole("columnheader", {
+      name: "amount_alias",
+      exact: true,
+    }),
+  ).toBeVisible();
 });
