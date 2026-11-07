@@ -249,15 +249,16 @@ describe("CompositionVariableBindingPicker", () => {
   });
 
   it("waits for explicit argument binding without creating sample variables", async () => {
-    const period: CompositionVariableNode = {
-      id: "period",
-      kind: "constant",
+    const fromInput: CompositionVariableNode = {
+      id: "from",
+      kind: "input",
       value_type: { scalar_type: "date", nullable: false },
-      value: { kind: "date", value: "2026-10-01" },
+      required: true,
+      default: { kind: "date", value: "2026-10-01" },
     };
     const draft = {
       ...createCompositionGraphDraft("Report"),
-      variables: [period],
+      variables: [fromInput],
     };
     const prepareSavedSql = vi.fn(async (
       _input: Parameters<CompositionBindingProvider["prepareSavedSql"]>[0],
@@ -282,20 +283,24 @@ describe("CompositionVariableBindingPicker", () => {
       name: "Add",
       exact: true,
     });
+    const fromBinding = within(dialog).getByRole("combobox", {
+      name: "Variable for SQL argument from",
+    });
+    expect(fromBinding).toHaveValue("");
     expect(add).toBeDisabled();
-    fireEvent.change(
-      within(dialog).getByRole("combobox", {
-        name: "Variable for SQL argument from",
-      }),
-      { target: { value: "period" } },
-    );
+    expect(draft.variables).toEqual([fromInput]);
+    expect(prepareSavedSql).not.toHaveBeenCalled();
+    fireEvent.change(fromBinding, { target: { value: "from" } });
+    expect(add).toBeEnabled();
     fireEvent.click(add);
     await waitFor(() => expect(prepareSavedSql).toHaveBeenCalledOnce());
     expect(prepareSavedSql.mock.calls[0][0]).toMatchObject({
-      arguments: [{ name: "from", variable: "period" }],
+      arguments: [{ name: "from", variable: "from" }],
       draft,
     });
-    expect(prepareSavedSql.mock.calls[0][0].draft.variables).toEqual([period]);
+    expect(prepareSavedSql.mock.calls[0][0].draft.variables).toEqual([
+      fromInput,
+    ]);
   });
 
   it("reports an incompatible selected Saved SQL locally without committing a component", async () => {
