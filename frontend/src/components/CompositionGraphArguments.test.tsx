@@ -16,6 +16,7 @@ import {
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { buildSqlSchema } from "~/lib/sql";
+import { parseSqlDocument } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 
 vi.mock("~/lib/composition-api", () => ({
@@ -398,6 +399,158 @@ describe("Composition shared SQL argument editing", () => {
       id: "input_1",
       kind: "input",
       variable: "minimum_value",
+    }]);
+    expect(savedSpec.layout).toEqual(draft().layout);
+  });
+
+  it("creates a typed unbound SQL argument from an expression and binds it explicitly", async () => {
+    const { draft, setDraft, query, open, validity } = setup();
+    const expressionSql = 'SELECT amount >= 1 AS matches FROM "Expenses"';
+    const argumentsDialog = await open();
+    fireEvent.click(
+      within(argumentsDialog).getAllByRole("button", { name: "Close" })[0],
+    );
+    setDraft((current) => ({
+      ...current,
+      variables: current.variables.map((node) =>
+        node.id === "rows" && node.kind === "query"
+          ? {
+            ...node,
+            returns: {
+              kind: "scalar",
+              value_type: { scalar_type: "boolean", nullable: false },
+            },
+            query: {
+              ...node.query,
+              kind: "inline_sql",
+              sql: expressionSql,
+              arguments: [],
+            },
+          }
+          : node
+      ),
+    }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Design", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Input", exact: true }));
+    const inputName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(inputName, { target: { value: "minimum" } });
+    fireEvent.submit(inputName.closest("form")!);
+    await waitFor(() =>
+      expect(draft().components).toContainEqual({
+        id: "input_1",
+        kind: "input",
+        variable: "minimum",
+      })
+    );
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Variables", exact: true }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "minimum", exact: true }),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
+      target: { value: "integer" },
+    });
+    await waitFor(() =>
+      expect(draft().variables.find((node) => node.id === "minimum"))
+        .toMatchObject({
+          kind: "input",
+          value_type: { scalar_type: "integer", nullable: false },
+        })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
+    const structure = await screen.findByRole("button", {
+      name: "Structure",
+      exact: true,
+    });
+    fireEvent.click(structure);
+    const structureOptions = await screen.findByRole("group", {
+      name: "Structure options",
+    });
+    const sqlTreeButton = within(structureOptions).getByRole("button", {
+      name: /SQL tree/,
+    });
+    await waitFor(() => expect(sqlTreeButton).toBeEnabled());
+    fireEvent.click(
+      sqlTreeButton,
+    );
+    const structureDialog = await screen.findByRole("dialog");
+    const document = await parseSqlDocument(expressionSql);
+    const value = document.nodes.find((node) =>
+      node.semantic?.kind === "literal" &&
+      node.semantic.literal_kind === "number"
+    );
+    expect(value).toBeDefined();
+    const valueItem = (await within(structureDialog).findAllByRole("treeitem"))
+      .find((item) => item.dataset.sqlDocumentNode === String(value!.id));
+    expect(valueItem).toBeDefined();
+    fireEvent.click(valueItem!);
+    fireEvent.change(screen.getByLabelText("Value type"), {
+      target: { value: "named_parameter" },
+    });
+    fireEvent.input(within(structureDialog).getByLabelText("Argument name"), {
+      target: { value: "minimum" },
+    });
+    fireEvent.change(within(structureDialog).getByLabelText("Type"), {
+      target: { value: "integer" },
+    });
+    fireEvent.click(
+      within(structureDialog).getByRole("button", { name: "Apply" }),
+    );
+
+    await waitFor(() =>
+      expect(query().query.sql)
+        .toBe('SELECT amount >= $minimum AS matches FROM "Expenses"')
+    );
+    expect(query().query.arguments).toEqual([{
+      name: "minimum",
+      variable: "",
+    }]);
+    expect(validity).toHaveBeenLastCalledWith("rows", false);
+    expect(screen.getByRole("button", { name: "Run Query", exact: true }))
+      .toBeDisabled();
+
+    fireEvent.click(
+      within(structureDialog).getAllByRole("button", {
+        name: "Close",
+        exact: true,
+      })[0],
+    );
+    const inputBinding = await screen.findByRole("combobox", {
+      name: "minimum",
+      exact: true,
+    });
+    expect(inputBinding).toHaveValue("");
+    fireEvent.change(inputBinding, { target: { value: "minimum" } });
+    await waitFor(() =>
+      expect(query().query.arguments).toEqual([{
+        name: "minimum",
+        variable: "minimum",
+      }])
+    );
+    await waitFor(() =>
+      expect(validity).toHaveBeenLastCalledWith("rows", true)
+    );
+
+    const savedSpec = compositionGraphDocumentDraft(draft()).spec;
+    expect(savedSpec.variables.find((node) => node.id === "rows"))
+      .toMatchObject({
+        query: {
+          sql: 'SELECT amount >= $minimum AS matches FROM "Expenses"',
+          arguments: [{ name: "minimum", variable: "minimum" }],
+        },
+      });
+    expect(savedSpec.variables.find((node) => node.id === "minimum"))
+      .toMatchObject({
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+      });
+    expect(savedSpec.components).toEqual([{
+      id: "input_1",
+      kind: "input",
+      variable: "minimum",
     }]);
     expect(savedSpec.layout).toEqual(draft().layout);
   });

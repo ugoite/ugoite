@@ -270,6 +270,24 @@ requirements:
                 criterion: REQ-COMP-009#criterion.single-typed-variable-graph
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
+          - id: expression-editor-creates-typed-argument
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: "declares a typed SQL argument while editing an expression through actual WASM" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: "declares a typed SQL argument while editing an expression through actual WASM" } }
+          - id: composition-expression-argument-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "creates a typed unbound SQL argument from an expression and binds it explicitly" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a typed unbound SQL argument from an expression and binds it explicitly" } }
           - id: mode-and-insertion
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

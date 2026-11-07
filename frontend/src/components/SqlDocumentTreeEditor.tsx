@@ -41,13 +41,17 @@ import type {
   SqlDocumentSetQuantifier,
   SqlDocumentSubqueryPredicateTemplate,
   SqlDocumentUnarySign,
+  SqlStructureVariableType,
 } from "~/lib/ugoite-client";
+import type { SqlVariable } from "~/lib/types";
 import { t } from "~/lib/i18n";
 
 interface SqlDocumentTreeEditorProps {
   sql: () => string;
   scope?: () => string;
   onSqlChange: (sql: string) => void;
+  argumentDefinitions?: () => readonly SqlVariable[];
+  onArgumentAdded?: (variable: SqlVariable) => boolean | void;
   disabled?: () => boolean;
   onPlanColumns?: PlanSqlColumns;
   relationOptions?: () => readonly {
@@ -68,6 +72,15 @@ type LiteralKind =
   | "timestamp"
   | "interval"
   | "hex_string";
+
+const sqlArgumentTypes: readonly SqlStructureVariableType[] = [
+  "string",
+  "boolean",
+  "integer",
+  "float",
+  "date",
+  "timestamp",
+];
 
 type LiteralDraft = {
   kind: LiteralKind | "";
@@ -1036,6 +1049,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     kind: "",
     value: "",
   });
+  const [argumentType, setArgumentType] = createSignal<
+    SqlStructureVariableType
+  >("string");
   const [expressionLeafAction, setExpressionLeafAction] = createSignal<
     ExpressionLeafAction
   >("");
@@ -2618,7 +2634,18 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setSelectedNodeId(node.id);
     setArrayElementAction("");
     setParts(identifierParts(node));
-    setLiteral(initialLiteralDraft(node));
+    const initialLiteral = initialLiteralDraft(node);
+    setLiteral(initialLiteral);
+    const argumentType = props.argumentDefinitions?.().find((variable) =>
+      variable.name === initialLiteral.value
+    )?.type;
+    setArgumentType(
+      argumentType && sqlArgumentTypes.includes(
+          argumentType as SqlStructureVariableType,
+        )
+        ? argumentType as SqlStructureVariableType
+        : "string",
+    );
     setExpressionLeafAction(
       node.kind === "identifier_expression" ||
         node.kind === "compound_identifier_expression"
@@ -2945,6 +2972,29 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         result.document.source === expectedSource
       ) {
         setError(t("sqlPage.structure.documentEditUnavailable"));
+        return;
+      }
+      const addedArgument = edit.kind === "replace_literal" &&
+          edit.literal.kind === "named_parameter" &&
+          !props.argumentDefinitions?.().some((variable) =>
+            variable.name === edit.literal.name
+          )
+        ? {
+          name: edit.literal.name,
+          type: argumentType(),
+          description: "",
+        }
+        : undefined;
+      // Atomicity: both host updates below run synchronously with no await
+      // between them, after the generation/source/scope staleness guard
+      // above. A veto (=== false) from onArgumentAdded skips onSqlChange,
+      // so the host never observes a declared argument without its SQL edit
+      // or vice versa.
+      if (
+        addedArgument &&
+        props.onArgumentAdded?.(addedArgument) === false
+      ) {
+        setError(t("sqlPage.structureUnavailable"));
         return;
       }
       props.onSqlChange(result.document.source);
@@ -3717,6 +3767,32 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                                   value: event.currentTarget.value,
                                 }))}
                             />
+                          </label>
+                        </Show>
+                        <Show
+                          when={props.onArgumentAdded &&
+                            literal().kind === "named_parameter" &&
+                            Boolean(literal().value.trim()) &&
+                            !props.argumentDefinitions?.().some((variable) =>
+                              variable.name === literal().value.trim()
+                            )}
+                        >
+                          <label class="ui-label">
+                            {t("sqlPage.structure.argumentType")}
+                            <select
+                              class="ui-input"
+                              value={argumentType()}
+                              disabled={busy() || props.disabled?.()}
+                              onChange={(event) =>
+                                setArgumentType(
+                                  event.currentTarget
+                                    .value as SqlStructureVariableType,
+                                )}
+                            >
+                              <For each={sqlArgumentTypes}>
+                                {(type) => <option value={type}>{type}</option>}
+                              </For>
+                            </select>
                           </label>
                         </Show>
                       </div>

@@ -337,6 +337,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.sql-filter-adds-typed-parameter
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+          - id: composition-sql-document-tree-editor
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.tsx
+            selector: { kind: symbol, name: SqlDocumentTreeEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
           - id: composition-result-renderer
             adapter: typescript
             path: frontend/src/components/CompositionGraphRenderer.tsx
@@ -429,6 +438,24 @@ features:
         facet: verification
         responsibility: Verify typed SQL argument declarations bind explicitly to graph inputs in the picker, alongside explicit count and paging, obsolete-result suppression, browser pinning before an independent inline copy, and runtime Input control behavior at native 200% Chromium zoom.
         targets:
+          - id: expression-editor-creates-typed-argument
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: "declares a typed SQL argument while editing an expression through actual WASM" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: "declares a typed SQL argument while editing an expression through actual WASM" } }
+          - id: composition-expression-argument-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "creates a typed unbound SQL argument from an expression and binds it explicitly" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a typed unbound SQL argument from an expression and binds it explicitly" } }
           - id: access-change-broadcast
             adapter: typescript
             path: frontend/src/lib/composition-access-changes.test.ts

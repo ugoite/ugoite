@@ -188,6 +188,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     return [...variables.values()];
   };
 
+  const addDocumentArgument = (variable: SqlVariable) => {
+    if (props.onArgumentAdded) return props.onArgumentAdded(variable);
+    return props.onVariablesAdded?.([{
+      name: variable.name,
+      type: variable.type as SqlStructureVariableType,
+    }]);
+  };
+
   const referencedArgumentNames = () => [
     ...new Set(
       props.contexts().flatMap((context) =>
@@ -486,6 +494,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   sql={props.sql}
                   scope={props.scope}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  argumentDefinitions={argumentVariables}
+                  onArgumentAdded={props.onArgumentAdded ||
+                      props.onVariablesAdded
+                    ? addDocumentArgument
+                    : undefined}
                   disabled={props.disabled}
                   initialNodeKinds={() => targetNodeKinds()}
                   onPlanColumns={props.onPlanColumns}
