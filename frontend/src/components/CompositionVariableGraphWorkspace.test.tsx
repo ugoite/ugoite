@@ -193,7 +193,7 @@ describe("CompositionVariableGraphWorkspace", () => {
         required: true,
       }],
     });
-    const [selected, setSelected] = createSignal<string | null>("input_1");
+    const [, setSelected] = createSignal<string | null>("input_1");
     const creation = creationProps(draft, setDraft, setSelected);
     render(() => (
       <CompositionVariableGraphWorkspace
