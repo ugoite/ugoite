@@ -383,6 +383,13 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio saves and reopens a filtered SQL metric } }
+          - id: source-revision-keeps-composition-pin
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: Composition Studio builds a reusable tool from existing knowledge }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.exact-query-identities
 
           - id: shared-query-edit-updates-displays
             adapter: typescript
