@@ -746,7 +746,7 @@
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
         "One-based array indexing, fully bounded one-based array-slice construction, and named Struct-field subscript construction have typed native/WASM/DOM edits; terminal existing slices with two simple decimal integer bounds parseable as i64 can be edited in place, preserving comments and source around the literals. An authorized Form ObjectList execution fixture verifies array indexing, the [1:2] result order, and editing to [2:2] yielding Grace; the same authorized Struct fixture verifies `field_101[1]['name']` returns Ada. Struct-field edits escape single quotes in field names and preserve source outside the selected expression. Omitted-bound or dynamic-bound slices, non-literal bounds, strides, a slice followed by another access in the same chain, dot-style Struct fields, map/dynamic keys, full array-literal range editing, aliased array edits, reordering elements outside eligible direct elements of unaliased ARRAY literals in complete projection items (including comment-bearing items), and broader admitted collection construction remain gaps. ARRAY construction by wrapping a typed expression, appending typed literal elements in order to an unaliased complete projection, selected element removal including empty ARRAY construction, ordinary typed element editing, and eligible direct-element reordering remain verified through native, WASM, DOM and authorized execution paths.",
-        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. One directly authored DECIMAL(4, 2) target has actual-WASM and authorized-result evidence; planner validity for other authored type parameters remains authoritative.",
+        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Directly authored DECIMAL(4, 2) and TIMESTAMP(3) targets each have actual-WASM and authorized-result evidence; planner validity for other authored type parameters remains authoritative.",
         "Aggregate ordered argument clauses remain read-only and are outside the enabled aggregate registry.",
         "The active tree exposes LEFT/RIGHT SEMI and ANTI joins admitted by DataFusion; directionless SEMI/ANTI spellings are not offered. LIMIT accepts typed literals, named parameters, and same-query expressions. CTE and derived-table output aliases can be added or renamed with exact binding checks; nested CTE shadowing is respected and ambiguous unqualified references fail closed."
       ],
@@ -786,6 +786,19 @@
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
               "async fn parameterized_cast_target_edit_executes_exact_decimal_result"
+            ]
+          ]
+        },
+        {
+          "id": "timestamp-cast-authorized-result",
+          "selectors": [
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx",
+              "edits a directly written CAST to TIMESTAMP(3) through actual WASM"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn timestamp_cast_precision_edit_executes_exact_millisecond_result"
             ]
           ]
         },
