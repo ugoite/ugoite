@@ -75,7 +75,7 @@
     "std-env": "npm:std-env@^4.1.0",
     "statuses": "npm:statuses@^2.0.2",
     "strict-event-emitter": "npm:strict-event-emitter@^0.5.1",
-    "tough-cookie": "npm:tough-cookie@^6.0.1",
+    "tough-cookie": "npm:tough-cookie@^6.0.2",
     "tinyglobby": "npm:tinyglobby@^0.2.17",
     "until-async": "npm:until-async@^3.0.2",
     "node-mock-http": "npm:node-mock-http@^1.0.4",
