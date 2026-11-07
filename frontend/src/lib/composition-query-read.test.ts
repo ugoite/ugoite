@@ -98,8 +98,33 @@ describe("Composition explicit query count", () => {
       label_source: "source",
       arguments: node.query.arguments,
     };
+    delete response.queries[0].portable_sql;
     expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
-      { sql: "", saved_sql: { id: "saved", revision_id: "pinned" } },
+      {
+        sql: "",
+        saved_sql: { id: "saved", revision_id: "pinned" },
+        parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
+        parameter_types: { text: "string", minimum: "integer" },
+      },
+    );
+  });
+
+  it("preserves a valid zero-valued scalar argument for explicit Count", () => {
+    const { draft, response } = fixture();
+    draft.variables[1] = {
+      id: "floor",
+      kind: "input",
+      value_type: { scalar_type: "float", nullable: false },
+      required: true,
+      default: { kind: "float", value: 0 },
+    };
+    delete response.query_results.floor;
+    response.variable_values.floor = 0;
+    expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
+      {
+        parameters: { minimum: 0 },
+        parameter_types: { minimum: "float" },
+      },
     );
   });
 
