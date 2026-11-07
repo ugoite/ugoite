@@ -82,6 +82,7 @@ Deno.test(
       plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
       [
         "One saved Composition Design journey and one runtime journey at actual 200% zoom in Linux Chromium are evidenced; other Composition states and available modes remain unverified.",
+        "The runtime Metric's DOM and synchronous Xvfb root-window capture agree on 6 after input change; Playwright's result-element screenshot shows 4 and its viewport captures omit the Metric, so that screenshot path is unreliable under native zoom. Other Composition states and modes remain unverified.",
         "iPhone Safari device verification is excluded from the current task scope.",
       ],
     );
