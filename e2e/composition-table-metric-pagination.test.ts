@@ -20,6 +20,13 @@ type SeedState = {
   compositionName: string;
 };
 
+type PersistedCompositionWorkSnapshot = {
+  compositionRevisionIds: string[];
+  compositionRevisionCount: number;
+  forms: Array<{ id?: string; name?: string }>;
+  entryCount: number;
+};
+
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -237,6 +244,72 @@ async function seedComposition(
   };
 }
 
+async function getSavedSqlSource(
+  request: APIRequestContext,
+  spaceId: string,
+  savedSqlId: string,
+): Promise<string> {
+  const response = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+  );
+  expect(response.ok()).toBe(true);
+  const savedSql = await response.json() as { sql?: string };
+  expect(savedSql.sql).toBeTruthy();
+  return savedSql.sql!;
+}
+
+async function snapshotPersistedCompositionWork(
+  request: APIRequestContext,
+  seed: SeedState,
+): Promise<PersistedCompositionWorkSnapshot> {
+  const historyResponse = await request.get(
+    getBackendUrl(
+      `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history?limit=100&offset=0`,
+    ),
+  );
+  expect(historyResponse.ok()).toBe(true);
+  const history = await historyResponse.json() as {
+    revisions: Array<{ revision: { revision_id: string } }>;
+    total: number;
+  };
+  expect(history.revisions).toHaveLength(history.total);
+
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as Array<{
+    id?: string;
+    name?: string;
+  }>;
+  expect(forms.every((form) => form.id && form.name)).toBe(true);
+  const sourceForms = forms.filter((form) => form.name === seed.formName);
+  expect(sourceForms).toHaveLength(1);
+
+  const entryCountResponse = await request.post(
+    getBackendUrl(`/spaces/${seed.spaceId}/entries/query/count`),
+    {
+      data: {
+        query: { scope: { kind: "all" }, filters: [], sort: [] },
+      },
+    },
+  );
+  expect(entryCountResponse.ok()).toBe(true);
+  const entryCount = await entryCountResponse.json() as { count: number };
+  expect(Number.isInteger(entryCount.count)).toBe(true);
+
+  return {
+    compositionRevisionIds: history.revisions.map(({ revision }) =>
+      revision.revision_id
+    ).sort(),
+    compositionRevisionCount: history.total,
+    forms: forms.map(({ id, name }) => ({ id, name })).sort((a, b) =>
+      (a.id ?? "").localeCompare(b.id ?? "")
+    ),
+    entryCount: entryCount.count,
+  };
+}
+
 test.describe("Composition Table and Metric pagination", () => {
   let seed: SeedState;
 
@@ -252,7 +325,7 @@ test.describe("Composition Table and Metric pagination", () => {
     seed = await seedComposition(request);
   });
 
-  test("Table pagination leaves the SQL Metric and typed Input unchanged", async ({ page }) => {
+  test("Table pagination leaves the SQL Metric and typed Input unchanged", async ({ page, request }) => {
     test.setTimeout(120_000);
     // This scenario resolves a Form-backed table and Saved SQL metric over
     // 102 Entries. Keep those async page assertions bounded without using the
@@ -319,6 +392,10 @@ test.describe("Composition Table and Metric pagination", () => {
     // authorized evaluation path, but the table still receives only one
     // bounded page. Keep the server exchanges so this proves the browser did
     // not fetch and slice the remaining rows itself.
+    const persistedBeforeDesign = await snapshotPersistedCompositionWork(
+      request,
+      seed,
+    );
     type EvaluationRequest = {
       variables?: Record<string, unknown>;
       page?: { variable_id?: string; cursor?: string };
@@ -439,6 +516,10 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(designInput).toHaveValue("0");
     await uiExpect(designMetric).toHaveText("102");
     expect(designPageRequests).toHaveLength(1);
+
+    expect(await snapshotPersistedCompositionWork(request, seed)).toEqual(
+      persistedBeforeDesign,
+    );
   });
 
   test("Studio counts the pinned Table SQL separately and preserves its source while paging", async ({ page, request }) => {
