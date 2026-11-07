@@ -313,6 +313,34 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+          - id: domain-prerelease-source-rejection
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/yaml.rs
+            selector: { kind: test, name: rejects_the_removed_prerelease_source_document_without_migration }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-008#criterion.no-composition-legacy-reader
+          - id: cli-prerelease-source-lint-rejection
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: test, name: lint_rejects_the_removed_prerelease_source_document }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-008#criterion.no-composition-legacy-reader
+          - id: server-prerelease-source-save-rejection
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: composition_save_rejects_prerelease_source_shape_without_side_effects }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-008#criterion.no-composition-legacy-reader
+          - id: cli-prerelease-source-raw-history-export
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_composition_unsupported_version_recovery_matches_core_remote }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-008#criterion.no-composition-legacy-reader
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend
