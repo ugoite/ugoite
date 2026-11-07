@@ -1495,4 +1495,203 @@ test.describe("Saved SQL route", () => {
       );
     }
   });
+
+  test("REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable", async ({ page, request }) => {
+    const timestamp = Date.now();
+    const queryName = `Complex Form query ${timestamp}`;
+    const formName = `SQL_Workspace_Alternate_${timestamp}`;
+    const sql =
+      `SELECT COUNT(*) FROM "${formName}" WHERE "_ugoite_id" = $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" ASC LIMIT 9`;
+    let savedSqlId: string | undefined;
+    let entryId: string | undefined;
+    await ensureDefaultForm(request, spaceId);
+    try {
+      const formResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/forms`),
+        {
+          data: {
+            name: formName,
+            version: 1,
+            template: `# ${formName}\n\n## Body\n`,
+            fields: { Body: { type: "markdown", required: false } },
+          },
+        },
+      );
+      expect([200, 201], await formResponse.text()).toContain(
+        formResponse.status(),
+      );
+      const formsResponse = await request.get(
+        getBackendUrl(`/spaces/${spaceId}/forms`),
+      );
+      expect(formsResponse.ok(), await formsResponse.text()).toBe(true);
+      const forms = await formsResponse.json() as Array<{
+        id: string;
+        name: string;
+      }>;
+      const form = forms.find((candidate) => candidate.name === formName);
+      expect(form?.id).toBeTruthy();
+
+      const entryResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/entries`),
+        {
+          data: {
+            form: formName,
+            fields: { Body: `SQL journey ${timestamp}` },
+          },
+        },
+      );
+      expect(entryResponse.status(), await entryResponse.text()).toBe(201);
+      entryId = (await entryResponse.json() as { id: string }).id;
+
+      const createResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/sql`),
+        {
+          data: {
+            name: queryName,
+            kind: "user-query",
+            metadata: { formBindings: [{ name: formName, formId: form!.id }] },
+            sql,
+            variables: [{
+              type: "string",
+              name: "entry_id",
+              description: "",
+              default: entryId,
+            }],
+          },
+        },
+      );
+      const createBody = await createResponse.text();
+      expect([200, 201], createBody).toContain(createResponse.status());
+      savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      const rawSql = () => editor.evaluate((element) => element.textContent);
+      await expect.poll(rawSql).toBe(sql);
+
+      const parameters = { entry_id: entryId };
+      const parameterTypes = { entry_id: "string" };
+      const formBindingGuards = [{ name: formName, form_id: form!.id }];
+      const planResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/sql/query/plan`),
+        {
+          data: {
+            sql,
+            parameters,
+            parameter_types: parameterTypes,
+            form_binding_guards: formBindingGuards,
+          },
+        },
+      );
+      expect(planResponse.ok(), await planResponse.text()).toBe(true);
+
+      const queryResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/sql/query`),
+        {
+          data: {
+            sql,
+            parameters,
+            parameter_types: parameterTypes,
+            form_binding_guards: formBindingGuards,
+            limit: 50,
+          },
+        },
+      );
+      expect(queryResponse.ok(), await queryResponse.text()).toBe(true);
+      const output = await queryResponse.json() as {
+        columns: string[];
+        rows: Record<string, unknown>[];
+      };
+      expect(output.columns).toHaveLength(1);
+      expect(output.rows).toHaveLength(1);
+      expect(Number(output.rows[0][output.columns[0]])).toBe(1);
+
+      const toolbar = page.getByRole("group", { name: "SQL", exact: true });
+      const assertSqlUnchanged = async () => {
+        await expect.poll(rawSql).toBe(sql);
+      };
+      const openAndClose = async (action: string) => {
+        const button = toolbar.getByRole("button", {
+          name: action,
+          exact: true,
+        });
+        await expect(button).toBeEnabled();
+        await button.click();
+        const dialog = page.getByRole("dialog", {
+          name: action,
+          exact: true,
+        });
+        await expect(dialog).toBeVisible();
+        await dialog.locator("footer").getByRole("button", {
+          name: "Close",
+          exact: true,
+        }).click();
+        await expect(dialog).toHaveCount(0);
+        await assertSqlUnchanged();
+      };
+
+      for (const action of ["Form", "Columns", "Filter", "Sort"]) {
+        await openAndClose(action);
+      }
+
+      const structure = toolbar.getByRole("button", {
+        name: "Structure",
+        exact: true,
+      });
+      await expect(structure).toBeEnabled();
+      await structure.click();
+      const structureOptions = page.getByRole("group", {
+        name: "Structure options",
+        exact: true,
+      });
+      await structureOptions.getByRole("button", {
+        name: "SQL tree",
+        exact: true,
+      }).click();
+      const sqlTree = page.getByRole("dialog", {
+        name: "SQL tree",
+        exact: true,
+      });
+      await expect(sqlTree).toBeVisible();
+      await sqlTree.locator("footer").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
+      await expect(sqlTree).toHaveCount(0);
+      await assertSqlUnchanged();
+
+      await openAndClose("Arguments");
+    } finally {
+      const cleanupResults = await Promise.all([
+        ...(savedSqlId
+          ? [{
+            resource: "Saved SQL",
+            path: `/spaces/${spaceId}/sql/${savedSqlId}`,
+            response: request.delete(
+              getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+            ),
+          }]
+          : []),
+        ...(entryId
+          ? [{
+            resource: "Entry",
+            path: `/spaces/${spaceId}/entries/${entryId}`,
+            response: request.delete(
+              getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
+            ),
+          }]
+          : []),
+      ]);
+      for (const cleanup of cleanupResults) {
+        const response = await cleanup.response;
+        const body = await response.text();
+        expect(
+          response.ok(),
+          `DELETE ${cleanup.path} (${cleanup.resource}) returned HTTP ${response.status()}: ${body}`,
+        ).toBe(true);
+      }
+    }
+  });
 });

@@ -74,6 +74,8 @@ features:
             selector: { kind: symbol, name: SpaceSqlDetailRoute }
             claims:
               - kind: satisfies
+                criterion: REQ-FE-062#criterion.shared-workspace-actions
+              - kind: satisfies
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.form-binding-identifiers
