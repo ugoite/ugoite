@@ -23,7 +23,7 @@
     "npm:@oslojs/encoding@1.1.0": "1.1.0",
     "npm:@playwright/test@^1.60.0": "1.60.0",
     "npm:@solidjs/router@~0.16.1": "0.16.1_solid-js@1.9.13",
-    "npm:@solidjs/start@^1.3.2": "1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0",
+    "npm:@solidjs/start@^1.3.2": "1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0",
     "npm:@solidjs/testing-library@0.8.10": "0.8.10_@solidjs+router@0.16.1__solid-js@1.9.13_solid-js@1.9.13",
     "npm:@solidjs/testing-library@~0.8.10": "0.8.10_@solidjs+router@0.16.1__solid-js@1.9.13_solid-js@1.9.13",
     "npm:@tailwindcss/node@4.3.0": "4.3.0",
@@ -98,8 +98,7 @@
     "npm:vinxi@*": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
     "npm:vinxi@~0.5.11": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
     "npm:vite-plugin-pwa@^1.3.0": "1.3.0_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1_yaml@2.9.0",
-    "npm:vite-plugin-solid@2.11.12": "2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0",
-    "npm:vite-plugin-solid@^2.11.12": "2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0",
+    "npm:vite-plugin-solid@^2.11.15": "2.11.15_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0",
     "npm:vite@8.1.0": "8.1.0_esbuild@0.28.1_yaml@2.9.0",
     "npm:vite@^8.0.16": "8.1.0_esbuild@0.28.1_yaml@2.9.0",
     "npm:vitefu@^1.1.2": "1.1.3_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_esbuild@0.28.1_yaml@2.9.0",
@@ -2704,7 +2703,7 @@
         "solid-js"
       ]
     },
-    "@solidjs/start@1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0": {
+    "@solidjs/start@1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0": {
       "integrity": "sha512-tasDl3utVbtP0rr4InB3ntBIFV2upvEiFrOOCkRrAA3yBfjx9elpxnc94sJQXo65PNYdAAAkPIC6h93vLrtwHg==",
       "dependencies": [
         "@tanstack/server-functions-plugin",
@@ -3693,8 +3692,8 @@
     "base64-js@1.5.1": {
       "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA=="
     },
-    "baseline-browser-mapping@2.10.37": {
-      "integrity": "sha512-girxaJ7WZssDOFhzCGZTDKoTa1gk6A1TbflaYTpykLJ4UU9Fz9kx1aREM8JCuoVHbL8X8T/mJg7w2oYSq72Oig==",
+    "baseline-browser-mapping@2.11.35": {
+      "integrity": "sha512-GNk8KX52CHqeNKGk8+7tZnQab/2k1t/BgrUHPKNdijzpEhF1saPQZHVKb6m5loSAxB39gyrTYw34Qf9CQ3u1qQ==",
       "bin": true
     },
     "bcp-47-match@2.0.3": {
@@ -3754,8 +3753,8 @@
         "fill-range"
       ]
     },
-    "browserslist@4.28.2": {
-      "integrity": "sha512-48xSriZYYg+8qXna9kwqjIVzuQxi+KYWp2+5nCYnYKPTr0LvD89Jqk2Or5ogxz0NUMfIjhh2lIUX/LyX9B4oIg==",
+    "browserslist@4.29.5": {
+      "integrity": "sha512-khTmKu5NGYTotqcYo8Bew2k4RAE9PuXRSFRXG2lQBrCEQHyeQ/vX6gKMxfokwywBsLiXZMnHsmWMG1pnO8J7uQ==",
       "dependencies": [
         "baseline-browser-mapping",
         "caniuse-lite",
@@ -3831,8 +3830,8 @@
     "camelcase@8.0.0": {
       "integrity": "sha512-8WB3Jcas3swSvjIeA2yvCJ+Miyz5l1ZmB6HFb9R1317dt9LCQoswg/BGrmAmkWVEszSrrg4RwmO46qIm2OEnSA=="
     },
-    "caniuse-lite@1.0.30001799": {
-      "integrity": "sha512-hG1bReV+OUU+MOqK4t/ZWI0tZOyz3rqS9XuhOUz1cIcbwBKjOyJEJuw9ER5JuNyqxNk8u/JUVbGibBOL1yrjFw=="
+    "caniuse-lite@1.0.30001823": {
+      "integrity": "sha512-TQ5s/djDjNk1axreUW+4rULH+BmdCMLiJkhaXnO5wqivG7tITkSUj4ItIdzqdZHKaXcHAV8dhH3JxOM7/7bwqw=="
     },
     "ccount@2.0.1": {
       "integrity": "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="
@@ -4289,8 +4288,8 @@
       ],
       "bin": true
     },
-    "electron-to-chromium@1.5.372": {
-      "integrity": "sha512-M3yhbAlilnwqC8D21t28UCDGHyitShTmmLRU/H+b74P6Ski16Nb9HONYEaVpMj/pwC7BEo5B95FpjODLCWbtfA=="
+    "electron-to-chromium@1.5.479": {
+      "integrity": "sha512-uAJdJQ7vHa4TvPfzt1TOqoRgHmav5gwmqHMPLxBH6m8Cbj5R9/z/rygTOQiZ8pe5g0ZAEogga1bP6HoKcOzx/Q=="
     },
     "emmet@2.4.11": {
       "integrity": "sha512-23QPJB3moh/U9sT4rQzGgeyyGIrcM+GH5uVYg2C6wZIxAIJq7Ng3QLT79tl8FUwDXhyq9SusfknOrofAKqvgyQ==",
@@ -6691,8 +6690,8 @@
     "node-mock-http@1.0.4": {
       "integrity": "sha512-8DY+kFsDkNXy1sJglUfuODx1/opAGJGyrTuFqEoN90oRc2Vk0ZbD4K2qmKXBBEhZQzdKHIVfEJpDU8Ak2NJEvQ=="
     },
-    "node-releases@2.0.47": {
-      "integrity": "sha512-Uzmd6LXpouKo8EUK68IjH4+E01w/hXyV3R3g/geCJo+rXLNfh1xucB+LOzYEOQPSiUK3h/xZf0cQGcSsmyL2Og=="
+    "node-releases@2.0.63": {
+      "integrity": "sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q=="
     },
     "nopt@8.1.0": {
       "integrity": "sha512-ieGu42u/Qsa4TFktmaKEwM6MQH0pOWnaB3htzh0JRtx84+Mebc0cbZYN5bC+6WTZ4+77xrL9Pn5m7CV6VIkV7A==",
@@ -8564,8 +8563,8 @@
     "upath@1.2.0": {
       "integrity": "sha512-aZwGpamFO61g3OlfT7OQCHqhGnW43ieH9WZeP7QxN/G/jS4jfqUkZxoryvJgVPEcrl5NL/ggHsSmLMHuH64Lhg=="
     },
-    "update-browserslist-db@1.2.3_browserslist@4.28.2": {
-      "integrity": "sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==",
+    "update-browserslist-db@1.3.4_browserslist@4.29.5": {
+      "integrity": "sha512-t8wonIOdQyOjtPd2VktlBu6QjTVTks6v8bSi7kd0r2Vll8TK1JYDZtRRdbmCHOAMphkZgrzK+L+vXK4pyZ8t4A==",
       "dependencies": [
         "browserslist",
         "escalade",
@@ -8651,8 +8650,8 @@
         "workbox-window"
       ]
     },
-    "vite-plugin-solid@2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0_yaml@2.9.0": {
-      "integrity": "sha512-FgjPcx2OwX9h6f28jli7A4bG7PP3te8uyakE5iqsmpq3Jqi1TWLgSroC9N6cMfGRU2zXsl4Q6ISvTr2VL0QHpA==",
+    "vite-plugin-solid@2.11.15_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.1.0__esbuild@0.28.1__yaml@2.9.0": {
+      "integrity": "sha512-twDNPdUDbhem+UOXVu5PyRJvwHFmxSJ3+NxbCgT9iFL42EmWS7lBfFskVM/HXLwd86fh1BgHKJBfGCWkTu2zEg==",
       "dependencies": [
         "@babel/core",
         "@testing-library/jest-dom",
@@ -9435,7 +9434,7 @@
           "npm:until-async@^3.0.2",
           "npm:vinxi@~0.5.11",
           "npm:vite-plugin-pwa@^1.3.0",
-          "npm:vite-plugin-solid@^2.11.12",
+          "npm:vite-plugin-solid@^2.11.15",
           "npm:vite@^8.0.16",
           "npm:vitefu@^1.1.2",
           "npm:vitest@^4.1.8",
