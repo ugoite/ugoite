@@ -20,10 +20,11 @@ are described in `components/asset-field.yaml`.
 The shared visual and accessibility contract for source-native Entry and SQL
 result tables, including their use in Composition revisions, is in
 `components/result-table.yaml`.
-The planned shared SQL editing, parameter, preview, and result contract is in
-`components/sql-workspace.yaml`. Composition-specific source, naming, and
-drawer behavior is in `components/composition-studio.yaml`. Both are
-targets; their presence is not implementation evidence.
+The shared SQL editing, parameter, preview, and result contract is in
+`components/sql-workspace.yaml`. Composition-specific graph, canvas, and
+reader behavior is in `components/composition-studio.yaml`. These are current
+contracts; device and screen-reader validation is recorded separately and is
+not implied by their presence.
 
 The current browser is server-backed and authenticated. Shared navigation and
 the Browser Konase panel reference are described in

@@ -16215,7 +16215,8 @@ spec:
                             },
                             query: VariableGraphQuery {
                                 definition: VariableGraphQueryDefinition::InlineSql {
-                                    sql: "SELECT 7 AS total".to_string(),
+                                    sql: "SELECT CAST(9223372036854775807 AS BIGINT) AS total"
+                                        .to_string(),
                                 },
                                 arguments: Vec::new(),
                                 form_bindings: Vec::new(),
@@ -16410,7 +16411,7 @@ spec:
             body["query_results"]["total_query"]["value"],
             json!({
                 "kind": "scalar",
-                "value": {"kind": "integer", "value": 7}
+                "value": {"kind": "integer", "value": i64::MAX}
             })
         );
         assert_eq!(

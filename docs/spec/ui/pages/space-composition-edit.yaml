@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-20"
+updated: "2026-11-13"
 page:
   id: space-composition-edit
   title: Edit tool
@@ -33,23 +33,26 @@ components:
       single_control: true
       source: canonical Composition document through composition.save with the selected base revision
       persistence: append one Entry revision with existing receipt and stale-write semantics
-      readiness: strict typed graph, valid SQL descriptors and bindings, and each component placed exactly once
+      readiness: strict inline-SQL graph, valid result descriptors and bindings, and each component placed exactly once
     - id: composition-studio
       type: composition-studio
       reference: ../components/composition-studio.yaml
       contract_status: in_progress
+      default_mode: design
       modes: [design, variables]
       variables:
         kinds: [constant, input, query]
         query_outputs: [table, scalar]
-        editor: shared SQL Workspace with explicit SQL-parameter-to-variable bindings
+        query_source: inline_sql_only
+        editor: text-first SQL Workspace with explicit SQL-parameter-to-variable bindings
       design:
-        components: [input, text, table, value]
-        table_and_value_binding_picker:
-          tabs: [variables, forms, saved_sql]
-          saved_sql_revision: exact_entry_revision
-          persisted_component_reference: variable_only
-        inspector: one_variable_reference_action_for_table_and_value
+        components: [text, table, input]
+        table_binding: select_table_query_variable_or_create_one_in_variables_and_return
+        input_binding: select_input_variable_or_create_one_and_place_it
+        text_content: in_place_plain_template_using_rust_parsed_scalar_references
+        text_style: [title, heading, body, caption]
+        component_inspector: none
+        reader_edit_controls: hidden
       execution:
         preview: explicit, using immutable evaluation snapshots and current authorization
         results: transient stateless work

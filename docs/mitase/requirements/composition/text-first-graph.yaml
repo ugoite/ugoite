@@ -1,0 +1,70 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Text-first Composition graph and evaluation
+requirements:
+  - id: REQ-COMP-010
+    title: Text-first Composition graph and evaluation
+    description: >-
+      Define the replacement executable Composition document and graph
+      behavior. The shape currently persisted by main is rejected without
+      migration and is therefore scheduled for a next-minor change; raw Entry
+      history remains available for inspection and recovery.
+    priority: high
+    status: planned
+    criteria:
+      - id: inline-sql-typed-graph
+        kind: behavior
+        statement: >-
+          Composition variables are typed constants, inputs, or inline-SQL
+          queries with explicit SQL-parameter-to-variable bindings. A query
+          declares either an ordered table result or a scalar result. Saved SQL
+          references and all unrecognized query variants are rejected by the
+          executable document parser.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: table-text-input-components
+        kind: behavior
+        statement: >-
+          Composition components are Table, Text, or Input. Table references
+          one table-valued query and renders its result columns in SQL
+          projection order without a stored presentation projection. Input
+          references one input variable. Metric and unrecognized component
+          variants are rejected.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: rust-parsed-text-templates
+        kind: behavior
+        statement: >-
+          Text content is one plain template string. Rust parses ordered
+          literal and `{{variable_id}}` parts, with `\{{` representing a
+          literal `{{`. Missing references, table values, and JSON values are
+          rejected. Only displayable scalar values are emitted as text; HTML
+          or expression evaluation is not performed.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: exact-scalar-query-contract
+        kind: behavior
+        statement: >-
+          A scalar query result succeeds only with exactly one result column
+          and one row. Zero rows, a NULL value, multiple rows, multiple columns,
+          type drift, and access denial remain distinguishable. No first row or
+          column is selected implicitly, and supported integer and decimal
+          values retain their exact representation.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: current-query-authority-and-schema
+        kind: security
+        statement: >-
+          Query planning and evaluation recheck current Form identity, ACL,
+          Publication, SQL validity, explicit argument types, and the declared
+          result descriptor. Results are bounded transient Work; stale or
+          unauthorized values are not exposed as current Composition output.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: append-only-save-and-raw-recovery
+        kind: security
+        statement: >-
+          Composition save retains the existing idempotent receipt, stale
+          revision conflict, and append-only Entry history behavior. An
+          unsupported historical Composition shape is not executed or silently
+          migrated; raw inspect, export, and history remain available. Restore
+          remains supported for revisions in the current Composition shape,
+          while the replaced historical shape cannot be restored as an
+          executable Composition and is scheduled for the next minor version.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

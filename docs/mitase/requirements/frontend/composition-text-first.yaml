@@ -1,0 +1,46 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Text-first Composition Studio
+requirements:
+  - id: REQ-FE-083
+    title: Text-first Composition Studio
+    description: >-
+      Define the browser authoring and reader boundary for the current
+      Composition graph, using concise placement and controls from the Ugoite
+      UI policies.
+    priority: high
+    status: planned
+    criteria:
+      - id: design-and-variables-modes
+        kind: behavior
+        statement: >-
+          Composition Studio opens in Design and exposes only Design and
+          Variables modes. Design inserts only Text, Table, and Input
+          components; it does not offer Metric or Saved SQL binding pickers.
+          Reader output contains no authoring mode or editing controls.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: text-is-edited-in-place
+        kind: behavior
+        statement: >-
+          Authors edit a Text template in its canvas position and choose its
+          Title, Heading, Body, or Caption style with a compact adjacent
+          control. The same reader renderer displays the validated value using
+          text nodes; editing controls are absent in reader output.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: variable-creation-completes-pending-placement
+        kind: behavior
+        statement: >-
+          When Design needs a missing Table or Input variable, successful
+          creation in Variables returns to the originating Design position and
+          completes the pending reference and placement. Cancel or failed
+          creation leaves no partial component or binding in the draft.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: variables-show-local-sql-diagnostics
+        kind: behavior
+        statement: >-
+          SQL variables keep their authored SQL source in one editor. Lint,
+          authorized schema check, and explicit execution have distinct
+          outcomes; parameter bindings and errors are presented next to the
+          relevant SQL or variable control without a separate arguments page.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]

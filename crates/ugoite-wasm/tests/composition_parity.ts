@@ -227,7 +227,11 @@ async function main(): Promise<void> {
     action: "domain.parse_composition_text_template",
     value: { template: "Missing {{close" },
   });
-  assertEqual(malformedTextTemplate.ok, false, "malformed Text template result");
+  assertEqual(
+    malformedTextTemplate.ok,
+    false,
+    "malformed Text template result",
+  );
   assertEqual(
     (malformedTextTemplate.error as Record<string, unknown>).code,
     "unclosed_variable",
@@ -573,8 +577,8 @@ async function main(): Promise<void> {
   );
 
   const invalidVariableReferenceYaml = yaml.replace(
-    "      variable: month_total",
-    "      variable: missing",
+    'content: "Total: {{month_total}}"',
+    'content: "Total: {{missing}}"',
   );
   if (invalidVariableReferenceYaml === yaml) {
     throw new Error(
