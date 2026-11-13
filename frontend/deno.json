@@ -97,7 +97,7 @@
     "vitest/config": "npm:vitest@^4.1.8/config",
     "vitest/globals": "npm:vitest@^4.1.8/globals",
     "vitest/": "npm:vitest@^4.1.8/",
-    "workbox-build": "npm:workbox-build@^7.4.0",
+    "workbox-build": "npm:workbox-build@^7.4.1",
     "workbox-window": "npm:workbox-window@^7.4.0",
     "yaml": "npm:yaml@^2.9.0"
   }
