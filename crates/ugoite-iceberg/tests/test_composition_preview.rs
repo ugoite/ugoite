@@ -20,7 +20,7 @@ use ugoite_domain::composition::{
     VariableGraphResultType, VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor,
     VariableGraphScalarType, VariableGraphValidatedResult,
 };
-use ugoite_domain::form::{sql_column_name, sql_relation_name};
+use ugoite_domain::form::{sql_column_name, sql_relation_name, FormChange, FormChangeSet};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::{
@@ -783,47 +783,58 @@ async fn saved_graph_ignores_unused_form_field_changes() -> Result<()> {
     ));
     assert!(response.diagnostics.is_empty());
 
-    // Changing the display label of that still-unused field preserves the
-    // same saved query result contract as well.
-    let relabeled_form = service
-        .upsert_form_result(
-            &space_id,
-            &json!({
-                "name": "Composition-Preview",
-                "fields": {
-                    "title": {"id": 100, "type": "string", "required": false},
-                    "note": {
-                        "id": 101,
-                        "type": "string",
-                        "required": false,
-                        "label": "Memo"
-                    }
-                }
-            }),
-        )
+    // Renaming that still-unused field keeps its stable ID and must preserve
+    // the same saved query result contract.
+    let workspace = ugoite_iceberg::iceberg_store::native_mutation_workspace(
+        service.operator(),
+        &service.workspace_path(&space_id),
+    )
+    .await?;
+    let current_form = workspace.load_form(form_id).await?;
+    let note_field = current_form
+        .fields
+        .iter()
+        .find(|field| field.name == "note")
+        .context("unused note field")?;
+    let rename = FormChangeSet {
+        form_id,
+        expected_version: Some(current_form.version),
+        changes: vec![FormChange::RenameField {
+            field_id: note_field.id,
+            name: "memo".to_owned(),
+        }],
+    };
+    let renamed_form = workspace
+        .commit(ugoite_iceberg::publication_context(
+            "composition-preview-rename-unused-field",
+            "test.form.evolve",
+            &rename,
+        )?)?
+        .evolve_form(&rename)
         .await?;
-    assert_eq!(relabeled_form.form_id, form_id);
+    assert_eq!(renamed_form.id, form_id);
+    assert!(renamed_form
+        .fields
+        .iter()
+        .any(|field| field.id == note_field.id && field.name == "memo"));
     service
         .create_structured_entry_with_receipt(
             &space_id,
-            "composition-preview-schema-relabel",
+            "composition-preview-schema-rename",
             "Composition-Preview".to_owned(),
             Vec::new(),
             BTreeMap::from([
                 (
                     "title".to_owned(),
-                    Value::String("relabeled-field-row".to_owned()),
+                    Value::String("renamed-field-row".to_owned()),
                 ),
-                (
-                    "note".to_owned(),
-                    Value::String("relabeled-note".to_owned()),
-                ),
+                ("memo".to_owned(), Value::String("renamed-note".to_owned())),
             ]),
             BTreeMap::new(),
             "preview-test",
         )
         .await?;
-    let relabeled = service
+    let renamed = service
         .evaluate_composition_graph_local(
             &space_id,
             CompositionQueryEvaluationTarget::SavedRevision {
@@ -839,18 +850,18 @@ async fn saved_graph_ignores_unused_form_field_changes() -> Result<()> {
             None,
         )
         .await?;
-    assert!(relabeled.ok);
+    assert!(renamed.ok);
     assert_eq!(
-        relabeled
+        renamed
             .plan
             .as_ref()
-            .context("saved query plan after unused field relabel")?
+            .context("saved query plan after unused field rename")?
             .queries[0]
             .schema_fingerprint,
         original_schema_fingerprint
     );
     assert!(matches!(
-        relabeled.query_results.get("source").map(|result| &result.result),
+        renamed.query_results.get("source").map(|result| &result.result),
         Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 5
     ));
 
