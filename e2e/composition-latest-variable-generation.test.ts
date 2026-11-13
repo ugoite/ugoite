@@ -4,7 +4,12 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
@@ -39,16 +44,7 @@ async function seedRapidVariableComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
   const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const spaceResponse = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-generation-${suffix}`,
-      name: `Composition generation ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(spaceResponse.status());
-  const space = await spaceResponse.json() as { space_uid?: string };
-  expect(space.space_uid).toBeTruthy();
-  const spaceId = space.space_uid!;
+  const spaceId = await getDefaultSpaceId(request);
 
   const formName = `GenerationAmounts${crypto.randomUUID().slice(0, 8)}`;
   const formResponse = await request.post(

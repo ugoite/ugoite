@@ -19,6 +19,7 @@ if [[ "${EVENT_NAME:-}" == "pull_request" &&
   for result_name in \
     RUST_CHECK_RESULT RUST_TEST_RESULT S3_SHARED_AUTHORIZATION_RESULT \
     WEB_RESULT ARTIFACT_BUILD_RESULT E2E_SMOKE_MOBILE_RESULT \
+    E2E_COMPOSITION_STUDIO_RESULT E2E_COMPOSITION_METRIC_RESULT \
     E2E_OWNER_RESULT E2E_PORTABLE_RESULT DOCSITE_NAV_RESULT \
     CP1_FIXTURES_RESULT CP1_QUERY_RESULT CP1_EXPORT_RESULT PR_CONTEXT_RESULT; do
     result="${!result_name:-missing}"
@@ -72,6 +73,8 @@ validate_lane "s3-shared-authorization" "${PLAN_RUST_TEST:-missing}" "${S3_SHARE
 validate_lane "web" "${PLAN_WEB:-missing}" "${WEB_RESULT:-missing}"
 validate_lane "artifact-build" "${PLAN_ARTIFACTS:-missing}" "${ARTIFACT_BUILD_RESULT:-missing}"
 validate_lane "e2e-smoke-mobile" "${PLAN_ARTIFACTS:-missing}" "${E2E_SMOKE_MOBILE_RESULT:-missing}"
+validate_lane "e2e-composition-studio" "${PLAN_ARTIFACTS:-missing}" "${E2E_COMPOSITION_STUDIO_RESULT:-missing}"
+validate_lane "e2e-composition-metric" "${PLAN_ARTIFACTS:-missing}" "${E2E_COMPOSITION_METRIC_RESULT:-missing}"
 validate_lane "e2e-owner" "${PLAN_ARTIFACTS:-missing}" "${E2E_OWNER_RESULT:-missing}"
 validate_lane "e2e-portable" "${PLAN_ARTIFACTS:-missing}" "${E2E_PORTABLE_RESULT:-missing}"
 validate_lane "docsite-nav" "${PLAN_DOCSITE_NAV:-missing}" "${DOCSITE_NAV_RESULT:-missing}"

@@ -461,12 +461,15 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() =>
       expect(screen.getByTestId("query-page")).toHaveTextContent("2")
     );
-    expect(evaluateMock.mock.calls[1][1].page).toEqual({
+    const nextPageRequest = evaluateMock.mock.calls.find(([, request]) =>
+      request.page?.cursor === "next-page"
+    );
+    expect(nextPageRequest?.[1].page).toEqual({
       variable_id: "rows",
       cursor: "next-page",
     });
     // Paging one Workspace query must not execute unrelated graph branches.
-    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
+    expect(nextPageRequest?.[1].requested_queries).toEqual(["rows"]);
     fireEvent.click(
       screen.getByRole("button", { name: "Previous query page" }),
     );
@@ -1318,10 +1321,6 @@ describe("CompositionStudio graph surface", () => {
           {
             name: "custom",
             value_type: { scalar_type: "string", nullable: true },
-          },
-          {
-            name: "_ugoite_id",
-            value_type: { scalar_type: "string", nullable: false },
           },
         ],
       })

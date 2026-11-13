@@ -17,6 +17,10 @@ import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
+import {
+  expectedCompositionFormSeedSql,
+  type CompositionFormSeedField,
+} from "./lib/composition-form.ts";
 import { parse as parseYaml } from "yaml";
 
 type StudioSeedState = {
@@ -133,7 +137,7 @@ async function seedStudioKnowledge(
     id?: string;
     name?: string;
     sql_relation?: string;
-    fields?: Record<string, { sql_column?: string }>;
+    fields?: Record<string, CompositionFormSeedField>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
   expect(form?.id).toBeTruthy();
@@ -249,7 +253,7 @@ async function seedReactiveMetricKnowledge(
   const forms = await formsResponse.json() as Array<{
     name?: string;
     sql_relation?: string;
-    fields?: Record<string, { sql_column?: string }>;
+    fields?: Record<string, CompositionFormSeedField>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
   expect(form?.sql_relation).toBeTruthy();
@@ -1024,7 +1028,7 @@ test.describe("Composition Studio Journey", () => {
         id?: string;
         name?: string;
         sql_relation?: string;
-        fields?: Record<string, { sql_column?: string }>;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1236,7 +1240,7 @@ test.describe("Composition Studio Journey", () => {
           "";
 
       expect(savedYaml).toContain(
-        `SELECT * FROM "${seed.formName}"`,
+        expectedCompositionFormSeedSql(seed.formName, form?.fields),
       );
       expect(savedYaml).toContain(
         `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
@@ -1314,7 +1318,7 @@ test.describe("Composition Studio Journey", () => {
       const forms = await formsResponse.json() as Array<{
         id?: string;
         name?: string;
-        fields?: Record<string, { sql_column?: string }>;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1474,6 +1478,7 @@ test.describe("Composition Studio Journey", () => {
       const forms = await formsResponse.json() as Array<{
         id?: string;
         name?: string;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1695,7 +1700,7 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(originalFormQuery?.query).toMatchObject({
         kind: "inline_sql",
-        sql: `SELECT * FROM ${sqlIdentifier(seed.formName)}`,
+        sql: expectedCompositionFormSeedSql(seed.formName, form?.fields),
         form_bindings: [{ relation: seed.formName, form_id: form!.id! }],
       });
       expect(originalFormQuery?.query).toEqual(originalSavedFormQuery?.query);
@@ -1879,7 +1884,7 @@ test.describe("Composition Studio Journey", () => {
       )?.query;
       expect(savedFormQuery).toBeDefined();
       expect(savedFormQuery?.sql).toBe(
-        `SELECT * FROM ${sqlIdentifier(formName)}`,
+        expectedCompositionFormSeedSql(formName, form?.fields),
       );
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
@@ -1934,7 +1939,7 @@ test.describe("Composition Studio Journey", () => {
       id?: string;
       name?: string;
       sql_relation?: string;
-      fields?: Record<string, { sql_column?: string }>;
+      fields?: Record<string, CompositionFormSeedField>;
     }>;
     const form = forms.find((candidate) => candidate.name === formName);
     expect(form?.id).toBeTruthy();
@@ -2037,7 +2042,7 @@ test.describe("Composition Studio Journey", () => {
       )?.query;
       expect(savedFormQuery).toBeDefined();
       expect(savedFormQuery?.sql).toBe(
-        `SELECT * FROM ${sqlIdentifier(formName)}`,
+        expectedCompositionFormSeedSql(formName, form?.fields),
       );
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
@@ -2402,7 +2407,7 @@ test.describe("Composition Studio Journey", () => {
       id?: string;
       name?: string;
       sql_relation?: string;
-      fields?: Record<string, { sql_column?: string }>;
+      fields?: Record<string, CompositionFormSeedField>;
     }>;
     const form = forms.find((candidate) => candidate.name === formName);
     const sqlRelation = form?.sql_relation;

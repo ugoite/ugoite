@@ -871,6 +871,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
         ...candidate,
         id: uniqueId(id),
       }, component === "table" ? "table" : "scalar");
+      if (component === "table") {
+        resolved.tablePresentation = {
+          columns: projectableColumns.map(({ label }) => ({
+            column: label,
+            label,
+          })),
+        };
+      }
       return resolved;
     },
     prepareSavedSql: async (

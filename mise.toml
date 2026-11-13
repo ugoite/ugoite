@@ -700,7 +700,15 @@ run = [
   { task = "test:e2e:smoke-and-asset-owned" },
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
-  { task = "test:e2e:composition-studio" },
+]
+
+[tasks."ci:lane:e2e-composition-studio"]
+description = "Run Composition Studio authoring E2E against the loaded CI image"
+run = [{ task = "test:e2e:composition-studio" }]
+
+[tasks."ci:lane:e2e-composition-metric"]
+description = "Run Composition Metric and source ACL E2E against the loaded CI image"
+run = [
   { task = "test:e2e:composition-metric" },
   { task = "test:e2e:composition-source-acl-isolation" },
 ]

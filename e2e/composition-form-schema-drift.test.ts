@@ -1,11 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  expectedCompositionFormSeedSql,
+  type CompositionFormSeedField,
+} from "./lib/composition-form.ts";
 
 type FormSummary = {
   id?: string;
   name?: string;
-  fields?: Record<string, { sql_column?: string }>;
+  fields?: Record<string, CompositionFormSeedField>;
 };
 
 type SavedRevision = {
@@ -160,14 +164,16 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     );
     expect(originalQuery?.query?.schema_fingerprint)
       .toMatch(/^[0-9a-f]{64}$/);
-    expect(originalQuery?.query?.sql).toContain("SELECT *");
+    expect(originalQuery?.query?.sql).toBe(
+      expectedCompositionFormSeedSql(formName, formBefore?.fields),
+    );
     const originalTable = originalDocument.spec?.components?.find(
       (component) =>
         component.kind === "table" &&
         component.variable === variableId,
     );
     expect(originalTable?.presentation?.columns).toEqual([
-      { column: "field_100", label: "Title" },
+      { column: "Title", label: "Title" },
     ]);
 
     // This API call represents the external event: the same Form gains one

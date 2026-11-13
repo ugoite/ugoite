@@ -44,7 +44,8 @@ Root task composition:
   source without running E2E;
 - `ci:artifacts:load`: verify the same-run manifest, source SHA, CI run ID, and
   selected CLI or image digests, then selectively load or extract those files;
-- `ci:lane:e2e-smoke-mobile`, `ci:lane:e2e-owner`, and
+- `ci:lane:e2e-smoke-mobile`, `ci:lane:e2e-composition-studio`,
+  `ci:lane:e2e-composition-metric`, `ci:lane:e2e-owner`, and
   `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
   build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;

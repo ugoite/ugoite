@@ -1,8 +1,12 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  expectedCompositionFormSeedSql,
+  type CompositionFormSeedField,
+} from "./lib/composition-form.ts";
 
-type FormField = { sql_column?: string };
+type FormField = CompositionFormSeedField;
 type FormSummary = {
   id?: string;
   name?: string;
@@ -897,7 +901,9 @@ test("Composition shared query edits update every display", async ({ page, reque
   const form = forms.find((candidate) => candidate.name === formName);
   expect(form?.id).toBeTruthy();
   expect(form?.sql_relation).toBeTruthy();
+  const itemColumn = form?.fields?.Item?.sql_column;
   const amountColumn = form?.fields?.Amount?.sql_column;
+  expect(itemColumn).toBeTruthy();
   expect(amountColumn).toBeTruthy();
   const formVariableId = `${slug(formName)}_rows`;
 
@@ -948,11 +954,16 @@ test("Composition shared query edits update every display", async ({ page, reque
   await page.getByRole("tab", { name: "Variables", exact: true }).click();
   await page.getByRole("button", { name: formVariableId, exact: true }).click();
   const editor = page.getByRole("textbox", { name: "SQL", exact: true });
-  await expect(editor).toContainText("SELECT *", { timeout: 30_000 });
+  await expect(editor).toContainText(
+    expectedCompositionFormSeedSql(formName, form?.fields),
+    { timeout: 30_000 },
+  );
   await editor.click();
   await editor.press("ControlOrMeta+A");
   await editor.pressSequentially(
-    `SELECT * FROM ${sqlIdentifier(form!.sql_relation!)} WHERE ${
+    `SELECT ${sqlIdentifier(itemColumn!)} AS "Item", ${
+      sqlIdentifier(amountColumn!)
+    } AS "Amount" FROM ${sqlIdentifier(formName)} WHERE ${
       sqlIdentifier(amountColumn!)
     } > 15`,
   );

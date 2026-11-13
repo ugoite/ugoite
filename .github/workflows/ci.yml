@@ -834,6 +834,26 @@ jobs:
             echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
           } >>"$GITHUB_STEP_SUMMARY"
 
+  e2e-composition-studio:
+    name: ci-e2e-composition-studio
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
+    uses: ./.github/workflows/e2e-artifact-consumer.yml
+    with:
+      job_name: Composition Studio E2E
+      lane_name: composition-studio
+      lane_task: ci:lane:e2e-composition-studio
+
+  e2e-composition-metric:
+    name: ci-e2e-composition-metric
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
+    uses: ./.github/workflows/e2e-artifact-consumer.yml
+    with:
+      job_name: Composition Metric E2E
+      lane_name: composition-metric
+      lane_task: ci:lane:e2e-composition-metric
+
   e2e-portable:
     name: ci-e2e-portable
     needs: [impact, artifact-build]
@@ -1355,7 +1375,7 @@ jobs:
   required:
     name: ci-required
     if: ${{ always() }}
-    needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]
+    needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-composition-metric, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
@@ -1386,6 +1406,8 @@ jobs:
           WEB_RESULT: ${{ needs.web.result }}
           ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}
           E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}
+          E2E_COMPOSITION_STUDIO_RESULT: ${{ needs.e2e-composition-studio.result }}
+          E2E_COMPOSITION_METRIC_RESULT: ${{ needs.e2e-composition-metric.result }}
           E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}
           E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}
           DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}
