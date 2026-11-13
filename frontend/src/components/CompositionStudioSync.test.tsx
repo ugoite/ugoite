@@ -474,7 +474,11 @@ describe("CompositionStudio graph surface", () => {
       screen.getByRole("button", { name: "Previous query page" }),
     );
     expect(screen.getByTestId("query-page")).toHaveTextContent("1");
-    expect(evaluateMock).toHaveBeenCalledTimes(2);
+    // Design preview can evaluate independently; returning to a cached page
+    // must not issue another cursor-based request.
+    expect(
+      evaluateMock.mock.calls.filter(([, request]) => request.page),
+    ).toHaveLength(1);
     let completeCount!: (value: number) => void;
     countMock.mockImplementationOnce(() =>
       new Promise<number>((resolve) => {
