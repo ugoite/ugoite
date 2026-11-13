@@ -23,7 +23,7 @@ use ugoite_domain::composition::{
     VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
     MAX_COMPOSITION_COLLECTION_ITEMS,
 };
-use ugoite_domain::sql_document::{parse_sql_document, SqlDocumentStatus};
+use ugoite_domain::sql_document::{normalize_sql_template, parse_sql_document, SqlDocumentStatus};
 use uuid::Uuid;
 
 /// The default bounded page size for one variable-graph table query.
@@ -953,13 +953,16 @@ fn compile_validated_query_node_with_deferred_dependencies(
                     &node.id,
                 )]);
             }
-            if parse_sql_document(sql).status != SqlDocumentStatus::Parsed {
+            let normalized = normalize_sql_template(sql);
+            if normalized.error.is_some()
+                || parse_sql_document(&normalized.sql).status != SqlDocumentStatus::Parsed
+            {
                 return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
                     VariableGraphQueryRequestDiagnosticCode::InvalidInlineSql,
                     &node.id,
                 )]);
             }
-            (sql.clone(), None)
+            (normalized.sql, None)
         }
         VariableGraphQueryDefinition::SavedSql {
             entry_id,
@@ -1249,12 +1252,17 @@ pub fn validate_variable_graph_sql_page(
         )]);
     };
 
-    let selected_column = match &query.definition {
-        VariableGraphQueryDefinition::InlineSql { sql }
-            if request.saved_sql.is_none() && request.sql == *sql =>
-        {
-            None
+    let inline_request_matches = match &query.definition {
+        VariableGraphQueryDefinition::InlineSql { sql } => {
+            let normalized = normalize_sql_template(sql);
+            request.saved_sql.is_none()
+                && normalized.error.is_none()
+                && request.sql == normalized.sql
         }
+        VariableGraphQueryDefinition::SavedSql { .. } => false,
+    };
+    let selected_column = match &query.definition {
+        VariableGraphQueryDefinition::InlineSql { .. } if inline_request_matches => None,
         VariableGraphQueryDefinition::SavedSql {
             entry_id: Some(entry_id),
             revision_id: Some(revision_id),
@@ -1946,6 +1954,44 @@ mod tests {
             exact_integer_rows: None,
             composition_count_snapshot: None,
         }
+    }
+
+    #[test]
+    fn inline_sql_templates_normalize_for_execution_and_result_source_validation() {
+        let node = scalar_query_node(
+            "result",
+            "SELECT {{ amount }} + '{{ignored}}' /* {{also_ignored}} */",
+            vec![argument(
+                "amount",
+                "amount_input",
+                VariableGraphScalarType::Integer,
+                false,
+            )],
+        );
+        let graph = graph_for(node);
+        let resolved_values =
+            BTreeMap::from([("amount_input".to_owned(), VariableGraphLiteral::Integer(8))]);
+        let mut evaluation =
+            VariableGraphQueryEvaluation::new(&graph, test_execution_id(), &resolved_values)
+                .expect("template compiles through Rust graph validation");
+        let request = evaluation
+            .compile_request("result")
+            .expect("evaluation compiles the normalized request");
+
+        assert_eq!(
+            request.sql,
+            "SELECT $amount + '{{ignored}}' /* {{also_ignored}} */"
+        );
+        assert_eq!(request.parameters["amount"], Value::from(8));
+
+        let page = result_page(
+            &request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 9})],
+        );
+        evaluation
+            .accept_page("result", &request, &page)
+            .expect("evaluation accepts the page for the normalized source");
     }
 
     #[test]

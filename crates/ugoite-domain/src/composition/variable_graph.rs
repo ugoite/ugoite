@@ -493,8 +493,11 @@ pub fn compile_variable_graph(
                 }
                 let inline_parameters = match &query.definition {
                     VariableGraphQueryDefinition::InlineSql { sql } => {
-                        let document = crate::sql_document::parse_sql_document(sql);
-                        if document.status != crate::sql_document::SqlDocumentStatus::Parsed {
+                        let normalized = crate::sql_document::normalize_sql_template(sql);
+                        let document = crate::sql_document::parse_sql_document(&normalized.sql);
+                        if normalized.error.is_some()
+                            || document.status != crate::sql_document::SqlDocumentStatus::Parsed
+                        {
                             diagnostics.push(VariableGraphDiagnostic::for_variable(
                                 VariableGraphDiagnosticCode::InvalidInlineSql,
                                 &node.id,
@@ -1484,6 +1487,42 @@ mod tests {
                 None,
             )]
         );
+    }
+
+    #[test]
+    fn inline_sql_template_parameters_use_normalized_names_and_reject_bad_markers() {
+        let mut templated = query("result", vec![binding("day", "input")]);
+        if let VariableGraphNodeKind::Query { query, .. } = &mut templated.kind {
+            query.definition = VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT {{ day }}, '{{ignored}}' /* {{also_ignored}} */".to_owned(),
+            };
+        }
+        assert!(compile_variable_graph(&graph(vec![
+            input("input", VariableGraphScalarType::Integer, false),
+            templated,
+        ]))
+        .is_ok());
+
+        for sql in ["SELECT {{bad-name}}", "SELECT {{missing"] {
+            let mut invalid = query("result", vec![binding("day", "input")]);
+            if let VariableGraphNodeKind::Query { query, .. } = &mut invalid.kind {
+                query.definition = VariableGraphQueryDefinition::InlineSql {
+                    sql: sql.to_owned(),
+                };
+            }
+            assert_eq!(
+                compile_variable_graph(&graph(vec![
+                    input("input", VariableGraphScalarType::Integer, false),
+                    invalid,
+                ]))
+                .expect_err("malformed markers must fail graph validation"),
+                [VariableGraphDiagnostic::for_variable(
+                    VariableGraphDiagnosticCode::InvalidInlineSql,
+                    "result"
+                )],
+                "SQL: {sql:?}"
+            );
+        }
     }
 
     #[test]

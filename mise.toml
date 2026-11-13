@@ -526,6 +526,7 @@ run = [
 description = "Run focused Composition graph protocol, Server adapter, and CLI parity tests"
 run = [
   "cargo nextest run -p ugoite-api-client --lib --locked -E 'test(removed_composition_operations_have_no_protocol_fallback) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol)'",
+  { task = "test:composition-query" },
   "cargo nextest run -p ugoite-server --lib --locked -E 'test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_pinned_saved_sql_schema_with_date_parameters) | test(composition_restore_route_rechecks_current_authorization_after_revocation)'",
   "cargo nextest run -p ugoite-server --test api_contract --locked -E 'test(openapi_exposes_graph_composition_operations_without_legacy_adapters)'",
   "cargo nextest run -p ugoite-iceberg --test test_composition_preview --locked -E 'test(local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes)'",
@@ -545,6 +546,10 @@ run = [
   "cargo nextest run -p ugoite-cli --locked --lib -E 'test(sql_cli_tests::)'",
   "cargo nextest run -p ugoite-cli --locked --test test_cli_endpoint_routing -E 'test(test_sql_lint_returns_portable_diagnostics_without_a_connection)'",
 ]
+
+[tasks."test:composition-query"]
+description = "Run Composition query graph compilation and evaluation tests"
+run = "cargo nextest run -p ugoite-core --lib --locked -E 'test(composition_query::)'"
 
 [tasks."test:sql-check"]
 description = "Verify local and remote SQL check use schema-only planning"
