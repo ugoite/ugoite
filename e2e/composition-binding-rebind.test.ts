@@ -957,7 +957,7 @@ test("Composition shared query edits update every display", async ({ page, reque
   const editor = page.getByRole("textbox", { name: "SQL", exact: true });
   await expect(editor).toBeVisible({ timeout: 30_000 });
   expect(
-    normalizeCompositionFormSeedSql(await editor.inputValue()),
+    normalizeCompositionFormSeedSql(await editor.innerText()),
   ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
   await editor.click();
   await editor.press("ControlOrMeta+A");
