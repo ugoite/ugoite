@@ -244,7 +244,7 @@ export class CompositionBindingDiagnosticError extends Error {
 export interface CompositionFormChoice {
   id: string;
   name: string;
-  /** Server-owned relation name used only to author the inline query. */
+  /** Current Form name accepted by the planner for authorized resolution. */
   relation: string;
   fields: Array<{
     /** Human-readable Form field name shown in the picker. */
@@ -253,6 +253,8 @@ export interface CompositionFormChoice {
     column: string;
     /** Field type as declared by the Form; unsupported types stay visible in Tables. */
     type: string;
+    /** True only when the current Form authorization exposes this field to SQL. */
+    projectable: boolean;
   }>;
 }
 

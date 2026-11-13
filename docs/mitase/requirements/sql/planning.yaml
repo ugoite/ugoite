@@ -90,3 +90,12 @@ requirements:
                 criterion: REQ-SQL-002#criterion.definition-preflight
                 covers: [FEAT-SQL-003#binding.frontend/target.saved-draft]
                 runner: { runner: frontend-vitest-file, arguments: { file: 'src/routes/spaces/[space_id]/sql/[sql_id].test.tsx', test: plans and saves an argument type change as a draft while keeping exact revision previews } }
+          - id: form-guard-request-through-plan-and-run
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-081#criterion.human-form-name-binding
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" } }

@@ -7093,6 +7093,51 @@ impl UgoiteService {
         Ok(EntryCount { count })
     }
 
+    /// Plans one stateless, read-only SQL request for the trusted local
+    /// operator boundary without materializing result rows.
+    pub async fn plan_sql(
+        &self,
+        space_id: &str,
+        request: SqlQueryPlanRequest,
+    ) -> Result<SqlQueryPlan> {
+        request.validate().map_err(sql_query_contract_error)?;
+        let query_request = SqlQueryRequest {
+            sql: request.sql,
+            parameters: request.parameters,
+            parameter_types: request.parameter_types,
+            include_exact_integer_values: false,
+            limit: 1,
+            continuation: None,
+            execution_id: None,
+            saved_sql: request.saved_sql,
+            binding_base: request.binding_base,
+            form_binding_guards: request.form_binding_guards,
+        };
+        let prepared =
+            sql_execution::prepare_sql_request(self, space_id, &query_request, None).await?;
+        self.validate_complete_space(space_id).await?;
+
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
+        let result_schema = index::plan_sql_query_authorized_by_form_at_checkpoint_stateless(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &execution_sql,
+            &relation_scopes,
+            prepared.parameters,
+            forms,
+            checkpoint,
+        )
+        .await?;
+
+        Ok(SqlQueryPlan { result_schema })
+    }
+
     /// Executes one stateless, read-only SQL page for the trusted local
     /// operator boundary. The publication is fixed by the first request and
     /// carried by an opaque continuation; no query state is written.

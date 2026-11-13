@@ -8,7 +8,7 @@ RUST_BACKTRACE = "1"
 DENO_NO_UPDATE_CHECK = "1"
 
 [tools]
-deno = "2.8.3"
+deno = "2.9.8"
 helm = "3.19.0"
 
 [settings]
@@ -524,11 +524,39 @@ run = [
 
 [tasks."test:composition-adapter"]
 description = "Run focused Composition graph protocol, Server adapter, and CLI parity tests"
-run = "cargo nextest run -p ugoite-api-client -p ugoite-server -p ugoite-iceberg -p ugoite-cli -E 'test(removed_composition_operations_have_no_protocol_fallback) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_pinned_saved_sql_schema_with_date_parameters) | test(composition_restore_route_rechecks_current_authorization_after_revocation) | test(openapi_exposes_graph_composition_operations_without_legacy_adapters) | test(local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes) | test(local_graph_evaluation_uses_the_portable_response_shape) | test(test_cli_composition_inspect_query_export_match_core_remote)' --locked"
+run = [
+  "cargo nextest run -p ugoite-api-client --lib --locked -E 'test(removed_composition_operations_have_no_protocol_fallback) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol)'",
+  { task = "test:composition-query" },
+  "cargo nextest run -p ugoite-server --lib --locked -E 'test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_pinned_saved_sql_schema_with_date_parameters) | test(composition_restore_route_rechecks_current_authorization_after_revocation)'",
+  "cargo nextest run -p ugoite-server --test api_contract --locked -E 'test(openapi_exposes_graph_composition_operations_without_legacy_adapters)'",
+  "cargo nextest run -p ugoite-iceberg --test test_composition_preview --locked -E 'test(local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes) | test(saved_graph_ignores_unused_form_field_changes) | test(portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement)'",
+  "cargo nextest run -p ugoite-cli --lib --locked -E 'test(local_graph_evaluation_uses_the_portable_response_shape)'",
+  "cargo nextest run -p ugoite-cli --test test_journey_remote --locked -E 'test(test_cli_composition_inspect_query_export_match_core_remote)'",
+]
 
 [tasks."test:composition:domain"]
 description = "Run the typed Composition domain contract tests"
 run = "cargo nextest run -p ugoite-domain --locked -E 'test(composition::)'"
+
+[tasks."test:sql-lint"]
+description = "Run portable SQL lint and native/WASM parity tests"
+run = [
+  "cargo nextest run -p ugoite-domain --locked -E 'test(sql_lint::)'",
+  "cargo nextest run -p ugoite-wasm --locked -E 'test(tests::portable_sql_lint_matches_domain_profiles)'",
+  "cargo nextest run -p ugoite-cli --locked --lib -E 'test(sql_cli_tests::)'",
+  "cargo nextest run -p ugoite-cli --locked --test test_cli_endpoint_routing -E 'test(test_sql_lint_returns_portable_diagnostics_without_a_connection)'",
+]
+
+[tasks."test:composition-query"]
+description = "Run Composition query graph compilation and evaluation tests"
+run = "cargo nextest run -p ugoite-core --lib --locked -E 'test(composition_query::) | test(old_output_only_schema_fingerprints_remain_valid_when_form_sources_are_pinned)'"
+
+[tasks."test:sql-check"]
+description = "Verify local and remote SQL check use schema-only planning"
+run = [
+  "cargo nextest run -p ugoite-cli --locked --test test_sql_stateless_cli -E 'test(sql_check_uses_the_local_authorized_planner_without_rows)'",
+  "cargo nextest run -p ugoite-cli --locked --test test_cli_endpoint_routing -E 'test(test_sql_check_uses_the_remote_authorized_plan_route_without_rows)'",
+]
 
 [tasks."test:sql-structure:domain"]
 description = "Run focused SQL Workspace structure parser and proposal tests"
@@ -672,7 +700,15 @@ run = [
   { task = "test:e2e:smoke-and-asset-owned" },
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
-  { task = "test:e2e:composition-studio" },
+]
+
+[tasks."ci:lane:e2e-composition-studio"]
+description = "Run Composition Studio authoring E2E against the loaded CI image"
+run = [{ task = "test:e2e:composition-studio" }]
+
+[tasks."ci:lane:e2e-composition-metric"]
+description = "Run Composition Metric and source ACL E2E against the loaded CI image"
+run = [
   { task = "test:e2e:composition-metric" },
   { task = "test:e2e:composition-source-acl-isolation" },
 ]

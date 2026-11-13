@@ -1,0 +1,31 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: sql
+category: Portable SQL static lint
+requirements:
+  - id: REQ-SQL-004
+    title: Portable SQL static lint
+    description: Validate SQL text through one versioned Rust-owned lint contract independently of Space data, authorization, planning, and execution.
+    priority: high
+    status: implemented
+    criteria:
+      - id: read-only-select-diagnostics
+        kind: behavior
+        statement: >-
+          Static SQL lint accepts one SQL source and a declared profile and
+          returns a versioned response containing stable diagnostic codes,
+          error severity, and UTF-8 byte ranges into the original source when
+          a range is available. It accepts exactly one read-only SELECT,
+          validates template markers before syntax analysis, rejects oversized
+          input, and performs no Space read, authorization check, query plan,
+          row execution, or persistence.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance]
+      - id: composition-projection-wildcards
+        kind: behavior
+        statement: >-
+          The standard profile accepts SELECT output wildcards. The Composition
+          profile rejects unqualified and qualified wildcard projection items
+          in every SELECT body, including nested queries and CTEs, while
+          accepting COUNT(*), arithmetic multiplication, and asterisk
+          characters that occur only inside literals or comments.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance]

@@ -1,0 +1,133 @@
+name: E2E artifact consumer
+
+on:
+  workflow_call:
+    inputs:
+      job_name:
+        description: Hosted job name displayed in CI
+        required: true
+        type: string
+      lane_name:
+        description: Stable lane identifier used for measurements and artifacts
+        required: true
+        type: string
+      lane_task:
+        description: Root mise task that runs the E2E lane
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  consume:
+    name: ${{ inputs.job_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      UGOITE_SOURCE_SHA: ${{ github.sha }}
+      UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_ARTIFACT_SELECTION: runtime
+      UGOITE_IMAGE_TAG: ugoite:e2e
+      UGOITE_IMAGE_PLATFORM: linux/amd64
+      UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        with:
+          persist_github_token: true
+          install: true
+          install_args: deno
+          cache: true
+
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install browser dependencies
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
+
+      - name: Start artifact transfer measurement
+        id: transfer-start
+        run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ugoite-artifact-manifest
+          path: target/artifacts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ugoite-runtime-image
+          path: target/artifacts/image
+
+      - name: Record artifact transfer measurement
+        id: transfer
+        env:
+          START_EPOCH: ${{ steps.transfer-start.outputs.epoch }}
+        run: |
+          echo "seconds=$(( $(date +%s) - START_EPOCH ))" >>"$GITHUB_OUTPUT"
+          echo "bytes=$(du -sb target/artifacts | awk '{print $1}')" >>"$GITHUB_OUTPUT"
+
+      - name: Verify and load the exact build artifacts
+        id: load-artifacts
+        run: scripts/measure-step.sh load-artifacts mise run ci:artifacts:load
+
+      - name: Run E2E lane
+        id: e2e
+        run: scripts/measure-step.sh "${{ inputs.lane_name }}" mise run "${{ inputs.lane_task }}"
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ugoite-e2e-${{ inputs.lane_name }}-${{ github.run_id }}
+          path: |
+            target/e2e/login-responsive/
+            e2e/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize E2E lane
+        if: always()
+        env:
+          DOWNLOAD_SECONDS: ${{ steps.transfer.outputs.seconds }}
+          DOWNLOAD_BYTES: ${{ steps.transfer.outputs.bytes }}
+          LOAD_SECONDS: ${{ steps.load-artifacts.outputs.duration_seconds }}
+          VERIFY_SECONDS: ${{ steps.load-artifacts.outputs.verification_seconds }}
+          CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
+          IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
+          E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+          BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
+        run: |
+          {
+            echo "## ${{ inputs.job_name }} timing"
+            echo
+            echo "- Artifact download: ${DOWNLOAD_SECONDS:-n/a}s / ${DOWNLOAD_BYTES:-n/a} bytes"
+            echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
+            echo "- CLI extraction: ${CLI_EXTRACT_SECONDS:-n/a}s"
+            echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
+            echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
+            echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+            echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
+          } >>"$GITHUB_STEP_SUMMARY"

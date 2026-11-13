@@ -150,17 +150,34 @@ describe("portable Ugoite API protocol WASM", () => {
       .toThrow("Variable graph input parser is not prepared");
   });
 
-  it("constructs Form table and explicit metric SQL through Rust with quoted identities", async () => {
-    expect(await compositionFormQuerySql('form"identity')).toEqual({
-      sql: 'SELECT * FROM "form""identity"',
-    });
-    expect(await compositionFormQuerySql("form_id", { kind: "count" })).toEqual(
-      { sql: 'SELECT COUNT(*) AS value FROM "form_id"' },
-    );
+  it("constructs explicit Form projections and metric SQL through Rust", async () => {
     expect(
-      await compositionFormQuerySql("form_id", { kind: "sum", column: 'a"b' }),
-    ).toEqual({ sql: 'SELECT SUM("a""b") AS value FROM "form_id"' });
-    await expect(compositionFormQuerySql("")).rejects.toThrow();
+      await compositionFormQuerySql('form"identity', [{
+        column: "title",
+        label: "Title",
+      }]),
+    ).toEqual({
+      sql:
+        'SELECT "title" AS "Title" FROM "form""identity" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
+      projection_aliases: ["Title"],
+    });
+    expect(
+      await compositionFormQuerySql("form_id", [], { kind: "count" }),
+    ).toEqual({
+      sql: 'SELECT COUNT(*) AS value FROM "form_id"',
+      projection_aliases: ["value"],
+    });
+    expect(
+      await compositionFormQuerySql(
+        "form_id",
+        [],
+        { kind: "sum", column: 'a"b' },
+      ),
+    ).toEqual({
+      sql: 'SELECT SUM("a""b") AS value FROM "form_id"',
+      projection_aliases: ["value"],
+    });
+    await expect(compositionFormQuerySql("", [])).rejects.toThrow();
   });
 
   it("canonicalizes a strict variable-graph Composition through Rust/WASM", async () => {
@@ -1788,6 +1805,24 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
       method: "GET",
       path: "/spaces/team%2F%E6%9D%B1%E4%BA%AC/entries/entry-1",
       body_kind: "none",
+    });
+  });
+
+  it("prepares the portable offline SQL lint operation", async () => {
+    const request = await prepareApiRequest(
+      "sql.lint",
+      {},
+      { sql: 'SELECT * FROM "Expense"', profile: "composition" },
+    );
+
+    expect(request).toMatchObject({
+      method: "POST",
+      path: "/sql/lint",
+      body_kind: "json",
+    });
+    expect(JSON.parse(request.body ?? "null")).toEqual({
+      sql: 'SELECT * FROM "Expense"',
+      profile: "composition",
     });
   });
 

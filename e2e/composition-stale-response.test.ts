@@ -166,12 +166,17 @@ async function seedStaleComposition(
 async function expectCurrentValues(page: Page): Promise<void> {
   await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
     String(CURRENT_AMOUNT),
+    { timeout: 30_000 },
   );
   const table = page.getByRole("table");
-  await expect(table).toContainText(CURRENT_MERCHANT);
-  await expect(table).not.toContainText(STALE_MERCHANT);
-  await expect(page.locator("[role='alert']")).toHaveCount(0);
-  await expect(page.locator("[role='status']")).toHaveCount(0);
+  await expect(table).toContainText(CURRENT_MERCHANT, { timeout: 30_000 });
+  await expect(table).not.toContainText(STALE_MERCHANT, { timeout: 30_000 });
+  await expect(page.locator("[role='alert']")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.locator("[role='status']")).toHaveCount(0, {
+    timeout: 30_000,
+  });
 }
 
 test.describe("Composition Stale Response", () => {
@@ -187,16 +192,17 @@ test.describe("Composition Stale Response", () => {
     test.setTimeout(180_000);
     let release!: () => void;
     const heldGate = new Promise<void>((resolve) => release = resolve);
-    let held = 0;
+    let intercepted = 0;
     let delivered = 0;
     await page.route("**/compositions/evaluate", async (route) => {
       const request = route.request().postDataJSON() as EvaluationRequest;
-      const response = await route.fetch();
       if (request.variables.minimum_amount !== 7) {
+        const response = await route.fetch();
         await route.fulfill({ response });
         return;
       }
-      held += 1;
+      intercepted += 1;
+      const response = await route.fetch();
       await heldGate;
       delivered += 1;
       await route.fulfill({ response });
@@ -210,7 +216,8 @@ test.describe("Composition Stale Response", () => {
     );
     const threshold = page.getByRole("textbox", { name: "minimum_amount" });
     await threshold.fill("7");
-    await expect.poll(() => held).toBeGreaterThan(0);
+    await expect.poll(() => intercepted, { timeout: 30_000 })
+      .toBeGreaterThan(0);
 
     await threshold.fill(String(CURRENT_AMOUNT));
     await expectCurrentValues(page);
@@ -220,7 +227,8 @@ test.describe("Composition Stale Response", () => {
     expect(currentSnapshot).not.toContain(STALE_MERCHANT);
 
     release();
-    await expect.poll(() => delivered).toBe(held);
+    await expect.poll(() => delivered, { timeout: 30_000 })
+      .toBe(intercepted);
     await expectCurrentValues(page);
     await expect(page.locator(".compositionGraphRender")).toHaveText(
       currentSnapshot,

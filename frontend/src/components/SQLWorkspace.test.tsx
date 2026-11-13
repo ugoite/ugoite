@@ -20,6 +20,7 @@ vi.mock("./SqlQueryEditor", () => ({
     id?: string;
     value: string;
     ariaLabel?: string;
+    lintProfile?: "standard" | "composition";
     disabled?: boolean;
     additionalDiagnostics?: readonly { message: string }[];
     onChange: (value: string) => void;
@@ -27,6 +28,7 @@ vi.mock("./SqlQueryEditor", () => ({
     <textarea
       id={props.id}
       aria-label={props.ariaLabel}
+      data-lint-profile={props.lintProfile ?? "standard"}
       data-planner-diagnostics={props.additionalDiagnostics?.map((item) =>
         item.message
       ).join("|") ?? ""}
@@ -68,6 +70,15 @@ describe("SQLWorkspace", () => {
     expect(editor).toHaveValue("SELECT 1");
     fireEvent.input(editor, { target: { value: "SELECT 2" } });
     expect(onSqlChange).toHaveBeenCalledWith("SELECT 2");
+  });
+
+  it("passes the selected static lint profile to the Rust-backed editor", () => {
+    renderWorkspace({ lintProfile: "composition" });
+
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
+      "data-lint-profile",
+      "composition",
+    );
   });
 
   it("shows a current planner error as a local SQL diagnostic", () => {

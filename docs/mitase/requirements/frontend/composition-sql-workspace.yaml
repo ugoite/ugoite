@@ -5,9 +5,17 @@ category: Typed variable graph Composition Studio
 requirements:
   - id: REQ-FE-079
     title: Composition Studio graph interactions
-    description: The Composition Studio presents a strict typed variable graph, uses the shared SQL Workspace for query variables, and keeps design bindings accessible and structure-first.
+    description: >-
+      Historical prerelease Studio criteria retained verbatim for audit. The
+      v0.2.2 SQL template and Form seed decisions are specified by REQ-FE-082;
+      the remaining Composition UI and graph redesign is tracked separately.
+      Historical verification bindings are not current evidence for this
+      implementation: their assertions were attached to the previous Studio
+      targets and included the superseded Form seed behavior. Verification of
+      the remaining historical graph and UI criteria is an explicit evidence
+      gap pending the Composition model and Studio work tracked by #4888.
     priority: high
-    status: planned
+    status: deprecated
     criteria:
       - id: composition-uses-shared-workspace
         kind: behavior
@@ -175,203 +183,39 @@ requirements:
           return to literal editing. The selected variable name appears once;
           it is never inferred from matching names.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
-    bindings:
-      - id: graph-draft-and-atomic-bindings
-        role: verification
-        facet: verification
-        responsibility: >-
-          Verify strict graph-only serialization, typed bindings, atomic Form
-          and Saved SQL insertion, explicit aggregate choice, and reference-only
-          rebinding. Existing renderer and journey tests partially distinguish
-          an empty Table, NULL scalar, scalar zero, zero-row scalar, and
-          multiple-row scalar. The scalar-state journey compares those scalar
-          displays between the saved runtime and reopened Design preview. The
-          Table pagination journey checks bounded rows and the server
-          continuation request in both saved runtime and Design; page responses
-          are not browser-sliced or aggregated. The SQL result Criterion remains
-          unverified: the coverage does not distinguish unavailable data from
-          an execution error. UI evidence for the defensive
-          scalar_column_count_mismatch state remains unverified; source review
-          found its validator is not reachable through a valid Composition
-          save/run path (issue #4810). The broader
-          Composition SQL argument requirement also remains unverified because
-          no current test covers host-side variable and Input creation in the
-          same draft update.
-        targets:
-          - id: graph-draft-shape
-            adapter: typescript
-            path: frontend/src/lib/composition-variable-binding.test.ts
-            selector: { kind: test, name: "serializes only the strict Composition document envelope and spec" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-variable-binding.test.ts, test: "serializes only the strict Composition document envelope and spec" } }
-          - id: form-table-picker
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
-            selector: { kind: test, name: "inserts a Form table with only a variable reference" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "inserts a Form table with only a variable reference" } }
-          - id: form-sql-host-delegation
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "creates a Form-backed table query and component in one picker selection" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "creates a Form-backed table query and component in one picker selection" } }
-          - id: form-metric-picker
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
-            selector: { kind: test, name: "requires explicit aggregate selection for a Form metric" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "requires explicit aggregate selection for a Form metric" } }
-          - id: saved-sql-picker
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
-            selector: { kind: test, name: "pins exact Saved SQL revision and chosen scalar column" }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-          - id: query-workspace-and-evaluation
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "runs the selected query through the graph evaluator" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "runs the selected query through the graph evaluator" } }
-          - id: composition-filter-creates-typed-sql-arguments
-            adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: "creates a typed argument when filtering a fresh Form query" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.sql-filter-adds-typed-parameter
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "creates a typed argument when filtering a fresh Form query" } }
-          - id: host-input-explicit-argument-binding
-            adapter: typescript
-            path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" } }
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-variable-creation-requires-name
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-graph-studio, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.variable-name-creation-form]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "keeps SQL declarations and a Design Input in one explicitly bound graph draft" } }
-          - id: same-name-explicit-argument-binding
-            adapter: typescript
-            path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: "does not bind a same-named Design Input to a SQL argument implicitly" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
-              - kind: verifies
-                criterion: REQ-COMP-009#criterion.single-typed-variable-graph
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "does not bind a same-named Design Input to a SQL argument implicitly" } }
-          - id: expression-editor-creates-typed-argument
-            adapter: typescript
-            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
-            selector: { kind: test, name: "declares a typed SQL argument while editing an expression through actual WASM" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: "declares a typed SQL argument while editing an expression through actual WASM" } }
-          - id: composition-expression-argument-binding
-            adapter: typescript
-            path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: "creates a typed unbound SQL argument from an expression and binds it explicitly" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-sql-document-tree-editor, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar, FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a typed unbound SQL argument from an expression and binds it explicitly" } }
-          - id: mode-and-insertion
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "offers only Design and Variables and inserts a Table without opening an Inspector" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-mode-context-singular
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "offers only Design and Variables and inserts a Table without opening an Inspector" } }
-          - id: reference-rebinding
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
-            selector: { kind: test, name: "uses the same picker to change only an existing component reference" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "uses the same picker to change only an existing component reference" } }
-          - id: narrow-focus-restoration
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "keeps one modal owner and restores focus after Escape" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one modal owner and restores focus after Escape" } }
-          - id: runtime-input-mobile-accessibility
-            adapter: typescript
-            path: e2e/composition-invalid-variable-input.test.ts
-            selector: { kind: test, name: "invalid_raw_input_blocks_query_and_stale_result" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "invalid_raw_input_blocks_query_and_stale_result" } }
-          - id: composition-design-and-runtime-semantic-values
-            adapter: typescript
-            path: e2e/composition-studio-journey.test.ts
-            selector: { kind: test, name: "Composition Studio builds a reusable tool from existing knowledge" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.design-components-use-semantic-values
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
-              - kind: evidences
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-          - id: scalar-state-runtime-and-design-parity
-            adapter: typescript
-            path: e2e/composition-scalar-state-journey.test.ts
-            selector: { kind: test, name: "scalar_result_distinguishes_zero_rows_null_and_zero" }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-          - id: composition-source-unavailable-clears-runtime-and-design-results
-            adapter: typescript
-            path: e2e/composition-source-acl-isolation.test.ts
-            selector: { kind: test, name: "evaluate rechecks Form and exact Saved SQL access after revocation" }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-          - id: bounded-composition-table-pages
-            adapter: typescript
-            path: e2e/composition-table-metric-pagination.test.ts
-            selector: { kind: test, name: "Table pagination leaves the SQL Metric and typed Input unchanged" }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
-              - kind: evidences
-                anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
-              - kind: evidences
-                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+  - id: REQ-FE-082
+    title: Composition SQL templates and Form seeds
+    description: >-
+      Composition SQL source uses Rust-owned template normalization and typed
+      bindings. Form-derived SQL uses explicit projectable user-data columns;
+      the browser does not add metadata or wildcard fallbacks.
+    priority: high
+    status: implemented
+    criteria:
+      - id: inline-template-parameters
+        kind: behavior
+        statement: >-
+          Composition inline SQL stores its authored source with `{{name}}`
+          references. Rust derives the execution SQL before graph validation
+          and request compilation, and preserves marker-like text in strings,
+          quoted identifiers, and comments. Every discovered parameter has one
+          explicit binding to a compatible scalar graph variable; malformed,
+          missing, unused, or incompatible bindings fail before query
+          execution.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: form-seed-projectable-columns
+        kind: behavior
+        statement: >-
+          A Composition Form seed explicitly projects every supplied
+          projectable user-data column in source order, uses quoted identifiers
+          and unique aliases, and excludes metadata fields from the projection.
+          The generated SQL contains no `SELECT *` or synthetic `LIMIT`.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-006#rule.governance]
+      - id: form-seed-without-projectable-columns
+        kind: behavior
+        statement: >-
+          A Form with no projectable user-data columns returns a typed local
+          diagnostic. The Composition draft remains unchanged and inserts no
+          query variable or Table; metadata such as `_ugoite_id` is not added
+          as a fallback projection.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-006#rule.governance]

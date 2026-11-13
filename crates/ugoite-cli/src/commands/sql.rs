@@ -5,20 +5,18 @@ use crate::output::{
     UsageError,
 };
 use anyhow::{Context, Result};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use ugoite_core::sql_query::{
-    SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest,
+    SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryPage, SqlQueryPlanRequest, SqlQueryRequest,
 };
+use ugoite_domain::sql_lint::{lint_sql, SqlLintProfile};
+use ugoite_iceberg::saved_sql::{SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
-use ugoite_iceberg::{
-    index::validate_sql_syntax,
-    saved_sql::{SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload},
-};
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -28,8 +26,33 @@ pub struct SqlCmd {
 
 #[derive(Subcommand)]
 pub enum SqlSubCmd {
-    /// Validate SQL syntax without executing it
-    Lint { sql_text: String },
+    /// Lint one SELECT statement without reading Space data
+    Lint {
+        #[arg(
+            value_name = "SQL",
+            conflicts_with = "file",
+            required_unless_present = "file"
+        )]
+        sql_text: Option<String>,
+        #[arg(
+            long,
+            value_name = "PATH",
+            conflicts_with = "sql_text",
+            required_unless_present = "sql_text"
+        )]
+        file: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = SqlLintProfileArg::Standard)]
+        profile: SqlLintProfileArg,
+    },
+    /// Check one query against the current authorized Space schema without reading rows
+    Check {
+        #[arg(value_name = "SQL_OR_FILE")]
+        sql_text: String,
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        parameters: Vec<String>,
+        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        parameter_types: Vec<String>,
+    },
     /// Execute one stateless, read-only SQL page
     Query {
         #[arg(value_name = "SQL_OR_FILE")]
@@ -77,6 +100,22 @@ pub enum SqlSubCmd {
     /// Manage durable saved SQL queries
     #[command(subcommand)]
     Saved(SavedSqlSubCmd),
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum SqlLintProfileArg {
+    #[default]
+    Standard,
+    Composition,
+}
+
+impl From<SqlLintProfileArg> for SqlLintProfile {
+    fn from(profile: SqlLintProfileArg) -> Self {
+        match profile {
+            SqlLintProfileArg::Standard => Self::Standard,
+            SqlLintProfileArg::Composition => Self::Composition,
+        }
+    }
 }
 
 const MAX_SQL_EXPORT_ROWS: usize = 1_000_000;
@@ -716,6 +755,29 @@ fn target_space_id(target: &SpaceTarget) -> &str {
     }
 }
 
+async fn check_sql_remote(target: &SpaceTarget, request: &SqlQueryPlanRequest) -> Result<()> {
+    let result = http::execute_for_target(
+        target,
+        "sql.query.plan",
+        serde_json::json!({"space_id": target_space_id(target)}),
+        Some(serde_json::to_value(request)?),
+    )
+    .await?;
+    print_json(&result);
+    Ok(())
+}
+
+async fn check_sql_core(target: &SpaceTarget, request: &SqlQueryPlanRequest) -> Result<()> {
+    let SpaceTarget::Core { root, .. } = target else {
+        anyhow::bail!("local SQL check requires a core connection");
+    };
+    let result = UgoiteService::new_without_background_refresh(root)?
+        .plan_sql(target_space_id(target), request.clone())
+        .await?;
+    print_json(&result);
+    Ok(())
+}
+
 async fn get_saved_sql(target: &SpaceTarget, sql_id: &str) -> Result<serde_json::Value> {
     let space_id = target_space_id(target);
     match target {
@@ -814,17 +876,34 @@ pub async fn run(
     context_override: Option<&str>,
 ) -> Result<()> {
     match cmd.sub {
-        SqlSubCmd::Lint { sql_text } => match validate_sql_syntax(&sql_text) {
-            Ok(()) => print_json(&serde_json::json!({
-                "syntax_valid": true,
-                "sql": sql_text,
-            })),
-            Err(error) => print_json(&serde_json::json!({
-                "syntax_valid": false,
-                "sql": sql_text,
-                "reason": error.to_string(),
-            })),
-        },
+        SqlSubCmd::Lint {
+            sql_text,
+            file,
+            profile,
+        } => {
+            run_lint(sql_text, file, profile)?;
+        }
+        SqlSubCmd::Check {
+            sql_text,
+            parameters,
+            parameter_types,
+        } => {
+            let sql = sql_text_from_argument(&sql_text)?;
+            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let target = resolve_command_target(explicit_config, context_override, "sql check")?;
+            let request = SqlQueryPlanRequest {
+                sql,
+                parameters,
+                parameter_types,
+                saved_sql: None,
+                binding_base: None,
+                form_binding_guards: Vec::new(),
+            };
+            match &target {
+                SpaceTarget::Remote { .. } => check_sql_remote(&target, &request).await?,
+                SpaceTarget::Core { .. } => check_sql_core(&target, &request).await?,
+            }
+        }
         SqlSubCmd::Query {
             sql_text,
             parameters,
@@ -1230,5 +1309,94 @@ pub async fn run(
             emit_mutation(&receipt, &fmt, Some(format!("deleted sql {sql_id}")));
         }
     }
+    Ok(())
+}
+
+#[cfg(test)]
+mod sql_cli_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct SqlTestCli {
+        #[command(subcommand)]
+        command: SqlSubCmd,
+    }
+
+    #[test]
+    fn sql_lint_accepts_source_file_and_profile_options() {
+        let cli = SqlTestCli::try_parse_from([
+            "ugoite",
+            "lint",
+            "--file",
+            "query.sql",
+            "--profile",
+            "composition",
+        ])
+        .expect("SQL lint command");
+
+        assert!(matches!(
+            cli.command,
+            SqlSubCmd::Lint {
+                sql_text: None,
+                file: Some(path),
+                profile: SqlLintProfileArg::Composition,
+            } if path.as_path() == Path::new("query.sql")
+        ));
+
+        let cli = SqlTestCli::try_parse_from(["ugoite", "lint", "SELECT 1"])
+            .expect("inline SQL lint command");
+        assert!(matches!(
+            cli.command,
+            SqlSubCmd::Lint {
+                sql_text: Some(sql),
+                file: None,
+                profile: SqlLintProfileArg::Standard,
+            } if sql == "SELECT 1"
+        ));
+    }
+
+    #[test]
+    fn sql_check_accepts_parameters_and_type_hints() {
+        let cli = SqlTestCli::try_parse_from([
+            "ugoite",
+            "check",
+            "query.sql",
+            "--param",
+            "owner=alice",
+            "--param-type",
+            "owner=string",
+        ])
+        .expect("SQL check command");
+
+        assert!(matches!(
+            cli.command,
+            SqlSubCmd::Check {
+                sql_text,
+                parameters,
+                parameter_types,
+            } if sql_text == "query.sql"
+                && parameters == ["owner=alice"]
+                && parameter_types == ["owner=string"]
+        ));
+    }
+}
+
+fn run_lint(
+    sql_text: Option<String>,
+    file: Option<PathBuf>,
+    profile: SqlLintProfileArg,
+) -> Result<()> {
+    let sql = match (sql_text, file) {
+        (Some(sql), None) => sql,
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read SQL file {}", path.display()))?,
+        _ => {
+            return Err(
+                UsageError("provide SQL text or --file PATH, but not both".to_string()).into(),
+            )
+        }
+    };
+    print_json(&lint_sql(&sql, profile.into()));
     Ok(())
 }

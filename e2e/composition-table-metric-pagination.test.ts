@@ -15,6 +15,7 @@ type SavedSqlRevision = { entryId: string; revisionId: string };
 type SeedState = {
   spaceId: string;
   formName: string;
+  tableSql: SavedSqlRevision;
   compositionId: string;
   revisionId: string;
   compositionName: string;
@@ -238,6 +239,7 @@ async function seedComposition(
   return {
     spaceId,
     formName,
+    tableSql,
     compositionId: savedComposition.composition_id!,
     revisionId: savedComposition.revision_id!,
     compositionName,

@@ -2061,6 +2061,34 @@ fn openapi_publishes_response_signing_headers_and_unsigned_boundary() {
 }
 
 #[test]
+fn openapi_documents_stateless_sql_form_binding_guards() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let schemas = &snapshot["components"]["schemas"];
+    for request in [
+        "SqlQueryRequest",
+        "SqlQueryCountRequest",
+        "SqlQueryPlanRequest",
+    ] {
+        assert_eq!(
+            schemas[request]["properties"]["form_binding_guards"]["type"],
+            "array"
+        );
+        assert_eq!(
+            schemas[request]["properties"]["form_binding_guards"]["items"]["$ref"],
+            "#/components/schemas/SqlFormBindingGuard"
+        );
+    }
+    assert_eq!(
+        schemas["SqlFormBindingGuard"]["required"],
+        serde_json::json!(["name", "form_id"])
+    );
+    assert_eq!(
+        schemas["SqlFormBindingGuard"]["additionalProperties"],
+        false
+    );
+}
+
+#[test]
 fn openapi_documents_saved_sql_variable_defaults() {
     let snapshot = ugoite_server::openapi_snapshot();
     let schemas = &snapshot["components"]["schemas"];
@@ -2130,19 +2158,62 @@ fn openapi_documents_saved_sql_variable_defaults() {
             schemas[request]["properties"]["binding_base"]["$ref"],
             "#/components/schemas/SavedSqlRevisionRef"
         );
-        assert_eq!(
-            schemas[request]["properties"]["form_binding_guards"]["items"]["$ref"],
-            "#/components/schemas/SqlFormBindingGuard"
-        );
     }
-    assert_eq!(
-        schemas["SqlQueryPlanRequest"]["properties"]["form_binding_guards"]["items"]["$ref"],
-        "#/components/schemas/SqlFormBindingGuard"
-    );
     assert_eq!(
         schemas["SqlQueryPlanRequest"]["properties"]["binding_base"]["$ref"],
         "#/components/schemas/SavedSqlRevisionRef"
     );
+}
+
+#[test]
+fn openapi_documents_versioned_sql_lint_without_space_authorization() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let operation = &snapshot["paths"]["/sql/lint"]["post"];
+    assert!(operation.is_object());
+    assert!(operation["parameters"].is_null());
+    assert_eq!(
+        operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SqlLintRequest"
+    );
+    assert_eq!(
+        operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SqlLintResponse"
+    );
+    let schemas = &snapshot["components"]["schemas"];
+    assert_eq!(
+        schemas["SqlLintProfile"]["enum"],
+        serde_json::json!(["standard", "composition"])
+    );
+    assert_eq!(
+        schemas["SqlLintDiagnostic"]["properties"]["range"]["$ref"],
+        "#/components/schemas/SqlSourceRange"
+    );
+}
+
+#[tokio::test]
+async fn sql_lint_accepts_composition_sql_without_a_space_or_session() {
+    let app = initialized_app("sql-lint-public").await;
+    let response = app
+        .oneshot(
+            Request::post("/sql/lint")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "sql": "SELECT * FROM \"Expenses\"",
+                        "profile": "composition"
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json(response).await;
+    assert_eq!(body["contract_version"], 1);
+    assert_eq!(body["profile"], "composition");
+    assert_eq!(body["diagnostics"][0]["code"], "wildcard_projection");
+    assert_eq!(body["diagnostics"][0]["range"]["start"], 7);
 }
 
 fn variable_timestamp_schema(schema: &serde_json::Value) -> (&str, &str) {

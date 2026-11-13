@@ -101,6 +101,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.evaluate",
     "composition.save",
     "composition.restore",
+    "sql.lint",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -403,6 +404,7 @@ pub fn operation_auth_intent(operation: &str) -> Option<AuthIntent> {
             | "sql.query"
             | "sql.query.plan"
             | "sql.query.count"
+            | "sql.lint"
             | "composition.lint"
     ) {
         return Some(AuthIntent::AllowAnonymous);
@@ -1087,6 +1089,11 @@ pub fn prepare_request(
             "composition.lint" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to lint Composition"),
                 vec!["compositions".into(), "lint".into()],
+                vec![],
+            ),
+            "sql.lint" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to lint SQL"),
+                vec!["sql".into(), "lint".into()],
                 vec![],
             ),
             "composition.list" => {
@@ -2210,6 +2217,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to list saved SQL",
             RequestBodyKind::None,
         ),
+        "sql.lint" => (
+            HttpMethod::Post,
+            "Failed to lint SQL",
+            RequestBodyKind::Json,
+        ),
         "sql.get" => (
             HttpMethod::Get,
             "Failed to get saved SQL",
@@ -2778,6 +2790,24 @@ mod tests {
         assert_eq!(
             request.body.expect("body"),
             serde_json::to_string(&body).expect("encode")
+        );
+    }
+
+    #[test]
+    fn sql_lint_uses_a_global_offline_route() {
+        let body = json!({"sql": "SELECT * FROM \"Expense\"", "profile": "composition"});
+        let request =
+            prepare_request("sql.lint", &json!({}), Some(&body)).expect("SQL lint request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/sql/lint");
+        assert_eq!(request.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            request.body.expect("body"),
+            serde_json::to_string(&body).expect("encode")
+        );
+        assert_eq!(
+            operation_auth_intent("sql.lint"),
+            Some(AuthIntent::AllowAnonymous)
         );
     }
 
@@ -4431,7 +4461,7 @@ mod tests {
             || operation.starts_with("entry.")
             || operation.starts_with("composition.")
             || operation.starts_with("search.")
-            || operation.starts_with("sql.")
+            || (operation.starts_with("sql.") && operation != "sql.lint")
             || operation.starts_with("agent.")
             || operation.starts_with("approval.")
             || operation.starts_with("access.")

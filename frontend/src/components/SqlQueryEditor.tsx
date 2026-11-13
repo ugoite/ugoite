@@ -14,6 +14,7 @@ export interface SqlQueryEditorProps {
   value: string;
   onChange: (value: string) => void;
   schema: SqlSchema;
+  lintProfile?: "standard" | "composition";
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   additionalDiagnostics?: readonly Diagnostic[];
   ariaLabel?: string;
@@ -35,7 +36,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const lintSource: Parameters<typeof linter>[0] = async (view) => {
       const source = view.state.doc.toString();
       const diagnostics = [
-        ...await sqlLintDiagnostics(source),
+        ...await sqlLintDiagnostics(source, props.lintProfile ?? "standard"),
         ...(props.additionalDiagnostics ?? []),
       ];
       if (view.state.doc.toString() === source) {
@@ -84,14 +85,16 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     setView(editorView);
     /* v8 ignore start */
     const source = editorView.state.doc.toString();
-    void sqlLintDiagnostics(source).then((diagnostics) => {
-      if (editorView.state.doc.toString() === source) {
-        props.onDiagnostics?.([
-          ...diagnostics,
-          ...(props.additionalDiagnostics ?? []),
-        ]);
-      }
-    });
+    void sqlLintDiagnostics(source, props.lintProfile ?? "standard").then(
+      (diagnostics) => {
+        if (editorView.state.doc.toString() === source) {
+          props.onDiagnostics?.([
+            ...diagnostics,
+            ...(props.additionalDiagnostics ?? []),
+          ]);
+        }
+      },
+    );
     /* v8 ignore stop */
   };
 
@@ -99,7 +102,12 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     /* v8 ignore start */
     const editorView = view();
     const diagnostics = props.additionalDiagnostics;
-    if (editorView && diagnostics !== undefined) forceLinting(editorView);
+    const lintProfile = props.lintProfile;
+    if (
+      editorView && (diagnostics !== undefined || lintProfile !== undefined)
+    ) {
+      forceLinting(editorView);
+    }
     /* v8 ignore stop */
   });
 

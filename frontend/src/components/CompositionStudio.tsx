@@ -155,15 +155,16 @@ const formScalarType = (
 };
 
 const formChoice = (form: Form): CompositionFormChoice | undefined => {
-  if (!form.id || !form.sql_relation?.trim()) return undefined;
+  if (!form.id || !form.name.trim()) return undefined;
   return {
     id: form.id,
     name: form.name,
-    relation: form.sql_relation,
+    relation: form.name,
     fields: Object.entries(form.fields ?? {}).map(([name, field]) => ({
       name: field.label?.trim() || name,
       column: field.sql_column?.trim() || name,
       type: field.type ? formScalarType(field.type) ?? field.type : "other",
+      projectable: field.query_capability?.projectable === true,
     })),
   };
 };
@@ -808,12 +809,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       if (
         aggregate && aggregate.kind !== "count" &&
-        !form.fields.some((field) => field.column === aggregate.column)
+        !form.fields.some((field) =>
+          field.projectable && field.column === aggregate.column
+        )
       ) {
         throw new Error("Aggregate field unavailable");
       }
-      const { sql } = await compositionFormQuerySql(
+      const projectableColumns = form.fields.filter((field) =>
+        field.projectable
+      ).map(({ column, name }) => ({ column, label: name }));
+      const { sql, projection_aliases } = await compositionFormQuerySql(
         form.name,
+        projectableColumns,
         component === "table"
           ? undefined
           : aggregate!.kind === "count"
@@ -836,7 +843,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
         ? `form_${formSlug}`
         : "form";
       const aggregateField = component === "metric" && aggregate?.column
-        ? form.fields.find((field) => field.column === aggregate.column)
+        ? form.fields.find((field) =>
+          field.projectable && field.column === aggregate.column
+        )
         : undefined;
       const aggregateFieldSlug = aggregateField
         ? variableSlug(aggregateField.name)
@@ -864,15 +873,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }, component === "table" ? "table" : "scalar");
       if (component === "table") {
         resolved.tablePresentation = {
-          columns: form.fields.length > 0
-            ? form.fields.map((field) => ({
-              column: field.column,
-              label: field.name,
-            }))
-            : [{
-              column: "_ugoite_id",
-              label: t("composition.studioEntryIdColumn"),
-            }],
+          columns: projection_aliases.map((alias) => ({
+            column: alias,
+            label: alias,
+          })),
         };
       }
       return resolved;
@@ -1294,9 +1298,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
               query.variable_id === variableId
             );
             if (!response.ok || !query) {
-              throw new Error(
-                t("composition.queryFailed"),
-              );
+              throw new Error(t("composition.queryFailed"));
             }
             return {
               columns: query.result_columns.map((column) => column.name),

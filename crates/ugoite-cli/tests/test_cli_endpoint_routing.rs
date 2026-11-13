@@ -503,6 +503,71 @@ fn test_sql_query_uses_stateless_route_and_dto() {
 }
 
 #[test]
+fn test_sql_check_uses_the_remote_authorized_plan_route_without_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"result_schema":[{"name":"status","type":"string"}]}"#,
+    );
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
+
+    let output = run(&config, &["sql", "check", "SELECT status FROM tasks"]);
+    let request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with(
+            "POST /spaces/019f1234-5678-7abc-8def-0123456789ab/sql/query/plan HTTP/1.1\r\n"
+        ),
+        "{request}"
+    );
+    let body = request_json_body(&request);
+    assert_eq!(body["sql"], "SELECT status FROM tasks");
+    assert_eq!(body["parameters"], serde_json::json!({}));
+    let plan: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("SQL check prints JSON");
+    assert_eq!(plan["result_schema"][0]["name"], "status");
+    assert!(plan.get("rows").is_none());
+}
+
+#[test]
+fn test_sql_lint_returns_portable_diagnostics_without_a_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "lint",
+            "--profile",
+            "composition",
+            "SELECT * FROM tasks",
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let response: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("lint result is JSON");
+    assert_eq!(response["contract_version"], 1);
+    assert_eq!(response["profile"], "composition");
+    assert_eq!(response["diagnostics"][0]["code"], "wildcard_projection");
+    assert_eq!(response["diagnostics"][0]["range"]["start"], 7);
+    assert_eq!(response["diagnostics"][0]["range"]["end"], 8);
+}
+
+#[test]
 fn test_sql_export_reuses_stateless_route_and_continuation() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");

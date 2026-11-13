@@ -7,7 +7,6 @@ import {
   within,
 } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { For } from "solid-js";
 import { setLocale } from "~/lib/i18n";
 import SpaceQueryCreateRoute from "./new";
 
@@ -32,29 +31,6 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/components/SQLWorkspace", () => ({
-  SQLWorkspaceActionBar: (props: {
-    actions: readonly {
-      label: string;
-      disabled?: boolean;
-      disabledReason?: string;
-      onActivate: () => void;
-    }[];
-  }) => (
-    <div role="group" aria-label="SQL">
-      <For each={props.actions}>
-        {(action) => (
-          <button
-            type="button"
-            disabled={action.disabled}
-            title={action.disabledReason}
-            onClick={action.onActivate}
-          >
-            {action.label}
-          </button>
-        )}
-      </For>
-    </div>
-  ),
   SQLWorkspace: () => <div data-testid="sql-workspace" />,
 }));
 

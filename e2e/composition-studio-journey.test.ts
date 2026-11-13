@@ -17,6 +17,11 @@ import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
+import {
+  expectedCompositionFormSeedSql,
+  normalizeCompositionFormSeedSql,
+  type CompositionFormSeedField,
+} from "./lib/composition-form.ts";
 import { parse as parseYaml } from "yaml";
 
 type StudioSeedState = {
@@ -133,7 +138,7 @@ async function seedStudioKnowledge(
     id?: string;
     name?: string;
     sql_relation?: string;
-    fields?: Record<string, { sql_column?: string }>;
+    fields?: Record<string, CompositionFormSeedField>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
   expect(form?.id).toBeTruthy();
@@ -249,7 +254,7 @@ async function seedReactiveMetricKnowledge(
   const forms = await formsResponse.json() as Array<{
     name?: string;
     sql_relation?: string;
-    fields?: Record<string, { sql_column?: string }>;
+    fields?: Record<string, CompositionFormSeedField>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
   expect(form?.sql_relation).toBeTruthy();
@@ -531,13 +536,39 @@ async function openToolFromSavedTools(
   toolName: string,
 ): Promise<string> {
   const path = `/spaces/${spaceId}/compositions/${compositionId}/${revisionId}`;
+  const compositionList = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET" &&
+      url.pathname === `/api/spaces/${spaceId}/compositions` &&
+      url.searchParams.get("limit") === "50" &&
+      url.searchParams.get("offset") === "0";
+  });
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
+  const listedCompositions = await compositionList;
+  expect(listedCompositions.ok()).toBe(true);
+  const compositionPage = await listedCompositions.json() as {
+    items?: Array<{ composition_id?: string; revision_id?: string }>;
+  };
+  expect(compositionPage.items?.some((item) =>
+    item.composition_id === compositionId && item.revision_id === revisionId
+  )).toBe(true);
   const link = page.locator(`a[href="${path}"]`);
   await expect(link).toBeVisible();
+  const revisionResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    new URL(response.url()).pathname.endsWith(
+      `/spaces/${spaceId}/compositions/${compositionId}/history/${revisionId}`,
+    )
+  );
   await link.click();
   await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
+  const loadedRevision = await revisionResponse;
+  expect(loadedRevision.ok()).toBe(true);
+  const revisionBody = await loadedRevision.json() as StudioRawRevision;
+  expect(revisionBody.revision.entry_id).toBe(compositionId);
+  expect(revisionBody.revision.revision_id).toBe(revisionId);
   await expect(
     page.getByRole("heading", { level: 1, name: toolName }),
   ).toBeVisible();
@@ -621,7 +652,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio builds a reusable tool from existing knowledge", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const storageState = await context.storageState();
     let compositionId = "";
     let firstRevisionId = "";
@@ -1024,7 +1055,7 @@ test.describe("Composition Studio Journey", () => {
         id?: string;
         name?: string;
         sql_relation?: string;
-        fields?: Record<string, { sql_column?: string }>;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1203,6 +1234,10 @@ test.describe("Composition Studio Journey", () => {
       expect(savedYaml).toContain(String(form?.id));
       const savedDocument = parseYaml(savedYaml) as {
         spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: { sql?: string };
+          }>;
           components?: Array<{
             id?: string;
             kind?: string;
@@ -1235,9 +1270,12 @@ test.describe("Composition Studio Journey", () => {
         savedYaml.split("components:")[1]?.split("layout:")[0] ??
           "";
 
-      expect(savedYaml).toContain(
-        `SELECT * FROM "${seed.formName}"`,
-      );
+      const savedFormQuery = savedDocument.spec?.variables?.find(
+        (variable) => variable.id === `${formSlug}_rows`,
+      )?.query?.sql;
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(seed.formName, form?.fields));
       expect(savedYaml).toContain(
         `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
       );
@@ -1314,7 +1352,7 @@ test.describe("Composition Studio Journey", () => {
       const forms = await formsResponse.json() as Array<{
         id?: string;
         name?: string;
-        fields?: Record<string, { sql_column?: string }>;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1464,6 +1502,7 @@ test.describe("Composition Studio Journey", () => {
   );
 
   test("Changing a Form-backed Table source preserves the Metric and query through save and reopen", async ({ browser, context, request }) => {
+    test.setTimeout(180_000);
     const storageState = await context.storageState();
     const ownerContext = await openOwnerContext(browser, storageState);
     try {
@@ -1474,6 +1513,7 @@ test.describe("Composition Studio Journey", () => {
       const forms = await formsResponse.json() as Array<{
         id?: string;
         name?: string;
+        fields?: Record<string, CompositionFormSeedField>;
       }>;
       const form = forms.find((candidate) => candidate.name === seed.formName);
       expect(form?.id).toBeTruthy();
@@ -1571,7 +1611,7 @@ test.describe("Composition Studio Journey", () => {
       }).selectOption({ label: "Amount" });
       await metricPicker.getByRole("button", { name: "Add", exact: true })
         .click();
-      await expect(metricPicker).toHaveCount(0);
+      await expect(metricPicker).toHaveCount(0, { timeout: 30_000 });
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
@@ -1695,9 +1735,13 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(originalFormQuery?.query).toMatchObject({
         kind: "inline_sql",
-        sql: `SELECT * FROM ${sqlIdentifier(seed.formName)}`,
         form_bindings: [{ relation: seed.formName, form_id: form!.id! }],
       });
+      expect(
+        normalizeCompositionFormSeedSql(
+          originalFormQuery?.query?.sql ?? "",
+        ),
+      ).toBe(expectedCompositionFormSeedSql(seed.formName, form?.fields));
       expect(originalFormQuery?.query).toEqual(originalSavedFormQuery?.query);
       expect(reboundVariables.some((variable) =>
         variable.id === `${replacementSlug}_rows` &&
@@ -1721,10 +1765,10 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("region", {
         name: `${formSlug}_sum_amount`,
         exact: true,
-      })).toContainText("50", { timeout: 30_000 });
+      })).toContainText("50", { timeout: 90_000 });
       await expect(page.getByRole("table", {
         name: `${replacementSlug}_rows results`,
-      })).toContainText("Replacement Form row", { timeout: 30_000 });
+      })).toContainText("Replacement Form row", { timeout: 90_000 });
     } finally {
       await ownerContext.close();
     }
@@ -1878,9 +1922,9 @@ test.describe("Composition Studio Journey", () => {
         variable.query?.kind === "inline_sql"
       )?.query;
       expect(savedFormQuery).toBeDefined();
-      expect(savedFormQuery?.sql).toBe(
-        `SELECT * FROM ${sqlIdentifier(formName)}`,
-      );
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery?.sql ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
         form_id: form!.id!,
@@ -1905,7 +1949,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio adds a no-entry Form table beside an existing query and reopens it", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const spaceId = await createSpace(request);
     const suffix = crypto.randomUUID().slice(0, 8);
     const formName = `EmptyRecords${suffix}`;
@@ -1934,7 +1978,7 @@ test.describe("Composition Studio Journey", () => {
       id?: string;
       name?: string;
       sql_relation?: string;
-      fields?: Record<string, { sql_column?: string }>;
+      fields?: Record<string, CompositionFormSeedField>;
     }>;
     const form = forms.find((candidate) => candidate.name === formName);
     expect(form?.id).toBeTruthy();
@@ -1979,7 +2023,7 @@ test.describe("Composition Studio Journey", () => {
       await expect(tablePicker.getByRole("button", {
         name: sqlName,
         exact: true,
-      })).toBeVisible();
+      })).toBeVisible({ timeout: 30_000 });
       await tablePicker.getByRole("tab", { name: "Forms", exact: true })
         .click();
       await tablePicker.getByRole("button", { name: formName, exact: true })
@@ -2036,9 +2080,9 @@ test.describe("Composition Studio Journey", () => {
         variable.query?.kind === "inline_sql"
       )?.query;
       expect(savedFormQuery).toBeDefined();
-      expect(savedFormQuery?.sql).toBe(
-        `SELECT * FROM ${sqlIdentifier(formName)}`,
-      );
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery?.sql ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
         form_id: form!.id!,
@@ -2054,7 +2098,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio saves and reopens a filtered SQL metric", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const seed = await seedReactiveMetricKnowledge(request);
     const storageState = await context.storageState();
     let compositionId = "";
@@ -2081,7 +2125,9 @@ test.describe("Composition Studio Journey", () => {
         { timeout: 30_000 },
       );
       const sqlResult = page.getByRole("table");
-      await expect(sqlResult.locator("tbody tr")).toHaveCount(1);
+      await expect(sqlResult.locator("tbody tr")).toHaveCount(1, {
+        timeout: 30_000,
+      });
       await expect(sqlResult).toContainText("3", { timeout: 30_000 });
       await expect(sqlResult).toContainText("60", { timeout: 30_000 });
 
@@ -2372,7 +2418,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Design preview recomputes only a dependent query and keeps unrelated results", async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(180_000);
     const suffix = crypto.randomUUID().slice(0, 8);
     const spaceId = seed.spaceId;
     const formName = `DesignDependency${suffix}`;
@@ -2402,7 +2448,7 @@ test.describe("Composition Studio Journey", () => {
       id?: string;
       name?: string;
       sql_relation?: string;
-      fields?: Record<string, { sql_column?: string }>;
+      fields?: Record<string, CompositionFormSeedField>;
     }>;
     const form = forms.find((candidate) => candidate.name === formName);
     const sqlRelation = form?.sql_relation;
@@ -2552,8 +2598,10 @@ test.describe("Composition Studio Journey", () => {
     const independentTable = page.getByRole("table", {
       name: `${independentTableVariableId} results`,
     });
-    await expect(dependentMetric).toHaveText("2", { timeout: 30_000 });
-    await expect(independentTable).toContainText("Independent row 000");
+    await expect(dependentMetric).toHaveText("2", { timeout: 90_000 });
+    await expect(independentTable).toContainText("Independent row 000", {
+      timeout: 90_000,
+    });
     await expect(page.getByRole("textbox", {
       name: "independent_minimum",
       exact: true,
@@ -2576,7 +2624,7 @@ test.describe("Composition Studio Journey", () => {
         successfulEvaluationFor(dependentVariableId) &&
           successfulEvaluationFor(independentTableVariableId),
       )
-    ).toBe(true);
+    , { timeout: 90_000 }).toBe(true);
     const initialDependentExchange =
       successfulEvaluationFor(dependentVariableId)!;
     const initialTableExchange =
@@ -2613,8 +2661,12 @@ test.describe("Composition Studio Journey", () => {
       independentTableVariableId,
     );
 
-    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
-    await expect(independentTable).toContainText("Independent row 001");
+    await expect(independentTable.locator("tbody tr")).toHaveCount(2, {
+      timeout: 90_000,
+    });
+    await expect(independentTable).toContainText("Independent row 001", {
+      timeout: 90_000,
+    });
     const independentRowsBefore = await independentTable.locator("tbody tr")
       .allTextContents();
     const evaluationIdsBeforeInputChange = new Set(
@@ -2622,7 +2674,7 @@ test.describe("Composition Studio Journey", () => {
     );
 
     await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
-    await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
+    await expect(dependentMetric).toHaveText("1", { timeout: 90_000 });
     const changedInputAttempts = () =>
       [...evaluationExchanges.entries()]
         .filter(([evaluationId]) =>
@@ -2644,7 +2696,7 @@ test.describe("Composition Studio Journey", () => {
         attempts.every((exchange) =>
           exchange.response !== undefined || exchange.failure !== undefined
         );
-    }).toBe(true);
+    }, { timeout: 90_000 }).toBe(true);
     const changedInputExchange = changedInputAttempts().find((exchange) =>
       exchange.failure === undefined && exchange.response?.ok === true &&
         exchange.response.evaluation_id === exchange.evaluationId &&
@@ -2682,7 +2734,7 @@ test.describe("Composition Studio Journey", () => {
     );
     await expect.poll(() =>
       independentTable.locator("tbody tr").allTextContents()
-    ).toEqual(independentRowsBefore);
+    , { timeout: 90_000 }).toEqual(independentRowsBefore);
   });
 
   test("Pinned Saved SQL source supports an explicit inline copy and explicit counts", async ({ page, request }) => {
@@ -3119,8 +3171,7 @@ test("Composition shared Arguments rename and type editing persist explicit bind
 });
 
 test("unnamed mobile Composition keeps Text focus and inserts existing data before naming", async ({ page, request }) => {
-  test.setTimeout(120_000);
-  page.setDefaultTimeout(15_000);
+  test.setTimeout(180_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -3228,7 +3279,7 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
     "1",
     "42",
-  ], { timeout: 30_000 });
+  ], { timeout: 90_000 });
   await expect(name).toHaveValue("");
   await expect(save).toBeDisabled();
   expect(

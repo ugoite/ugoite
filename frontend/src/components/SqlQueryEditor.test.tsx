@@ -236,6 +236,26 @@ describe("REQ-FE-036: SQL Query Editor", () => {
     result.unmount();
   });
 
+  it("reports Rust SQL diagnostics for the current editor value", async () => {
+    const onDiagnostics = vi.fn();
+    render(() => (
+      <SqlQueryEditor
+        value="DROP TABLE entries"
+        onChange={() => undefined}
+        schema={buildSqlSchema([])}
+        onDiagnostics={onDiagnostics}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(onDiagnostics).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ message: "SQL must be a SELECT query" }),
+        ]),
+      )
+    );
+  });
+
   it("installs CodeMirror history and its undo/redo key bindings", () => {
     codeMirrorHistoryMocks.history.mockClear();
     codeMirrorViewMocks.keymapOf.mockClear();

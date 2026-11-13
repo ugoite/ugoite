@@ -72,6 +72,11 @@ const creationProps = (
 };
 
 vi.mock("~/lib/ugoite-client", () => ({
+  lintSql: async (_sql: string, profile = "standard") => ({
+    contract_version: 1,
+    profile,
+    diagnostics: [],
+  }),
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
 }));
 

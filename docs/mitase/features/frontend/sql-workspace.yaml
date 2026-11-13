@@ -1,96 +1,59 @@
 schema: mitase/authoring/v2
 kind: features
 namespace: frontend
-category: Shared SQL Workspace
+category: Text-first SQL Workspace
 features:
   - id: FEAT-FE-008
-    title: Shared SQL Workspace component
-    summary: Provide a controlled SQL editing and preview surface for SQL route and Composition adapters to reuse.
+    title: Text-first Saved SQL Workspace
+    summary: Share direct SQL text editing, static diagnostics, explicit preview actions, and a guarded Form starter across Saved SQL routes.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep the shared SQL editing, guarded Form identity transport, transient parameter presentation, explicit preview actions, adapter capabilities, and workspace control sizes connected to reusable frontend components.
+        responsibility: Keep SQL text editing and auxiliary actions in the shared workspace; seed only a blank draft from a readable Form and preserve its exact identity guard.
         targets:
           - id: sql-workspace
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.tsx
-            selector: { kind: symbol, name: SQLWorkspace }
+            selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.shared-editor-and-preview
+                criterion: REQ-FE-081#criterion.shared-text-authoring
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.workspace-presentation-api
+                criterion: REQ-FE-081#criterion.workspace-presentation-api
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
+                criterion: REQ-FE-081#criterion.adapter-owned-persistence-and-execution
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.transient-typed-parameters
+                criterion: REQ-FE-081#criterion.adapter-owned-persistence-and-execution
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+                criterion: REQ-FE-081#criterion.transient-typed-parameters
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                criterion: REQ-FE-081#criterion.explicit-preview-count-and-paging
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.current-plan-run-state
+                criterion: REQ-FE-081#criterion.current-plan-run-state
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+                criterion: REQ-FE-081#criterion.editor-accessibility-and-wrapping
           - id: sql-workspace-layout
             adapter: declared
             path: frontend/src/app.css
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.mobile-sql-editor-and-results
+                criterion: REQ-FE-081#criterion.mobile-sql-editor-and-results
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.workspace-control-size-rules
-          - id: sql-structure-toolbar
+                criterion: REQ-FE-081#criterion.workspace-control-size-rules
+          - id: form-source-control
             adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.tsx
-            selector: { kind: symbol, name: SqlStructureToolbar }
+            path: frontend/src/components/SqlFormSourceControl.tsx
+            selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-          - id: sql-form-picker
-            adapter: typescript
-            path: frontend/src/components/SqlFormPicker.tsx
-            selector: { kind: symbol, name: SqlFormPicker }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
-          - id: sql-columns-editor
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.tsx
-            selector: { kind: symbol, name: SqlColumnsEditor }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-          - id: composition-columns-schema
-            adapter: typescript
-            path: frontend/src/components/CompositionStudio.tsx
-            selector: { kind: symbol, name: CompositionStudio }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
-          - id: guarded-wildcard-source
-            adapter: typescript
-            path: frontend/src/lib/sql-document-columns.ts
-            selector: { kind: symbol, name: wildcardProjectionQualifier }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
-          - id: sql-structure-context
-            adapter: typescript
-            path: frontend/src/lib/sql.ts
-            selector: { kind: symbol, name: buildSqlStructureContexts }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
+                criterion: REQ-FE-081#criterion.blank-form-source-starter
       - id: form-name-binding-service
         role: implementation
         facet: service
-        responsibility: Resolve human SQL Form names only from current readable Forms, compare submitted identity guards, and preserve exact parent or Composition pins.
+        responsibility: Resolve a human Form name against the current readable Form snapshot and compare the submitted immutable Form identity.
         targets:
           - id: sql-form-name-binding
             adapter: rust
@@ -98,18 +61,18 @@ features:
             selector: { kind: symbol, name: bind_human_form_names }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
+                criterion: REQ-FE-081#criterion.human-form-name-binding
           - id: saved-sql-parent-binding
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
             selector: { kind: symbol, name: derive_form_bindings }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
+                criterion: REQ-FE-081#criterion.human-form-name-binding
       - id: form-name-binding-rest-contract
         role: contract-source
         facet: api
-        responsibility: Publish additive compare-only Form guard properties on stateless SQL query, plan, and count request schemas.
+        responsibility: Publish compare-only Form guard properties on stateless SQL query, plan, and count request schemas.
         targets:
           - id: sql-query-guard-contract
             adapter: declared
@@ -126,212 +89,54 @@ features:
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
-      - id: rust-structure-capabilities
-        role: evidence
-        facet: domain
-        responsibility: Parse the guarded SQL Document, dispatch typed semantic transactions through WASM, and preserve source and undo without granting execution admission.
-        targets:
-          - id: sql-structure-analysis
-            adapter: rust
-            path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: symbol, name: parse_sql_document }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.safe-structured-operations
-          - id: sql-structure-proposal
-            adapter: rust
-            path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: symbol, name: apply_sql_document_semantic_edit_transaction }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.safe-structured-operations
-          - id: sql-structure-wasm-protocol
-            adapter: rust
-            path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: symbol, name: invoke_domain }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.safe-structured-operations
-          - id: sql-structure-frontend-protocol
-            adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.ts
-            selector: { kind: symbol, name: applySqlDocumentSemanticEditTransaction }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.safe-structured-operations
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.human-form-name-binding
-      - id: saved-sql-transient-parameter-evidence
-        role: evidence
-        facet: frontend
-        responsibility: Record one Saved SQL browser journey showing a declared integer default and an explicitly unset parameter flowing through the route's Run action.
-        targets:
-          - id: saved-sql-default-and-unset-run
-            adapter: typescript
-            path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-080: Saved SQL Run applies a declared default and preserves an unset parameter" }
-            claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.transient-typed-parameters
-      - id: form-picker-verification
+                criterion: REQ-FE-081#criterion.human-form-name-binding
+      - id: verification
         role: verification
         facet: verification
-        responsibility: Verify direct Form selection against the actual Rust WASM parser and semantic transactions, including source preservation and invalid drafts.
+        responsibility: Verify the text-only shared workspace actions and the Form starter's blank-draft guard, explicit projection, human relation, and exact identity.
         targets:
-          - id: empty-form
+          - id: workspace-actions
             adapter: typescript
-            path: frontend/src/components/SqlFormPicker.test.tsx
-            selector: { kind: test, name: "starts an empty query by choosing a human-labelled Form without a syntax tree" }
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: file }
             claims:
               - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
-                runner:
-                  runner: frontend-vitest-file
-                  arguments:
-                    file: src/components/SqlFormPicker.test.tsx
-                    test: "starts an empty query by choosing a human-labelled Form without a syntax tree"
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
-                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
-                runner:
-                  runner: frontend-vitest-file
-                  arguments:
-                    file: src/components/SqlFormPicker.test.tsx
-                    test: "starts an empty query by choosing a human-labelled Form without a syntax tree"
-          - id: preserve-sql
+                criterion: REQ-FE-081#criterion.shared-text-authoring
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "renders the adapter's copy action without SQL syntax actions" } }
+          - id: form-source-starter
             adapter: typescript
-            path: frontend/src/components/SqlFormPicker.test.tsx
-            selector: { kind: test, name: "replaces a source while preserving aliases, comments, columns, predicates and ordering" }
+            path: frontend/src/components/SqlFormSourceControl.test.tsx
+            selector: { kind: file }
             claims:
               - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
-                runner:
-                  runner: frontend-vitest-file
-                  arguments:
-                    file: src/components/SqlFormPicker.test.tsx
-                    test: "replaces a source while preserving aliases, comments, columns, predicates and ordering"
-          - id: invalid-draft
+                criterion: REQ-FE-081#criterion.blank-form-source-starter
+                covers: [FEAT-FE-008#binding.frontend/target.form-source-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlFormSourceControl.test.tsx, test: "provides a Form starter without SQL construction actions" } }
+          - id: form-source-identity-and-projection
             adapter: typescript
-            path: frontend/src/components/SqlFormPicker.test.tsx
-            selector: { kind: test, name: "keeps an invalid draft and opens explicit advanced editing" }
+            path: frontend/src/components/SqlFormSourceControl.test.tsx
+            selector: { kind: file }
             claims:
               - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
-                runner:
-                  runner: frontend-vitest-file
-                  arguments:
-                    file: src/components/SqlFormPicker.test.tsx
-                    test: "keeps an invalid draft and opens explicit advanced editing"
-      - id: columns-task-verification
-        role: verification
-        facet: verification
-        responsibility: Verify field selection and order against actual Rust WASM and across the shared browser hosts.
-        targets:
-          - id: field-order-undo
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.test.tsx
-            selector: { kind: test, name: "shows human field names, edits output order, removes fields, and undoes without changing other clauses" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "shows human field names, edits output order, removes fields, and undoes without changing other clauses" } }
-          - id: qualified-wildcard
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.test.tsx
-            selector: { kind: test, name: "expands only the qualified wildcard's Form, preserving joins and their aliases" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "expands only the qualified wildcard's Form, preserving joins and their aliases" } }
-          - id: field-focus
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.test.tsx
-            selector: { kind: test, name: "keeps the same field's focused control through a pending reorder" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "keeps the same field's focused control through a pending reorder" } }
-          - id: host-isolation
-            adapter: typescript
-            path: frontend/src/components/SqlColumnsEditor.test.tsx
-            selector: { kind: test, name: "rejects a pending edit after host identity changes even with identical SQL" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "rejects a pending edit after host identity changes even with identical SQL" } }
-          - id: shared-browser-columns
-            adapter: typescript
-            path: e2e/sql-columns-editor.test.ts
-            selector: { kind: test, name: SQL Columns edits human-labelled fields and preserves focus at narrow widths }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.task-oriented-result-fields
-                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
-                covers: [FEAT-FE-008#binding.frontend/target.composition-columns-schema]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
-      - id: wildcard-schema-verification
-        role: verification
-        facet: verification
-        responsibility: Verify complete planned output and stale parameter rejection, plus both editor paths and all shared browser hosts.
-        targets:
-          - id: complete-plan-order
-            adapter: typescript
-            path: frontend/src/lib/sql-workspace.test.ts
-            selector: { kind: test, name: replans wildcard output against current authorization and rejects stale parameter snapshots }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
-                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: replans wildcard output against current authorization and rejects stale parameter snapshots } }
-          - id: guarded-qualified-output
-            adapter: typescript
-            path: frontend/src/components/SqlWildcardExpansion.test.tsx
-            selector: { kind: test, name: "uses the qualified wildcard's complete planned output order including residual fields" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
-                covers: [FEAT-FE-008#binding.frontend/target.guarded-wildcard-source]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlWildcardExpansion.test.tsx, test: "uses the qualified wildcard's complete planned output order including residual fields" } }
-      - id: form-name-binding-verification
-        role: verification
-        facet: verification
-        responsibility: Verify that selected Form identities travel with readable SQL names through the frontend, stateless service, saved SQL revision pins, and published API contract.
-        targets:
-          - id: sql-workspace-controller-identity-guards
-            adapter: typescript
-            path: frontend/src/lib/sql-workspace.test.ts
-            selector: { kind: test, name: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
-                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" } }
-          - id: saved-sql-parent-binding
+                criterion: REQ-FE-081#criterion.blank-form-source-starter
+                covers: [FEAT-FE-008#binding.frontend/target.form-source-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlFormSourceControl.test.tsx, test: "seeds explicit projectable columns and retains the selected Form identity" } }
+          - id: form-binding-api-contract
             adapter: rust
-            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
-            selector: { kind: test, name: saved_sql_draft_inherits_exact_parent_form_binding_after_rename }
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_stateless_sql_form_binding_guards }
             claims:
               - kind: verifies
-                criterion: REQ-FE-080#criterion.human-form-name-binding
-                covers: [FEAT-FE-008#binding.form-name-binding-service/target.saved-sql-parent-binding]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: saved_sql_draft_inherits_exact_parent_form_binding_after_rename } }
+                criterion: REQ-FE-081#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-api/target.sql-query-guard-schema]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_stateless_sql_form_binding_guards } }
     contracts:
       - id: human-form-name-binding
         kind: http
         source: FEAT-FE-008#binding.form-name-binding-rest-contract/target.sql-query-guard-contract
         participants:
-          - target: FEAT-FE-008#binding.frontend/target.sql-form-picker
+          - target: FEAT-FE-008#binding.frontend/target.form-source-control
             role: client
           - target: FEAT-SQL-003#binding.frontend/target.planning-state
             role: client
@@ -339,4 +144,4 @@ features:
             role: service
           - target: FEAT-FE-008#binding.form-name-binding-api/target.sql-query-guard-schema
             role: server-contract
-        guarantees: [REQ-FE-080#criterion.human-form-name-binding]
+        guarantees: [REQ-FE-081#criterion.human-form-name-binding]

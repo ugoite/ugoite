@@ -13,14 +13,14 @@ use std::collections::BTreeMap;
 use ugoite_core::composition::CompositionRevisionRef;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
-    canonicalize_composition, CompositionComponent, CompositionDiagnosticCode, CompositionDocument,
-    CompositionFormat, CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem,
-    FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphFormBinding,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
-    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphSavedSqlLabelSource,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
+    CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+    VariableGraphArgumentBinding, VariableGraphFormBinding, VariableGraphLiteral,
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor,
+    VariableGraphScalarType, VariableGraphValidatedResult,
 };
-use ugoite_domain::form::{sql_column_name, sql_relation_name};
+use ugoite_domain::form::{sql_column_name, sql_relation_name, FormChange, FormChangeSet};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::{
@@ -688,15 +688,18 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
 }
 
 #[tokio::test]
-async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
+async fn saved_graph_ignores_unused_form_field_changes() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
         anyhow::bail!("fixture should use an inline SQL query variable");
     };
     query.definition = VariableGraphQueryDefinition::InlineSql {
-        sql: "SELECT * FROM \"Composition-Preview\"".to_owned(),
+        sql: format!(
+            "SELECT \"{}\" AS title FROM \"Composition-Preview\"",
+            sql_column_name(FieldId::new(100)?)
+        ),
     };
-    let original_schema_fingerprint = service
+    let original_preview = service
         .preview_composition_local(
             &space_id,
             &canonicalize_composition(&document)
@@ -705,16 +708,17 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             &BTreeMap::new(),
             &[],
         )
-        .await?
+        .await?;
+    let original_query = &original_preview
         .plan
         .context("original schema preview")?
-        .queries[0]
-        .schema_fingerprint
-        .clone();
+        .queries[0];
+    let original_schema_fingerprint = original_query.schema_fingerprint.clone();
+    let original_result_columns = original_query.result_columns.clone();
     let saved = save_local_composition(&service, &space_id, document.clone()).await?;
 
-    // Adding a field changes the stored SELECT * result descriptor. A saved
-    // graph must not silently adopt that new schema during evaluation.
+    // Adding an unselected field leaves the saved query's result contract
+    // unchanged and must not invalidate the saved revision.
     let evolved_form = service
         .upsert_form_result(
             &space_id,
@@ -760,18 +764,140 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         )
         .await?;
 
-    assert!(!response.ok);
-    assert!(response.plan.is_none());
-    assert!(response.query_results.is_empty());
-    assert!(response.diagnostics.iter().any(|diagnostic| {
-        diagnostic.variable_id.as_deref() == Some("source")
-            && diagnostic.code == CompositionDiagnosticCode::QuerySchemaChanged
-    }));
+    assert!(
+        response.ok,
+        "an unused Form field must not invalidate the query"
+    );
+    assert_eq!(
+        response
+            .plan
+            .as_ref()
+            .context("saved query plan after unused field addition")?
+            .queries[0]
+            .schema_fingerprint,
+        original_schema_fingerprint
+    );
+    assert!(matches!(
+        response.query_results.get("source").map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 4
+    ));
+    assert!(response.diagnostics.is_empty());
 
-    // Authoring preview resolves the current schema so the graph can be
-    // repaired. Saving that server-derived descriptor creates a new
-    // Composition revision that runtime can evaluate without exposing the old
-    // result under the changed schema.
+    // Renaming that still-unused field keeps its stable ID and must preserve
+    // the same saved query result contract.
+    let workspace = ugoite_iceberg::iceberg_store::native_mutation_workspace(
+        service.operator(),
+        &service.workspace_path(&space_id),
+    )
+    .await?;
+    let current_form = workspace.load_form(form_id).await?;
+    let note_field = current_form
+        .fields
+        .iter()
+        .find(|field| field.name == "note")
+        .context("unused note field")?;
+    let rename = FormChangeSet {
+        form_id,
+        expected_version: Some(current_form.version),
+        changes: vec![FormChange::RenameField {
+            field_id: note_field.id,
+            name: "memo".to_owned(),
+        }],
+    };
+    let renamed_form = workspace
+        .commit(ugoite_iceberg::publication_context(
+            "composition-preview-rename-unused-field",
+            "test.form.evolve",
+            &rename,
+        )?)?
+        .evolve_form(&rename)
+        .await?;
+    assert_eq!(renamed_form.id, form_id);
+    assert!(renamed_form
+        .fields
+        .iter()
+        .any(|field| field.id == note_field.id && field.name == "memo"));
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "composition-preview-schema-rename",
+            "Composition-Preview".to_owned(),
+            Vec::new(),
+            BTreeMap::from([
+                (
+                    "title".to_owned(),
+                    Value::String("renamed-field-row".to_owned()),
+                ),
+                ("memo".to_owned(), Value::String("renamed-note".to_owned())),
+            ]),
+            BTreeMap::new(),
+            "preview-test",
+        )
+        .await?;
+    let renamed = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+    assert!(renamed.ok);
+    assert_eq!(
+        renamed
+            .plan
+            .as_ref()
+            .context("saved query plan after unused field rename")?
+            .queries[0]
+            .schema_fingerprint,
+        original_schema_fingerprint
+    );
+    assert!(matches!(
+        renamed.query_results.get("source").map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 5
+    ));
+
+    let evolved_preview = service
+        .preview_composition_local(
+            &space_id,
+            &canonicalize_composition(&document)
+                .map_err(|code| anyhow::anyhow!(code.as_str()))?
+                .yaml,
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    let evolved_query = &evolved_preview
+        .plan
+        .as_ref()
+        .context("evolved Form schema preview")?
+        .queries[0];
+    assert_eq!(evolved_query.result_columns, original_result_columns);
+    assert_eq!(
+        evolved_query.schema_fingerprint,
+        original_schema_fingerprint
+    );
+
+    // The old query still selects only `title`. Update the draft explicitly to
+    // include the new field before previewing and saving the repaired revision.
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should use an inline SQL query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!(
+            "SELECT \"{}\" AS title, \"{}\" FROM \"Composition-Preview\"",
+            sql_column_name(FieldId::new(100)?),
+            sql_column_name(FieldId::new(101)?)
+        ),
+    };
     let draft_preview = service
         .preview_composition_local(
             &space_id,
@@ -818,8 +944,7 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
     assert_eq!(repaired.entry_id, saved.entry_id);
     assert_ne!(repaired.revision_id, saved.revision_id);
 
-    // The prior immutable revision remains stale after the repaired revision
-    // is appended.
+    // Adding an unused Form field does not stale the prior immutable revision.
     let old_revision = service
         .evaluate_composition_graph_local(
             &space_id,
@@ -836,8 +961,14 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             None,
         )
         .await?;
-    assert!(!old_revision.ok);
-    assert!(old_revision.query_results.is_empty());
+    assert!(old_revision.ok);
+    assert!(matches!(
+        old_revision
+            .query_results
+            .get("source")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 5
+    ));
 
     let repaired_plan = service
         .resolve_composition_local(
@@ -900,6 +1031,7 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
                 "repaired-note".to_owned(),
             ))
     }));
+
     Ok(())
 }
 

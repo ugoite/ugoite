@@ -5,13 +5,13 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-006
     title: SQL editor and stateless query clients
-    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and stateless SQL query result flow to exact frontend verification evidence.
+    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and stateless SQL query result flow.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep SQL editing, shared lint and completion rules, saved-query lifecycle calls, and stateless SQL result access connected to the shipped frontend artifacts.
+        responsibility: Keep SQL editing, shared completion rules, saved-query lifecycle calls, and stateless SQL result access connected to the shipped frontend artifacts.
         targets:
           - id: sql-editor
             adapter: typescript
@@ -22,15 +22,6 @@ features:
                 criterion: REQ-FE-036#criterion.editor-contract
               - kind: satisfies
                 criterion: REQ-FE-036#criterion.schema-completion
-          - id: sql-helpers
-            adapter: typescript
-            path: frontend/src/lib/sql.ts
-            selector: { kind: symbol, name: sqlLintDiagnostics }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-036#criterion.editor-contract
-              - kind: satisfies
-                criterion: REQ-FE-036#criterion.shared-rules
           - id: shared-sql-rules
             adapter: declared
             path: shared/sql/ugoite-sql-rules.json
@@ -49,13 +40,13 @@ features:
                 criterion: REQ-FE-050#criterion.typed-errors
   - id: FEAT-FE-007
     title: Saved SQL route workflows
-    summary: Connect Saved SQL creation to the shared SQL Workspace and ordinary save/run lifecycle, alongside exact verification for list, detail, and variable actions.
+    summary: Connect Saved SQL creation and detail routes to direct text editing, the guarded Form starter, and the ordinary save/run lifecycle.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep Saved SQL list and creation actions, shared structured SQL editing, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
+        responsibility: Keep Saved SQL list and creation actions, direct SQL text editing, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
         targets:
           - id: sql-index-route
             adapter: typescript
@@ -74,7 +65,7 @@ features:
             selector: { kind: symbol, name: SpaceSqlDetailRoute }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-062#criterion.shared-workspace-actions
+                criterion: REQ-FE-081#criterion.shared-text-authoring
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
@@ -87,15 +78,6 @@ features:
                 criterion: REQ-FE-062#criterion.delete
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.search-history-read-only
-              - kind: satisfies
-                criterion: REQ-FE-062#criterion.typed-variable-defaults
-          - id: sql-variables-route
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
-            selector: { kind: symbol, name: SpaceQueryVariablesRoute }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-062#criterion.typed-variable-defaults
           - id: sql-create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
@@ -106,9 +88,7 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
               - kind: satisfies
-                criterion: REQ-FE-063#criterion.shared-structure-actions
-              - kind: satisfies
-                criterion: REQ-FE-063#criterion.typed-variable-defaults
+                criterion: REQ-FE-081#criterion.shared-text-authoring
           - id: sql-run-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx

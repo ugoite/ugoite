@@ -21,7 +21,7 @@ import {
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { buildSqlSchema } from "~/lib/sql";
-import type { Form } from "~/lib/types";
+import type { Form, FormField } from "~/lib/types";
 import { setLocale } from "~/lib/i18n";
 
 const {
@@ -250,6 +250,23 @@ const renderStudio = (
 
 let releasePendingFormReferences: ((references: string[]) => void) | undefined;
 
+const projectableField = (
+  field: FormField,
+  name: string,
+  fieldId: number,
+): FormField => ({
+  ...field,
+  query_capability: {
+    field: { kind: "property", field_id: fieldId },
+    name,
+    field_type: field.type,
+    filterable: true,
+    sortable: true,
+    projectable: true,
+    supported_operators: ["equals"],
+  },
+});
+
 describe("CompositionStudio graph surface", () => {
   beforeEach(() => {
     setLocale("en");
@@ -444,17 +461,24 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() =>
       expect(screen.getByTestId("query-page")).toHaveTextContent("2")
     );
-    expect(evaluateMock.mock.calls[1][1].page).toEqual({
+    const nextPageRequest = evaluateMock.mock.calls.find(([, request]) =>
+      request.page?.cursor === "next-page"
+    );
+    expect(nextPageRequest?.[1].page).toEqual({
       variable_id: "rows",
       cursor: "next-page",
     });
     // Paging one Workspace query must not execute unrelated graph branches.
-    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
+    expect(nextPageRequest?.[1].requested_queries).toEqual(["rows"]);
     fireEvent.click(
       screen.getByRole("button", { name: "Previous query page" }),
     );
     expect(screen.getByTestId("query-page")).toHaveTextContent("1");
-    expect(evaluateMock).toHaveBeenCalledTimes(2);
+    // Design preview can evaluate independently; returning to a cached page
+    // must not issue another cursor-based request.
+    expect(
+      evaluateMock.mock.calls.filter(([, request]) => request.page),
+    ).toHaveLength(1);
     let completeCount!: (value: number) => void;
     countMock.mockImplementationOnce(() =>
       new Promise<number>((resolve) => {
@@ -798,7 +822,7 @@ describe("CompositionStudio graph surface", () => {
     ).toBeNull();
   });
 
-  it("writes inline SQL editor changes back to the graph node", async () => {
+  it("writes inline SQL template source back to the graph node", async () => {
     renderStudio(createCompositionGraphDraft("Report"));
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
@@ -814,8 +838,8 @@ describe("CompositionStudio graph surface", () => {
 
     const editor = screen.getByRole("textbox", { name: "SQL" });
     expect(editor).toHaveValue("SELECT 1");
-    fireEvent.input(editor, { target: { value: "SELECT 2" } });
-    expect(editor).toHaveValue("SELECT 2");
+    fireEvent.input(editor, { target: { value: "SELECT {{minimum}}" } });
+    expect(editor).toHaveValue("SELECT {{minimum}}");
   });
 
   it("keeps Save disabled for an invalid literal after another variable is valid", async () => {
@@ -1247,20 +1271,42 @@ describe("CompositionStudio graph surface", () => {
   });
 
   it("creates a Form-backed table query and component in one picker selection", async () => {
-    const rustOwnedSql = 'SELECT 37 AS rust_authority FROM "Receipts"';
-    compositionFormQuerySqlMock.mockResolvedValueOnce({ sql: rustOwnedSql });
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "Receipts",
       sql_relation: "form_receipts",
       fields: {
         amount: {
-          type: "float",
-          sql_column: "amount",
-          label: "Amount paid",
+          ...projectableField(
+            {
+              type: "float",
+              required: false,
+              sql_column: "amount",
+              label: "Amount paid",
+            },
+            "amount",
+            1,
+          ),
         },
-        payload: { type: "json", sql_column: "payload" },
-        custom: { type: "custom_type", sql_column: "custom" },
+        payload: projectableField(
+          {
+            type: "json",
+            required: false,
+            sql_column: "payload",
+            label: "Amount paid",
+          },
+          "payload",
+          2,
+        ),
+        custom: projectableField(
+          {
+            type: "custom_type",
+            required: false,
+            sql_column: "custom",
+          },
+          "custom",
+          3,
+        ),
       },
     }]);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
@@ -1268,20 +1314,16 @@ describe("CompositionStudio graph surface", () => {
         kind: "table",
         columns: [
           {
-            name: "amount",
+            name: "Amount paid",
             value_type: { scalar_type: "float", nullable: false },
           },
           {
-            name: "payload",
+            name: "Amount paid (2)",
             value_type: { scalar_type: "json", nullable: true },
           },
           {
             name: "custom",
             value_type: { scalar_type: "string", nullable: true },
-          },
-          {
-            name: "_ugoite_id",
-            value_type: { scalar_type: "string", nullable: false },
           },
         ],
       })
@@ -1301,59 +1343,172 @@ describe("CompositionStudio graph surface", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("button", { name: /Change variable/ }))
       .toBeNull();
-    const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(authored.spec.variables[0].query).toMatchObject({
+    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
+    expect(previewInput.spec.variables[0].query).toMatchObject({
       kind: "inline_sql",
-      sql: rustOwnedSql,
       form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
       schema_fingerprint: "",
     });
     expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
       "Receipts",
+      [
+        { column: "amount", label: "Amount paid" },
+        { column: "payload", label: "Amount paid" },
+        { column: "custom", label: "custom" },
+      ],
       undefined,
     );
-    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(previewInput.spec.variables[0].query.sql).toBe(rustOwnedSql);
-    expect(authored.spec.components).toHaveLength(1);
-    expect(authored.spec.components[0]).toMatchObject({
-      kind: "table",
-      variable: authored.spec.variables[0].id,
-    });
+    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
+    expect(generated.projection_aliases).toEqual([
+      "Amount paid",
+      "Amount paid (2)",
+      "custom",
+    ]);
+    expect(previewInput.spec.variables[0].query.sql).toBe(generated.sql);
     fireEvent.click(block);
     expect(
       screen.getByRole("textbox", { name: "Display label for Amount paid" }),
     ).toHaveValue("Amount paid");
     expect(
-      screen.getByRole("textbox", { name: "Display label for payload" }),
-    ).toHaveValue("payload");
+      screen.getByRole("textbox", {
+        name: "Display label for Amount paid (2)",
+      }),
+    ).toHaveValue("Amount paid (2)");
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+      exact: true,
+    });
+    expect(saveButton).toBeEnabled();
     expect(
       screen.getByRole("textbox", { name: "Display label for custom" }),
     ).toHaveValue("custom");
     expect(
       screen.queryByRole("checkbox", { name: "Add result column _ugoite_id" }),
-    ).not.toBeVisible();
-    expect(authored.spec.layout.rows[0].items).toEqual([{
+    ).not.toBeInTheDocument();
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+      spec: {
+        components: Array<{ id: string; presentation?: unknown }>;
+        layout: { rows: Array<{ items: unknown[] }> };
+      };
+    }).spec;
+    expect(savedSpec.components[0].presentation).toEqual({
+      columns: [
+        { column: "Amount paid", label: "Amount paid" },
+        { column: "Amount paid (2)", label: "Amount paid (2)" },
+        { column: "custom", label: "custom" },
+      ],
+    });
+    expect(savedSpec.layout.rows[0].items).toEqual([{
       kind: "component",
-      component: authored.spec.components[0].id,
+      component: savedSpec.components[0].id,
     }]);
   });
 
-  it("gives a fieldless Form table an Entry ID view preset", async () => {
+  it("preserves Form field order in a generated Table projection", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Ordered records",
+      sql_relation: "form_ordered_records",
+      fields: {
+        zulu: projectableField(
+          {
+            type: "string",
+            required: false,
+            sql_column: "field_zulu",
+            label: "Zulu",
+          },
+          "zulu",
+          1,
+        ),
+        alpha: projectableField(
+          {
+            type: "string",
+            required: false,
+            sql_column: "field_alpha",
+            label: "Alpha",
+          },
+          "alpha",
+          2,
+        ),
+      },
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [
+          {
+            name: "Zulu",
+            value_type: { scalar_type: "string", nullable: true },
+          },
+          {
+            name: "Alpha",
+            value_type: { scalar_type: "string", nullable: true },
+          },
+        ],
+      })
+    );
+    renderStudio(createCompositionGraphDraft("Ordered report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    fireEvent.click(
+      await within(picker).findByRole("button", {
+        name: "Ordered records",
+        exact: true,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(compositionFormQuerySqlMock).toHaveBeenCalledOnce()
+    );
+    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
+      "Ordered records",
+      [
+        { column: "field_zulu", label: "Zulu" },
+        { column: "field_alpha", label: "Alpha" },
+      ],
+      undefined,
+    );
+    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
+    expect(generated.sql).toBe(
+      'SELECT "field_zulu" AS "Zulu", "field_alpha" AS "Alpha" FROM "Ordered records" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
+    );
+    expect(generated.projection_aliases).toEqual(["Zulu", "Alpha"]);
+    const block = await screen.findByRole("button", {
+      name: "table, ordered_records_rows",
+    });
+    fireEvent.click(block);
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+      exact: true,
+    });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+      spec: {
+        components: Array<{ presentation?: unknown }>;
+      };
+    }).spec;
+    expect(savedSpec.components[0].presentation).toEqual({
+      columns: [
+        { column: "Zulu", label: "Zulu" },
+        { column: "Alpha", label: "Alpha" },
+      ],
+    });
+  });
+
+  it("does not seed a Form table when it has no projectable fields", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "System records",
       sql_relation: "form_system_records",
       fields: {},
     }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "table",
-        columns: [{
-          name: "_ugoite_id",
-          value_type: { scalar_type: "string", nullable: false },
-        }],
-      })
-    );
     renderStudio(createCompositionGraphDraft("Report"));
     fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
     const picker = screen.getByRole("dialog", { name: "Table", exact: true });
@@ -1367,15 +1522,17 @@ describe("CompositionStudio graph surface", () => {
       }),
     );
 
-    const block = await screen.findByRole("button", {
-      name: "table, system_records_rows",
-    });
-    fireEvent.click(block);
+    expect(await within(picker).findByRole("alert")).toHaveTextContent(
+      "This Form has no displayable data fields.",
+    );
+    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
+      "System records",
+      [],
+      undefined,
+    );
     expect(
-      screen.getByRole("textbox", {
-        name: "Display label for Entry ID",
-      }),
-    ).toHaveValue("Entry ID");
+      screen.queryByRole("button", { name: "table, system_records_rows" }),
+    ).toBeNull();
   });
 
   it("updates a changed query schema before letting the Table view be repaired and saved", async () => {
@@ -1446,7 +1603,17 @@ describe("CompositionStudio graph surface", () => {
       id: "form-id",
       name: "Receipts",
       sql_relation: "form_receipts",
-      fields: { amount: { type: "float", sql_column: "amount" } },
+      fields: {
+        amount: projectableField(
+          {
+            type: "float",
+            required: false,
+            sql_column: "amount",
+          },
+          "amount",
+          1,
+        ),
+      },
     }]);
     let previews = 0;
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
@@ -1506,7 +1673,17 @@ describe("CompositionStudio graph surface", () => {
       id: "form-id",
       name: "Receipts",
       sql_relation: "form_receipts",
-      fields: { Amount: { type: "float", sql_column: "amount" } },
+      fields: {
+        Amount: projectableField(
+          {
+            type: "float",
+            required: false,
+            sql_column: "amount",
+          },
+          "Amount",
+          1,
+        ),
+      },
     }]);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
       if (!JSON.parse(yaml).name.trim()) {
@@ -1552,11 +1729,51 @@ describe("CompositionStudio graph surface", () => {
       name: "Receipts",
       sql_relation: "form_receipts",
       fields: {
-        Amount: { type: "double", sql_column: "field_103" },
-        Units: { type: "long", sql_column: "field_104" },
-        Notes: { type: "markdown", sql_column: "field_105" },
-        Query: { type: "sql", sql_column: "field_106" },
-        Created: { type: "timestamp_tz_ns", sql_column: "field_107" },
+        Amount: projectableField(
+          {
+            type: "double",
+            required: false,
+            sql_column: "field_103",
+          },
+          "Amount",
+          103,
+        ),
+        Units: projectableField(
+          {
+            type: "long",
+            required: false,
+            sql_column: "field_104",
+          },
+          "Units",
+          104,
+        ),
+        Notes: projectableField(
+          {
+            type: "markdown",
+            required: false,
+            sql_column: "field_105",
+          },
+          "Notes",
+          105,
+        ),
+        Query: projectableField(
+          {
+            type: "sql",
+            required: false,
+            sql_column: "field_106",
+          },
+          "Query",
+          106,
+        ),
+        Created: projectableField(
+          {
+            type: "timestamp_tz_ns",
+            required: false,
+            sql_column: "field_107",
+          },
+          "Created",
+          107,
+        ),
       },
     }]);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
@@ -1619,7 +1836,17 @@ describe("CompositionStudio graph surface", () => {
       id: "form-id",
       name: "Receipts",
       sql_relation: "form_receipts",
-      fields: { amount: { type: "float", sql_column: "amount" } },
+      fields: {
+        amount: projectableField(
+          {
+            type: "float",
+            required: false,
+            sql_column: "amount",
+          },
+          "amount",
+          1,
+        ),
+      },
     }]);
     let finishPreview!: (value: ReturnType<typeof plannedQuery>) => void;
     previewGraphMock.mockReturnValue(

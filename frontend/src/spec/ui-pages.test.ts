@@ -524,10 +524,10 @@ describe("UI spec YAML registry", () => {
     );
 
     expect(studioContract).toContain(
-      "**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.**",
+      "**Status: incremental SQL authoring changes are implemented; the full v0.2.2 Composition model and Studio migration remain planned.**",
     );
     expect(studioContract).toContain(
-      "The normative next Composition model is [ADR-025]",
+      "The normative Composition graph model is [ADR-025]",
     );
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
       "Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs.",
@@ -535,7 +535,10 @@ describe("UI spec YAML registry", () => {
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition query variables use the same Workspace component",
+      "Composition query variables also use direct text editing",
+    );
+    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
+      "retain their host-owned Structure Toolbar until the planned migration",
     );
   });
 

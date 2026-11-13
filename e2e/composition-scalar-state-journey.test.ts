@@ -658,6 +658,7 @@ test.describe("Composition scalar state journey", () => {
       kind: "saved_sql" as const,
       entry_id: savedSql.entryId,
       revision_id: savedSql.revisionId,
+      label_source: "variable" as const,
       column: "value",
       arguments: [],
       form_bindings: [],

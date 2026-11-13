@@ -14,6 +14,9 @@ inventory:
     rust:
       mode: test
       include_tests: true
+      additional_roots:
+        - crates/ugoite-domain/src/composition/variable_graph.rs
+        - crates/ugoite-domain/src/composition/form_query.rs
     typescript:
       roots:
         - frontend/src/lib/auth-api.ts
@@ -280,6 +283,9 @@ inventory:
         - frontend/src/lib/sql-document-columns.ts
         - frontend/src/components/SqlWildcardExpansion.test.tsx
         - frontend/src/components/SqlColumnsEditor.test.tsx
+        - frontend/src/components/SqlFormSourceControl.tsx
+        - frontend/src/components/SqlFormSourceControl.test.tsx
+        - frontend/src/components/CompositionSqlBinding.test.tsx
         - e2e/sql-columns-editor.test.ts
         - frontend/src/components/SqlFormPicker.test.tsx
         - frontend/src/components/SqlStructureToolbar.tsx
@@ -305,6 +311,7 @@ inventory:
         - frontend/src/lib/exact-integer.ts
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
+        - frontend/src/components/CompositionVariableGraphWorkspace.tsx
         - frontend/src/components/CompositionStudio.tsx
         - frontend/src/components/CompositionGraphRenderer.tsx
         - frontend/src/components/CompositionGraphRenderer.test.tsx

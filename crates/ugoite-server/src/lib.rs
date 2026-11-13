@@ -1892,6 +1892,10 @@ fn api_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/openapi.json", get(|| async { OPENAPI_JSON }))
+        .route(
+            "/sql/lint",
+            post(lint_sql).layer(DefaultBodyLimit::max(SQL_LINT_MAX_REQUEST_BYTES)),
+        )
         .route("/auth/config", get(auth_config))
         .route("/auth/setup/start", post(auth_setup_start))
         .route("/auth/setup/finish", post(auth_setup_finish))
@@ -12139,6 +12143,35 @@ async fn lint_composition(
         )
     })?;
     Ok(Json(composition_lint_response(&request.yaml)?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SqlLintRequest {
+    sql: String,
+    #[serde(default)]
+    profile: ugoite_domain::sql_lint::SqlLintProfile,
+}
+
+const SQL_LINT_MAX_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + 256;
+
+async fn lint_sql(
+    request: Result<Json<SqlLintRequest>, JsonRejection>,
+) -> ApiResult<Json<ugoite_domain::sql_lint::SqlLintResponse>> {
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+    Ok(Json(ugoite_domain::sql_lint::lint_sql(
+        &request.sql,
+        request.profile,
+    )))
 }
 
 const COMPOSITION_LINT_MAX_REQUEST_BYTES: usize =

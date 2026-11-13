@@ -75,6 +75,7 @@ describe("CompositionVariableBindingPicker", () => {
       name: "Total",
       column: "field_total",
       type: "decimal" as const,
+      projectable: true,
     }],
   }];
   const renderPicker = (
@@ -187,6 +188,30 @@ describe("CompositionVariableBindingPicker", () => {
     expect(alert.textContent).not.toContain("form_sensitive-id");
     expect(alert.textContent).not.toContain("SELECT");
     expect(dialog).toBeInTheDocument();
+  });
+
+  it("localizes the typed empty projectable Form seed error", async () => {
+    const onCommit = vi.fn();
+    const provider: CompositionBindingProvider = {
+      resolveForm: vi.fn(async () => {
+        throw new UgoiteApiError({
+          kind: "domain_validation",
+          code: "form_no_projectable_fields",
+          message: "Form has no projectable data fields",
+        });
+      }),
+      prepareSavedSql: vi.fn(),
+    };
+    renderPicker({ kind: "table", provider, onCommit });
+    const dialog = screen.getByRole("dialog", { name: "Table" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Forms" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Customers" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This Form has no displayable data fields.",
+    );
+    expect(screen.getByRole("dialog", { name: "Table" })).toBeInTheDocument();
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("prepares only the selected exact Saved SQL revision without inspecting earlier rows", async () => {

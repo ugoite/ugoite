@@ -49,6 +49,8 @@ async function ciGatePasses(
     WEB_RESULT: "success",
     ARTIFACT_BUILD_RESULT: "success",
     E2E_SMOKE_MOBILE_RESULT: "success",
+    E2E_COMPOSITION_STUDIO_RESULT: "success",
+    E2E_COMPOSITION_METRIC_RESULT: "success",
     E2E_OWNER_RESULT: "success",
     E2E_PORTABLE_RESULT: "success",
     DOCSITE_NAV_RESULT: "success",
@@ -122,6 +124,14 @@ async function assertAggregateWorkflow(
   const webJob = workflowJobBlock(workflow, "web");
   const artifactBuildJob = workflowJobBlock(workflow, "artifact-build");
   const e2eSmokeMobileJob = workflowJobBlock(workflow, "e2e-smoke-mobile");
+  const e2eCompositionStudioJob = workflowJobBlock(
+    workflow,
+    "e2e-composition-studio",
+  );
+  const e2eCompositionMetricJob = workflowJobBlock(
+    workflow,
+    "e2e-composition-metric",
+  );
   const e2eOwnerJob = workflowJobBlock(workflow, "e2e-owner");
   const e2ePortableJob = workflowJobBlock(workflow, "e2e-portable");
   const impactJob = workflowJobBlock(workflow, "impact");
@@ -478,6 +488,41 @@ async function assertAggregateWorkflow(
       "DOWNLOAD_BYTES",
     ],
     "smoke/mobile E2E consumer lane",
+  );
+  assertContainsAll(
+    e2eCompositionStudioJob,
+    [
+      "name: ci-e2e-composition-studio",
+      "needs: [impact, artifact-build]",
+      "uses: ./.github/workflows/e2e-artifact-consumer.yml",
+      "lane_task: ci:lane:e2e-composition-studio",
+    ],
+    "Composition Studio E2E consumer lane",
+  );
+  assertContainsAll(
+    e2eCompositionMetricJob,
+    [
+      "name: ci-e2e-composition-metric",
+      "needs: [impact, artifact-build]",
+      "uses: ./.github/workflows/e2e-artifact-consumer.yml",
+      "lane_task: ci:lane:e2e-composition-metric",
+    ],
+    "Composition Metric E2E consumer lane",
+  );
+  const e2eArtifactConsumer = await Deno.readTextFile(
+    ".github/workflows/e2e-artifact-consumer.yml",
+  );
+  assertContainsAll(
+    e2eArtifactConsumer,
+    [
+      "workflow_call:",
+      "timeout-minutes: 45",
+      "actions/download-artifact@",
+      "scripts/measure-step.sh load-artifacts mise run ci:artifacts:load",
+      'scripts/measure-step.sh "${{ inputs.lane_name }}" mise run "${{ inputs.lane_task }}"',
+      "ugoite-e2e-${{ inputs.lane_name }}-${{ github.run_id }}",
+    ],
+    "shared hosted E2E artifact consumer",
   );
   for (
     const [job, subject] of [
@@ -927,7 +972,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-composition-metric, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -945,6 +990,8 @@ async function assertAggregateWorkflow(
       "WEB_RESULT: ${{ needs.web.result }}",
       "ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}",
       "E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}",
+      "E2E_COMPOSITION_STUDIO_RESULT: ${{ needs.e2e-composition-studio.result }}",
+      "E2E_COMPOSITION_METRIC_RESULT: ${{ needs.e2e-composition-metric.result }}",
       "E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}",
       "E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}",
       "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
@@ -1048,6 +1095,8 @@ Deno.test("required CI workflows cover base-ref edits without cancelling content
       WEB_RESULT: "skipped",
       ARTIFACT_BUILD_RESULT: "skipped",
       E2E_SMOKE_MOBILE_RESULT: "skipped",
+      E2E_COMPOSITION_STUDIO_RESULT: "skipped",
+      E2E_COMPOSITION_METRIC_RESULT: "skipped",
       E2E_OWNER_RESULT: "skipped",
       E2E_PORTABLE_RESULT: "skipped",
       DOCSITE_NAV_RESULT: "skipped",
