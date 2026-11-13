@@ -815,7 +815,7 @@ describe("CompositionStudio graph surface", () => {
     ).toBeNull();
   });
 
-  it("writes inline SQL editor changes back to the graph node", async () => {
+  it("writes inline SQL template source back to the graph node", async () => {
     renderStudio(createCompositionGraphDraft("Report"));
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
@@ -831,8 +831,8 @@ describe("CompositionStudio graph surface", () => {
 
     const editor = screen.getByRole("textbox", { name: "SQL" });
     expect(editor).toHaveValue("SELECT 1");
-    fireEvent.input(editor, { target: { value: "SELECT 2" } });
-    expect(editor).toHaveValue("SELECT 2");
+    fireEvent.input(editor, { target: { value: "SELECT {{minimum}}" } });
+    expect(editor).toHaveValue("SELECT {{minimum}}");
   });
 
   it("keeps Save disabled for an invalid literal after another variable is valid", async () => {

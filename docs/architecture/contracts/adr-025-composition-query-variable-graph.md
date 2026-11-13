@@ -159,6 +159,20 @@ not open an Inspector automatically. The Inspector owns one variable reference
 control. The picker has one modal focus owner, closes on Escape, restores focus,
 and uses accessible names and 44px targets.
 
+Composition inline SQL may author parameters as `{{name}}`. The shared Rust SQL
+template normalizer derives execution SQL for graph validation and Core request
+compilation; literal, quoted-identifier, and comment contents remain opaque.
+Each discovered parameter has one explicit binding to a compatible scalar
+variable. Invalid markers, missing or unused bindings, and type mismatches fail
+before query execution. The authored source remains the SQL Knowledge.
+
+When a Form is selected to seed a Composition Table, Rust generates SQL with
+explicitly projected projectable user-data columns in source order, quoted
+identifiers, and unique aliases. It excludes metadata columns and adds neither
+`SELECT *` nor a synthetic `LIMIT`. A Form with no projectable user-data
+columns returns a typed local diagnostic; the draft remains unchanged, with no
+query variable or Table inserted and no metadata fallback.
+
 ### 4. Reactive execution and persistence
 
 The Rust Domain compiles variables into a typed dependency DAG. A run uses an

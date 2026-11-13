@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn form_seeds_use_explicit_columns_and_unique_labels_without_metadata_projection() {
+    fn form_seed_projects_fields_with_unique_aliases() {
         let sql = composition_form_query_sql(CompositionFormQuery {
             relation: "Expenses".into(),
             columns: vec![
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn form_seeds_do_not_fall_back_to_select_star_without_data_columns() {
+    fn form_seed_rejects_empty_projectable_fields() {
         assert_eq!(
             composition_form_query_sql(CompositionFormQuery {
                 relation: "Form".into(),

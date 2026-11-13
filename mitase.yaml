@@ -14,6 +14,9 @@ inventory:
     rust:
       mode: test
       include_tests: true
+      additional_roots:
+        - crates/ugoite-domain/src/composition/variable_graph.rs
+        - crates/ugoite-domain/src/composition/form_query.rs
     typescript:
       roots:
         - frontend/src/lib/auth-api.ts
@@ -308,6 +311,7 @@ inventory:
         - frontend/src/lib/exact-integer.ts
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
+        - frontend/src/components/CompositionVariableGraphWorkspace.tsx
         - frontend/src/components/CompositionStudio.tsx
         - frontend/src/components/CompositionGraphRenderer.tsx
         - frontend/src/components/CompositionGraphRenderer.test.tsx

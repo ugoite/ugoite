@@ -1,0 +1,169 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Text-first Composition SQL and Form seeds
+features:
+  - id: FEAT-COMP-015
+    title: Text-first Composition SQL and Form seeds
+    summary: Preserve authored Composition SQL templates for Rust validation and execution, and seed Form queries from explicit projectable user-data columns.
+    status: implemented
+    bindings:
+      - id: domain-implementation
+        role: implementation
+        facet: core
+        responsibility: Validate inline SQL parameter bindings from Rust-normalized source and generate safe Form SQL from the supplied projectable fields.
+        targets:
+          - id: composition-sql-template-graph-validation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: symbol, name: compile_variable_graph }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+          - id: composition-form-query-seed
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/form_query.rs
+            selector: { kind: symbol, name: composition_form_query_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.form-seed-projectable-columns
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+      - id: core-service-implementation
+        role: implementation
+        facet: service
+        responsibility: Normalize authored inline SQL before query request compilation and result validation.
+        targets:
+          - id: composition-query-template-normalization
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector: { kind: symbol, name: compile_variable_graph_query_request }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+      - id: frontend-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep the authored SQL source in the graph editor and surface the typed no-projectable-fields error without committing a partial Table.
+        targets:
+          - id: composition-data-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
+            selector: { kind: symbol, name: CompositionVariableGraphWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+          - id: composition-studio
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.form-seed-projectable-columns
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+          - id: composition-variable-binding-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.tsx
+            selector: { kind: symbol, name: CompositionVariableBindingPicker }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authored SQL remains intact through the browser, Rust graph and request handling, and explicit Form projection and empty-field failure across Domain and picker behavior.
+        targets:
+          - id: graph-template-validation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: test, name: tests::inline_template_markers_validate_bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+                covers: [FEAT-COMP-015#binding.domain-implementation/target.composition-sql-template-graph-validation]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::variable_graph::tests::inline_template_markers_validate_bindings } }
+          - id: evaluation-template-request
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector: { kind: test, name: tests::inline_sql_templates_normalize_for_execution_and_result_source_validation }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+                covers: [FEAT-COMP-015#binding.core-service-implementation/target.composition-query-template-normalization]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition_query::tests::inline_sql_templates_normalize_for_execution_and_result_source_validation } }
+          - id: browser-authored-template-source
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: writes inline SQL template source back to the graph node }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "writes inline SQL template source back to the graph node" } }
+          - id: explicit-form-projection
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/form_query.rs
+            selector: { kind: test, name: tests::form_seed_projects_fields_with_unique_aliases }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.form-seed-projectable-columns
+                covers: [FEAT-COMP-015#binding.domain-implementation/target.composition-form-query-seed]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::form_query::tests::form_seed_projects_fields_with_unique_aliases } }
+          - id: empty-form-seed-diagnostic
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/form_query.rs
+            selector: { kind: test, name: tests::form_seed_rejects_empty_projectable_fields }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+                covers: [FEAT-COMP-015#binding.domain-implementation/target.composition-form-query-seed]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::form_query::tests::form_seed_rejects_empty_projectable_fields } }
+          - id: empty-form-studio-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: does not seed a Form table when it has no projectable fields }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not seed a Form table when it has no projectable fields" } }
+          - id: empty-form-picker-no-commit
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: localizes the typed empty projectable Form seed error }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
+                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "localizes the typed empty projectable Form seed error" } }
+          - id: projectable-form-seed
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: creates a Form-backed table query and component in one picker selection }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.form-seed-projectable-columns
+                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "creates a Form-backed table query and component in one picker selection" } }
+    contracts:
+      - id: sql-template-and-form-seed
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-015#binding.domain-implementation/target.composition-sql-template-graph-validation
+            role: rust-domain
+          - target: FEAT-COMP-015#binding.core-service-implementation/target.composition-query-template-normalization
+            role: application-core
+          - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-data-workspace
+            role: browser-authoring
+          - target: FEAT-COMP-015#binding.domain-implementation/target.composition-form-query-seed
+            role: rust-domain
+          - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-studio
+            role: browser-form-seed
+          - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-variable-binding-picker
+            role: browser-form-seed
+        guarantees:
+          - REQ-FE-082#criterion.inline-template-parameters
+          - REQ-FE-082#criterion.form-seed-projectable-columns
+          - REQ-FE-082#criterion.form-seed-without-projectable-columns

@@ -1490,7 +1490,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_sql_template_parameters_use_normalized_names_and_reject_bad_markers() {
+    fn inline_template_markers_validate_bindings() {
         let mut templated = query("result", vec![binding("day", "input")]);
         if let VariableGraphNodeKind::Query { query, .. } = &mut templated.kind {
             query.definition = VariableGraphQueryDefinition::InlineSql {

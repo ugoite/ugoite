@@ -191,6 +191,7 @@ describe("CompositionVariableBindingPicker", () => {
   });
 
   it("localizes the typed empty projectable Form seed error", async () => {
+    const onCommit = vi.fn();
     const provider: CompositionBindingProvider = {
       resolveForm: vi.fn(async () => {
         throw new UgoiteApiError({
@@ -201,7 +202,7 @@ describe("CompositionVariableBindingPicker", () => {
       }),
       prepareSavedSql: vi.fn(),
     };
-    renderPicker({ kind: "table", provider, onCommit: vi.fn() });
+    renderPicker({ kind: "table", provider, onCommit });
     const dialog = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(dialog).getByRole("tab", { name: "Forms" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Customers" }));
@@ -210,6 +211,7 @@ describe("CompositionVariableBindingPicker", () => {
       "This Form has no displayable data fields.",
     );
     expect(screen.getByRole("dialog", { name: "Table" })).toBeInTheDocument();
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("prepares only the selected exact Saved SQL revision without inspecting earlier rows", async () => {

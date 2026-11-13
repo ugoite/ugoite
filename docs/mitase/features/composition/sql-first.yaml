@@ -34,6 +34,12 @@ features:
                 anchor: REQ-COMP-009#criterion.replaced-composition-grammar-fails-closed
               - kind: documents
                 anchor: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
+              - kind: documents
+                anchor: REQ-FE-082#criterion.inline-template-parameters
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-projectable-columns
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns
           - id: sql-first-workspace-ui-contract
             adapter: declared
             path: docs/spec/ui/components/sql-workspace.yaml
@@ -86,6 +92,18 @@ features:
                 anchor: REQ-FE-079#criterion.composition-text-inspector-literal-editing
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-text-inspector-variable-binding
+              - kind: documents
+                anchor: REQ-FE-082#criterion.inline-template-parameters
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-projectable-columns
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns
+              - kind: documents
+                anchor: REQ-FE-082#criterion.inline-template-parameters
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-projectable-columns
+              - kind: documents
+                anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns
           - id: sql-first-composition-architecture-contract
             adapter: declared
             path: docs/architecture/contracts/composition.md
@@ -436,8 +454,6 @@ features:
             path: frontend/src/components/CompositionVariableBindingPicker.tsx
             selector: { kind: symbol, name: CompositionVariableBindingPicker }
             claims:
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
               - kind: satisfies
