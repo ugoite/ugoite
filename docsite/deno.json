@@ -41,7 +41,7 @@
     "unifont": "npm:unifont@1.0.3",
     "unstorage": "npm:unstorage@1.17.6",
     "vite": "npm:vite@8.1.0",
-    "vitest": "npm:vitest@4.1.8",
+    "vitest": "npm:vitest@5.1.0",
     "yaml": "npm:yaml@2.9.0",
     "zod": "npm:zod@4.4.3",
     "zod/v4": "npm:zod@4.4.3/v4"
