@@ -2,11 +2,10 @@
 title: 'Text-first Composition'
 ---
 
-**Status: accepted target; implementation and focused verification are in
-progress.** The current Composition model is defined by
+**Status: accepted contract.** The current Composition model is defined by
 [ADR-027](../../architecture/contracts/adr-027-text-first-composition.md),
-[REQ-COMP-010](../../mitase/requirements/composition/text-first-graph.yaml),
-and [REQ-FE-083](../../mitase/requirements/frontend/composition-text-first.yaml).
+[REQ-COMP-010](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/composition/text-first-graph.yaml),
+and [REQ-FE-083](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/frontend/composition-text-first.yaml).
 This specification does not authorize release preparation, version changes, or
 publication.
 
