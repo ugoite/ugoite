@@ -2,8 +2,9 @@ import { expect, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import {
-  expectedCompositionFormSeedSql,
   type CompositionFormSeedField,
+  expectedCompositionFormSeedSql,
+  normalizeCompositionFormSeedSql,
 } from "./lib/composition-form.ts";
 
 type FormSummary = {
@@ -164,9 +165,9 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     );
     expect(originalQuery?.query?.schema_fingerprint)
       .toMatch(/^[0-9a-f]{64}$/);
-    expect(originalQuery?.query?.sql).toBe(
-      expectedCompositionFormSeedSql(formName, formBefore?.fields),
-    );
+    expect(
+      normalizeCompositionFormSeedSql(originalQuery?.query?.sql ?? ""),
+    ).toBe(expectedCompositionFormSeedSql(formName, formBefore?.fields));
     const originalTable = originalDocument.spec?.components?.find(
       (component) =>
         component.kind === "table" &&

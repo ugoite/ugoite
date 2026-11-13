@@ -2,8 +2,9 @@ import { type APIRequestContext, expect, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import {
-  expectedCompositionFormSeedSql,
   type CompositionFormSeedField,
+  expectedCompositionFormSeedSql,
+  normalizeCompositionFormSeedSql,
 } from "./lib/composition-form.ts";
 
 type FormField = CompositionFormSeedField;
@@ -954,10 +955,10 @@ test("Composition shared query edits update every display", async ({ page, reque
   await page.getByRole("tab", { name: "Variables", exact: true }).click();
   await page.getByRole("button", { name: formVariableId, exact: true }).click();
   const editor = page.getByRole("textbox", { name: "SQL", exact: true });
-  await expect(editor).toContainText(
-    expectedCompositionFormSeedSql(formName, form?.fields),
-    { timeout: 30_000 },
-  );
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  expect(
+    normalizeCompositionFormSeedSql(await editor.inputValue()),
+  ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
   await editor.click();
   await editor.press("ControlOrMeta+A");
   await editor.pressSequentially(

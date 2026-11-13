@@ -19,6 +19,7 @@ import {
 } from "./lib/composition-graph.ts";
 import {
   expectedCompositionFormSeedSql,
+  normalizeCompositionFormSeedSql,
   type CompositionFormSeedField,
 } from "./lib/composition-form.ts";
 import { parse as parseYaml } from "yaml";
@@ -1207,6 +1208,10 @@ test.describe("Composition Studio Journey", () => {
       expect(savedYaml).toContain(String(form?.id));
       const savedDocument = parseYaml(savedYaml) as {
         spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: { sql?: string };
+          }>;
           components?: Array<{
             id?: string;
             kind?: string;
@@ -1239,9 +1244,12 @@ test.describe("Composition Studio Journey", () => {
         savedYaml.split("components:")[1]?.split("layout:")[0] ??
           "";
 
-      expect(savedYaml).toContain(
-        expectedCompositionFormSeedSql(seed.formName, form?.fields),
-      );
+      const savedFormQuery = savedDocument.spec?.variables?.find(
+        (variable) => variable.id === `${formSlug}_rows`,
+      )?.query?.sql;
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(seed.formName, form?.fields));
       expect(savedYaml).toContain(
         `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
       );
@@ -1700,9 +1708,13 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(originalFormQuery?.query).toMatchObject({
         kind: "inline_sql",
-        sql: expectedCompositionFormSeedSql(seed.formName, form?.fields),
         form_bindings: [{ relation: seed.formName, form_id: form!.id! }],
       });
+      expect(
+        normalizeCompositionFormSeedSql(
+          originalFormQuery?.query?.sql ?? "",
+        ),
+      ).toBe(expectedCompositionFormSeedSql(seed.formName, form?.fields));
       expect(originalFormQuery?.query).toEqual(originalSavedFormQuery?.query);
       expect(reboundVariables.some((variable) =>
         variable.id === `${replacementSlug}_rows` &&
@@ -1883,9 +1895,9 @@ test.describe("Composition Studio Journey", () => {
         variable.query?.kind === "inline_sql"
       )?.query;
       expect(savedFormQuery).toBeDefined();
-      expect(savedFormQuery?.sql).toBe(
-        expectedCompositionFormSeedSql(formName, form?.fields),
-      );
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery?.sql ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
         form_id: form!.id!,
@@ -2041,9 +2053,9 @@ test.describe("Composition Studio Journey", () => {
         variable.query?.kind === "inline_sql"
       )?.query;
       expect(savedFormQuery).toBeDefined();
-      expect(savedFormQuery?.sql).toBe(
-        expectedCompositionFormSeedSql(formName, form?.fields),
-      );
+      expect(
+        normalizeCompositionFormSeedSql(savedFormQuery?.sql ?? ""),
+      ).toBe(expectedCompositionFormSeedSql(formName, form?.fields));
       expect(savedFormQuery?.form_bindings).toEqual([{
         relation: formName,
         form_id: form!.id!,

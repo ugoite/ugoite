@@ -1402,6 +1402,80 @@ describe("CompositionStudio graph surface", () => {
     }]);
   });
 
+  it("preserves Form field order in a generated Table projection", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Ordered records",
+      sql_relation: "form_ordered_records",
+      fields: {
+        zulu: projectableField(
+          {
+            type: "string",
+            required: false,
+            sql_column: "field_zulu",
+            label: "Zulu",
+          },
+          "zulu",
+          1,
+        ),
+        alpha: projectableField(
+          {
+            type: "string",
+            required: false,
+            sql_column: "field_alpha",
+            label: "Alpha",
+          },
+          "alpha",
+          2,
+        ),
+      },
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [
+          {
+            name: "Zulu",
+            value_type: { scalar_type: "string", nullable: true },
+          },
+          {
+            name: "Alpha",
+            value_type: { scalar_type: "string", nullable: true },
+          },
+        ],
+      })
+    );
+    renderStudio(createCompositionGraphDraft("Ordered report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    fireEvent.click(
+      await within(picker).findByRole("button", {
+        name: "Ordered records",
+        exact: true,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(compositionFormQuerySqlMock).toHaveBeenCalledOnce()
+    );
+    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
+      "Ordered records",
+      [
+        { column: "field_zulu", label: "Zulu" },
+        { column: "field_alpha", label: "Alpha" },
+      ],
+      undefined,
+    );
+    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
+    expect(generated.sql).toBe(
+      'SELECT "field_zulu" AS "Zulu", "field_alpha" AS "Alpha" FROM "Ordered records" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
+    );
+    expect(generated.projection_aliases).toEqual(["Zulu", "Alpha"]);
+  });
+
   it("does not seed a Form table when it has no projectable fields", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
