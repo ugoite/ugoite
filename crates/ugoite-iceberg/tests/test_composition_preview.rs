@@ -15,13 +15,13 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
     CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
-    VariableGraphArgumentBinding, VariableGraphFormBinding, VariableGraphLiteral,
+    TextStyle, VariableGraphArgumentBinding, VariableGraphFormBinding, VariableGraphLiteral,
     VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
-    VariableGraphResultType, VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor,
-    VariableGraphScalarType, VariableGraphValidatedResult,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormChange, FormChangeSet};
-use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
+use ugoite_domain::id::{FieldId, FormId};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::{
     CompositionQueryEvaluationPage, CompositionQueryEvaluationTarget, UgoiteService,
@@ -93,7 +93,6 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
                 variable: "source".to_string(),
-                presentation: None,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -164,7 +163,6 @@ async fn concurrent_empty_form_preview_and_draft_evaluation_keep_form_snapshot_c
             components: vec![CompositionComponent::Table {
                 id: "table".to_owned(),
                 variable: variable_id.to_owned(),
-                presentation: None,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -594,10 +592,10 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
                 },
             },
         });
-        document.spec.components.push(CompositionComponent::Metric {
+        document.spec.components.push(CompositionComponent::Text {
             id: format!("{id}_metric"),
-            variable: id.to_string(),
-            presentation: None,
+            content: format!("{{{{{id}}}}}"),
+            style: TextStyle::Body,
         });
         document.spec.layout.rows.push(FlowRow {
             id: format!("{id}_row"),
@@ -1071,10 +1069,10 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
             kind: query("SELECT 1 AS value", Vec::new()),
         },
     ];
-    document.spec.components = vec![CompositionComponent::Metric {
+    document.spec.components = vec![CompositionComponent::Text {
         id: "metric".to_owned(),
-        variable: "downstream".to_owned(),
-        presentation: None,
+        content: "{{downstream}}".to_owned(),
+        style: TextStyle::Body,
     }];
     document.spec.layout.rows[0].items = vec![FlowItem::Component {
         component: "metric".to_owned(),
@@ -1095,148 +1093,6 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
         };
         assert_eq!(value_type.scalar_type, VariableGraphScalarType::Integer);
     }
-    Ok(())
-}
-
-#[tokio::test]
-async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Result<()> {
-    let (service, space_id, _, _) = setup_preview_space().await?;
-    let sql_id = Uuid::from_u128(3_434_002);
-    let created = service
-        .create_saved_sql(
-            &space_id,
-            Some(&sql_id.to_string()),
-            &SqlPayload {
-                name: Some("Integer parameter".to_string()),
-                kind: SqlKind::UserQuery,
-                metadata: None,
-                sql: "SELECT {{minimum}} AS total".to_string(),
-                variables: json!([{
-                    "name": "minimum",
-                    "type": "integer",
-                    "description": "",
-                }]),
-            },
-            "owner",
-        )
-        .await?;
-    let revision_id = created
-        .get("revision_id")
-        .and_then(Value::as_str)
-        .context("Saved SQL should return its revision ID")?;
-    let entry_id = EntryId::from_uuid(sql_id).to_string();
-    let revision_id = RevisionId::from_uuid(Uuid::parse_str(revision_id)?);
-
-    let document_for = |source_returns, source_sql: &str, name: &str| {
-        let source_query = |returns| VariableGraphNodeKind::Query {
-            returns,
-            query: VariableGraphQuery {
-                definition: VariableGraphQueryDefinition::InlineSql {
-                    sql: source_sql.to_string(),
-                },
-                arguments: Vec::new(),
-                form_bindings: Vec::new(),
-                schema_fingerprint: String::new(),
-            },
-        };
-        CompositionDocument {
-            format: CompositionFormat::UgoiteComposition,
-            format_version: 1,
-            kind: CompositionKind::Dashboard,
-            name: name.to_string(),
-            spec: CompositionSpec {
-                variables: vec![
-                    VariableGraphNode {
-                        id: "upstream".to_string(),
-                        kind: source_query(source_returns),
-                    },
-                    VariableGraphNode {
-                        id: "total".to_string(),
-                        kind: VariableGraphNodeKind::Query {
-                            returns: VariableGraphResultType::Scalar {
-                                value_type: VariableGraphScalarDescriptor {
-                                    scalar_type: VariableGraphScalarType::Integer,
-                                    nullable: true,
-                                },
-                            },
-                            query: VariableGraphQuery {
-                                definition: VariableGraphQueryDefinition::SavedSql {
-                                    entry_id: Some(entry_id.clone()),
-                                    revision_id: Some(revision_id.to_string()),
-                                    column: Some("total".to_string()),
-                                    label_source: VariableGraphSavedSqlLabelSource::Source,
-                                },
-                                arguments: vec![VariableGraphArgumentBinding {
-                                    name: "minimum".to_string(),
-                                    variable: "upstream".to_string(),
-                                }],
-                                form_bindings: Vec::new(),
-                                schema_fingerprint: String::new(),
-                            },
-                        },
-                    },
-                ],
-                components: vec![CompositionComponent::Metric {
-                    id: "total_metric".to_string(),
-                    variable: "total".to_string(),
-                    presentation: None,
-                }],
-                layout: DashboardFlowLayout {
-                    kind: FlowLayoutKind::Flow,
-                    rows: vec![FlowRow {
-                        id: "main".to_string(),
-                        items: vec![FlowItem::Component {
-                            component: "total_metric".to_string(),
-                        }],
-                    }],
-                },
-            },
-        }
-    };
-
-    let integer = VariableGraphScalarDescriptor {
-        scalar_type: VariableGraphScalarType::Integer,
-        nullable: false,
-    };
-    let saved = save_local_composition(
-        &service,
-        &space_id,
-        document_for(
-            VariableGraphResultType::Scalar {
-                value_type: integer,
-            },
-            "SELECT 7 AS value",
-            "Scalar query argument",
-        ),
-    )
-    .await?;
-    assert!(saved.document.has_complete_query_descriptors());
-
-    let mismatch = save_local_composition(
-        &service,
-        &space_id,
-        document_for(
-            VariableGraphResultType::Scalar {
-                value_type: VariableGraphScalarDescriptor {
-                    scalar_type: VariableGraphScalarType::String,
-                    nullable: false,
-                },
-            },
-            "SELECT 'seven' AS value",
-            "Mismatched scalar query argument",
-        ),
-    )
-    .await
-    .expect_err("a planner-derived string cannot bind an integer parameter");
-    assert_eq!(
-        mismatch.downcast_ref::<AppError>().map(AppError::code),
-        Some(ErrorCode::InvalidInput)
-    );
-
-    let saved_compositions = service
-        .list_compositions_local_page(&space_id, 100, 0)
-        .await?;
-    assert_eq!(saved_compositions.items.len(), 1);
     Ok(())
 }
 
@@ -1398,10 +1254,10 @@ async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Resu
             kind: query(unresolved_metadata_query),
         },
     ];
-    document.spec.components = vec![CompositionComponent::Metric {
+    document.spec.components = vec![CompositionComponent::Text {
         id: "metric".to_owned(),
-        variable: "selected".to_owned(),
-        presentation: None,
+        content: "{{selected}}".to_owned(),
+        style: TextStyle::Body,
     }];
     document.spec.layout.rows[0].items = vec![FlowItem::Component {
         component: "metric".to_owned(),
@@ -1686,9 +1542,7 @@ async fn inline_sql_planning_rejects_unsupported_decimal_and_json_arguments() ->
         let VariableGraphNodeKind::Query { query, .. } = &mut query.kind else {
             anyhow::bail!("preview fixture source must be a query variable");
         };
-        let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition else {
-            anyhow::bail!("preview fixture source must use inline SQL");
-        };
+        let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition;
         let order_by = sql
             .find(" ORDER BY ")
             .context("preview fixture should include a deterministic order")?;
@@ -1739,67 +1593,15 @@ async fn inline_sql_planning_rejects_unsupported_decimal_and_json_arguments() ->
 }
 
 #[tokio::test]
-async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema() -> Result<()> {
+async fn parameterized_inline_sql_preview_and_save_uses_server_schema() -> Result<()> {
     let (service, space_id, _, _) = setup_preview_space().await?;
-    let sql_id = Uuid::from_u128(3_434_010);
-    let pinned_sql_input = "SELECT {{minimum}} AS total";
-    let pinned_sql_text = "SELECT $minimum AS total";
-    let latest_sql_text = "SELECT {{minimum}} + 100 AS total";
-    let created = service
-        .create_saved_sql(
-            &space_id,
-            Some(&sql_id.to_string()),
-            &SqlPayload {
-                name: Some("Minimum value".to_string()),
-                kind: SqlKind::UserQuery,
-                metadata: None,
-                sql: pinned_sql_input.to_string(),
-                variables: json!([{
-                    "name": "minimum",
-                    "type": "integer",
-                    "description": "",
-                }]),
-            },
-            "owner",
-        )
-        .await?;
-    let revision_id = Uuid::parse_str(
-        created
-            .get("revision_id")
-            .and_then(Value::as_str)
-            .context("saved SQL should return its revision ID")?,
-    )?;
-    let first_revision_id = RevisionId::from_uuid(revision_id).to_string();
-    let updated = service
-        .update_saved_sql(
-            &space_id,
-            &sql_id.to_string(),
-            &SqlPayload {
-                name: Some("Minimum value".to_string()),
-                kind: SqlKind::UserQuery,
-                metadata: None,
-                sql: latest_sql_text.to_string(),
-                variables: json!([{
-                    "name": "minimum",
-                    "type": "integer",
-                    "description": "",
-                }]),
-            },
-            &first_revision_id,
-            "owner",
-        )
-        .await?;
-    let latest_revision_id = updated
-        .get("revision_id")
-        .and_then(Value::as_str)
-        .context("updated Saved SQL should return its revision ID")?;
-    assert_ne!(latest_revision_id, first_revision_id);
+    let parameterized_sql = "SELECT $minimum AS total";
 
     let document = CompositionDocument {
         format: CompositionFormat::UgoiteComposition,
         format_version: 1,
         kind: CompositionKind::Dashboard,
-        name: "Parameterized Saved SQL".to_string(),
+        name: "Parameterized inline SQL".to_string(),
         spec: CompositionSpec {
             variables: vec![
                 VariableGraphNode {
@@ -1823,11 +1625,8 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                             },
                         },
                         query: VariableGraphQuery {
-                            definition: VariableGraphQueryDefinition::SavedSql {
-                                entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
-                                revision_id: Some(RevisionId::from_uuid(revision_id).to_string()),
-                                column: Some("total".to_string()),
-                                label_source: VariableGraphSavedSqlLabelSource::Source,
+                            definition: VariableGraphQueryDefinition::InlineSql {
+                                sql: parameterized_sql.to_owned(),
                             },
                             arguments: vec![VariableGraphArgumentBinding {
                                 name: "minimum".to_string(),
@@ -1844,10 +1643,10 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                     id: "minimum_input".to_string(),
                     variable: "minimum".to_string(),
                 },
-                CompositionComponent::Metric {
+                CompositionComponent::Text {
                     id: "total".to_string(),
-                    variable: "minimum_query".to_string(),
-                    presentation: None,
+                    content: "Total: {{minimum_query}}".to_string(),
+                    style: TextStyle::Body,
                 },
             ],
             layout: DashboardFlowLayout {
@@ -1888,7 +1687,10 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
     assert_eq!(plan.queries.len(), 1);
     assert!(plan.queries[0].request.is_none());
     assert!(!plan.variable_values.contains_key("minimum"));
-    assert_eq!(plan.queries[0].sql_text.as_deref(), Some(pinned_sql_text));
+    assert_eq!(
+        plan.queries[0].portable_sql.as_deref(),
+        Some(parameterized_sql)
+    );
     assert_eq!(plan.queries[0].schema_fingerprint.len(), 64);
 
     let resolved_preview = service
@@ -1907,8 +1709,8 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
         Some(request) if request.parameters.get("minimum") == Some(&json!(7))
     ));
     assert_eq!(
-        resolved_plan.queries[0].sql_text.as_deref(),
-        Some(pinned_sql_text)
+        resolved_plan.queries[0].portable_sql.as_deref(),
+        Some(parameterized_sql)
     );
 
     let document_with_descriptors =
@@ -1954,7 +1756,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
         .iter()
         .find(|node| node.id == "minimum_query")
     else {
-        anyhow::bail!("saved Composition should retain its Saved SQL query variable");
+        anyhow::bail!("saved Composition should retain its inline SQL query variable");
     };
     assert_eq!(query.schema_fingerprint.len(), 64);
 
@@ -2319,93 +2121,6 @@ async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacem
         count, 3,
         "portable SQL must keep the original Form, not its same-name replacement"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column() -> Result<()> {
-    let (service, space_id, mut document, _) = setup_preview_space().await?;
-    let sql_id = Uuid::now_v7();
-    let payload = SqlPayload {
-        name: Some("Pinned scalar".to_owned()),
-        kind: SqlKind::UserQuery,
-        metadata: None,
-        sql: "SELECT CAST(11 AS BIGINT) AS \"a\"\"b\", CAST(99 AS BIGINT) AS other".to_owned(),
-        variables: json!([]),
-    };
-    let created = service
-        .create_saved_sql(&space_id, Some(&sql_id.to_string()), &payload, "owner")
-        .await?;
-    let revision = created["revision_id"]
-        .as_str()
-        .context("Saved SQL revision")?;
-    service
-        .update_saved_sql(
-            &space_id,
-            &sql_id.to_string(),
-            &SqlPayload {
-                sql: "SELECT CAST(999 AS BIGINT) AS \"a\"\"b\", CAST(0 AS BIGINT) AS other"
-                    .to_owned(),
-                ..payload
-            },
-            revision,
-            "owner",
-        )
-        .await?;
-    document.spec.variables[0].kind = VariableGraphNodeKind::Query {
-        returns: VariableGraphResultType::Scalar {
-            value_type: VariableGraphScalarDescriptor {
-                scalar_type: VariableGraphScalarType::Integer,
-                nullable: false,
-            },
-        },
-        query: VariableGraphQuery {
-            definition: VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
-                revision_id: Some(revision.to_owned()),
-                column: Some("a\"b".to_owned()),
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-            },
-            arguments: Vec::new(),
-            form_bindings: Vec::new(),
-            schema_fingerprint: String::new(),
-        },
-    };
-    document.spec.components[0] = CompositionComponent::Metric {
-        id: "table".to_owned(),
-        variable: "source".to_owned(),
-        presentation: None,
-    };
-    let yaml = canonicalize_composition(&document)
-        .expect("valid graph document")
-        .yaml;
-    let preview = service
-        .preview_composition_local(&space_id, &yaml, &BTreeMap::new(), &[])
-        .await?;
-    let query = preview
-        .plan
-        .context("pinned scalar plan")?
-        .queries
-        .remove(0);
-    assert!(query
-        .sql_text
-        .as_deref()
-        .context("pinned SQL")?
-        .contains("11"));
-    let sql = query.portable_sql.context("independent inline copy")?;
-    let page = service
-        .query_sql(
-            &space_id,
-            ugoite_core::sql_query::SqlQueryRequest {
-                form_binding_guards: Vec::new(),
-                sql,
-                limit: 2,
-                ..Default::default()
-            },
-        )
-        .await?;
-    assert_eq!(page.columns, vec!["a\"b"]);
-    assert_eq!(page.rows, vec![json!({"a\"b": 11})]);
     Ok(())
 }
 

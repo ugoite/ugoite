@@ -432,14 +432,7 @@ impl UgoiteService {
                 continue;
             };
             let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-                &query.definition
-            else {
-                return Err(AppError::invalid_input(
-                    ErrorCode::InvalidInput,
-                    format!("Query {} requires a published Space snapshot", node.id),
-                )
-                .into());
-            };
+                &query.definition;
             if !crate::index::quoted_form_name_references(sql)?.is_empty()
                 || !crate::index::quoted_form_relation_names(sql)?.is_empty()
             {
@@ -1596,7 +1589,6 @@ mod tests {
         ResolvedQueryRequest {
             variable_id: "total".to_owned(),
             request: None,
-            sql_text: None,
             portable_sql: None,
             deferred_arguments: Vec::new(),
             returns: VariableGraphResultType::Scalar {

@@ -547,8 +547,6 @@ pub struct CompositionVariableConsumers {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub query_variable_ids: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub metric_component_ids: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub table_component_ids: BTreeSet<String>,
 }
 
@@ -556,35 +554,16 @@ pub struct CompositionVariableConsumers {
 #[serde(rename_all = "snake_case")]
 pub enum CompositionComponentKind {
     Input,
-    Metric,
     Table,
     Text,
 }
 
-/// Explicit display-only formatting for numeric Composition metrics.
+/// Rust-parsed plain text template segments used to render Text components.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionMetricPresentation {
-    Number {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        unit: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fraction_digits: Option<u8>,
-    },
-}
-
-/// Portable logical result type selected by the resolver for a metric.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionResultFieldType {
-    String,
-    Boolean,
-    Integer,
-    Float,
-    Decimal,
-    Date,
-    Timestamp,
-    Json,
+pub enum CompositionTextTemplatePart {
+    Literal { text: String },
+    Variable { variable: String },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -592,13 +571,12 @@ pub enum CompositionResultFieldType {
 pub struct CompositionComponentBinding {
     pub component_id: String,
     pub kind: CompositionComponentKind,
-    /// The single typed graph value bound to this component.
+    /// The single graph value bound to an Input or Table component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_result_type: Option<CompositionResultFieldType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<CompositionMetricPresentation>,
+    /// Ordered Rust-parsed template parts; populated only for Text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_segments: Vec<CompositionTextTemplatePart>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -617,9 +595,6 @@ pub struct CompositionQuery {
     pub variable_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<Value>,
-    /// Exact SQL source for an authorized pinned Saved SQL revision.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sql_text: Option<String>,
     /// Authorized SQL using immutable Form relation IDs, suitable for an explicit inline copy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portable_sql: Option<String>,

@@ -25,7 +25,6 @@ type HmacSha256 = Hmac<sha2::Sha256>;
 
 mod composition_local_save;
 mod composition_restore;
-mod composition_save_validation;
 
 const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
 const CHANGE_PAGE_MAX_LIMIT: usize = 100;
@@ -162,10 +161,10 @@ use ugoite_storage::{
     SpaceCatalogStore, StorageBackend,
 };
 
-#[path = "service/composition_metric_query.rs"]
-mod composition_metric_query;
 mod composition_query_evaluation;
 mod composition_resolver;
+#[path = "service/composition_scalar_query.rs"]
+mod composition_scalar_query;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
 #[cfg(debug_assertions)]
@@ -5462,42 +5461,26 @@ impl UgoiteService {
                 else {
                     continue;
                 };
-                match &query.definition {
-                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
-                        entry_id: Some(entry_id),
-                        revision_id,
-                        ..
-                    } => ensure_saved_sql_access(
-                        &state,
-                        principal_ids,
-                        &ugoite_core::sql_query::SavedSqlRevisionRef {
-                            id: entry_id.clone(),
-                            revision_id: revision_id.clone().unwrap_or_default(),
-                        },
-                    )?,
-                    ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
-                        let mut referenced = index::quoted_form_name_references(sql)?;
-                        referenced.extend(index::quoted_form_relation_names(sql)?);
-                        referenced.extend(
-                            query
-                                .form_bindings
-                                .iter()
-                                .map(|binding| binding.relation.clone()),
-                        );
-                        for form in &current_forms {
-                            if referenced.iter().any(|name| {
-                                name.eq_ignore_ascii_case(&form.name)
-                                    || name.eq_ignore_ascii_case(
-                                        &ugoite_domain::form::sql_relation_name(form.id),
-                                    )
-                            }) && !current_form_scopes
-                                .contains_key(&form.name.to_ascii_lowercase())
-                            {
-                                return Err(AppError::forbidden("Form is not readable").into());
-                            }
-                        }
+                let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+                    &query.definition;
+                let mut referenced = index::quoted_form_name_references(sql)?;
+                referenced.extend(index::quoted_form_relation_names(sql)?);
+                referenced.extend(
+                    query
+                        .form_bindings
+                        .iter()
+                        .map(|binding| binding.relation.clone()),
+                );
+                for form in &current_forms {
+                    if referenced.iter().any(|name| {
+                        name.eq_ignore_ascii_case(&form.name)
+                            || name.eq_ignore_ascii_case(&ugoite_domain::form::sql_relation_name(
+                                form.id,
+                            ))
+                    }) && !current_form_scopes.contains_key(&form.name.to_ascii_lowercase())
+                    {
+                        return Err(AppError::forbidden("Form is not readable").into());
                     }
-                    _ => {}
                 }
             }
             if let Some(result) = composition::recover_published_composition_save(
@@ -5567,87 +5550,39 @@ impl UgoiteService {
                 // nonempty spoof. An empty schema fingerprint marks the result
                 // descriptor incomplete and lets the planner fill it in.
                 let draft_descriptor = query.schema_fingerprint.is_empty();
-                match &query.definition {
-                    ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
-                        let candidate_bindings = composition_inline_form_bindings_for_save(
-                            &node.id,
-                            sql,
-                            &query.form_bindings,
-                            previous_document.as_ref(),
-                            &readable_forms,
-                        )?;
-                        let metadata = self
-                            .derive_inline_sql_query_metadata(
-                                space_id,
-                                &source_for_planning,
-                                Some(&candidate_bindings),
-                                &variables,
-                                Some(principal_ids),
-                                Some(&state),
-                                None,
-                            )
-                            .await?
-                            .ok_or_else(|| {
-                                AppError::not_found(
-                                    ErrorCode::FormNotFound,
-                                    "Composition query Form is not available",
-                                )
-                            })?;
-                        composition_resolver::reconcile_query_returns_with_schema(
-                            returns,
-                            &metadata.result_columns,
-                            draft_descriptor,
-                        )?;
-                        query.form_bindings = metadata.form_bindings;
-                        query.schema_fingerprint = metadata.schema_fingerprint;
-                    }
-                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
-                        entry_id: Some(entry_id),
-                        revision_id: Some(revision_id),
-                        ..
-                    } => {
-                        let metadata = self
-                            .derive_saved_sql_query_metadata(
-                                space_id,
-                                &source_for_planning,
-                                Some(principal_ids),
-                                Some(&state),
-                                None,
-                            )
-                            .await?
-                            .ok_or_else(|| {
-                                AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
-                            })?;
-                        if metadata.entry_id != *entry_id || metadata.revision_id != *revision_id {
-                            return Err(AppError::not_found(
-                                ErrorCode::EntryNotFound,
-                                "Saved SQL revision not found",
-                            )
-                            .into());
-                        }
-                        composition_save_validation::validate_saved_sql_arguments(
-                            &query.arguments,
-                            &metadata.parameter_types,
-                            &variables,
-                        )?;
-                        composition_resolver::reconcile_query_returns_with_schema(
-                            returns,
-                            &metadata.result_columns,
-                            draft_descriptor,
-                        )?;
-                        query.form_bindings = metadata.form_bindings;
-                        query.schema_fingerprint = metadata.schema_fingerprint;
-                    }
-                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
-                        ..
-                    } => {
-                        return Err(AppError::not_found(
-                            ErrorCode::EntryNotFound,
-                            "Saved SQL revision not found",
+                let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+                    &query.definition;
+                let candidate_bindings = composition_inline_form_bindings_for_save(
+                    &node.id,
+                    sql,
+                    &query.form_bindings,
+                    previous_document.as_ref(),
+                    &readable_forms,
+                )?;
+                let metadata = self
+                    .derive_inline_sql_query_metadata(
+                        space_id,
+                        &source_for_planning,
+                        Some(&candidate_bindings),
+                        &variables,
+                        Some(principal_ids),
+                        Some(&state),
+                        None,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::not_found(
+                            ErrorCode::FormNotFound,
+                            "Composition query Form is not available",
                         )
-                        .into());
-                    }
-                }
+                    })?;
+                composition_resolver::reconcile_query_returns_with_schema(
+                    returns,
+                    &metadata.result_columns,
+                    draft_descriptor,
+                )?;
+                query.form_bindings = metadata.form_bindings;
+                query.schema_fingerprint = metadata.schema_fingerprint;
             }
             if !request.document.has_complete_query_descriptors() {
                 return Err(AppError::invalid_input(
@@ -7767,6 +7702,13 @@ impl UgoiteService {
         let composition_count_snapshot =
             match (pinned_publication, continuation_context_fingerprint) {
                 (Some(publication), Some(context_fingerprint)) => {
+                    // Count requests use portable SQL rebound to Form IDs,
+                    // while graph page requests use the authored Form name.
+                    // Fingerprint the SQL after Form binding so both requests
+                    // identify the same execution at the pinned publication.
+                    let count_sql_fingerprint = request
+                        .sql_fingerprint(&execution_sql)
+                        .map_err(sql_query_contract_error)?;
                     let snapshot_parameter_fingerprint = SqlQueryRequest {
                         parameter_types: effective_parameter_types.clone(),
                         ..request.clone()
@@ -7776,7 +7718,7 @@ impl UgoiteService {
                     let mut snapshot = SqlContinuation::new(
                         state.space_uid.into(),
                         publication.clone(),
-                        sql_fingerprint,
+                        count_sql_fingerprint,
                         snapshot_parameter_fingerprint,
                         authorization_fingerprint,
                         0,
@@ -7876,9 +7818,6 @@ impl UgoiteService {
             binding_base: request.binding_base.clone(),
             form_binding_guards: request.form_binding_guards.clone(),
         };
-        let sql_fingerprint = count_query
-            .sql_fingerprint(&normalized_sql)
-            .map_err(sql_query_contract_error)?;
         let parameter_fingerprint = count_query
             .typed_parameter_fingerprint(&effective_parameter_types)
             .map_err(sql_query_contract_error)?;
@@ -7888,7 +7827,6 @@ impl UgoiteService {
                 || snapshot.offset != 0
                 || snapshot.space_id.as_uuid() != space_uid
                 || snapshot.context_fingerprint.is_none()
-                || snapshot.sql_fingerprint != sql_fingerprint
                 || snapshot.parameter_fingerprint != parameter_fingerprint
                 || snapshot.saved_sql != request.saved_sql
                 || snapshot.binding_fingerprint
@@ -7954,6 +7892,18 @@ impl UgoiteService {
                 &relation_scopes,
             )?
         };
+        if let Some(snapshot) = &composition_snapshot {
+            let sql_fingerprint = count_query
+                .sql_fingerprint(&execution_sql)
+                .map_err(sql_query_contract_error)?;
+            if snapshot.sql_fingerprint != sql_fingerprint {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition Count snapshot does not match the SQL request",
+                )
+                .into());
+            }
+        }
         index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
             &self.operator,
             &self.workspace_path(space_id),

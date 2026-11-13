@@ -58,15 +58,14 @@ use ugoite_api_client::{
     CompositionEvaluationResultContractDiagnostic as ApiCompositionEvaluationResultContractDiagnostic,
     CompositionEvaluationResultDiagnostic as ApiCompositionEvaluationResultDiagnostic,
     CompositionFormBinding, CompositionHistoryPage, CompositionLintError, CompositionLintResponse,
-    CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionMetricPresentation as ApiCompositionMetricPresentation, CompositionPreviewPlan,
+    CompositionLintValue, CompositionListItem, CompositionListPage, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionQuery, CompositionQueryResultType, CompositionRawRevision,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionResultFieldType as ApiCompositionResultFieldType,
-    CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionResultColumn, CompositionRevisionMetadata, CompositionRevisionReference,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
     CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
+    CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
     CompositionVariableConsumers as ApiCompositionVariableConsumers, CompositionVariableDefinition,
 };
 use ugoite_core::composition::{
@@ -77,8 +76,7 @@ use ugoite_core::composition::{
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
-    CompositionMetricPresentation as DomainCompositionMetricPresentation,
-    CompositionResultFieldType as DomainCompositionResultFieldType, VariableGraphLiteral,
+    CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphLiteral,
     VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType, VariableGraphScalarType,
     VariableGraphValidatedResult,
 };
@@ -11804,32 +11802,16 @@ fn api_composition_variable_column(
     }
 }
 
-fn api_composition_result_field_type(
-    result_type: DomainCompositionResultFieldType,
-) -> ApiCompositionResultFieldType {
-    match result_type {
-        DomainCompositionResultFieldType::String => ApiCompositionResultFieldType::String,
-        DomainCompositionResultFieldType::Boolean => ApiCompositionResultFieldType::Boolean,
-        DomainCompositionResultFieldType::Integer => ApiCompositionResultFieldType::Integer,
-        DomainCompositionResultFieldType::Float => ApiCompositionResultFieldType::Float,
-        DomainCompositionResultFieldType::Decimal => ApiCompositionResultFieldType::Decimal,
-        DomainCompositionResultFieldType::Date => ApiCompositionResultFieldType::Date,
-        DomainCompositionResultFieldType::Timestamp => ApiCompositionResultFieldType::Timestamp,
-        DomainCompositionResultFieldType::Json => ApiCompositionResultFieldType::Json,
-    }
-}
-
-fn api_composition_metric_presentation(
-    presentation: DomainCompositionMetricPresentation,
-) -> ApiCompositionMetricPresentation {
-    match presentation {
-        DomainCompositionMetricPresentation::Number {
-            unit,
-            fraction_digits,
-        } => ApiCompositionMetricPresentation::Number {
-            unit,
-            fraction_digits,
-        },
+fn api_composition_text_template_part(
+    part: DomainCompositionTextTemplatePart,
+) -> ApiCompositionTextTemplatePart {
+    match part {
+        DomainCompositionTextTemplatePart::Literal { text } => {
+            ApiCompositionTextTemplatePart::Literal { text }
+        }
+        DomainCompositionTextTemplatePart::Variable { variable } => {
+            ApiCompositionTextTemplatePart::Variable { variable }
+        }
     }
 }
 
@@ -12042,7 +12024,6 @@ fn api_composition_dependency_index(
                         input_component_ids: consumers.input_component_ids,
                         text_component_ids: consumers.text_component_ids,
                         query_variable_ids: consumers.query_variable_ids,
-                        metric_component_ids: consumers.metric_component_ids,
                         table_component_ids: consumers.table_component_ids,
                     },
                 )
@@ -12096,7 +12077,6 @@ fn api_composition_queries_and_bindings(
             Ok(CompositionQuery {
                 variable_id: query.variable_id,
                 request,
-                sql_text: query.sql_text,
                 portable_sql: query.portable_sql,
                 deferred_arguments,
                 returns: api_composition_query_result_type(query.returns),
@@ -12114,17 +12094,15 @@ fn api_composition_queries_and_bindings(
             component_id: binding.component_id,
             kind: match binding.kind {
                 ResolvedComponentKind::Input => CompositionComponentKind::Input,
-                ResolvedComponentKind::Metric => CompositionComponentKind::Metric,
                 ResolvedComponentKind::Tabular => CompositionComponentKind::Table,
                 ResolvedComponentKind::Text => CompositionComponentKind::Text,
             },
             variable_id: binding.variable_id,
-            expected_result_type: binding
-                .expected_result_type
-                .map(api_composition_result_field_type),
-            presentation: binding
-                .presentation
-                .map(api_composition_metric_presentation),
+            text_segments: binding
+                .text_segments
+                .into_iter()
+                .map(api_composition_text_template_part)
+                .collect(),
         })
         .collect();
     Ok((queries, component_bindings))
@@ -14874,7 +14852,7 @@ mod authentication_regression_tests {
         assert!(!value.contains("spaces/"));
     }
 
-    const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+    const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
     const SQL_FIRST_COMPOSITION_TEST_YAML: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
     const REMOVED_SOURCE_GRAMMAR_TEST_YAML: &str =
@@ -14957,9 +14935,7 @@ mod authentication_regression_tests {
                 variables: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
-                    content: ugoite_domain::composition::CompositionTextContent::Literal {
-                        text: "Note".to_string(),
-                    },
+                    content: "Note".to_string(),
                     style: TextStyle::Body,
                 }],
                 layout: DashboardFlowLayout {
@@ -15319,22 +15295,20 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn composition_save_derives_pinned_saved_sql_schema_with_date_parameters(
-    ) -> anyhow::Result<()> {
+    async fn composition_save_derives_inline_sql_schema_with_date_parameters() -> anyhow::Result<()>
+    {
         let state = AppState::new_for_tests(format!(
-            "memory://server-composition-save-saved-sql-{}",
+            "memory://server-composition-save-inline-sql-{}",
             Uuid::now_v7()
         ))?;
         let owner_id = Uuid::from_u128(351204);
         let space_id = state
             .service
-            .create_space_for_principal("composition-save-saved-sql", owner_id, "Save test")
+            .create_space_for_principal("composition-save-inline-sql", owner_id, "Save test")
             .await?
             .to_string();
         let form_name = "StudioExpenseCompositionSave";
         let form_id = Uuid::from_u128(351205);
-        let sql_relation =
-            ugoite_domain::form::sql_relation_name(ugoite_domain::id::FormId::from_uuid(form_id));
         state
             .service
             .upsert_form(
@@ -15387,41 +15361,6 @@ mod authentication_regression_tests {
                 &owner_id.to_string(),
             )
             .await?;
-        let saved_sql = state
-            .service
-            .create_saved_sql_authorized_for_principals(
-                &space_id,
-                None,
-                &saved_sql::SqlPayload {
-                    name: Some("Composition save date query".to_string()),
-                    kind: saved_sql::SqlKind::UserQuery,
-                    metadata: None,
-                    sql: format!(
-                        "SELECT \"field_102\" AS total, \"field_103\" AS quantity \
-                         FROM \"{sql_relation}\" WHERE \"field_100\" >= $month_start \
-                           AND \"field_100\" < $month_end ORDER BY \"field_100\" ASC"
-                    ),
-                    variables: json!([
-                        {
-                            "name": "month_start",
-                            "type": "date",
-                            "description": "First date included in this month."
-                        },
-                        {
-                            "name": "month_end",
-                            "type": "date",
-                            "description": "First date excluded from this month."
-                        }
-                    ]),
-                },
-                &owner_id.to_string(),
-                &[owner_id],
-            )
-            .await?;
-        let saved_sql_id = saved_sql["id"].as_str().expect("Saved SQL ID");
-        let saved_sql_revision_id = saved_sql["revision_id"]
-            .as_str()
-            .expect("Saved SQL revision ID");
         let yaml = format!(
             r#"format: ugoite.composition
 format_version: 1
@@ -15443,10 +15382,8 @@ spec:
       kind: query
       returns: {{ kind: table, columns: [] }}
       query:
-        kind: saved_sql
-        entry_id: "{saved_sql_id}"
-        revision_id: "{saved_sql_revision_id}"
-        label_source: variable
+        kind: inline_sql
+        sql: 'SELECT "field_102" AS total, "field_103" AS quantity FROM "{form_name}" WHERE "field_100" >= $month_start AND "field_100" < $month_end ORDER BY "field_100" ASC'
         arguments:
           - {{ name: month_start, variable: month_start }}
           - {{ name: month_end, variable: month_end }}
@@ -15498,10 +15435,10 @@ spec:
             .iter()
             .find(|node| node.id == "studio_rows")
         else {
-            anyhow::bail!("save should persist the pinned Saved SQL query variable");
+            anyhow::bail!("save should persist the inline query variable");
         };
         let ugoite_domain::composition::VariableGraphResultType::Table { columns } = returns else {
-            anyhow::bail!("Saved SQL should remain a table result");
+            anyhow::bail!("the inline SQL should remain a table result");
         };
         assert_eq!(
             columns
@@ -16108,9 +16045,7 @@ spec:
                 variables: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
-                    content: ugoite_domain::composition::CompositionTextContent::Literal {
-                        text: "Note".to_string(),
-                    },
+                    content: "Note".to_string(),
                     style: TextStyle::Body,
                 }],
                 layout: DashboardFlowLayout {
@@ -16230,9 +16165,9 @@ spec:
     async fn composition_evaluate_route_executes_the_selected_saved_graph() -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-            CompositionMetricPresentation, CompositionSpec, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphColumn,
-            VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+            CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
+            VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphLiteral,
+            VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
             VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
             VariableGraphScalarType,
         };
@@ -16336,23 +16271,19 @@ spec:
                     },
                 ],
                 components: vec![
-                    CompositionComponent::Metric {
-                        id: "total_metric".to_string(),
-                        variable: "total_query".to_string(),
-                        presentation: Some(CompositionMetricPresentation::Number {
-                            unit: Some("items".to_string()),
-                            fraction_digits: None,
-                        }),
+                    CompositionComponent::Text {
+                        id: "total_text".to_string(),
+                        content: "Total: {{total_query}}".to_string(),
+                        style: TextStyle::Body,
                     },
                     CompositionComponent::Table {
                         id: "rows_table".to_string(),
                         variable: "rows_query".to_string(),
-                        presentation: None,
                     },
-                    CompositionComponent::Metric {
-                        id: "empty_metric".to_string(),
-                        variable: "empty_query".to_string(),
-                        presentation: None,
+                    CompositionComponent::Text {
+                        id: "empty_text".to_string(),
+                        content: "Empty: {{empty_query}}".to_string(),
+                        style: TextStyle::Body,
                     },
                     CompositionComponent::Input {
                         id: "include_empty_input".to_string(),
@@ -16365,13 +16296,13 @@ spec:
                         id: "main".to_string(),
                         items: vec![
                             FlowItem::Component {
-                                component: "total_metric".to_string(),
+                                component: "total_text".to_string(),
                             },
                             FlowItem::Component {
                                 component: "rows_table".to_string(),
                             },
                             FlowItem::Component {
-                                component: "empty_metric".to_string(),
+                                component: "empty_text".to_string(),
                             },
                             FlowItem::Component {
                                 component: "include_empty_input".to_string(),
@@ -16450,8 +16381,11 @@ spec:
             })
         );
         assert_eq!(
-            body["component_bindings"][0]["presentation"],
-            json!({"kind": "number", "unit": "items"})
+            body["component_bindings"][0]["text_segments"],
+            json!([
+                {"kind": "literal", "text": "Total: "},
+                {"kind": "variable", "variable": "total_query"}
+            ])
         );
         assert!(body["query_results"].get("empty_query").is_none());
         assert!(body["query_diagnostics"]
@@ -16534,8 +16468,6 @@ spec:
             DomainCode::MetricResultTypeMismatch,
             DomainCode::MetricScalarNoRows,
             DomainCode::MetricScalarMultipleRows,
-            DomainCode::MetricResultColumnMissing,
-            DomainCode::MetricResultColumnAmbiguous,
         ];
         for domain in domain_codes {
             let api = api_composition_diagnostic_code(domain)

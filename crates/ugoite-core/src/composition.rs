@@ -9,12 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(test)]
-use ugoite_domain::composition::VariableGraphSavedSqlLabelSource;
 use ugoite_domain::composition::{
-    variable_graph_dependency_order, variable_graph_literal_matches, CompositionComponent,
-    CompositionDiagnosticCode, CompositionMetricPresentation, CompositionResultFieldType,
-    CompositionSpec, CompositionTextContent, VariableGraph, VariableGraphColumn,
+    parse_composition_text_template, variable_graph_dependency_order,
+    variable_graph_literal_matches, CompositionComponent, CompositionDiagnosticCode,
+    CompositionSpec, CompositionTextTemplatePart, VariableGraph, VariableGraphColumn,
     VariableGraphFormBinding, VariableGraphInputDiagnosticCode, VariableGraphLiteral,
     VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
     VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
@@ -274,19 +272,6 @@ pub struct InlineSqlQueryMetadata {
     pub schema_fingerprint: String,
 }
 
-/// Planner-derived schema for one exact Saved SQL revision.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SavedSqlRevisionMetadata {
-    pub entry_id: String,
-    pub revision_id: String,
-    /// SQL source read from this exact immutable revision after authorization.
-    pub sql_text: String,
-    pub parameter_types: BTreeMap<String, VariableGraphScalarDescriptor>,
-    pub form_bindings: Vec<VariableGraphFormBinding>,
-    pub result_columns: Vec<VariableGraphColumn>,
-    pub schema_fingerprint: String,
-}
-
 /// Current query metadata read through the caller's authorization boundary.
 #[derive(Clone, Copy)]
 pub enum CurrentQueryDescriptor<'a> {
@@ -294,16 +279,12 @@ pub enum CurrentQueryDescriptor<'a> {
         variable_id: &'a str,
         metadata: Option<&'a InlineSqlQueryMetadata>,
     },
-    SavedSql {
-        variable_id: &'a str,
-        metadata: Option<&'a SavedSqlRevisionMetadata>,
-    },
 }
 
 impl CurrentQueryDescriptor<'_> {
     fn variable_id(&self) -> &str {
         match self {
-            Self::InlineSql { variable_id, .. } | Self::SavedSql { variable_id, .. } => variable_id,
+            Self::InlineSql { variable_id, .. } => variable_id,
         }
     }
 }
@@ -332,9 +313,6 @@ pub struct ResolveInput<'a> {
 pub struct ResolvedQueryRequest {
     pub variable_id: String,
     pub request: Option<SqlQueryRequest>,
-    /// Exact source text for Saved SQL; absent for inline SQL.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sql_text: Option<String>,
     /// Authorized source rebound to immutable Form relation IDs by the service.
     /// It may be used as a new inline definition; it grants no read authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -353,7 +331,7 @@ pub struct ResolvedQueryRequest {
     pub form_bindings: Vec<VariableGraphFormBinding>,
     pub schema_fingerprint: String,
     /// Stable identity for authoring-time reuse. Inline SQL hashes its exact
-    /// bound SQL and all bindings; Saved SQL also pins exact entry/revision.
+    /// bound SQL and all bindings.
     pub query_semantic_fingerprint: String,
 }
 
@@ -375,8 +353,6 @@ pub struct VariableConsumers {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub query_variable_ids: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub metric_component_ids: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub table_component_ids: BTreeSet<String>,
 }
 
@@ -391,7 +367,6 @@ pub struct CompositionDependencyIndex {
 #[serde(rename_all = "snake_case")]
 pub enum ResolvedComponentKind {
     Input,
-    Metric,
     #[serde(rename = "table")]
     Tabular,
     Text,
@@ -406,10 +381,10 @@ pub struct ResolvedComponentBinding {
     pub kind: ResolvedComponentKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_result_type: Option<CompositionResultFieldType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<CompositionMetricPresentation>,
+    /// Rust-parsed template parts for a Text component. This is present only
+    /// for Text and lets every reader render without implementing a parser.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_segments: Vec<CompositionTextTemplatePart>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -764,24 +739,10 @@ fn resolve_parts(
             Vec<VariableGraphColumn>,
             String,
             String,
-            Option<String>,
         ),
     >::new();
     let mut diagnostics = Vec::new();
     for variable_id in query_order {
-        // Earlier query nodes may have had their draft return descriptor
-        // replaced with planner-derived metadata. Snapshot the current scalar
-        // types before mutably borrowing the node being resolved so downstream
-        // Saved SQL argument bindings can be checked against the actual graph.
-        let variable_scalar_types = execution_graph
-            .variables
-            .iter()
-            .filter_map(|variable| {
-                scalar_descriptor(&variable.kind)
-                    .or_else(|| query_scalar_descriptor(&variable.kind))
-                    .map(|descriptor| (variable.id.clone(), descriptor))
-            })
-            .collect::<BTreeMap<_, _>>();
         let Some(node) = execution_graph
             .variables
             .iter_mut()
@@ -859,9 +820,8 @@ fn resolve_parts(
                         }
                     }
                 }
-                if let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition {
-                    *sql = metadata.bound_sql.clone();
-                }
+                let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition;
+                *sql = metadata.bound_sql.clone();
                 query.form_bindings = metadata.form_bindings.clone();
                 query.schema_fingerprint = metadata.schema_fingerprint.clone();
                 let returns = returns.clone();
@@ -887,102 +847,6 @@ fn resolve_parts(
                         metadata.result_columns.clone(),
                         metadata.schema_fingerprint.clone(),
                         fingerprint,
-                        None,
-                    ),
-                );
-            }
-            (
-                VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some(entry_id),
-                    revision_id: Some(revision_id),
-                    ..
-                },
-                CurrentQueryDescriptor::SavedSql {
-                    metadata: Some(metadata),
-                    ..
-                },
-            ) => {
-                if &metadata.entry_id != entry_id
-                    || &metadata.revision_id != revision_id
-                    || !schema_is_well_formed(
-                        &metadata.result_columns,
-                        &metadata.schema_fingerprint,
-                    )
-                {
-                    diagnostics.push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::QueryUnavailable,
-                        &node.id,
-                    ));
-                    continue;
-                }
-                // Saved SQL metadata is also re-derived for each preview;
-                // client descriptors never establish a result contract.
-                if !options.allow_draft_descriptors
-                    && (query.form_bindings != metadata.form_bindings
-                        || !query_schema_fingerprint_matches(
-                            &query.schema_fingerprint,
-                            &metadata.result_columns,
-                            &metadata.schema_fingerprint,
-                        ))
-                {
-                    diagnostics.push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::QuerySchemaChanged,
-                        &node.id,
-                    ));
-                    continue;
-                }
-                let draft_returns = options.allow_draft_descriptors;
-                if (!returns_match_schema(returns, &metadata.result_columns) && !draft_returns)
-                    || !saved_arguments_match(
-                        &query.arguments,
-                        &metadata.parameter_types,
-                        &variable_scalar_types,
-                    )
-                {
-                    diagnostics.push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::QuerySchemaChanged,
-                        &node.id,
-                    ));
-                    continue;
-                }
-                if draft_returns {
-                    match returns_from_schema(returns, &metadata.result_columns) {
-                        Some(inferred) => *returns = inferred,
-                        None => {
-                            diagnostics.push(CompositionDiagnostic::for_variable(
-                                CompositionDiagnosticCode::QuerySchemaChanged,
-                                &node.id,
-                            ));
-                            continue;
-                        }
-                    }
-                }
-                query.form_bindings = metadata.form_bindings.clone();
-                query.schema_fingerprint = metadata.schema_fingerprint.clone();
-                let returns = returns.clone();
-                let fingerprint = query_semantic_fingerprint(
-                    &query.definition,
-                    &query.arguments,
-                    &metadata.form_bindings,
-                    &returns,
-                    &metadata.result_columns,
-                    &metadata.schema_fingerprint,
-                )
-                .map_err(|_| {
-                    vec![CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                        &node.id,
-                    )]
-                })?;
-                derived.insert(
-                    node.id.clone(),
-                    (
-                        returns,
-                        metadata.form_bindings.clone(),
-                        metadata.result_columns.clone(),
-                        metadata.schema_fingerprint.clone(),
-                        fingerprint,
-                        Some(metadata.sql_text.clone()),
                     ),
                 );
             }
@@ -1037,7 +901,6 @@ fn resolve_parts(
                 result_columns,
                 schema_fingerprint,
                 query_semantic_fingerprint,
-                sql_text,
             ) = derived
                 .remove(&item.variable_id)
                 .expect("every query descriptor was derived");
@@ -1049,7 +912,6 @@ fn resolve_parts(
             ResolvedQueryRequest {
                 variable_id: item.variable_id,
                 request,
-                sql_text,
                 portable_sql: None,
                 deferred_arguments: item.deferred_arguments,
                 scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
@@ -1088,31 +950,25 @@ fn resolve_parts(
         .collect::<BTreeMap<_, _>>();
     for component in render_components {
         let component_id = component.id();
-        let variable_id = component.variable_id();
         let binding = match component {
-            CompositionComponent::Text {
-                content: CompositionTextContent::Literal { .. },
-                ..
-            } => ResolvedComponentBinding {
-                component_id: component_id.to_owned(),
-                kind: ResolvedComponentKind::Text,
-                variable_id: None,
-                expected_result_type: None,
-                presentation: None,
-            },
-            CompositionComponent::Text {
-                content: CompositionTextContent::Variable { variable },
-                ..
-            } => {
-                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
-                    consumers.text_component_ids.insert(component_id.to_owned());
+            CompositionComponent::Text { content, .. } => {
+                let text_segments = parse_composition_text_template(content).map_err(|_| {
+                    vec![CompositionDiagnostic::without_variable(
+                        CompositionDiagnosticCode::InvalidComposition,
+                    )]
+                })?;
+                for segment in &text_segments {
+                    if let CompositionTextTemplatePart::Variable { variable } = segment {
+                        if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
+                            consumers.text_component_ids.insert(component_id.to_owned());
+                        }
+                    }
                 }
                 ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Text,
-                    variable_id: Some(variable.clone()),
-                    expected_result_type: None,
-                    presentation: None,
+                    variable_id: None,
+                    text_segments,
                 }
             }
             CompositionComponent::Input { variable, .. } => {
@@ -1125,53 +981,7 @@ fn resolve_parts(
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Input,
                     variable_id: Some(variable.clone()),
-                    expected_result_type: None,
-                    presentation: None,
-                }
-            }
-            CompositionComponent::Metric {
-                variable,
-                presentation,
-                ..
-            } => {
-                let node = nodes.get(variable.as_str()).copied().ok_or_else(|| {
-                    vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]
-                })?;
-                let descriptor = scalar_descriptor(&node.kind)
-                    .or_else(|| query_scalar_descriptor(&node.kind))
-                    .ok_or_else(|| {
-                        vec![CompositionDiagnostic::for_variable(
-                            CompositionDiagnosticCode::MetricResultNotScalar,
-                            variable,
-                        )]
-                    })?;
-                if descriptor.scalar_type == VariableGraphScalarType::Json
-                    || (presentation.is_some()
-                        && !matches!(
-                            descriptor.scalar_type,
-                            VariableGraphScalarType::Integer
-                                | VariableGraphScalarType::Float
-                                | VariableGraphScalarType::Decimal
-                        ))
-                {
-                    return Err(vec![CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::MetricResultNotScalar,
-                        variable,
-                    )]);
-                }
-                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
-                    consumers
-                        .metric_component_ids
-                        .insert(component_id.to_owned());
-                }
-                ResolvedComponentBinding {
-                    component_id: component_id.to_owned(),
-                    kind: ResolvedComponentKind::Metric,
-                    variable_id: Some(variable.clone()),
-                    expected_result_type: Some(result_field_type(descriptor.scalar_type)),
-                    presentation: presentation.clone(),
+                    text_segments: Vec::new(),
                 }
             }
             CompositionComponent::Table { variable, .. } => {
@@ -1200,70 +1010,14 @@ fn resolve_parts(
                 ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Tabular,
-                    variable_id: variable_id.map(str::to_owned),
-                    expected_result_type: None,
-                    presentation: None,
+                    variable_id: Some(variable.clone()),
+                    text_segments: Vec::new(),
                 }
             }
         };
         component_bindings.push(binding);
     }
     Ok((bindings.values, queries, component_bindings, dependencies))
-}
-
-fn scalar_descriptor(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
-    match kind {
-        VariableGraphNodeKind::Constant { value_type, .. }
-        | VariableGraphNodeKind::Input { value_type, .. } => Some(*value_type),
-        _ => None,
-    }
-}
-
-fn query_scalar_descriptor(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
-    match kind {
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Scalar { value_type },
-            ..
-        } => Some(*value_type),
-        _ => None,
-    }
-}
-
-fn result_field_type(value_type: VariableGraphScalarType) -> CompositionResultFieldType {
-    match value_type {
-        VariableGraphScalarType::String => CompositionResultFieldType::String,
-        VariableGraphScalarType::Boolean => CompositionResultFieldType::Boolean,
-        VariableGraphScalarType::Integer => CompositionResultFieldType::Integer,
-        VariableGraphScalarType::Float => CompositionResultFieldType::Float,
-        VariableGraphScalarType::Decimal => CompositionResultFieldType::Decimal,
-        VariableGraphScalarType::Date => CompositionResultFieldType::Date,
-        VariableGraphScalarType::Timestamp => CompositionResultFieldType::Timestamp,
-        VariableGraphScalarType::Json => CompositionResultFieldType::Json,
-    }
-}
-
-fn saved_arguments_match(
-    arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
-    parameter_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
-    variable_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
-) -> bool {
-    if arguments.len() != parameter_types.len() {
-        return false;
-    }
-
-    let mut seen = BTreeSet::new();
-    arguments.iter().all(|argument| {
-        if !seen.insert(argument.name.as_str()) {
-            return false;
-        }
-        let Some(expected_type) = parameter_types.get(&argument.name) else {
-            return false;
-        };
-        let Some(actual_type) = variable_types.get(&argument.variable) else {
-            return false;
-        };
-        actual_type.scalar_type == expected_type.scalar_type
-    })
 }
 
 /// Check whether a declared query result contract exactly matches planner
@@ -1357,7 +1111,6 @@ mod tests {
     use super::*;
     use ugoite_domain::composition::{
         CompositionComponent, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
-        VariableGraphArgumentBinding, VariableGraphQuery,
     };
 
     #[test]
@@ -1453,155 +1206,60 @@ mod tests {
     }
 
     #[test]
-    fn saved_sql_preview_rejects_mismatched_argument_type_and_accepts_matching_type() {
+    fn resolves_text_template_into_ordered_rust_segments_and_dependencies() {
         let integer = VariableGraphScalarDescriptor {
             scalar_type: VariableGraphScalarType::Integer,
             nullable: false,
         };
-        let string = VariableGraphScalarDescriptor {
-            scalar_type: VariableGraphScalarType::String,
-            nullable: false,
-        };
         let spec = CompositionSpec {
-            variables: vec![
-                VariableGraphNode {
-                    id: "minimum".to_owned(),
-                    kind: VariableGraphNodeKind::Constant {
-                        value_type: string,
-                        value: VariableGraphLiteral::String("10".to_owned()),
-                    },
+            variables: vec![VariableGraphNode {
+                id: "total".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: integer,
+                    value: VariableGraphLiteral::Integer(42),
                 },
-                VariableGraphNode {
-                    id: "count".to_owned(),
-                    kind: VariableGraphNodeKind::Query {
-                        returns: VariableGraphResultType::Scalar {
-                            value_type: integer,
-                        },
-                        query: VariableGraphQuery {
-                            definition: VariableGraphQueryDefinition::SavedSql {
-                                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                                revision_id: Some(
-                                    "00000000-0000-0000-0000-000000000002".to_owned(),
-                                ),
-                                column: None,
-                                label_source: VariableGraphSavedSqlLabelSource::Source,
-                            },
-                            arguments: vec![VariableGraphArgumentBinding {
-                                name: "minimum".to_owned(),
-                                variable: "minimum".to_owned(),
-                            }],
-                            form_bindings: Vec::new(),
-                            schema_fingerprint: String::new(),
-                        },
-                    },
-                },
-            ],
-            components: vec![CompositionComponent::Metric {
-                id: "count_metric".to_owned(),
-                variable: "count".to_owned(),
-                presentation: None,
+            }],
+            components: vec![CompositionComponent::Text {
+                id: "summary".to_owned(),
+                content: "Total: {{total}} USD".to_owned(),
+                style: ugoite_domain::composition::TextStyle::Body,
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
                 rows: vec![FlowRow {
                     id: "row".to_owned(),
                     items: vec![FlowItem::Component {
-                        component: "count_metric".to_owned(),
+                        component: "summary".to_owned(),
                     }],
                 }],
             },
         };
-        let metadata = SavedSqlRevisionMetadata {
-            entry_id: "00000000-0000-0000-0000-000000000001".to_owned(),
-            revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
-            sql_text: "SELECT {{minimum}} AS value".to_owned(),
-            parameter_types: BTreeMap::from([("minimum".to_owned(), integer)]),
-            form_bindings: Vec::new(),
-            result_columns: vec![VariableGraphColumn {
-                name: "value".to_owned(),
-                value_type: integer,
-            }],
-            schema_fingerprint: "0".repeat(64),
-        };
-        let current_queries = [CurrentQueryDescriptor::SavedSql {
-            variable_id: "count",
-            metadata: Some(&metadata),
-        }];
 
-        let mismatched = resolve_composition_preview(
+        let preview = resolve_composition_preview(
             Uuid::nil(),
             &spec,
             &BTreeMap::new(),
-            &current_queries,
+            &[],
             "draft".to_owned(),
         )
-        .expect_err("a string binding must not satisfy the pinned integer parameter");
+        .expect("valid text template resolves");
         assert_eq!(
-            mismatched,
-            vec![CompositionDiagnostic::for_variable(
-                CompositionDiagnosticCode::QuerySchemaChanged,
-                "count",
-            )]
-        );
-
-        let mut matching_spec = spec.clone();
-        matching_spec.variables[0].kind = VariableGraphNodeKind::Constant {
-            value_type: integer,
-            value: VariableGraphLiteral::Integer(10),
-        };
-        assert!(resolve_composition_preview(
-            Uuid::nil(),
-            &matching_spec,
-            &BTreeMap::new(),
-            &current_queries,
-            "draft".to_owned(),
-        )
-        .is_ok());
-
-        // A downstream Saved SQL query must see the planner-derived type of
-        // an upstream scalar query, even when that query's draft descriptor
-        // was stale.
-        let mut planner_derived_spec = spec;
-        planner_derived_spec.variables[0].kind = VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Scalar { value_type: string },
-            query: VariableGraphQuery {
-                definition: VariableGraphQueryDefinition::InlineSql {
-                    sql: "SELECT 10 AS value".to_owned(),
+            preview.component_bindings[0].text_segments,
+            vec![
+                CompositionTextTemplatePart::Literal {
+                    text: "Total: ".to_owned(),
                 },
-                arguments: Vec::new(),
-                form_bindings: Vec::new(),
-                schema_fingerprint: String::new(),
-            },
-        };
-        // The document order must not replace dependency order during preview.
-        planner_derived_spec.variables.swap(0, 1);
-        let inline_metadata = InlineSqlQueryMetadata {
-            bound_sql: "SELECT 10 AS value".to_owned(),
-            form_bindings: Vec::new(),
-            parameter_names: BTreeSet::new(),
-            result_columns: vec![VariableGraphColumn {
-                name: "value".to_owned(),
-                value_type: integer,
-            }],
-            schema_fingerprint: "a".repeat(64),
-        };
-        let planner_derived_queries = [
-            CurrentQueryDescriptor::InlineSql {
-                variable_id: "minimum",
-                metadata: Some(&inline_metadata),
-            },
-            CurrentQueryDescriptor::SavedSql {
-                variable_id: "count",
-                metadata: Some(&metadata),
-            },
-        ];
-        assert!(resolve_composition_preview(
-            Uuid::nil(),
-            &planner_derived_spec,
-            &BTreeMap::new(),
-            &planner_derived_queries,
-            "draft".to_owned(),
-        )
-        .is_ok());
+                CompositionTextTemplatePart::Variable {
+                    variable: "total".to_owned(),
+                },
+                CompositionTextTemplatePart::Literal {
+                    text: " USD".to_owned(),
+                },
+            ]
+        );
+        assert_eq!(
+            preview.dependencies.variable_consumers["total"].text_component_ids,
+            BTreeSet::from(["summary".to_owned()])
+        );
     }
 }

@@ -3,18 +3,16 @@
 //!
 //! This module performs no storage reads or authorization. Callers resolve
 //! the current values first and the ordinary SQL execution path still checks
-//! access to the Space, Forms, and exact Saved SQL revision.
+//! access to the Space, Forms, and exact Form bindings.
 
 use crate::sql_query::{
-    SavedSqlRevisionRef, SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
+    SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
     MAX_SQL_SCALAR_PROBE_ROWS,
 };
 use chrono::{DateTime, Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(test)]
-use ugoite_domain::composition::VariableGraphSavedSqlLabelSource;
 use ugoite_domain::composition::{
     compile_variable_graph, validate_variable_graph_result, variable_graph_literal_matches,
     CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
@@ -36,8 +34,6 @@ pub enum VariableGraphQueryRequestDiagnosticCode {
     QueryVariableNotFound,
     QueryNodeRequired,
     InvalidInlineSql,
-    InvalidSavedSqlIdentity,
-    InvalidSavedSqlColumn,
     InvalidArgumentName,
     DuplicateArgumentName,
     MissingArgumentValue,
@@ -55,8 +51,6 @@ impl VariableGraphQueryRequestDiagnosticCode {
             Self::QueryVariableNotFound => "query_variable_not_found",
             Self::QueryNodeRequired => "query_node_required",
             Self::InvalidInlineSql => "invalid_inline_sql",
-            Self::InvalidSavedSqlIdentity => "invalid_saved_sql_identity",
-            Self::InvalidSavedSqlColumn => "invalid_saved_sql_column",
             Self::InvalidArgumentName => "invalid_argument_name",
             Self::DuplicateArgumentName => "duplicate_argument_name",
             Self::MissingArgumentValue => "missing_argument_value",
@@ -80,8 +74,6 @@ pub enum VariableGraphQueryResultDiagnosticCode {
     ResultSchemaMissing,
     ResultSchemaMismatch,
     InvalidResultRow,
-    SavedSqlColumnMissing,
-    SavedSqlColumnAmbiguous,
     ScalarResultIncomplete,
     ResultContractMismatch,
 }
@@ -97,8 +89,6 @@ impl VariableGraphQueryResultDiagnosticCode {
             Self::ResultSchemaMissing => "result_schema_missing",
             Self::ResultSchemaMismatch => "result_schema_mismatch",
             Self::InvalidResultRow => "invalid_result_row",
-            Self::SavedSqlColumnMissing => "saved_sql_column_missing",
-            Self::SavedSqlColumnAmbiguous => "saved_sql_column_ambiguous",
             Self::ScalarResultIncomplete => "scalar_result_incomplete",
             Self::ResultContractMismatch => "result_contract_mismatch",
         }
@@ -124,19 +114,6 @@ impl VariableGraphQueryResultDiagnostic {
             code,
             variable_id: variable_id.to_owned(),
             column_name: None,
-            result_diagnostic: None,
-        }
-    }
-
-    fn for_column(
-        code: VariableGraphQueryResultDiagnosticCode,
-        variable_id: &str,
-        column_name: &str,
-    ) -> Self {
-        Self {
-            code,
-            variable_id: variable_id.to_owned(),
-            column_name: Some(column_name.to_owned()),
             result_diagnostic: None,
         }
     }
@@ -881,8 +858,6 @@ fn nodes_kind<'a>(
 /// variable IDs. Unrelated resolved values are ignored. Missing values and
 /// unsupported SQL parameter types fail closed. The request is always limited
 /// to a bounded first page and carries no continuation token.
-/// A Saved SQL output-column selection remains query-result metadata because
-/// `SqlQueryRequest` carries the pinned revision and parameters only.
 /// The caller owns the execution snapshot identity so this portable compiler
 /// does not depend on a platform-specific random-number provider.
 pub fn compile_variable_graph_query_request(
@@ -945,7 +920,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
         )]);
     };
 
-    let (sql, saved_sql) = match &query.definition {
+    let sql = match &query.definition {
         VariableGraphQueryDefinition::InlineSql { sql } => {
             if sql.len() > MAX_SQL_QUERY_BYTES {
                 return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
@@ -962,42 +937,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
                     &node.id,
                 )]);
             }
-            (normalized.sql, None)
-        }
-        VariableGraphQueryDefinition::SavedSql {
-            entry_id,
-            revision_id,
-            column,
-            ..
-        } => {
-            let (Some(entry_id), Some(revision_id)) = (entry_id.as_deref(), revision_id.as_deref())
-            else {
-                return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
-                    VariableGraphQueryRequestDiagnosticCode::InvalidSavedSqlIdentity,
-                    &node.id,
-                )]);
-            };
-            if Uuid::parse_str(entry_id).is_err() || Uuid::parse_str(revision_id).is_err() {
-                return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
-                    VariableGraphQueryRequestDiagnosticCode::InvalidSavedSqlIdentity,
-                    &node.id,
-                )]);
-            }
-            if column.as_deref().is_some_and(|name| name.trim().is_empty())
-                || (column.is_some() && !matches!(returns, VariableGraphResultType::Scalar { .. }))
-            {
-                return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
-                    VariableGraphQueryRequestDiagnosticCode::InvalidSavedSqlColumn,
-                    &node.id,
-                )]);
-            }
-            (
-                String::new(),
-                Some(SavedSqlRevisionRef {
-                    id: entry_id.to_owned(),
-                    revision_id: revision_id.to_owned(),
-                }),
-            )
+            normalized.sql
         }
     };
 
@@ -1109,7 +1049,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
         },
         continuation: None,
         execution_id: Some(execution_id),
-        saved_sql,
+        saved_sql: None,
         binding_base: None,
         form_binding_guards: Vec::new(),
     };
@@ -1218,17 +1158,11 @@ fn map_graph_diagnostics(
 }
 
 /// Validate a typed SQL page before exposing it as a query variable value.
-///
-/// The caller passes the exact request used to obtain the page so Saved SQL
-/// results remain tied to the query variable's pinned entry and revision. The
+/// The exact inline request must match the query's normalized SQL source. The
 /// page's ordered planner schema supplies column names and portable types;
 /// values are converted without coercion and checked by the Domain result
 /// contract. Older typed SQL schemas that omit nullability are conservatively
 /// decoded as nullable.
-///
-/// A Saved SQL scalar may project a named output column only when that name is
-/// present exactly once in the pinned revision's result schema. No first-row
-/// or first-column selection is performed implicitly.
 pub fn validate_variable_graph_sql_page(
     graph: &VariableGraph,
     query_variable_id: &str,
@@ -1252,35 +1186,22 @@ pub fn validate_variable_graph_sql_page(
         )]);
     };
 
-    let inline_request_matches = match &query.definition {
-        VariableGraphQueryDefinition::InlineSql { sql } => {
-            let normalized = normalize_sql_template(sql);
-            request.saved_sql.is_none()
-                && normalized.error.is_none()
-                && request.sql == normalized.sql
-        }
-        VariableGraphQueryDefinition::SavedSql { .. } => false,
-    };
-    let selected_column = match &query.definition {
-        VariableGraphQueryDefinition::InlineSql { .. } if inline_request_matches => None,
-        VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some(entry_id),
-            revision_id: Some(revision_id),
-            column,
-            ..
-        } if request.saved_sql.as_ref().is_some_and(|saved_sql| {
-            saved_sql.id == *entry_id && saved_sql.revision_id == *revision_id
-        }) =>
-        {
-            column.as_deref()
-        }
-        _ => {
-            return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
-                VariableGraphQueryResultDiagnosticCode::RequestSourceMismatch,
-                &node.id,
-            )]);
-        }
-    };
+    let inline_request_matches = matches!(
+        &query.definition,
+        VariableGraphQueryDefinition::InlineSql { sql }
+            if {
+                let normalized = normalize_sql_template(sql);
+                request.saved_sql.is_none()
+                    && normalized.error.is_none()
+                    && request.sql == normalized.sql
+            }
+    );
+    if !inline_request_matches {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::RequestSourceMismatch,
+            &node.id,
+        )]);
+    }
 
     let request_fingerprint = request.execution_fingerprint().ok();
     if request.execution_id.is_none()
@@ -1312,37 +1233,7 @@ pub fn validate_variable_graph_sql_page(
         )]);
     }
 
-    let selected_indices = if let Some(selected_column) = selected_column {
-        let matches = result_schema
-            .iter()
-            .enumerate()
-            .filter_map(|(index, column)| (column.name == selected_column).then_some(index))
-            .collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => {
-                return Err(vec![VariableGraphQueryResultDiagnostic::for_column(
-                    VariableGraphQueryResultDiagnosticCode::SavedSqlColumnMissing,
-                    &node.id,
-                    selected_column,
-                )]);
-            }
-            [index] => vec![*index],
-            _ => {
-                return Err(vec![VariableGraphQueryResultDiagnostic::for_column(
-                    VariableGraphQueryResultDiagnosticCode::SavedSqlColumnAmbiguous,
-                    &node.id,
-                    selected_column,
-                )]);
-            }
-        }
-    } else {
-        (0..result_schema.len()).collect()
-    };
-
-    let selected_schema = selected_indices
-        .iter()
-        .map(|index| &result_schema[*index])
-        .collect::<Vec<_>>();
+    let selected_schema = result_schema.iter().collect::<Vec<_>>();
     let expected_row_names = page.columns.iter().collect::<BTreeSet<_>>();
     let mut observed_rows = Vec::with_capacity(page.rows.len());
     for row in &page.rows {
@@ -2102,93 +1993,10 @@ mod tests {
     }
 
     #[test]
-    fn validates_saved_sql_output_column_against_the_pinned_result_schema() {
-        let node = result_node(
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                column: Some("total".to_owned()),
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-            },
-            VariableGraphResultType::Scalar {
-                value_type: scalar(VariableGraphScalarType::Integer, false),
-            },
-        );
-        let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(
-            &graph,
-            "result",
-            Uuid::from_u128(1),
-            &BTreeMap::new(),
-        )
-        .expect("request pins Saved SQL revision");
-        let page = result_page(
-            &request,
-            &[
-                ("label", SqlResultColumnType::String),
-                ("total", SqlResultColumnType::Integer),
-            ],
-            vec![json!({"label": "March", "total": 17})],
-        );
-        assert_eq!(
-            validate_variable_graph_sql_page(&graph, "result", &request, &page)
-                .expect("explicitly selected output column is scalar"),
-            VariableGraphValidatedResult::Scalar {
-                value: VariableGraphLiteral::Integer(17),
-            }
-        );
-
-        let missing = result_page(
-            &request,
-            &[("label", SqlResultColumnType::String)],
-            vec![json!({"label": "March"})],
-        );
-        let missing_diagnostic =
-            validate_variable_graph_sql_page(&graph, "result", &request, &missing)
-                .expect_err("selected column must exist in the pinned revision schema");
-        assert_eq!(
-            missing_diagnostic[0].code,
-            VariableGraphQueryResultDiagnosticCode::SavedSqlColumnMissing
-        );
-        assert_eq!(missing_diagnostic[0].column_name.as_deref(), Some("total"));
-
-        let ambiguous = result_page(
-            &request,
-            &[
-                ("total", SqlResultColumnType::Integer),
-                ("total", SqlResultColumnType::Integer),
-            ],
-            vec![json!({"total": 17})],
-        );
-        assert_eq!(
-            validate_variable_graph_sql_page(&graph, "result", &request, &ambiguous)
-                .expect_err("duplicate selected names are ambiguous")[0]
-                .code,
-            VariableGraphQueryResultDiagnosticCode::SavedSqlColumnAmbiguous
-        );
-
-        let mut wrong_revision_request = request.clone();
-        wrong_revision_request
-            .saved_sql
-            .as_mut()
-            .expect("Saved SQL request")
-            .revision_id = "00000000-0000-0000-0000-000000000003".to_owned();
-        assert_eq!(
-            validate_variable_graph_sql_page(&graph, "result", &wrong_revision_request, &page,)
-                .expect_err("the response request must retain the exact pinned revision")[0]
-                .code,
-            VariableGraphQueryResultDiagnosticCode::RequestSourceMismatch
-        );
-    }
-
-    #[test]
     fn scalar_results_never_choose_a_first_row_or_column() {
         let node = result_node(
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                column: None,
-                label_source: VariableGraphSavedSqlLabelSource::Source,
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 4 AS total, 5 AS other".to_owned(),
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
@@ -2219,37 +2027,34 @@ mod tests {
             })
         }));
 
-        let selected_node = result_node(
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                column: Some("total".to_owned()),
-                label_source: VariableGraphSavedSqlLabelSource::Source,
+        let one_column_node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 4 AS total".to_owned(),
             },
             VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
             },
         );
-        let selected_graph = graph_for(selected_node);
-        let selected_request = compile_variable_graph_query_request(
-            &selected_graph,
+        let one_column_graph = graph_for(one_column_node);
+        let one_column_request = compile_variable_graph_query_request(
+            &one_column_graph,
             "result",
             Uuid::from_u128(1),
             &BTreeMap::new(),
         )
         .expect("query request compiles");
         let multiple_rows = result_page(
-            &selected_request,
+            &one_column_request,
             &[("total", SqlResultColumnType::Integer)],
             vec![json!({"total": 4}), json!({"total": 5})],
         );
         let diagnostics = validate_variable_graph_sql_page(
-            &selected_graph,
+            &one_column_graph,
             "result",
-            &selected_request,
+            &one_column_request,
             &multiple_rows,
         )
-        .expect_err("an explicit column does not permit first-row fallback");
+        .expect_err("scalar SQL cannot implicitly select a row");
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.result_diagnostic.as_ref().is_some_and(|result| {
                 result.code == VariableGraphResultDiagnosticCode::ScalarMultipleRows
@@ -2482,46 +2287,6 @@ mod tests {
     }
 
     #[test]
-    fn compiles_saved_sql_to_exact_revision_without_copying_sql_text() {
-        let node = query_node(
-            "total",
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                column: Some("total".to_owned()),
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-            },
-            VariableGraphResultType::Scalar {
-                value_type: scalar(VariableGraphScalarType::Integer, false),
-            },
-            vec![argument(
-                "day",
-                "selected_day",
-                VariableGraphScalarType::Date,
-                false,
-            )],
-        );
-        let values = BTreeMap::from([(
-            "selected_day".to_owned(),
-            VariableGraphLiteral::Date("2026-10-18".to_owned()),
-        )]);
-
-        let request = compile_node(&node, &values).expect("request");
-        assert_eq!(request.sql, "");
-        assert_eq!(request.parameters["day"], Value::from("2026-10-18"));
-        assert_eq!(request.parameter_types["day"], "date");
-        assert_eq!(
-            request.saved_sql,
-            Some(SavedSqlRevisionRef {
-                id: "00000000-0000-0000-0000-000000000001".to_owned(),
-                revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
-            })
-        );
-        assert_eq!(request.limit, MAX_SQL_SCALAR_PROBE_ROWS);
-        assert!(request.validate().is_ok());
-    }
-
-    #[test]
     fn missing_values_and_type_mismatches_are_stable() {
         let node = inline_node(vec![argument(
             "threshold",
@@ -2655,47 +2420,6 @@ mod tests {
         assert_eq!(
             compile_node(&invalid_sql, &BTreeMap::new()).expect_err("non-query inline SQL"),
             [graph_diagnostic("bad", "invalid_inline_sql")]
-        );
-
-        let missing_saved_identity = query_node(
-            "saved",
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: None,
-                revision_id: None,
-                column: None,
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-            },
-            VariableGraphResultType::Scalar {
-                value_type: scalar(VariableGraphScalarType::Integer, false),
-            },
-            vec![],
-        );
-        assert_eq!(
-            compile_node(&missing_saved_identity, &BTreeMap::new())
-                .expect_err("exact Saved SQL identity required"),
-            [graph_diagnostic("saved", "invalid_saved_sql_identity")]
-        );
-
-        let invalid_saved_identity = query_node(
-            "invalid_saved",
-            VariableGraphQueryDefinition::SavedSql {
-                entry_id: Some("not-a-uuid".to_owned()),
-                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                column: None,
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-            },
-            VariableGraphResultType::Scalar {
-                value_type: scalar(VariableGraphScalarType::Integer, false),
-            },
-            vec![],
-        );
-        assert_eq!(
-            compile_node(&invalid_saved_identity, &BTreeMap::new())
-                .expect_err("invalid entry identity"),
-            [graph_diagnostic(
-                "invalid_saved",
-                "invalid_saved_sql_identity"
-            )]
         );
 
         let mut duplicate = inline_node(vec![
