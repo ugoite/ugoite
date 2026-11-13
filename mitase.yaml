@@ -17,6 +17,12 @@ inventory:
       additional_roots:
         - crates/ugoite-domain/src/composition/variable_graph.rs
         - crates/ugoite-domain/src/composition/form_query.rs
+        - crates/ugoite-domain/src/composition/text_template.rs
+        - crates/ugoite-domain/src/composition/variable_binding.rs
+        - crates/ugoite-domain/src/composition/canonical.rs
+        - crates/ugoite-iceberg/src/service/composition_resolver.rs
+        - crates/ugoite-iceberg/src/service/composition_query_evaluation.rs
+        - crates/ugoite-iceberg/src/service/composition_local_save.rs
     typescript:
       roots:
         - frontend/src/lib/auth-api.ts
@@ -270,6 +276,9 @@ inventory:
         - frontend/src/components/CompositionDataWorkspace.tsx
         - frontend/src/components/CompositionDataWorkspace.test.tsx
         - frontend/src/components/CompositionGraphArguments.test.tsx
+        - frontend/src/components/CompositionGraphDesignCanvas.tsx
+        - frontend/src/components/CompositionGraphDesignCanvas.test.tsx
+        - frontend/src/components/CompositionGraphStudio.tsx
         - frontend/src/components/SQLWorkspace.tsx
         - frontend/src/components/SQLWorkspace.test.tsx
         - frontend/src/components/SqlFormPicker.tsx
@@ -312,6 +321,7 @@ inventory:
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
         - frontend/src/components/CompositionVariableGraphWorkspace.tsx
+        - frontend/src/components/CompositionVariableGraphWorkspace.test.tsx
         - frontend/src/components/CompositionStudio.tsx
         - frontend/src/components/CompositionGraphRenderer.tsx
         - frontend/src/components/CompositionGraphRenderer.test.tsx

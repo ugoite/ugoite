@@ -16388,6 +16388,16 @@ spec:
                 {"kind": "variable", "variable": "total_query"}
             ])
         );
+        assert!(body["component_bindings"]
+            .as_array()
+            .is_some_and(|bindings| bindings.iter().any(|binding| {
+                binding
+                    == &json!({
+                        "component_id": "rows_table",
+                        "kind": "table",
+                        "variable_id": "rows_query"
+                    })
+            })));
         assert!(body["query_results"].get("empty_query").is_none());
         assert!(body["query_diagnostics"]
             .as_array()

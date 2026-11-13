@@ -85,6 +85,30 @@ vi.mock("~/lib/ugoite-client", () => ({
     parseTemplateMock(...args),
 }));
 
+vi.mock("./SqlQueryEditor", () => ({
+  SqlQueryEditor: (props: {
+    id?: string;
+    value: string;
+    ariaLabel?: string;
+    lintProfile?: "standard" | "composition";
+    disabled?: boolean;
+    additionalDiagnostics?: readonly { message: string }[];
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      id={props.id}
+      aria-label={props.ariaLabel}
+      data-lint-profile={props.lintProfile ?? "standard"}
+      data-planner-diagnostics={props.additionalDiagnostics?.map((item) =>
+        item.message
+      ).join("|") ?? ""}
+      value={props.value}
+      readOnly={props.disabled}
+      onInput={(event) => props.onChange(event.currentTarget.value)}
+    />
+  ),
+}));
+
 const parseTemplate = (template: string) => {
   const segments: Array<
     { kind: "literal"; text: string } | { kind: "variable"; variable: string }
@@ -510,8 +534,9 @@ describe("CompositionVariableGraphWorkspace", () => {
     });
   });
 
-  it("keeps SQL and argument bindings current through consecutive graph edits", async () => {
+  it("keeps SQL lint, parameter bindings, and execution errors local to the selected query", async () => {
     setLocale("en");
+    const runQuery = vi.fn();
     const [draft, setDraft] = createSignal<CompositionGraphDraft>({
       ...createCompositionGraphDraft("Report"),
       variables: [
@@ -548,6 +573,12 @@ describe("CompositionVariableGraphWorkspace", () => {
         onRemove={() => {}}
         sqlSchema={buildSqlSchema([])}
         parameterDeclarations={{ rows: [{ name: "minimum", type: "integer" }] }}
+        previewForQuery={() => ({
+          status: "error",
+          isCurrent: true,
+          error: "Query execution failed",
+        })}
+        onRunQuery={runQuery}
         onQueryChange={(id, sql) =>
           setDraft((current) => ({
             ...current,
@@ -559,6 +590,18 @@ describe("CompositionVariableGraphWorkspace", () => {
           }))}
       />
     ));
+    const editor = screen.getByRole("textbox", { name: "SQL" });
+    expect(editor).toHaveValue("SELECT $minimum");
+    expect(editor).toHaveAttribute("data-lint-profile", "composition");
+    const queryWorkspace = editor.closest(".sql-workspace");
+    const runQueryButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runQueryButton).toBeEnabled());
+    expect(within(queryWorkspace!).getByRole("alert")).toHaveTextContent(
+      "Query execution failed",
+    );
+    fireEvent.click(runQueryButton);
+    expect(runQuery).toHaveBeenCalledWith("rows");
+
     const binding = screen.getByRole("combobox", { name: "minimum" });
     fireEvent.change(binding, { target: { value: "ceiling" } });
     await waitFor(() => expect(binding).toHaveValue("ceiling"));
@@ -574,10 +617,7 @@ describe("CompositionVariableGraphWorkspace", () => {
           : node
       ),
     }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "SQL" }).textContent)
-        .toContain(editedSql)
-    );
+    await waitFor(() => expect(editor).toHaveValue(editedSql));
     fireEvent.change(binding, { target: { value: "floor" } });
     expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
       query: {

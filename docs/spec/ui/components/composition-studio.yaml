@@ -30,10 +30,22 @@ query; its starter uses explicit projectable user-data columns and never
 silently replaces authored SQL. Composition wildcard restrictions do not
 change ordinary SQL or published Saved SQL behavior.
 
+## Saved revisions and historical shapes
+
+Before saving, the server validates the current graph and derives query Form
+bindings and result descriptors from current authorized planning. It does not
+trust submitted bindings or schema fingerprints. Saves retain append-only
+history and their existing idempotent receipt and stale-revision conflict
+behavior. The replaced prerelease graph shape is not silently converted or
+restored as an executable Composition. Exact reads, raw inspection, export, and
+history remain available for those stored revisions without migration; the
+user must create a current-shape Composition to execute it.
+
 ## Design canvas
 
 The canvas offers Text, Table, and Input only. Insertion is completed in the
-canvas without opening a second Inspector.
+canvas without opening a second Inspector. The two mode controls are Design
+and Variables; Metric and Saved SQL binding pickers are not offered.
 
 - Text starts editable in its placed position. Its plain template uses
   `{{variable_id}}`; a compact adjacent control selects Title, Heading, Body,

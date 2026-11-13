@@ -204,7 +204,7 @@ requirements:
       - id: form-seed-projectable-columns
         kind: behavior
         statement: >-
-          A Composition Form seed explicitly projects every supplied
+          A SQL Form seed explicitly projects every supplied
           projectable user-data column in source order, uses quoted identifiers
           and unique aliases, and excludes metadata fields from the projection.
           The generated SQL contains no `SELECT *` or synthetic `LIMIT`.
@@ -212,8 +212,7 @@ requirements:
       - id: form-seed-without-projectable-columns
         kind: behavior
         statement: >-
-          A Form with no projectable user-data columns returns a typed local
-          diagnostic. The Composition draft remains unchanged and inserts no
-          query variable or Table; metadata such as `_ugoite_id` is not added
-          as a fallback projection.
+          A Form with no projectable user-data columns returns the typed Rust
+          diagnostic. The SQL editor applies no partial seed, and metadata
+          such as `_ugoite_id` is not added as a fallback projection.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-006#rule.governance]

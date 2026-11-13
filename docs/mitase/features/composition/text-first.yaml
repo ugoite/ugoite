@@ -22,9 +22,17 @@ features:
               - { kind: documents, anchor: REQ-COMP-010#criterion.table-text-input-components }
               - { kind: documents, anchor: REQ-COMP-010#criterion.rust-parsed-text-templates }
               - { kind: documents, anchor: REQ-COMP-010#criterion.exact-scalar-query-contract }
+              - { kind: documents, anchor: REQ-COMP-010#criterion.current-shape-save-validation }
+              - { kind: documents, anchor: REQ-COMP-010#criterion.append-only-save-history }
+              - { kind: documents, anchor: REQ-COMP-010#criterion.replaced-shape-is-not-executable }
+              - { kind: documents, anchor: REQ-COMP-010#criterion.raw-history-remains-readable }
               - { kind: documents, anchor: REQ-FE-082#criterion.inline-template-parameters }
               - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-projectable-columns }
               - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns }
+              - { kind: documents, anchor: REQ-FE-083#criterion.design-and-variables-modes }
+              - { kind: documents, anchor: REQ-FE-083#criterion.text-is-edited-in-place }
+              - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
       - id: core
         role: implementation
         facet: core
@@ -37,13 +45,32 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable }
           - id: inline-query-graph
             adapter: rust
             path: crates/ugoite-domain/src/composition/variable_graph.rs
             selector: { kind: symbol, name: compile_variable_graph }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
+              - { kind: satisfies, criterion: REQ-FE-082#criterion.inline-template-parameters }
+          - id: component-binding-graph
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_binding.rs
+            selector: { kind: symbol, name: compile_variable_graph_bindings }
+            claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
+          - id: typed-query-result-validation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: symbol, name: validate_variable_graph_result }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
+          - id: typed-query-result-ingestion
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector: { kind: symbol, name: validate_variable_graph_sql_page }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
           - id: text-template-parser
             adapter: rust
             path: crates/ugoite-domain/src/composition/text_template.rs
@@ -64,7 +91,7 @@ features:
           - id: authoring-query-resolution
             adapter: rust
             path: crates/ugoite-iceberg/src/service/composition_resolver.rs
-            selector: { kind: symbol, name: preview_composition_authoring_authorized_for_principals_with_base }
+            selector: { kind: symbol, name: read_current_queries }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
           - id: authorized-query-evaluation
@@ -73,30 +100,25 @@ features:
             selector: { kind: symbol, name: evaluate_composition_graph_authorized_for_principals }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
           - id: append-only-save
             adapter: rust
             path: crates/ugoite-iceberg/src/service/composition_local_save.rs
             selector: { kind: symbol, name: save_composition_local_with_work }
             claims:
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.append-only-save-and-raw-recovery }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.append-only-save-history }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-shape-save-validation }
       - id: backend
         role: implementation
         facet: backend
         responsibility: Derive identity and authorization from the authenticated request and expose Composition evaluation and persistence through the existing REST adapter.
         targets:
-          - id: evaluation-handler
+          - id: evaluation-response-query-projection
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: composition_evaluation_handler }
+            selector: { kind: symbol, name: api_composition_queries_and_bindings }
             claims:
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
-          - id: save-handler
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: save_composition }
-            claims:
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.append-only-save-and-raw-recovery }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
       - id: api
         role: contract-source
         facet: api
@@ -134,6 +156,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.text-is-edited-in-place }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
           - id: graph-studio
             adapter: typescript
             path: frontend/src/components/CompositionGraphStudio.tsx
@@ -141,19 +164,21 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
-          - id: variables-workspace
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
-            selector: { kind: symbol, name: CompositionVariableGraphWorkspace }
-            claims:
-              - { kind: satisfies, criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
           - id: reader-renderer
             adapter: typescript
             path: frontend/src/components/CompositionGraphRenderer.tsx
             selector: { kind: symbol, name: CompositionGraphRenderer }
             claims:
-              - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
-              - { kind: satisfies, criterion: REQ-FE-083#criterion.text-is-edited-in-place }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.reader-is-read-only }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
+          - id: composition-variable-binding-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.tsx
+            selector: { kind: symbol, name: CompositionVariableBindingPicker }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.table-picker-focus-restoration }
           - id: browser-protocol-integer-decoding
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
@@ -165,13 +190,24 @@ features:
         facet: cli
         responsibility: Keep Composition lint, exact revision reads, graph evaluation, and raw inspection/export/history on the shared Rust contract for local and remote CLI use.
         targets:
-          - id: cli-composition-adapter
+          - id: cli-composition-response-projection
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
-            selector: { kind: symbol, name: lint_yaml_bytes }
+            selector: { kind: symbol, name: composition_queries_and_bindings }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.append-only-save-and-raw-recovery }
+          - id: cli-raw-inspection
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: read_composition }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.raw-history-remains-readable }
+          - id: cli-raw-history
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: read_composition_history }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.raw-history-remains-readable }
       - id: wasm
         role: implementation
         facet: wasm
@@ -197,6 +233,10 @@ features:
                 criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
                 covers: [FEAT-COMP-010#binding.core/target.composition-document]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable
+                covers: [FEAT-COMP-010#binding.core/target.composition-document]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
           - id: saved-sql-variant-rejected
             adapter: rust
             path: crates/ugoite-domain/src/composition/variable_graph.rs
@@ -206,6 +246,15 @@ features:
                 criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
                 covers: [FEAT-COMP-010#binding.core/target.inline-query-graph]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::variable_graph::tests::query_definition_decoding_rejects_saved_sql_and_unknown_fields } }
+          - id: graph-template-validation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_graph.rs
+            selector: { kind: test, name: tests::inline_template_markers_validate_bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-082#criterion.inline-template-parameters
+                covers: [FEAT-COMP-010#binding.core/target.inline-query-graph]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::variable_graph::tests::inline_template_markers_validate_bindings } }
           - id: replaced-component-kinds-rejected
             adapter: rust
             path: crates/ugoite-domain/src/composition/canonical.rs
@@ -240,8 +289,26 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
-                covers: [FEAT-COMP-010#binding.core/target.inline-query-graph]
+                covers: [FEAT-COMP-010#binding.core/target.typed-query-result-validation]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::variable_graph::tests::scalar_results_distinguish_cardinality_null_and_valid_values } }
+          - id: inline-result-schema-contract
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector: { kind: test, name: tests::validates_inline_planner_schema_before_exposing_scalar_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
+                covers: [FEAT-COMP-010#binding.core/target.typed-query-result-ingestion]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition_query::tests::validates_inline_planner_schema_before_exposing_scalar_values } }
+          - id: component-bindings
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/variable_binding.rs
+            selector: { kind: test, name: tests::compiles_variable_only_bindings_and_tracks_input_components }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.core/target.component-binding-graph]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::variable_binding::tests::compiles_variable_only_bindings_and_tracks_input_components } }
           - id: result-schema-and-unused-form-change
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
@@ -269,22 +336,17 @@ features:
                 criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
                 covers: [FEAT-COMP-010#binding.service/target.authoring-query-resolution]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: saves_reject_forged_complete_query_result_descriptors } }
-          - id: count-snapshot-float-transport
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
-            selector: { kind: test, name: inline_float_count_snapshot_matches_integer_json_zero }
-            claims:
               - kind: verifies
-                criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
-                covers: [FEAT-COMP-010#binding.service/target.authorized-query-evaluation]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: inline_float_count_snapshot_matches_integer_json_zero } }
+                criterion: REQ-COMP-010#criterion.current-shape-save-validation
+                covers: [FEAT-COMP-010#binding.service/target.append-only-save]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: saves_reject_forged_complete_query_result_descriptors } }
           - id: append-only-history
             adapter: rust
             path: crates/ugoite-iceberg/src/composition/history_tests.rs
-            selector: { kind: test, name: tests::authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap }
+            selector: { kind: test, name: authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-010#criterion.append-only-save-and-raw-recovery
+                criterion: REQ-COMP-010#criterion.append-only-save-history
                 covers: [FEAT-COMP-010#binding.service/target.append-only-save]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: composition::history_tests::authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap } }
           - id: raw-cli-projection
@@ -293,9 +355,27 @@ features:
             selector: { kind: test, name: tests::local_raw_projection_matches_the_portable_composition_read_dto }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-010#criterion.append-only-save-and-raw-recovery
-                covers: [FEAT-COMP-010#binding.cli/target.cli-composition-adapter]
+                criterion: REQ-COMP-010#criterion.raw-history-remains-readable
+                covers: [FEAT-COMP-010#binding.cli/target.cli-raw-inspection]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::local_raw_projection_matches_the_portable_composition_read_dto } }
+          - id: raw-cli-exact-read-and-export
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: test, name: tests::export_writes_the_exact_local_revision_and_does_not_replace_existing_files }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.raw-history-remains-readable
+                covers: [FEAT-COMP-010#binding.cli/target.cli-raw-inspection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::export_writes_the_exact_local_revision_and_does_not_replace_existing_files } }
+          - id: raw-cli-history
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: test, name: tests::history_reads_bounded_local_pages_with_raw_revision_data }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.raw-history-remains-readable
+                covers: [FEAT-COMP-010#binding.cli/target.cli-raw-history]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::history_reads_bounded_local_pages_with_raw_revision_data } }
           - id: evaluation-rest-route
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -303,32 +383,43 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
-                covers: [FEAT-COMP-010#binding.backend/target.evaluation-handler]
+                covers: [FEAT-COMP-010#binding.service/target.authoring-query-resolution]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph } }
-              - kind: verifies
-                criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
-                covers: [FEAT-COMP-010#binding.backend/target.evaluation-handler]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph } }
-          - id: openapi-composition-contract
-            adapter: rust
-            path: crates/ugoite-server/tests/api_contract.rs
-            selector: { kind: test, name: openapi_exposes_graph_composition_operations_without_legacy_adapters }
-            claims:
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
-                covers:
-                  - FEAT-COMP-010#binding.api/target.evaluate-operation
-                  - FEAT-COMP-010#binding.api/target.preview-operation
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_exposes_graph_composition_operations_without_legacy_adapters } }
+                covers: [FEAT-COMP-010#binding.backend/target.evaluation-response-query-projection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph } }
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.backend/target.evaluation-response-query-projection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph } }
+          - id: save-rest-route-receipt
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: test, name: authentication_regression_tests::composition_save_route_concurrent_same_key_returns_one_publication_and_receipt }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.append-only-save-history
+                covers: [FEAT-COMP-010#binding.service/target.append-only-save]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: composition_save_route_concurrent_same_key_returns_one_publication_and_receipt } }
           - id: cli-rejects-old-graph
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
             selector: { kind: test, name: tests::lint_rejects_the_removed_prerelease_source_document }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
-                covers: [FEAT-COMP-010#binding.cli/target.cli-composition-adapter]
+                criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable
+                covers: [FEAT-COMP-010#binding.core/target.composition-document]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_rejects_the_removed_prerelease_source_document } }
+          - id: cli-response-projection
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: test, name: tests::local_graph_evaluation_uses_the_portable_response_shape }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
+                covers: [FEAT-COMP-010#binding.cli/target.cli-composition-response-projection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::local_graph_evaluation_uses_the_portable_response_shape } }
           - id: wasm-native-template-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
@@ -347,6 +438,10 @@ features:
                 criterion: REQ-FE-083#criterion.text-is-edited-in-place
                 covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphDesignCanvas.test.tsx, test: "edits Text directly, selects a local style, and inserts a scalar variable" } }
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphDesignCanvas.test.tsx, test: "edits Text directly, selects a local style, and inserts a scalar variable" } }
           - id: graph-studio-modes-and-placement
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx
@@ -356,15 +451,34 @@ features:
                 criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "adds and cancels a Design input in place with matching graph references" } }
-          - id: variables-bindings-and-diagnostics
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "adds and cancels a Design input in place with matching graph references" } }
+          - id: graph-studio-modes-and-table-placement
             adapter: typescript
-            path: frontend/src/components/CompositionVariableGraphWorkspace.test.tsx
-            selector: { kind: test, name: keeps SQL and argument bindings current through consecutive graph edits }
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: offers only Design and Variables and keeps Table controls in the canvas }
             claims:
               - kind: verifies
-                criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics
-                covers: [FEAT-COMP-010#binding.frontend/target.variables-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableGraphWorkspace.test.tsx, test: "keeps SQL and argument bindings current through consecutive graph edits" } }
+                criterion: REQ-FE-083#criterion.design-and-variables-modes
+                covers:
+                  - FEAT-COMP-010#binding.frontend/target.design-canvas
+                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "offers only Design and Variables and keeps Table controls in the canvas" } }
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "offers only Design and Variables and keeps Table controls in the canvas" } }
+          - id: reader-read-only-text
+            adapter: typescript
+            path: e2e/composition-golden-journey.test.ts
+            selector: { kind: test, name: "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.reader-is-read-only
+                covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-golden-journey.test.ts, test: "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader" } }
           - id: reader-exact-text-values
             adapter: typescript
             path: frontend/src/components/CompositionGraphRenderer.test.tsx
@@ -372,10 +486,6 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
-                covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphRenderer.test.tsx, test: "renders exact i64 and decimal scalar tokens without Number coercion" } }
-              - kind: verifies
-                criterion: REQ-FE-083#criterion.text-is-edited-in-place
                 covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphRenderer.test.tsx, test: "renders exact i64 and decimal scalar tokens without Number coercion" } }
           - id: browser-protocol-exact-i64
@@ -387,14 +497,70 @@ features:
                 criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
                 covers: [FEAT-COMP-010#binding.frontend/target.browser-protocol-integer-decoding]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: "preserves typed Composition i64 values across real HTTP and WASM boundaries" } }
-          - id: browser-save-reopen-reader
+          - id: selected-table-query-binding
             adapter: typescript
-            path: e2e/composition-golden-journey.test.ts
-            selector: { kind: test, name: "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader" }
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: places a selected table query as one component and layout item }
             claims:
               - kind: verifies
-                criterion: REQ-FE-083#criterion.design-and-variables-modes
-                covers:
-                  - FEAT-COMP-010#binding.frontend/target.design-canvas
-                  - FEAT-COMP-010#binding.frontend/target.reader-renderer
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-golden-journey.test.ts, test: "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader" } }
+                criterion: REQ-COMP-010#criterion.table-text-input-components
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "places a selected table query as one component and layout item" } }
+          - id: table-picker-focus-restoration
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps one table picker modal and restores focus after Escape }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.table-picker-focus-restoration
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one table picker modal and restores focus after Escape" } }
+    contracts:
+      - id: typed-graph-and-inline-query-contract
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-010#binding.core/target.composition-document
+            role: rust-domain
+          - target: FEAT-COMP-010#binding.core/target.inline-query-graph
+            role: rust-domain
+          - target: FEAT-COMP-010#binding.backend/target.evaluation-response-query-projection
+            role: rest-adapter
+          - target: FEAT-COMP-010#binding.cli/target.cli-composition-response-projection
+            role: cli-adapter
+        guarantees: [REQ-COMP-010#criterion.inline-sql-typed-graph]
+      - id: portable-component-kinds-contract
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-010#binding.core/target.composition-document
+            role: rust-domain
+          - target: FEAT-COMP-010#binding.core/target.component-binding-graph
+            role: rust-component-bindings
+          - target: FEAT-COMP-010#binding.frontend/target.design-canvas
+            role: browser-design
+          - target: FEAT-COMP-010#binding.frontend/target.graph-studio
+            role: browser-studio
+          - target: FEAT-COMP-010#binding.frontend/target.composition-variable-binding-picker
+            role: browser-table-binding
+          - target: FEAT-COMP-010#binding.backend/target.evaluation-response-query-projection
+            role: rest-adapter
+        guarantees: [REQ-COMP-010#criterion.table-text-input-components]
+      - id: exact-scalar-result-contract
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-010#binding.core/target.typed-query-result-ingestion
+            role: rust-core
+          - target: FEAT-COMP-010#binding.frontend/target.reader-renderer
+            role: browser-reader
+        guarantees: [REQ-COMP-010#criterion.exact-scalar-query-contract]
+      - id: rust-text-template-contract
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-010#binding.core/target.text-template-parser
+            role: rust-domain
+          - target: FEAT-COMP-010#binding.wasm/target.text-template-action
+            role: wasm
+        guarantees: [REQ-COMP-010#criterion.rust-parsed-text-templates]

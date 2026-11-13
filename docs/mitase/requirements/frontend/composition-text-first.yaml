@@ -18,15 +18,20 @@ requirements:
           Composition Studio opens in Design and exposes only Design and
           Variables modes. Design inserts only Text, Table, and Input
           components; it does not offer Metric or Saved SQL binding pickers.
-          Reader output contains no authoring mode or editing controls.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: text-is-edited-in-place
         kind: behavior
         statement: >-
           Authors edit a Text template in its canvas position and choose its
           Title, Heading, Body, or Caption style with a compact adjacent
-          control. The same reader renderer displays the validated value using
-          text nodes; editing controls are absent in reader output.
+          control.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: reader-is-read-only
+        kind: behavior
+        statement: >-
+          Reader displays validated Composition values without authoring modes,
+          selection controls, or editing controls. Text is emitted as text
+          nodes rather than HTML or evaluated markup.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: variable-creation-completes-pending-placement
         kind: behavior
@@ -36,6 +41,13 @@ requirements:
           completes the pending reference and placement. Cancel or failed
           creation leaves no partial component or binding in the draft.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: table-picker-focus-restoration
+        kind: behavior
+        statement: >-
+          The Table binding picker owns one modal, makes the background inert
+          while open, and returns keyboard focus to its opener when dismissed
+          with Escape.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: variables-show-local-sql-diagnostics
         kind: behavior
         statement: >-

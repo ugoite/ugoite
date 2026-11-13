@@ -7,9 +7,9 @@ requirements:
     title: Text-first Composition graph and evaluation
     description: >-
       Define the replacement executable Composition document and graph
-      behavior. The shape currently persisted by main is rejected without
-      migration and is therefore scheduled for a next-minor change; raw Entry
-      history remains available for inspection and recovery.
+      behavior. The replaced prerelease shape is not migrated into the new
+      executable document, while raw Entry history remains available for
+      inspection and recovery.
     priority: high
     status: implemented
     criteria:
@@ -57,14 +57,34 @@ requirements:
           result descriptor. Results are bounded transient Work; stale or
           unauthorized values are not exposed as current Composition output.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
-      - id: append-only-save-and-raw-recovery
+      - id: current-shape-save-validation
+        kind: security
+        statement: >-
+          Before a Composition revision is appended, save validates the current
+          executable document and rebuilds each inline query's Form bindings
+          and result descriptor from current authorized planning. Submitted
+          bindings and schema fingerprints are not trusted as authority.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: append-only-save-history
         kind: security
         statement: >-
           Composition save retains the existing idempotent receipt, stale
-          revision conflict, and append-only Entry history behavior. An
-          unsupported historical Composition shape is not executed or silently
-          migrated; raw inspect, export, and history remain available. Restore
-          remains supported for revisions in the current Composition shape,
-          while the replaced historical shape cannot be restored as an
-          executable Composition and is scheduled for the next minor version.
+          revision conflict, and append-only Entry history behavior. Restore
+          remains supported for revisions in the current Composition shape.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: replaced-shape-is-not-executable
+        kind: behavior
+        statement: >-
+          The replaced prerelease Composition shape is rejected by executable
+          document validation and is not silently converted or restored as a
+          current Composition. Existing records remain raw Knowledge; a new
+          current-shape Composition is required for execution.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: raw-history-remains-readable
+        kind: behavior
+        statement: >-
+          Raw inspect, export, exact-revision reads, and history continue to
+          return stored fields and revision metadata for Composition records
+          whose document shape is not executable. Reading those records does
+          not require migration.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
