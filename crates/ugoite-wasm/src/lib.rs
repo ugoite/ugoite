@@ -358,6 +358,35 @@ fn invoke_domain(request: serde_json::Value) -> String {
     }
 
     if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.parse_composition_text_template")
+    {
+        let Some(template) = request
+            .get("value")
+            .and_then(|value| value.get("template"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": "template_required"},
+            })
+            .to_string();
+        };
+
+        return match ugoite_domain::composition::parse_composition_text_template(template) {
+            Ok(segments) => serde_json::json!({
+                "ok": true,
+                "value": { "segments": segments },
+            })
+            .to_string(),
+            Err(error) => serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": error.as_str()},
+            })
+            .to_string(),
+        };
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition")
     {
         let Some(yaml) = request

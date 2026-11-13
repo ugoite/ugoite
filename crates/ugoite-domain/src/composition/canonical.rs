@@ -1,8 +1,7 @@
 //! Canonical normalization and semantic fingerprints for Composition v1.
 
 use super::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionDocument, VariableGraphNodeKind,
-    VariableGraphResultType, VariableGraphScalarType,
+    CompositionDiagnosticCode, CompositionDocument, VariableGraphNodeKind, VariableGraphResultType,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -91,14 +90,6 @@ pub(super) fn normalize_composition_document(
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
     document.spec.components_in_render_order()?;
-    if document.spec.components.iter().any(|component| {
-        !component.metric_shape_is_well_formed() || !component.table_shape_is_well_formed()
-    }) || !metric_bindings_are_well_formed(document)
-        || !table_bindings_are_well_formed(document)
-    {
-        return Err(CompositionDiagnosticCode::InvalidComposition);
-    }
-
     let mut normalized = document.clone();
     for variable in &mut normalized.spec.variables {
         if let VariableGraphNodeKind::Query { query, .. } = &mut variable.kind {
@@ -108,94 +99,6 @@ pub(super) fn normalize_composition_document(
         }
     }
     Ok(normalized)
-}
-
-fn table_bindings_are_well_formed(document: &CompositionDocument) -> bool {
-    document.spec.components.iter().all(|component| {
-        let super::CompositionComponent::Table {
-            variable,
-            presentation: Some(presentation),
-            ..
-        } = component
-        else {
-            return true;
-        };
-
-        let Some(node) = document
-            .spec
-            .variables
-            .iter()
-            .find(|candidate| candidate.id == *variable)
-        else {
-            return false;
-        };
-        let super::VariableGraphNodeKind::Query {
-            returns: super::VariableGraphResultType::Table { columns },
-            query,
-        } = &node.kind
-        else {
-            return false;
-        };
-
-        // An empty fingerprint marks an authoring draft whose SQL output may
-        // have changed. The source schema is resolved before publication and
-        // this presentation is checked against that current descriptor then.
-        if query.schema_fingerprint.is_empty() {
-            return true;
-        }
-
-        presentation.columns.iter().all(|selected| {
-            columns
-                .iter()
-                .filter(|column| column.name == selected.column)
-                .count()
-                == 1
-        })
-    })
-}
-
-fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
-    document.spec.components.iter().all(|component| {
-        let CompositionComponent::Metric {
-            variable,
-            presentation,
-            ..
-        } = component
-        else {
-            return true;
-        };
-
-        let mut matching_variables = document
-            .spec
-            .variables
-            .iter()
-            .filter(|candidate| candidate.id == *variable);
-        let Some(node) = matching_variables.next() else {
-            return false;
-        };
-        if matching_variables.next().is_some() {
-            return false;
-        }
-        let scalar_type = match &node.kind {
-            VariableGraphNodeKind::Constant { value_type, .. }
-            | VariableGraphNodeKind::Input { value_type, .. } => value_type.scalar_type,
-            VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar { value_type },
-                ..
-            } => value_type.scalar_type,
-            VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Table { .. },
-                ..
-            } => return false,
-        };
-        presentation.is_none()
-            || matches!(
-                scalar_type,
-                VariableGraphScalarType::Integer
-                    | VariableGraphScalarType::Float
-                    | VariableGraphScalarType::Decimal
-            )
-    })
 }
 
 fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
@@ -229,43 +132,82 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
 mod tests {
     use super::{canonicalize_composition, canonicalize_composition_yaml};
     use crate::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionTablePresentation,
-        CompositionTablePresentationColumn, VariableGraphFormBinding, VariableGraphNodeKind,
+        CompositionDiagnosticCode, VariableGraphFormBinding, VariableGraphNodeKind,
     };
 
     const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
+    const CANONICAL_GRAPH: &str =
+        include_str!("../../tests/fixtures/composition/sql-first.canonical.ugcomp.yaml");
+    const FINGERPRINT: &str =
+        include_str!("../../tests/fixtures/composition/sql-first.fingerprint.txt");
 
     #[test]
     fn canonical_yaml_and_fingerprint_are_stable_for_variable_graph() {
         let result = canonicalize_composition_yaml(GRAPH).unwrap();
         assert!(result.yaml.ends_with('\n'));
         assert!(!result.yaml.contains('\r'));
+        assert_eq!(result.yaml, CANONICAL_GRAPH);
+        assert_eq!(result.fingerprint, FINGERPRINT.trim());
         assert_eq!(canonicalize_composition_yaml(&result.yaml).unwrap(), result);
         assert!(result.document.has_complete_query_descriptors());
     }
 
     #[test]
-    fn saved_sql_label_source_is_required_at_the_canonical_boundary() {
-        let missing = GRAPH.replace("        label_source: variable\n", "");
-        assert_ne!(missing, GRAPH);
+    fn old_component_kinds_and_table_presentation_are_rejected() {
+        let baseline = canonicalize_composition_yaml(GRAPH).unwrap();
+
+        let mut old_metric = serde_json::to_value(&baseline.document).unwrap();
+        old_metric["spec"]["components"][2] = serde_json::json!({
+            "kind": "metric",
+            "id": "total",
+            "variable": "month_total"
+        });
         assert_eq!(
-            canonicalize_composition_yaml(&missing),
+            super::canonicalize_composition_document_value(old_metric),
             Err(CompositionDiagnosticCode::InvalidComposition),
         );
 
-        let unknown = GRAPH.replace(
-            "        label_source: variable\n",
-            "        label_source: identifier_pattern\n",
-        );
-        assert_ne!(unknown, GRAPH);
+        let mut old_text = serde_json::to_value(&baseline.document).unwrap();
+        old_text["spec"]["components"][2]["content"] = serde_json::json!({
+            "kind": "literal",
+            "text": "Total"
+        });
         assert_eq!(
-            canonicalize_composition_yaml(&unknown),
+            super::canonicalize_composition_document_value(old_text),
+            Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+
+        let mut old_table_presentation = serde_json::to_value(&baseline.document).unwrap();
+        old_table_presentation["spec"]["components"][3]["presentation"] =
+            serde_json::json!({ "columns": [] });
+        assert_eq!(
+            super::canonicalize_composition_document_value(old_table_presentation),
+            Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+
+        let mut old_saved_sql = serde_json::to_value(&baseline.document).unwrap();
+        let query = &mut old_saved_sql["spec"]["variables"][3]["query"];
+        query["kind"] = serde_json::json!("saved_sql");
+        query["entry_id"] = serde_json::json!("00000000-0000-7000-8000-000000000020");
+        query["revision_id"] = serde_json::json!("00000000-0000-7000-8000-000000000021");
+        query["column"] = serde_json::json!("total");
+        query.as_object_mut().unwrap().remove("sql");
+        assert_eq!(
+            super::canonicalize_composition_document_value(old_saved_sql),
+            Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+
+        let mut old_table = serde_json::to_value(&baseline.document).unwrap();
+        old_table["spec"]["components"][3]["presentation"] =
+            serde_json::json!({ "columns": [{"column":"amount","label":"Amount"}] });
+        assert_eq!(
+            super::canonicalize_composition_document_value(old_table),
             Err(CompositionDiagnosticCode::InvalidComposition),
         );
     }
 
     #[test]
-    fn duplicate_form_bindings_and_invalid_metric_types_are_rejected() {
+    fn duplicate_form_bindings_and_invalid_result_descriptors_are_rejected() {
         let mut document = canonicalize_composition_yaml(GRAPH).unwrap().document;
         let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[2].kind
         else {
@@ -280,123 +222,17 @@ mod tests {
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
 
-        let mut invalid_metric = canonicalize_composition_yaml(GRAPH).unwrap().document;
+        let mut invalid_descriptor = canonicalize_composition_yaml(GRAPH).unwrap().document;
         let VariableGraphNodeKind::Query { returns, .. } =
-            &mut invalid_metric.spec.variables[2].kind
+            &mut invalid_descriptor.spec.variables[2].kind
         else {
             panic!("fixture node should be a query");
         };
         *returns = crate::composition::VariableGraphResultType::Table { columns: vec![] };
         assert_eq!(
-            canonicalize_composition(&invalid_metric),
+            canonicalize_composition(&invalid_descriptor),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
-    }
-
-    #[test]
-    fn table_presentation_is_ordered_display_metadata_bound_to_exact_result_columns() {
-        let mut document = canonicalize_composition_yaml(GRAPH).unwrap().document;
-        let table = document
-            .spec
-            .components
-            .iter_mut()
-            .find_map(|component| match component {
-                CompositionComponent::Table { presentation, .. } => Some(presentation),
-                _ => None,
-            })
-            .expect("fixture includes a Table");
-        *table = Some(CompositionTablePresentation {
-            columns: vec![
-                CompositionTablePresentationColumn {
-                    column: "amount".to_owned(),
-                    label: "Amount paid".to_owned(),
-                },
-                CompositionTablePresentationColumn {
-                    column: "Date".to_owned(),
-                    label: "Purchase date".to_owned(),
-                },
-            ],
-        });
-        let canonical = canonicalize_composition(&document).unwrap();
-        let canonical_table = canonical
-            .document
-            .spec
-            .components
-            .iter()
-            .find_map(|component| match component {
-                CompositionComponent::Table { presentation, .. } => presentation.as_ref(),
-                _ => None,
-            })
-            .unwrap();
-        assert_eq!(canonical_table.columns[0].column, "amount");
-        assert!(
-            canonical.yaml.find("column: amount").unwrap()
-                < canonical.yaml.find("column: Date").unwrap()
-        );
-
-        let mut duplicate = canonical.document.clone();
-        let table = duplicate
-            .spec
-            .components
-            .iter_mut()
-            .find_map(|component| match component {
-                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
-                _ => None,
-            })
-            .unwrap();
-        table.columns[1].column = "amount".to_owned();
-        assert_eq!(
-            canonicalize_composition(&duplicate),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-
-        let mut unknown = canonical.document.clone();
-        let table = unknown
-            .spec
-            .components
-            .iter_mut()
-            .find_map(|component| match component {
-                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
-                _ => None,
-            })
-            .unwrap();
-        table.columns[0].column = "_ugoite_id".to_owned();
-        assert_eq!(
-            canonicalize_composition(&unknown),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-
-        let mut unresolved = canonical.document.clone();
-        let table_variable = unresolved
-            .spec
-            .components
-            .iter()
-            .find_map(|component| match component {
-                CompositionComponent::Table { variable, .. } => Some(variable.clone()),
-                _ => None,
-            })
-            .unwrap();
-        let node = unresolved
-            .spec
-            .variables
-            .iter_mut()
-            .find(|node| node.id == table_variable)
-            .unwrap();
-        let VariableGraphNodeKind::Query { query, .. } = &mut node.kind else {
-            panic!("Table view must reference a query");
-        };
-        query.schema_fingerprint.clear();
-        let table = unresolved
-            .spec
-            .components
-            .iter_mut()
-            .find_map(|component| match component {
-                CompositionComponent::Table { presentation, .. } => presentation.as_mut(),
-                _ => None,
-            })
-            .unwrap();
-        table.columns[0].column = "future_result_column".to_owned();
-        assert!(canonicalize_composition(&unresolved).is_ok());
     }
 
     #[test]
