@@ -295,7 +295,9 @@ test.describe("Composition Table and Text pagination", () => {
     await uiExpect(page).toHaveURL(new RegExp(`${path}$`));
 
     const input = page.getByLabel("minimum_amount", { exact: true });
-    const scalarText = page.locator('[data-component-id="matching_count_text"] .compositionGraphText');
+    const scalarText = page.locator(
+      '[data-component-id="matching_count_text"] p.compositionGraphText',
+    );
     const table = page.getByRole("table");
     await uiExpect(input).toHaveValue("1");
     await uiExpect(scalarText).toHaveText("101");
@@ -387,7 +389,9 @@ test.describe("Composition Table and Text pagination", () => {
       name: "minimum_amount",
       exact: true,
     });
-    const designText = page.locator('[data-component-id="matching_count_text"] .compositionGraphText');
+    const designText = page.locator(
+      '[data-component-id="matching_count_text"] p.compositionGraphText',
+    );
     const designTable = page.getByRole("table");
     await uiExpect(designInput).toHaveValue("1");
     await uiExpect(designText).toHaveText("101");
@@ -527,7 +531,7 @@ test.describe("Composition Table and Text pagination", () => {
       .toBeEnabled();
     expect(countRequests).toHaveLength(0);
     expect(evaluationRequests.at(-1)).toMatchObject({
-      requested_queries: ["paged_rows"],
+      requested_queries: ["paged_rows", "matching_count_value"],
     });
 
     const nextPageResponse = page.waitForResponse((response) =>
