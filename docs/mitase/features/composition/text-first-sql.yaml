@@ -62,13 +62,6 @@ features:
                 criterion: REQ-FE-082#criterion.form-seed-projectable-columns
               - kind: satisfies
                 criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
-          - id: composition-variable-binding-picker
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.tsx
-            selector: { kind: symbol, name: CompositionVariableBindingPicker }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
       - id: verification
         role: verification
         facet: verification
@@ -128,15 +121,6 @@ features:
                 criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
                 covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not seed a Form table when it has no projectable fields" } }
-          - id: empty-form-picker-no-commit
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
-            selector: { kind: test, name: localizes the typed empty projectable Form seed error }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-082#criterion.form-seed-without-projectable-columns
-                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-variable-binding-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "localizes the typed empty projectable Form seed error" } }
           - id: projectable-form-seed
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -160,8 +144,6 @@ features:
           - target: FEAT-COMP-015#binding.domain-implementation/target.composition-form-query-seed
             role: rust-domain
           - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-studio
-            role: browser-form-seed
-          - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-variable-binding-picker
             role: browser-form-seed
         guarantees:
           - REQ-FE-082#criterion.inline-template-parameters

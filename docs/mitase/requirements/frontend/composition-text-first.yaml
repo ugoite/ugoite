@@ -10,7 +10,7 @@ requirements:
       Composition graph, using concise placement and controls from the Ugoite
       UI policies.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: design-and-variables-modes
         kind: behavior

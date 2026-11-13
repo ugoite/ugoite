@@ -11,7 +11,7 @@ requirements:
       migration and is therefore scheduled for a next-minor change; raw Entry
       history remains available for inspection and recovery.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: inline-sql-typed-graph
         kind: behavior

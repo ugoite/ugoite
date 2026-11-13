@@ -6,7 +6,7 @@ features:
   - id: FEAT-COMP-010
     title: Text-first Composition graph and Studio
     summary: Store typed Composition graphs as Space-owned Knowledge and author or read them through Rust-validated SQL, Text, Table, and Input paths.
-    status: planned
+    status: implemented
     bindings:
       - id: sql-first-composition-contract
         role: contract-source
