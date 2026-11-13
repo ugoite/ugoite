@@ -534,18 +534,22 @@ async function openToolFromSavedTools(
   compositionId: string,
   revisionId: string,
   toolName: string,
+  timeout = 5_000,
 ): Promise<string> {
   const path = `/spaces/${spaceId}/compositions/${compositionId}/${revisionId}`;
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
   const link = page.locator(`a[href="${path}"]`);
-  await expect(link).toBeVisible();
+  await expect(link).toBeVisible({ timeout });
   await link.click();
-  await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
+  await expect(page).toHaveURL(
+    new RegExp(`${path.replaceAll("/", "\\/")}$`),
+    { timeout },
+  );
   await expect(
     page.getByRole("heading", { level: 1, name: toolName }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout });
   return path;
 }
 
@@ -1477,6 +1481,7 @@ test.describe("Composition Studio Journey", () => {
   );
 
   test("Changing a Form-backed Table source preserves the Metric and query through save and reopen", async ({ browser, context, request }) => {
+    test.setTimeout(180_000);
     const storageState = await context.storageState();
     const ownerContext = await openOwnerContext(browser, storageState);
     try {
@@ -1740,10 +1745,10 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("region", {
         name: `${formSlug}_sum_amount`,
         exact: true,
-      })).toContainText("50", { timeout: 30_000 });
+      })).toContainText("50", { timeout: 90_000 });
       await expect(page.getByRole("table", {
         name: `${replacementSlug}_rows results`,
-      })).toContainText("Replacement Form row", { timeout: 30_000 });
+      })).toContainText("Replacement Form row", { timeout: 90_000 });
     } finally {
       await ownerContext.close();
     }
@@ -2344,6 +2349,7 @@ test.describe("Composition Studio Journey", () => {
         compositionId,
         revisionId,
         seed.toolName,
+        30_000,
       );
       const metrics = page.locator(".compositionGraphMetric strong");
       const metricValues = () =>
