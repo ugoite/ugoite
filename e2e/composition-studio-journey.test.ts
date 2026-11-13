@@ -536,9 +536,24 @@ async function openToolFromSavedTools(
   toolName: string,
 ): Promise<string> {
   const path = `/spaces/${spaceId}/compositions/${compositionId}/${revisionId}`;
+  const compositionList = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET" &&
+      url.pathname === `/api/spaces/${spaceId}/compositions` &&
+      url.searchParams.get("limit") === "50" &&
+      url.searchParams.get("offset") === "0";
+  });
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
+  const listedCompositions = await compositionList;
+  expect(listedCompositions.ok()).toBe(true);
+  const compositionPage = await listedCompositions.json() as {
+    items?: Array<{ composition_id?: string; revision_id?: string }>;
+  };
+  expect(compositionPage.items?.some((item) =>
+    item.composition_id === compositionId && item.revision_id === revisionId
+  )).toBe(true);
   const link = page.locator(`a[href="${path}"]`);
   await expect(link).toBeVisible();
   const revisionResponse = page.waitForResponse((response) =>
