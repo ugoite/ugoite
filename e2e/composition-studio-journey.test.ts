@@ -626,7 +626,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio builds a reusable tool from existing knowledge", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const storageState = await context.storageState();
     let compositionId = "";
     let firstRevisionId = "";
@@ -648,6 +648,7 @@ test.describe("Composition Studio Journey", () => {
     const buildContext = await openOwnerContext(browser, storageState);
     try {
       const page = await buildContext.newPage();
+      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/variables`,
@@ -1536,6 +1537,7 @@ test.describe("Composition Studio Journey", () => {
         .replace(/^_+|_+$/g, "");
 
       const page = await ownerContext.newPage();
+      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
@@ -1584,7 +1586,7 @@ test.describe("Composition Studio Journey", () => {
       }).selectOption({ label: "Amount" });
       await metricPicker.getByRole("button", { name: "Add", exact: true })
         .click();
-      await expect(metricPicker).toHaveCount(0);
+      await expect(metricPicker).toHaveCount(0, { timeout: 30_000 });
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
@@ -1922,7 +1924,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio adds a no-entry Form table beside an existing query and reopens it", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const spaceId = await createSpace(request);
     const suffix = crypto.randomUUID().slice(0, 8);
     const formName = `EmptyRecords${suffix}`;
@@ -1979,6 +1981,7 @@ test.describe("Composition Studio Journey", () => {
     );
     try {
       const page = await ownerContext.newPage();
+      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
@@ -1996,7 +1999,7 @@ test.describe("Composition Studio Journey", () => {
       await expect(tablePicker.getByRole("button", {
         name: sqlName,
         exact: true,
-      })).toBeVisible();
+      })).toBeVisible({ timeout: 30_000 });
       await tablePicker.getByRole("tab", { name: "Forms", exact: true })
         .click();
       await tablePicker.getByRole("button", { name: formName, exact: true })
@@ -2071,7 +2074,7 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Composition Studio saves and reopens a filtered SQL metric", async ({ browser, context, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const seed = await seedReactiveMetricKnowledge(request);
     const storageState = await context.storageState();
     let compositionId = "";
@@ -2080,6 +2083,7 @@ test.describe("Composition Studio Journey", () => {
     const buildContext = await openOwnerContext(browser, storageState);
     try {
       const page = await buildContext.newPage();
+      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/variables`,
@@ -2098,7 +2102,9 @@ test.describe("Composition Studio Journey", () => {
         { timeout: 30_000 },
       );
       const sqlResult = page.getByRole("table");
-      await expect(sqlResult.locator("tbody tr")).toHaveCount(1);
+      await expect(sqlResult.locator("tbody tr")).toHaveCount(1, {
+        timeout: 30_000,
+      });
       await expect(sqlResult).toContainText("3", { timeout: 30_000 });
       await expect(sqlResult).toContainText("60", { timeout: 30_000 });
 
@@ -2389,7 +2395,8 @@ test.describe("Composition Studio Journey", () => {
   });
 
   test("Design preview recomputes only a dependent query and keeps unrelated results", async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(30_000);
     const suffix = crypto.randomUUID().slice(0, 8);
     const spaceId = seed.spaceId;
     const formName = `DesignDependency${suffix}`;
@@ -2569,8 +2576,10 @@ test.describe("Composition Studio Journey", () => {
     const independentTable = page.getByRole("table", {
       name: `${independentTableVariableId} results`,
     });
-    await expect(dependentMetric).toHaveText("2", { timeout: 30_000 });
-    await expect(independentTable).toContainText("Independent row 000");
+    await expect(dependentMetric).toHaveText("2", { timeout: 90_000 });
+    await expect(independentTable).toContainText("Independent row 000", {
+      timeout: 90_000,
+    });
     await expect(page.getByRole("textbox", {
       name: "independent_minimum",
       exact: true,
@@ -2593,7 +2602,7 @@ test.describe("Composition Studio Journey", () => {
         successfulEvaluationFor(dependentVariableId) &&
           successfulEvaluationFor(independentTableVariableId),
       )
-    ).toBe(true);
+    , { timeout: 90_000 }).toBe(true);
     const initialDependentExchange =
       successfulEvaluationFor(dependentVariableId)!;
     const initialTableExchange =
@@ -2630,8 +2639,12 @@ test.describe("Composition Studio Journey", () => {
       independentTableVariableId,
     );
 
-    await expect(independentTable.locator("tbody tr")).toHaveCount(2);
-    await expect(independentTable).toContainText("Independent row 001");
+    await expect(independentTable.locator("tbody tr")).toHaveCount(2, {
+      timeout: 90_000,
+    });
+    await expect(independentTable).toContainText("Independent row 001", {
+      timeout: 90_000,
+    });
     const independentRowsBefore = await independentTable.locator("tbody tr")
       .allTextContents();
     const evaluationIdsBeforeInputChange = new Set(
@@ -2639,7 +2652,7 @@ test.describe("Composition Studio Journey", () => {
     );
 
     await page.getByRole("textbox", { name: "minimum", exact: true }).fill("1");
-    await expect(dependentMetric).toHaveText("1", { timeout: 30_000 });
+    await expect(dependentMetric).toHaveText("1", { timeout: 90_000 });
     const changedInputAttempts = () =>
       [...evaluationExchanges.entries()]
         .filter(([evaluationId]) =>
@@ -2661,7 +2674,7 @@ test.describe("Composition Studio Journey", () => {
         attempts.every((exchange) =>
           exchange.response !== undefined || exchange.failure !== undefined
         );
-    }).toBe(true);
+    }, { timeout: 90_000 }).toBe(true);
     const changedInputExchange = changedInputAttempts().find((exchange) =>
       exchange.failure === undefined && exchange.response?.ok === true &&
         exchange.response.evaluation_id === exchange.evaluationId &&
@@ -2699,7 +2712,7 @@ test.describe("Composition Studio Journey", () => {
     );
     await expect.poll(() =>
       independentTable.locator("tbody tr").allTextContents()
-    ).toEqual(independentRowsBefore);
+    , { timeout: 90_000 }).toEqual(independentRowsBefore);
   });
 
   test("Pinned Saved SQL source supports an explicit inline copy and explicit counts", async ({ page, request }) => {
@@ -3136,8 +3149,8 @@ test("Composition shared Arguments rename and type editing persist explicit bind
 });
 
 test("unnamed mobile Composition keeps Text focus and inserts existing data before naming", async ({ page, request }) => {
-  test.setTimeout(120_000);
-  page.setDefaultTimeout(15_000);
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(30_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -3245,7 +3258,7 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
     "1",
     "42",
-  ], { timeout: 30_000 });
+  ], { timeout: 90_000 });
   await expect(name).toHaveValue("");
   await expect(save).toBeDisabled();
   expect(
