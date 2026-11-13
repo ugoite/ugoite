@@ -694,7 +694,10 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         anyhow::bail!("fixture should use an inline SQL query variable");
     };
     query.definition = VariableGraphQueryDefinition::InlineSql {
-        sql: "SELECT * FROM \"Composition-Preview\"".to_owned(),
+        sql: format!(
+            "SELECT \"{}\" AS title FROM \"Composition-Preview\"",
+            sql_column_name(FieldId::new(100)?)
+        ),
     };
     let original_schema_fingerprint = service
         .preview_composition_local(
@@ -713,8 +716,9 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
         .clone();
     let saved = save_local_composition(&service, &space_id, document.clone()).await?;
 
-    // Adding a field changes the stored SELECT * result descriptor. A saved
-    // graph must not silently adopt that new schema during evaluation.
+    // Adding an unselected field leaves the SQL result projection unchanged,
+    // but the saved query must still fail closed against the changed Form
+    // schema.
     let evolved_form = service
         .upsert_form_result(
             &space_id,

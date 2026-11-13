@@ -744,7 +744,7 @@ impl UgoiteService {
         if !query_result_schema_is_well_formed(&result_columns) {
             return Ok(None);
         }
-        let schema_fingerprint = query_schema_fingerprint(&result_columns)?;
+        let schema_fingerprint = query_schema_fingerprint(&result_columns, &selected_forms)?;
         Ok(Some(PlannedSqlQueryMetadata {
             bound_sql,
             form_bindings: bindings,
@@ -1701,8 +1701,17 @@ fn query_result_schema_is_well_formed(columns: &[VariableGraphColumn]) -> bool {
             == columns.len()
 }
 
-fn query_schema_fingerprint(columns: &[VariableGraphColumn]) -> Result<String> {
-    let canonical = serde_json::to_vec(columns)?;
+fn query_schema_fingerprint(
+    columns: &[VariableGraphColumn],
+    forms: &[FormDefinition],
+) -> Result<String> {
+    // Keep explicit projections fail-closed when their source Form evolves,
+    // even if an added field does not change the query's output columns.
+    let source_schemas = forms
+        .iter()
+        .map(|form| (form.id, form.version, &form.fields))
+        .collect::<Vec<_>>();
+    let canonical = serde_json::to_vec(&(columns, source_schemas))?;
     Ok(hex::encode(Sha256::digest(canonical)))
 }
 
