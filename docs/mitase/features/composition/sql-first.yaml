@@ -505,7 +505,7 @@ features:
       - id: graph-workspace-read-verification
         role: verification
         facet: verification
-        responsibility: Verify typed SQL argument declarations bind explicitly to graph inputs in the picker, alongside explicit count and paging, obsolete-result suppression, Form schema drift recovery, and browser pinning before an independent inline copy, and runtime Input control behavior at native 200% Chromium zoom.
+        responsibility: Verify typed SQL argument declarations bind explicitly to graph inputs in the picker, alongside explicit count and paging, obsolete-result suppression, result-descriptor drift recovery, browser pinning before an independent inline copy, and runtime Input control behavior at native 200% Chromium zoom.
         targets:
           - id: expression-editor-creates-typed-argument
             adapter: typescript
@@ -728,7 +728,7 @@ features:
           - id: form-schema-drift-recovery
             adapter: typescript
             path: e2e/composition-form-schema-drift.test.ts
-            selector: { kind: test, name: "Composition fails closed after a Form schema evolves and saves a repaired revision" }
+            selector: { kind: test, name: "Composition keeps a saved query executable after an unused Form field is added" }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.exact-query-identities

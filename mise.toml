@@ -529,7 +529,7 @@ run = [
   { task = "test:composition-query" },
   "cargo nextest run -p ugoite-server --lib --locked -E 'test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_pinned_saved_sql_schema_with_date_parameters) | test(composition_restore_route_rechecks_current_authorization_after_revocation)'",
   "cargo nextest run -p ugoite-server --test api_contract --locked -E 'test(openapi_exposes_graph_composition_operations_without_legacy_adapters)'",
-  "cargo nextest run -p ugoite-iceberg --test test_composition_preview --locked -E 'test(local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes) | test(saved_graph_fails_closed_when_form_schema_changes) | test(portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement)'",
+  "cargo nextest run -p ugoite-iceberg --test test_composition_preview --locked -E 'test(local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes) | test(saved_graph_ignores_unused_form_field_changes) | test(portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement)'",
   "cargo nextest run -p ugoite-cli --lib --locked -E 'test(local_graph_evaluation_uses_the_portable_response_shape)'",
   "cargo nextest run -p ugoite-cli --test test_journey_remote --locked -E 'test(test_cli_composition_inspect_query_export_match_core_remote)'",
 ]

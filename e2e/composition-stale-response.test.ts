@@ -190,7 +190,6 @@ test.describe("Composition Stale Response", () => {
 
   test("a late evaluation for an earlier input cannot replace current graph values", async ({ page }) => {
     test.setTimeout(180_000);
-    page.setDefaultTimeout(30_000);
     let release!: () => void;
     const heldGate = new Promise<void>((resolve) => release = resolve);
     let intercepted = 0;

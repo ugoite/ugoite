@@ -534,22 +534,29 @@ async function openToolFromSavedTools(
   compositionId: string,
   revisionId: string,
   toolName: string,
-  timeout = 5_000,
 ): Promise<string> {
   const path = `/spaces/${spaceId}/compositions/${compositionId}/${revisionId}`;
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
   const link = page.locator(`a[href="${path}"]`);
-  await expect(link).toBeVisible({ timeout });
-  await link.click();
-  await expect(page).toHaveURL(
-    new RegExp(`${path.replaceAll("/", "\\/")}$`),
-    { timeout },
+  await expect(link).toBeVisible();
+  const revisionResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    new URL(response.url()).pathname.endsWith(
+      `/spaces/${spaceId}/compositions/${compositionId}/history/${revisionId}`,
+    )
   );
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
+  const loadedRevision = await revisionResponse;
+  expect(loadedRevision.ok()).toBe(true);
+  const revisionBody = await loadedRevision.json() as StudioRawRevision;
+  expect(revisionBody.revision.entry_id).toBe(compositionId);
+  expect(revisionBody.revision.revision_id).toBe(revisionId);
   await expect(
     page.getByRole("heading", { level: 1, name: toolName }),
-  ).toBeVisible({ timeout });
+  ).toBeVisible();
   return path;
 }
 
@@ -652,7 +659,6 @@ test.describe("Composition Studio Journey", () => {
     const buildContext = await openOwnerContext(browser, storageState);
     try {
       const page = await buildContext.newPage();
-      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/variables`,
@@ -1542,7 +1548,6 @@ test.describe("Composition Studio Journey", () => {
         .replace(/^_+|_+$/g, "");
 
       const page = await ownerContext.newPage();
-      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
@@ -1986,7 +1991,6 @@ test.describe("Composition Studio Journey", () => {
     );
     try {
       const page = await ownerContext.newPage();
-      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
@@ -2088,7 +2092,6 @@ test.describe("Composition Studio Journey", () => {
     const buildContext = await openOwnerContext(browser, storageState);
     try {
       const page = await buildContext.newPage();
-      page.setDefaultTimeout(30_000);
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/variables`,
@@ -2349,7 +2352,6 @@ test.describe("Composition Studio Journey", () => {
         compositionId,
         revisionId,
         seed.toolName,
-        30_000,
       );
       const metrics = page.locator(".compositionGraphMetric strong");
       const metricValues = () =>
@@ -2402,7 +2404,6 @@ test.describe("Composition Studio Journey", () => {
 
   test("Design preview recomputes only a dependent query and keeps unrelated results", async ({ page, request }) => {
     test.setTimeout(180_000);
-    page.setDefaultTimeout(30_000);
     const suffix = crypto.randomUUID().slice(0, 8);
     const spaceId = seed.spaceId;
     const formName = `DesignDependency${suffix}`;
@@ -3156,7 +3157,6 @@ test("Composition shared Arguments rename and type editing persist explicit bind
 
 test("unnamed mobile Composition keeps Text focus and inserts existing data before naming", async ({ page, request }) => {
   test.setTimeout(180_000);
-  page.setDefaultTimeout(30_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);

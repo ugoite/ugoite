@@ -1434,6 +1434,22 @@ mod tests {
             &columns,
             &current
         ));
+
+        let changed_columns = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::String,
+                nullable: false,
+            },
+        }];
+        let changed_result = hex::encode(Sha256::digest(
+            serde_json::to_vec(&changed_columns).expect("changed result schema serializes"),
+        ));
+        assert!(!query_schema_fingerprint_matches(
+            &legacy,
+            &changed_columns,
+            &changed_result
+        ));
     }
 
     #[test]

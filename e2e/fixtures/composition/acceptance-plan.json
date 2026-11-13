@@ -74,7 +74,7 @@
         {
           "path": "e2e/composition-form-schema-drift.test.ts",
           "kind": "test",
-          "name": "Composition fails closed after a Form schema evolves and saves a repaired revision"
+          "name": "Composition keeps a saved query executable after an unused Form field is added"
         }
       ],
       "manual_evidence_gaps": [

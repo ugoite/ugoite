@@ -81,9 +81,13 @@ Rust Domain and Core are the semantic authority for graph validation,
 canonicalization, dependencies, query planning, types, and diagnostics. Core
 compiles the graph to a typed dependency DAG, derives Form ID bindings and
 result descriptors, and rechecks current ACL and Publication access. A renamed
-Form remains bound to its stable ID. Deleted or recreated Forms, changed
-schemas, unavailable exact Saved SQL revisions, or revoked permissions fail
-closed.
+Form remains bound to its stable ID. Query schema fingerprints cover the
+ordered result columns and types, not every field in a bound Form. Adding or
+changing an unused Form field leaves a saved query executable when that result
+descriptor is unchanged. A missing referenced field fails planner validation;
+a changed result descriptor, unavailable exact Saved SQL revision, or revoked
+permission fails closed. A source-field change that leaves a valid query and
+the same result descriptor is outside the fingerprint guarantee.
 
 A scalar query succeeds only for exactly one row and one column. Zero rows, one
 NULL row, multiple rows, multiple columns, type drift, and access denial are

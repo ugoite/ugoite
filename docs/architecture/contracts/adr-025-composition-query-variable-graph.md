@@ -93,6 +93,21 @@ the first row or column. A "first item" interaction is an explicit deterministic
 `ORDER BY ... LIMIT 1` query and returns an optional scalar when there is no
 row.
 
+### Result descriptor compatibility
+
+A query schema fingerprint covers the ordered query result columns and their
+types. It does not fingerprint every field in each bound Form. Adding or
+changing a Form field that is not present in the query result leaves a saved
+Composition executable when the result descriptor remains unchanged. A
+referenced field removed from the Form makes the SQL fail planner validation;
+a changed result descriptor fails closed until an authoring preview derives
+the current descriptor and an explicit save appends a repaired Composition
+revision. Form identity, current ACL, Publication, exact Saved SQL revision,
+planner validation, and result-type validation are still rechecked during
+resolution. A source-field change that leaves the SQL valid and its result
+descriptor unchanged is outside the fingerprint guarantee; this model does
+not claim to detect every field dependency in predicates or other expressions.
+
 ### 2. SQL document and execution contract
 
 One Rust-owned SQL document parser, typed tree, diagnostics, compiler, and
@@ -181,7 +196,9 @@ authorization, input values, SQL revision, and parameter fingerprint. Only
 affected dependent queries are invalidated; equal query nodes share a result
 within that snapshot. Generation and fingerprint checks discard stale responses.
 Every run rechecks current authorization and fails closed for deleted Forms,
-changed schemas, unavailable Saved SQL revisions, or revoked access.
+planner-invalid queries, changed result descriptors, unavailable Saved SQL
+revisions, or revoked access. A Form change that leaves a query valid and its
+result descriptor unchanged does not invalidate that query.
 
 The saved-revision browser retains transient results only while it holds a
 server-issued authority snapshot lease with a maximum duration of 30 seconds.

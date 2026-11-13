@@ -24,7 +24,7 @@ function revisionFromUrl(url: string) {
   return { compositionId: match![1], revisionId: match![2] };
 }
 
-test("Composition fails closed after a Form schema evolves and saves a repaired revision", async ({ browser, context, request }) => {
+test("Composition keeps a saved query executable after an unused Form field is added", async ({ browser, context, request }) => {
   await waitForServers(request);
   const suffix = crypto.randomUUID().slice(0, 8);
   const spaceName = `Form schema drift ${suffix}`;
@@ -231,25 +231,23 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     await page.goto(getFrontendUrl(oldRuntimePath), {
       waitUntil: "domcontentloaded",
     });
-    const staleEvaluation = await (await oldEvaluationResponse).json() as {
+    const oldEvaluation = await (await oldEvaluationResponse).json() as {
       ok?: boolean;
       query_results?: Record<string, unknown>;
       diagnostics?: Array<{ variable_id?: string; code?: string }>;
     };
-    expect(staleEvaluation.ok).toBe(false);
-    expect(staleEvaluation.query_results ?? {}).toEqual({});
-    expect(staleEvaluation.diagnostics).toContainEqual(
-      expect.objectContaining({
-        variable_id: variableId,
-        code: "query_schema_changed",
-      }),
+    expect(oldEvaluation.ok).toBe(true);
+    expect(oldEvaluation.query_results).toHaveProperty(variableId);
+    const savedTable = page.getByRole("table", { name: tableName });
+    await expect(savedTable).toBeVisible();
+    await expect(savedTable.locator("tbody")).toContainText(
+      "before schema change",
     );
-    await expect(page.getByRole("alert")).toContainText(
-      "Could not load results.",
+    await expect(savedTable.locator("tbody")).toContainText(
+      "after schema change",
     );
-    await expect(page.getByRole("table")).toHaveCount(0);
-    await expect(page.getByText("before schema change", { exact: true }))
-      .toHaveCount(0);
+    await expect(savedTable.locator("thead")).toContainText("Title");
+    await expect(savedTable.locator("thead")).not.toContainText("Notes");
 
     await page.goto(
       getFrontendUrl(`${oldRuntimePath}/edit`),
@@ -490,13 +488,13 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
       waitUntil: "domcontentloaded",
     });
     const oldAfterRepair = await (await oldEvaluationAfterResponse)
-      .json() as typeof staleEvaluation;
-    expect(oldAfterRepair.ok).toBe(false);
-    expect(oldAfterRepair.query_results ?? {}).toEqual({});
-    await expect(page.getByRole("alert")).toContainText(
-      "Could not load results.",
-    );
-    await expect(page.getByRole("table")).toHaveCount(0);
+      .json() as {
+        ok?: boolean;
+        query_results?: Record<string, unknown>;
+      };
+    expect(oldAfterRepair.ok).toBe(true);
+    expect(oldAfterRepair.query_results).toHaveProperty(variableId);
+    await expect(page.getByRole("table", { name: tableName })).toBeVisible();
 
     const buildInfoResponse = await request.get(
       getFrontendUrl("/build-info.json"),
@@ -514,8 +512,8 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
         originalRevisionId: original.revisionId,
         repairedRevisionId: repaired.revisionId,
         originalRevisionUnchanged: true,
-        staleResultCount:
-          Object.keys(staleEvaluation.query_results ?? {}).length,
+        oldRevisionResultCount:
+          Object.keys(oldAfterRepair.query_results ?? {}).length,
         repairedSchemaFingerprint: repairedQuery!.query!.schema_fingerprint,
         originalSchemaFingerprint: originalQuery!.query!.schema_fingerprint,
         currentSchemaFingerprint: currentSchemaQuery!.schema_fingerprint,

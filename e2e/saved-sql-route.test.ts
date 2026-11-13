@@ -509,13 +509,21 @@ test.describe("Saved SQL route", () => {
     for (
       const sql of ["SELECT (1) IN (SELECT 1)", "SELECT (1) NOT IN (SELECT 1)"]
     ) {
+      const initialPlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/query/plan` &&
+        response.request().postDataJSON().sql === "SELECT 1"
+      );
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
         waitUntil: "domcontentloaded",
       });
       const editor = page.getByRole("textbox", { name: "SQL", exact: true });
-      await expect(editor).toHaveText("SELECT 1", { timeout: 30_000 });
+      await expect(editor).toHaveText("SELECT 1");
+      const plannedDefault = await initialPlan;
+      expect(plannedDefault.status()).toBe(200);
       await expect(page.getByRole("button", { name: "Run Query", exact: true }))
-        .toBeEnabled({ timeout: 30_000 });
+        .toBeEnabled();
       const rejectedPlan = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname ===

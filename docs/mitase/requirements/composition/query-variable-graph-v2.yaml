@@ -37,14 +37,21 @@ requirements:
         statement: >-
           Form-assisted inline SQL uses server-derived Form bindings, while a
           Saved SQL query node pins one exact Entry and revision. Resolution
-          rechecks current ACL, Publication, schema, and query revision; an
-          unavailable identity fails closed without creating a partial query
-          variable or display component. When a Form schema changes, the old
-          Composition revision remains non-executable until an authoring
-          preview derives the current query descriptor and an explicit save
-          appends a repaired Composition revision. Authorized query metadata
-          may expose Saved SQL source text only from that exact pinned
-          revision; it never substitutes the latest revision.
+          rechecks current ACL, Publication, Form identity, planner validity,
+          result descriptor, and query revision; an unavailable identity fails
+          closed without creating a partial query variable or display
+          component. A query schema fingerprint covers its ordered result
+          columns and types, not every field in a bound Form. Adding or
+          changing a Form field that is not in the query result does not
+          invalidate the saved query when its result descriptor remains the
+          same. A missing referenced field fails planner validation, and a
+          changed result descriptor fails closed until an authoring preview
+          derives the current descriptor and an explicit save appends a
+          repaired Composition revision. This contract does not promise to
+          detect every source-field change that leaves a valid query and the
+          same result descriptor. Authorized query metadata may expose Saved
+          SQL source text only from that exact pinned revision; it never
+          substitutes the latest revision.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
@@ -352,12 +359,12 @@ requirements:
                   arguments:
                     file: e2e/composition-source-acl-isolation.test.ts
                     test: evaluate rechecks Form and exact Saved SQL access after revocation
-          - id: saved-form-schema-drift
+          - id: saved-form-result-contract
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
             selector:
               kind: test
-              name: saved_graph_fails_closed_when_form_schema_changes
+              name: saved_graph_ignores_unused_form_field_changes
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.exact-query-identities
@@ -369,4 +376,4 @@ requirements:
                   arguments:
                     package: ugoite-iceberg
                     harness: test_composition_preview
-                    test: saved_graph_fails_closed_when_form_schema_changes
+                    test: saved_graph_ignores_unused_form_field_changes
