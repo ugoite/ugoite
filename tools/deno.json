@@ -6,8 +6,8 @@
     "create-pr": "deno run -A create_pr.ts"
   },
   "imports": {
-    "@std/assert/assert": "jsr:@std/assert@1/assert",
-    "@std/assert/equals": "jsr:@std/assert@1/equals",
+    "@std/assert/assert": "jsr:@std/assert@1.0.19/assert",
+    "@std/assert/equals": "jsr:@std/assert@1.0.19/equals",
     "yaml": "npm:yaml@2.9.0"
   }
 }
