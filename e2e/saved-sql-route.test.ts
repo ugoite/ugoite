@@ -513,6 +513,9 @@ test.describe("Saved SQL route", () => {
         waitUntil: "domcontentloaded",
       });
       const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      await expect(editor).toHaveText("SELECT 1", { timeout: 30_000 });
+      await expect(page.getByRole("button", { name: "Run Query", exact: true }))
+        .toBeEnabled({ timeout: 30_000 });
       const rejectedPlan = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname ===
