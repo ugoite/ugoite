@@ -92,7 +92,7 @@
     "vite": "npm:vite@^8.0.16",
     "vitefu": "npm:vitefu@^1.1.2",
     "vite-plugin-pwa": "npm:vite-plugin-pwa@^1.3.0",
-    "vite-plugin-solid": "npm:vite-plugin-solid@^2.11.12",
+    "vite-plugin-solid": "npm:vite-plugin-solid@^2.11.15",
     "vitest": "npm:vitest@^4.1.8",
     "vitest/config": "npm:vitest@^4.1.8/config",
     "vitest/globals": "npm:vitest@^4.1.8/globals",
