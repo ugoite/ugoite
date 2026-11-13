@@ -119,16 +119,23 @@ export const OPENAPI_SCHEMA_NAMES = [
   "SpacePatchRequest",
   "SpaceSummary",
   "SqlFormBindingGuard",
+  "SqlLintDiagnostic",
+  "SqlLintDiagnosticCode",
+  "SqlLintProfile",
+  "SqlLintRequest",
+  "SqlLintResponse",
+  "SqlLintSeverity",
   "SqlQueryCountRequest",
   "SqlQueryPage",
   "SqlQueryPlan",
   "SqlQueryPlanRequest",
   "SqlQueryRequest",
   "SqlResultColumn",
+  "SqlSourceRange",
   "StorageConnectionTestRequest",
   "StorageConnectionTestResponse",
   "WebAuthnCreationChallengeResponse",
-  "WebAuthnRegistrationCredential"
+  "WebAuthnRegistrationCredential",
 ] as const;
 export type OpenApiSchemaName = typeof OPENAPI_SCHEMA_NAMES[number];
 
@@ -237,6 +244,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/sql/query/count",
   "/spaces/{space_id}/sql/query/plan",
   "/spaces/{space_id}/sql/{sql_id}",
-  "/spaces/{space_id}/test-connection"
+  "/spaces/{space_id}/test-connection",
+  "/sql/lint",
 ] as const;
 export type OpenApiPath = typeof OPENAPI_PATHS[number];

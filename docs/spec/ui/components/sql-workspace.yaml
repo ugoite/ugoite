@@ -2,133 +2,64 @@
 title: "Shared SQL Workspace"
 ---
 
-**Status: shared editor implemented; complete grammar coverage remains in progress.** The /sql/new route and Saved SQL detail/edit use the same Workspace component. Composition query variables use the same Workspace component and the authorized graph resolver for exact Saved SQL source. [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md) defines the required lossless document and executor-to-GUI coverage contract. The owning route supplies SQL state, schema, parameters, preview, count, pagination, save, and execution callbacks. The Workspace presents them without becoming another query or persistence authority.
+**Status: text-first for Saved SQL.** `/sql/new` and Saved SQL detail/edit use
+the shared controlled SQL text editor. The owning route supplies saving,
+current schema authorization, parameter values, query execution, counting, and
+paging. The Workspace does not own query persistence or Knowledge authority.
+Composition query variables also use direct text editing, but retain their
+host-owned Structure Toolbar until the planned migration in REQ-FE-079.
 
-## Editing and parameter presentation
+## SQL authoring
 
-- Keep direct SQL editing available. A read-only adapter can present an exact
-  pinned Saved SQL revision without enabling edits.
-- Keep SQL text controlled by the owning adapter. Workspace controls dispatch
-  explicit callbacks and do not parse or regenerate SQL themselves.
-- Present declared variables using their transient Work values or declared
-  defaults. An explicit unset value overrides the default; the Workspace does
-  not coerce or persist parameter values.
-- Give the editor an accessible name and wrap long lines within the Workspace.
-- Keep the shared SQL editor's default wrapping behavior unchanged for other
-  callers.
+- SQL is edited as one text document. Rust/WASM owns normalization, parsing,
+  static lint, source ranges, and diagnostics; the browser does not build or
+  rewrite a SQL syntax tree.
+- The editor keeps wrapping, undo, keyboard editing, schema-aware completion,
+  an accessible name, and a minimum 16px text size.
+- `{{name}}` is the authoring form for typed SQL parameters. The Rust normalizer
+  ignores markers inside quoted strings, identifiers, and comments. Composition
+  binds an argument explicitly to a typed graph variable; matching names alone
+  do not create a persisted binding.
+- Offline Lint checks syntax and the selected static profile without loading
+  Knowledge or requiring a Space. The Composition profile rejects output
+  projection wildcards in Composition query definitions. Ordinary SQL keeps
+  its existing wildcard behavior, including `COUNT(*)` and multiplication.
+- Check uses the owning adapter's current Form permissions, schema, and typed
+  parameters. It returns diagnostics and result-column metadata without reading
+  result rows. A stale or failed Check cannot enable Run.
+- Run is an explicit action. It uses bounded, stateless query execution and the
+  current successful Check. Lint and Check do not run result queries.
+- On `/sql/new`, a Form is an optional source starter. Its only action
+  seeds editable SQL from authorized projectable user-data columns; there is no
+  column wizard or SQL syntax-construction toolbar. A Form without projectable
+  data fields shows one local error and never adds metadata columns. Saved SQL is
+  never reseeded implicitly.
+- Saved SQL editing does not expose Form, Columns, Filter, Sort, Structure, or
+  Arguments SQL construction actions. Its typed argument definitions and
+  optional defaults remain editable in the separate argument editor, while
+  query values stay transient in the runtime input surface. Composition shows
+  a typed variable selector beside each `{{name}}` reference; its Structure
+  Toolbar remains available pending the planned migration.
 
-The shared toolbar has six actions: Form, Columns, Filter, Sort, Structure,
-and Arguments. Structure opens the less common relation and query-tree edits.
-The toolbar sends typed SQL Document edits through the Rust/WASM protocol; it
-does not classify SQL with a second bounded analyzer or fall back to a separate
-SQL generator. The document serializer is responsible for retaining comments,
-quoted identifiers, aliases, and untouched clauses. Text edits and tree edits
-share the same Rust parser, diagnostics, transaction checks, and undo history.
+## Results
 
-Form metadata is context for the editor, not a second saved query model. The
-Form action presents eligible human-readable names directly, without requiring
-statement/query/parser-node selection. It can choose or replace a relation
-while retaining aliases and other clauses;
-relation-free SELECT statements such as `SELECT 1` remain editable. Nested
-relations, joins, CTEs, set operations, projections, filters, grouping,
-ordering, row limits, expressions, and SQL arguments are edited through the
-same document tree. Operations that cannot preserve a selected source span
-must fail locally with a diagnostic and leave the SQL unchanged. They must not
-silently replace the whole query with a starter statement.
-
-A successful Form selection closes the dialog and restores focus to the Form
-button. Only SQL with multiple sources asks which source to change. Detailed tree
-editing is an explicit advanced action. Empty or trivia-only SQL can start a
-query through the same Rust-owned typed transaction; an incomplete nonempty
-SQL draft cannot be overwritten with a starter. Pending operations are guarded
-by host identity as well as exact SQL source, including when two query variables
-have identical SQL. Closing the editor invalidates unfinished operations.
-Argument discovery can temporarily disable argument mutations, but must not
-disable the Form opener or prevent focus restoration after a document edit.
-Run and Save remain subject to current argument validation.
-
-Columns opens an ordered list of result fields directly. Form field labels and
-system field names identify the choices; stable SQL identifiers remain the
-Rust operation input. A plain wildcard offers Choose fields before individual
-fields can be added, removed, or moved. Expansion uses the authorized planner's
-complete output names and order, including readable fields not present in Form
-metadata. It is limited to a single plain outer projection with an unambiguous
-Form qualifier; multiple output sources, nested queries, modifiers and ambiguous
-schemas remain unchanged and expose a local unavailable state. Qualified
-wildcards use only their own planned output. Both the primary and advanced
-editors enforce this boundary. Complex expressions retain
-their exact source and have an explicit advanced editing entry point. Multiple
-SELECT results expose an explicit result choice instead of a statement tree.
-Edits, Undo, and Redo use exact-source, host-scoped Rust transactions; a moved
-field retains its focused control. Positional sorting and grouping obey
-`REQ-SQL-001#criterion.projection-position-bindings`.
-
-Filter presents supported comparisons already present in a simple Form query
-as editable conditions in their existing AND/OR groups. Users can change a
-group connector, edit or remove a comparison, and add or remove nested groups
-while keeping unrelated predicate meaning intact. A predicate the condition
-editor cannot safely represent remains available through Advanced structure;
-the editor does not silently discard or regenerate it. New declared arguments
-created from a condition are applied with that condition in one guarded Rust
-transaction, so Undo and Redo restore SQL and argument metadata together.
-
-The argument action is available with no arguments declared. SQL placeholders
-are paired with explicit, typed declarations; unused, undefined, duplicated,
-or incompatible arguments produce local lint errors. Text inside string
-literals and comments is not treated as a placeholder. Invalid or incomplete
-SQL drafts remain visible and editable, but cannot be saved or executed.
-
-Authorized planner diagnostics validate the same SQL with its current Form
-permissions and output schema before save or preview. Syntax parsing alone does
-not promise that a query is executable. The SQL feature matrix records each
-executor-admitted construct, its typed document representation, GUI operations,
-and verification evidence in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
-The matrix remains the completion gate: a parser node or preserved-only tree
-display is not evidence that the construct can be edited in the GUI.
-
-## Preview and results
-
-Run Query, Count rows, and page continuation are explicit actions delegated to
-the owning adapter. Preview presents loading, failure, empty, and current-page
-states with the existing typed `SqlResultTable` and `ResultPagination`. The
-adapter uses stateless SQL execution, request page size, and request
-continuation; generated SQL does not add `LIMIT` to simulate paging. Row counts
-do not run implicitly on every page.
+Run, Count rows, and continuation are explicit host callbacks. Results use the
+existing typed table and pagination controls. Paging state is transient Work;
+generated SQL does not receive a synthetic `LIMIT`. The Workspace clears or
+hides results that do not match the current SQL, parameter values, authorization,
+and schema.
 
 ## Layout and controls
 
 - Keep the page in one column at narrow widths. Only the result-table viewport
   scrolls horizontally.
-- Render SQL editor and variable input text at no less than 16px.
-- Give icon-only actions accessible names and at least 44px targets. Disabled
-  actions include their reason in the accessible name and title.
-- The owning route's primary Save action retains its visible text label.
 - Keep the steady state free of explanatory paragraphs and decorative cards.
+  Show short local diagnostics and recovery guidance only when needed.
+- Keep the Saved SQL primary action visibly labeled. Give icon-only actions
+  accessible names, visible focus, and at least 44px targets. Disabled actions
+  expose their reason accessibly.
+- EntryBrowser and FormTable retain their own search, filtering, sorting,
+  pagination, and column-selection controls; these are not SQL Workspace tools.
 
-The Composition variable rail, Design binding picker, pinned Saved SQL
-revision lifecycle, and graph-specific drawer behavior are defined in
+Composition Design and Variables behavior is specified separately in
 [`composition-studio.yaml`](composition-studio.yaml).
-
-## ADR-025 target: shared SQL document controls
-
-The accepted next target gives `/sql/new`, Saved SQL editing, and Composition
-query variables the same six icon actions in one row: Form/relation, columns,
-filter, sort, structure, and arguments. At widths up to 320px, only this row
-scrolls horizontally. The optional SQL argument-value row appears only when
-the host has declared arguments and supplied runtime values; its labels and
-inputs have one owner. The remaining order is SQL document, then result table.
-
-Each action edits the Rust-owned SQL document through typed operations. Text
-and structure edits synchronize through the same parser, diagnostics, and
-serializer; unsupported drafts cannot run or save, and no local generator
-replaces edited SQL. The available operations cover every SQL construct the
-authorized Rust executor admits. The Form/relation tree can start empty, so
-valid relation-free SELECT statements remain editable. Argument creation is
-available with zero existing arguments and from an expression that needs one.
-Parameter name/type errors stay local to the affected expression and do not
-disable unrelated actions.
-
-The shared controls keep icon accessible names, visible focus, 44px targets,
-Escape and focus restoration for dialogs, and text inputs of at least 16px.
-The host owns saving and execution; SQL remains one durable string, and result
-pages remain request state rather than generated `LIMIT` clauses.

@@ -535,7 +535,10 @@ describe("UI spec YAML registry", () => {
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition query variables use the same Workspace component",
+      "Composition query variables also use direct text editing",
+    );
+    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
+      "retain their host-owned Structure Toolbar until the planned migration",
     );
   });
 

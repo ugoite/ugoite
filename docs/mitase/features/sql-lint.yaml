@@ -1,0 +1,309 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: Portable SQL static lint
+features:
+  - id: FEAT-SQL-007
+    title: Portable SQL static lint
+    summary: Provide one Space-independent Rust lint contract for the server, browser WASM adapter, and CLI, with a Composition-only output projection rule.
+    status: implemented
+    bindings:
+      - id: contract-source
+        role: contract-source
+        facet: domain
+        responsibility: Define the versioned portable response and typed diagnostic representation shared by every lint host.
+        targets:
+          - id: lint-response
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_lint.rs
+            selector: { kind: symbol, name: SqlLintResponse }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-004#criterion.read-only-select-diagnostics
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Normalize template markers and return versioned static SQL diagnostics with source ranges.
+        targets:
+          - id: lint-sql
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_lint.rs
+            selector: { kind: symbol, name: lint_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: wasm
+        role: implementation
+        facet: wasm
+        responsibility: Expose the canonical Rust lint through the portable WASM protocol.
+        targets:
+          - id: lint-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_lint }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: backend
+        role: implementation
+        facet: backend
+        responsibility: Serve offline lint without requiring Space authority or exposing query execution.
+        targets:
+          - id: lint-route
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: lint_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: client-protocol
+        role: implementation
+        facet: service
+        responsibility: Keep the REST operation path and request body in the shared transport-neutral protocol.
+        targets:
+          - id: lint-operation-request
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: symbol, name: prepare_request }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+      - id: api
+        role: contract-source
+        facet: api
+        responsibility: Publish the Space-independent SQL lint request and versioned diagnostics in OpenAPI.
+        targets:
+          - id: lint-operation
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: POST, path: /sql/lint }
+            claims:
+              - kind: documents
+                anchor: REQ-SQL-004#criterion.read-only-select-diagnostics
+      - id: api-implementation
+        role: implementation
+        facet: api
+        responsibility: Expose offline versioned SQL lint as a published REST operation.
+        targets:
+          - id: lint-operation-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: POST, path: /sql/lint }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Convert Rust/WASM lint responses into editor diagnostics and pass the selected profile from SQL Workspace.
+        targets:
+          - id: lint-diagnostics
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: sqlLintDiagnostics }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+          - id: api-operation
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: prepareApiRequest }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+      - id: cli
+        role: implementation
+        facet: cli
+        responsibility: Keep `sql lint` positional input compatible while accepting file input and an explicit static profile.
+        targets:
+          - id: lint-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/sql.rs
+            selector: { kind: symbol, name: run_lint }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: satisfies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: editor-consumer
+        role: evidence
+        facet: frontend
+        responsibility: The shared SQL editor receives Rust/WASM diagnostics produced for the selected lint profile.
+        targets:
+          - id: sql-editor
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.tsx
+            selector: { kind: symbol, name: SqlQueryEditor }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-004#criterion.read-only-select-diagnostics
+              - kind: evidences
+                anchor: REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact profile behavior and response routing across each implementation facet.
+        targets:
+          - id: domain-profile-policy
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_lint.rs
+            selector: { kind: test, name: tests::composition_profile_rejects_only_projection_wildcards }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.core/target.lint-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_lint::tests::composition_profile_rejects_only_projection_wildcards } }
+          - id: domain-source-ranges-and-markers
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_lint.rs
+            selector: { kind: test, name: tests::composition_profile_keeps_source_ranges_across_template_normalization }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.core/target.lint-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_lint::tests::composition_profile_keeps_source_ranges_across_template_normalization } }
+          - id: domain-wire-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_lint.rs
+            selector: { kind: test, name: tests::response_has_a_stable_portable_shape }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.core/target.lint-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_lint::tests::response_has_a_stable_portable_shape } }
+          - id: wasm-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::portable_sql_lint_matches_domain_profiles }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.wasm/target.lint-action]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::portable_sql_lint_matches_domain_profiles } }
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.wasm/target.lint-action]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::portable_sql_lint_matches_domain_profiles } }
+          - id: backend-route
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: sql_lint_accepts_composition_sql_without_a_space_or_session }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.backend/target.lint-route]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: sql_lint_accepts_composition_sql_without_a_space_or_session } }
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.backend/target.lint-route]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: sql_lint_accepts_composition_sql_without_a_space_or_session } }
+          - id: api-contract
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_versioned_sql_lint_without_space_authorization }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.api-implementation/target.lint-operation-contract]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_versioned_sql_lint_without_space_authorization } }
+          - id: protocol-route
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: test, name: tests::sql_lint_uses_a_global_offline_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.client-protocol/target.lint-operation-request]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-api-client, test: tests::sql_lint_uses_a_global_offline_route } }
+          - id: browser-diagnostics
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: reports the SELECT-only policy from the portable Rust linter }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.frontend/target.lint-diagnostics]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: reports the read-only SELECT policy from Rust SQL lint } }
+          - id: browser-operation
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: prepares the portable offline SQL lint operation }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.frontend/target.api-operation]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: prepares the portable offline SQL lint operation } }
+          - id: browser-editor
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: checks projection wildcards only for Composition and maps UTF-8 ranges }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.frontend/target.lint-diagnostics]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: checks projection wildcards only for Composition and maps UTF-8 ranges } }
+          - id: browser-profile-selection
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: passes the selected static lint profile to the Rust-backed editor }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.frontend/target.lint-diagnostics]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: passes the selected static lint profile to the Rust-backed editor } }
+          - id: cli-portable-result
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_lint_returns_portable_diagnostics_without_a_connection }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.read-only-select-diagnostics
+                covers: [FEAT-SQL-007#binding.cli/target.lint-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_lint_returns_portable_diagnostics_without_a_connection } }
+              - kind: verifies
+                criterion: REQ-SQL-004#criterion.composition-projection-wildcards
+                covers: [FEAT-SQL-007#binding.cli/target.lint-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_lint_returns_portable_diagnostics_without_a_connection } }
+    contracts:
+      - id: portable-lint-contract
+        kind: custom
+        source: FEAT-SQL-007#binding.contract-source/target.lint-response
+        participants:
+          - target: FEAT-SQL-007#binding.core/target.lint-sql
+            role: rust-domain
+          - target: FEAT-SQL-007#binding.wasm/target.lint-action
+            role: wasm
+          - target: FEAT-SQL-007#binding.backend/target.lint-route
+            role: rest-adapter
+          - target: FEAT-SQL-007#binding.api-implementation/target.lint-operation-contract
+            role: rest-contract
+          - target: FEAT-SQL-007#binding.client-protocol/target.lint-operation-request
+            role: shared-client-protocol
+          - target: FEAT-SQL-007#binding.frontend/target.lint-diagnostics
+            role: browser-adapter
+          - target: FEAT-SQL-007#binding.editor-consumer/target.sql-editor
+            role: editor
+          - target: FEAT-SQL-007#binding.cli/target.lint-command
+            role: cli
+        guarantees:
+          - REQ-SQL-004#criterion.read-only-select-diagnostics
+          - REQ-SQL-004#criterion.composition-projection-wildcards
+      - id: lint-http-operation
+        kind: http
+        source: FEAT-SQL-007#binding.api/target.lint-operation
+        participants:
+          - target: FEAT-SQL-007#binding.backend/target.lint-route
+            role: backend
+          - target: FEAT-SQL-007#binding.client-protocol/target.lint-operation-request
+            role: client
+          - target: FEAT-SQL-007#binding.frontend/target.api-operation
+            role: browser-client
+        guarantees: [REQ-SQL-004#criterion.read-only-select-diagnostics]

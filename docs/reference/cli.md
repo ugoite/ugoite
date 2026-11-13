@@ -139,7 +139,9 @@ ugoite composition inspect <ID> [--revision <REVISION_ID>] [--raw]
 ugoite composition lint <FILE>
 ugoite composition export <ID> --output <FILE> [--revision <REVISION_ID>]
 ugoite composition query <ID> [--revision <REVISION_ID>] [--var ID=VALUE]...
-ugoite sql lint <SQL>
+ugoite sql lint <SQL> [--profile standard|composition]
+ugoite sql lint --file <PATH> [--profile standard|composition]
+ugoite sql check <SQL_OR_FILE> [--param NAME=VALUE]... [--param-type NAME=TYPE]...
 ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
 ugoite sql export <SQL_OR_FILE> --max-rows <N> [--page-size <N>] [--output <PATH>]

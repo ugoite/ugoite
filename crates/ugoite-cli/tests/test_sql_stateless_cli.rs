@@ -150,6 +150,23 @@ fn setup_cli_sql_space() -> CliSqlSpace {
 }
 
 #[test]
+fn sql_check_uses_the_local_authorized_planner_without_rows() {
+    let space = setup_cli_sql_space();
+    let sql = format!(
+        "SELECT {} AS status FROM \"CliSqlForm\"",
+        space.status_column
+    );
+    let plan = stdout_json(
+        &run_cli(&space.config_path, &["sql", "check", &sql]),
+        "local SQL check",
+    );
+
+    assert_eq!(plan["result_schema"][0]["name"], "status");
+    assert_eq!(plan["result_schema"][0]["type"], "string");
+    assert!(plan.get("rows").is_none());
+}
+
+#[test]
 fn cli_saved_sql_run_executes_current_or_selected_bound_revision() {
     let space = setup_cli_sql_space();
     let original_sql = "SELECT _ugoite_id FROM \"CliSqlForm\" ORDER BY _ugoite_id";

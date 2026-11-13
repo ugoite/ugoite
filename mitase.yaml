@@ -280,6 +280,9 @@ inventory:
         - frontend/src/lib/sql-document-columns.ts
         - frontend/src/components/SqlWildcardExpansion.test.tsx
         - frontend/src/components/SqlColumnsEditor.test.tsx
+        - frontend/src/components/SqlFormSourceControl.tsx
+        - frontend/src/components/SqlFormSourceControl.test.tsx
+        - frontend/src/components/CompositionSqlBinding.test.tsx
         - e2e/sql-columns-editor.test.ts
         - frontend/src/components/SqlFormPicker.test.tsx
         - frontend/src/components/SqlStructureToolbar.tsx

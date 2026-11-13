@@ -871,6 +871,7 @@ export function CompositionVariableGraphWorkspace(
                           }
                           : { readOnly: true })}
                         schema={props.sqlSchema}
+                        lintProfile="composition"
                         actions={[
                           ...actions(),
                           ...(props.actionsForQuery?.(query().id) ?? []),

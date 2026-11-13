@@ -29,6 +29,8 @@
   },
   "feature_matrix": {
     "version": 12,
+    "status": "historical",
+    "active_authoring_mode": "text_first",
     "backend": {
       "statement_gate": "exactly_one_select_query_statement",
       "query_body_form_restricted": true,
@@ -744,7 +746,7 @@
       "coverage_complete": false,
       "verification_gaps": [
         "IN and NOT IN subquery predicates have exact SQL-tree authoring and WASM undo evidence only. The Saved SQL browser E2E asserts that the exact plan request for each seed returns HTTP 422 and that Run and Save remain disabled; it does not attempt either action. The authorized Rust nested-structure fixture executes the IN seed `SELECT (1) IN (SELECT 1)` and asserts the planner rejection `Physical plan does not support logical expression InSubquery`; this is not a successful execution result. Neither IN nor NOT IN has successful execution, save, or reload evidence, and this does not complete S-02; broad admitted-SQL editor coverage remains tracked by #4565.",
-        "S-04 requires a path from each of four shapes to the SQL operation row: empty SQL, relation-free SELECT, simple SELECT/Form, and complex authorized SQL (Form-bound). Each shape has exact selector evidence; S-04 does not require all six actions to be applied and saved/reloaded separately from every shape. The simple SELECT/Form journey now asserts immediately after Form Apply that the FROM relation changes while the projection, WHERE and $entry_id argument default, GROUP BY, ORDER BY direction, and LIMIT remain unchanged. The new Form-switch assertion remains pending exact-head hosted execution evidence, and CI must pass before S-04 is marked complete.",
+        "S-04 requires a path from each of four Saved SQL states to the SQL operation row: blank SQL with its Form starter, relation-free SELECT, Form-seeded SQL, and complex authorized Form-bound SQL. Exact E2E selectors cover each state and its current text-first behavior. Composition's separate graph workspace still has its existing host-supplied SQL structure actions pending the Composition authoring migration; its actions remain covered by the Composition editor tests. CI must pass before S-04 is marked complete.",
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
         "Source-backed unmodeled expressions do not imply structured editing coverage.",
         "One-based array indexing, fully bounded one-based array-slice construction, and named Struct-field subscript construction have typed native/WASM/DOM edits; terminal existing slices with two simple decimal integer bounds parseable as i64 can be edited in place, preserving comments and source around the literals. An authorized Form ObjectList execution fixture verifies array indexing, the [1:2] result order, and editing to [2:2] yielding Grace; the same authorized Struct fixture verifies `field_101[1]['name']` returns Ada. Struct-field edits escape single quotes in field names and preserve source outside the selected expression. Omitted-bound or dynamic-bound slices, non-literal bounds, strides, a slice followed by another access in the same chain, dot-style Struct fields, map/dynamic keys, full array-literal range editing, reordering elements outside eligible direct elements in unaliased or aliased complete projection items (including comment-bearing items), and broader admitted collection construction remain gaps. ARRAY construction by wrapping a typed expression, appending typed literal elements in order to unaliased and eligible aliased complete projections, selected element removal including empty ARRAY construction from unaliased and eligible aliased complete projections, ordinary typed element editing, and eligible direct-element reordering in complete unaliased and aliased projections remain verified through native, WASM, DOM and authorized execution paths.",
@@ -762,7 +764,7 @@
           "selectors": [
             [
               "e2e/saved-sql-route.test.ts",
-              "REQ-FE-063 @smoke: empty SQL keeps shared structure actions reachable"
+              "REQ-FE-063 @smoke: new SQL keeps a Form seed beside the text editor"
             ]
           ]
         },
@@ -771,7 +773,7 @@
           "selectors": [
             [
               "e2e/saved-sql-route.test.ts",
-              "REQ-FE-063 @smoke: relation-free SELECT 1 keeps shared SQL actions reachable"
+              "REQ-FE-063 @smoke: relation-free Saved SQL stays text-first"
             ]
           ]
         },
@@ -780,7 +782,7 @@
           "selectors": [
             [
               "e2e/saved-sql-route.test.ts",
-              "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run"
+              "REQ-FE-063 @smoke: Form-seeded SQL saves and runs from the text editor"
             ]
           ]
         },
@@ -789,7 +791,7 @@
           "selectors": [
             [
               "e2e/saved-sql-route.test.ts",
-              "REQ-FE-062 @smoke: complex authorized SQL (Form-bound) keeps shared SQL actions reachable"
+              "REQ-FE-062 @smoke: complex authorized SQL stays text-first and runs with Form guards"
             ]
           ]
         },
@@ -802,7 +804,7 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored EXISTS query"
+              "@smoke SQL text edits, runs, saves, and reloads an EXISTS query"
             ]
           ]
         },
@@ -823,7 +825,7 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored EXISTS query"
+              "@smoke SQL text edits, runs, saves, and reloads an EXISTS query"
             ]
           ]
         },
@@ -844,7 +846,7 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL Workspace edits, runs, saves, and reloads an SQL-authored scalar subquery"
+              "@smoke SQL text edits, runs, saves, and reloads a scalar subquery"
             ]
           ]
         },
@@ -861,7 +863,7 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL tree authors IN and NOT IN and records HTTP 422 planning rejections"
+              "@smoke SQL text reports unsupported IN and NOT IN plans"
             ],
             [
               "crates/ugoite-iceberg/tests/authorized_query.rs",
@@ -962,7 +964,7 @@
             ],
             [
               "e2e/saved-sql-route.test.ts",
-              "@smoke SQL tree edits and executes a SQL-authored ARRAY literal draft"
+              "@smoke SQL text editor runs an SQL-authored ARRAY literal"
             ]
           ]
         },

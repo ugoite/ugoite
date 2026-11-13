@@ -19144,7 +19144,8 @@ mod tests {
 
     #[test]
     fn semantic_limit_preserves_nulls_last_after_sort_direction() {
-        let source = "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST";
+        let source =
+            "SELECT \"Entry\".\"field_100\" FROM \"Entry\" ORDER BY field_100 DESC NULLS LAST";
         let document = parse_sql_document(source);
         let query = document
             .nodes

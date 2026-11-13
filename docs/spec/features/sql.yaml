@@ -1,5 +1,5 @@
 version: '0.2'
-updated: '2026-09-28'
+updated: '2026-11-12'
 kind: sql
 apis:
 - id: sql.query
@@ -46,6 +46,22 @@ apis:
   ugoite_core:
     file: crates/ugoite-iceberg/src/service.rs
     function: plan_sql_authorized_for_principals
+  ugoite_cli:
+    command: ugoite sql check <SQL_OR_FILE> [--param NAME=VALUE]... [--param-type NAME=TYPE]...
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.lint
+  method: POST
+  status: implemented
+  description: Validate one read-only SQL SELECT with the portable Rust lint contract without reading Space data or planning execution. Return versioned diagnostics with stable codes and UTF-8 source ranges. The optional Composition profile rejects output projection wildcards while standard SQL preserves them.
+  backend:
+    path: /sql/lint
+    file: crates/ugoite-server/src/lib.rs
+    function: lint_sql
+  ugoite_cli:
+    command: ugoite sql lint <SQL> | ugoite sql lint --file <PATH>
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
 - id: sql.list
   method: GET
   status: implemented

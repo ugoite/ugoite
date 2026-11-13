@@ -8,7 +8,6 @@ import {
   within,
 } from "@solidjs/testing-library";
 import SpaceSqlDetailRoute from "./[sql_id]/index";
-import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   resetMockData,
@@ -18,8 +17,6 @@ import {
 } from "~/test/mocks/handlers";
 import type { Space } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
-import * as ugoiteClient from "~/lib/ugoite-client";
-import type { SqlVariable } from "~/lib/types";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const navigateMock = vi.fn();
@@ -108,46 +105,6 @@ vi.mock("~/components/SQLWorkspace", () => ({
   ),
 }));
 
-vi.mock("~/components/SqlStructureToolbar", () => ({
-  SqlStructureToolbar: (props: {
-    sql: () => string;
-    argumentDefinitions?: () => readonly SqlVariable[];
-    onArgumentAdded?: (variable: SqlVariable) => boolean | void;
-    onArgumentUpdated?: (
-      oldName: string,
-      variable: SqlVariable,
-    ) => boolean | void | Promise<boolean | void>;
-    onArgumentRemoved?: (name: string) => boolean | void;
-    argumentDefaults?: () => Record<string, { enabled: boolean; raw: string }>;
-    onArgumentDefaultsChange?: (
-      defaults: Record<string, { enabled: boolean; raw: string }>,
-    ) => void;
-    disabled?: () => boolean;
-  }) => (
-    <section role="dialog" aria-label="Arguments">
-      <SqlArgumentDefinitionsEditor
-        idPrefix="saved-sql-test"
-        variables={props.argumentDefinitions?.() ?? []}
-        referencedNames={props.argumentDefinitions?.().filter((variable) =>
-          props.sql().includes(`$${variable.name}`) ||
-          props.sql().includes(`{{${variable.name}}}`)
-        ).map((variable) => variable.name) ?? []}
-        defaults={props.argumentDefaults?.() ?? {}}
-        disabled={props.disabled?.()}
-        onAdd={(variable) => {
-          if (!props.onArgumentAdded) return false;
-          return props.onArgumentAdded(variable) === false ? false : true;
-        }}
-        onUpdate={(oldName, variable) =>
-          props.onArgumentUpdated?.(oldName, variable) ?? false}
-        onRemove={(name) => props.onArgumentRemoved?.(name) ?? false}
-        onDefaultsChange={(defaults) =>
-          props.onArgumentDefaultsChange?.(defaults)}
-      />
-    </section>
-  ),
-}));
-
 describe("/spaces/:space_id/sql/:sql_id", () => {
   const testSpace: Space = {
     space_uid: "default",
@@ -228,6 +185,10 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
       `SELECT * FROM "${entryRelation}" WHERE owner = {{owner}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
     );
+    expect(await screen.findByRole("textbox", { name: "owner" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Arguments" }))
+      .not.toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Open Variables" }))
       .toHaveAttribute(
         "href",
@@ -470,71 +431,6 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     query.mockRestore();
   });
 
-  it("plans and saves an argument type change as a draft while keeping exact revision previews", async () => {
-    seedSqlEntry("default", {
-      id: "saved-query",
-      name: "Typed query",
-      kind: "user-query",
-      sql: "SELECT $value",
-      variables: [{ name: "value", type: "integer", description: "" }],
-      created_at: "2025-03-01T00:00:00Z",
-      updated_at: "2025-03-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    const plan = vi.spyOn(sqlApi, "plan");
-    const update = vi.spyOn(sqlApi, "update").mockResolvedValue({
-      id: "saved-query",
-      revisionId: "rev-2",
-    });
-    const query = vi.spyOn(sqlApi, "query").mockResolvedValue({
-      columns: ["value"],
-      rows: [[null]],
-      has_more: false,
-    });
-    render(() => <SpaceSqlDetailRoute />);
-    fireEvent.change(
-      await screen.findByRole("combobox", { name: "Type for value" }),
-      { target: { value: "string" } },
-    );
-    await waitFor(() =>
-      expect(plan).toHaveBeenCalledWith("default", {
-        sql: "SELECT $value",
-        parameters: { value: null },
-        parameter_types: { value: "string" },
-        binding_base: { id: "saved-query", revision_id: "rev-1" },
-      }, expect.any(AbortSignal))
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(update).toHaveBeenCalledWith(
-        "default",
-        "saved-query",
-        expect.objectContaining({
-          sql: "SELECT $value",
-          variables: [{ name: "value", type: "string", description: "" }],
-          parent_revision_id: "rev-1",
-        }),
-      )
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run Query" })).toBeEnabled()
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
-    await waitFor(() =>
-      expect(query).toHaveBeenCalledWith(
-        "default",
-        expect.objectContaining({
-          saved_sql: { id: "saved-query", revision_id: "rev-2" },
-          parameter_types: { value: "string" },
-        }),
-        expect.any(AbortSignal),
-      )
-    );
-  });
-
   it("pins an edited query preview to the revision returned by Save", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
@@ -585,13 +481,115 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     query.mockRestore();
   });
 
-  it("normalizes SQL variables and uses the returned revision for the next save", async () => {
+  it("plans and saves an argument type change as a draft while keeping exact revision previews", async () => {
+    const plan = vi.spyOn(sqlApi, "plan").mockResolvedValue({
+      result_schema: [{ name: "value", type: "float" }],
+    });
+    const update = vi.spyOn(sqlApi, "update").mockResolvedValueOnce({
+      id: "saved-query",
+      revisionId: "rev-2",
+    });
+    const query = vi.spyOn(sqlApi, "query").mockResolvedValueOnce({
+      columns: ["value"],
+      rows: [[3]],
+      has_more: false,
+      result_schema: [{ name: "value", type: "float" }],
+    });
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Planning",
       kind: "user-query",
-      sql: "SELECT 1",
-      variables: [],
+      sql: "SELECT {{amount}} AS value",
+      variables: [{
+        type: "integer",
+        name: "amount",
+        description: "Amount",
+        default: 3,
+      }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Type for amount" }),
+      { target: { value: "float" } },
+    );
+
+    await waitFor(() =>
+      expect(plan).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql: "SELECT $amount AS value",
+          parameters: { amount: 3 },
+          parameter_types: { amount: "float" },
+          binding_base: { id: "saved-query", revision_id: "rev-1" },
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+    const save = screen.getByRole("button", { name: "Save", exact: true });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        "default",
+        "saved-query",
+        expect.objectContaining({
+          sql: "SELECT $amount AS value",
+          variables: [{
+            type: "float",
+            name: "amount",
+            description: "Amount",
+            default: 3,
+          }],
+          parent_revision_id: "rev-1",
+        }),
+      )
+    );
+    await waitFor(() =>
+      expect(plan).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql: "SELECT $amount AS value",
+          parameter_types: { amount: "float" },
+          binding_base: { id: "saved-query", revision_id: "rev-2" },
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+
+    const run = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(run).toBeEnabled());
+    fireEvent.click(run);
+    await waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql: "SELECT $amount AS value",
+          parameters: { amount: 3 },
+          parameter_types: { amount: "float" },
+          saved_sql: { id: "saved-query", revision_id: "rev-2" },
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+  });
+
+  it("keeps existing typed argument declarations while saving text edits", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Planning",
+      kind: "user-query",
+      sql: "SELECT * FROM records WHERE title = {{title}}",
+      variables: [{
+        type: "string",
+        name: "title",
+        description: "Title filter",
+        default: "Draft",
+      }],
       created_at: "2025-03-01T00:00:00Z",
       updated_at: "2025-03-02T00:00:00Z",
       revision_id: "rev-1",
@@ -605,19 +603,15 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     const editor = screen.getByRole("textbox", { name: "SQL" });
     fireEvent.input(name, { target: { value: "  Planning v2  " } });
     fireEvent.input(editor, {
-      target: { value: "SELECT * FROM records WHERE title = {{title}}" },
+      target: {
+        value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2",
+      },
     });
-    expect(
-      await screen.findByText("Add argument title before using it in SQL."),
-    )
-      .toBeInTheDocument();
-    const dialog = screen.getByRole("dialog", { name: "Arguments" });
-    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
-      target: { value: "title" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add argument" }),
+    expect(await screen.findByRole("textbox", { name: "title" })).toHaveValue(
+      "Draft",
     );
+    expect(screen.queryByRole("button", { name: "Arguments" }))
+      .not.toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
@@ -628,14 +622,19 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       name: "Planning v2",
       kind: "user-query",
       metadata: undefined,
-      sql: "SELECT * FROM records WHERE title = $title",
-      variables: [{ type: "string", name: "title", description: "" }],
+      sql: "SELECT * FROM records WHERE title = $title LIMIT 2",
+      variables: [{
+        type: "string",
+        name: "title",
+        description: "Title filter",
+        default: "Draft",
+      }],
       parent_revision_id: "rev-1",
     });
 
     fireEvent.input(editor, {
       target: {
-        value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2",
+        value: "SELECT * FROM records WHERE title = {{title}} LIMIT 3",
       },
     });
     await waitFor(() =>
@@ -652,13 +651,18 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     update.mockRestore();
   });
 
-  it("saves an explicitly configured typed variable default", async () => {
+  it("preserves a saved typed default when editing SQL text", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "By count",
       kind: "user-query",
       sql: "SELECT $count",
-      variables: [{ type: "integer", name: "count", description: "Count" }],
+      variables: [{
+        type: "integer",
+        name: "count",
+        description: "Count",
+        default: 12,
+      }],
       created_at: "2025-03-01T00:00:00Z",
       updated_at: "2025-03-02T00:00:00Z",
       revision_id: "rev-1",
@@ -669,13 +673,16 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     });
 
     render(() => <SpaceSqlDetailRoute />);
-    fireEvent.click(
-      await screen.findByRole("checkbox", { name: "Default for count" }),
+    expect(await screen.findByRole("textbox", { name: "count" })).toHaveValue(
+      "12",
     );
-    fireEvent.input(
-      screen.getByRole("textbox", { name: "Default for count" }),
-      { target: { value: "12" } },
-    );
+    expect(await screen.findByRole("checkbox", { name: "Default for count" }))
+      .toBeChecked();
+    expect(screen.queryByRole("button", { name: "Arguments" }))
+      .not.toBeInTheDocument();
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT $count + 1" },
+    });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
@@ -686,7 +693,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         name: "By count",
         kind: "user-query",
         metadata: undefined,
-        sql: "SELECT $count",
+        sql: "SELECT $count + 1",
         variables: [{
           type: "integer",
           name: "count",
@@ -696,128 +703,6 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         parent_revision_id: "rev-1",
       });
     });
-    update.mockRestore();
-  });
-
-  it("blocks preview and clears results for an invalid declared default until repaired", async () => {
-    seedSqlEntry("default", {
-      id: "saved-query",
-      name: "Typed default",
-      kind: "user-query",
-      sql: "SELECT $count",
-      variables: [{
-        type: "integer",
-        name: "count",
-        default: 12,
-        description: "",
-      }],
-      created_at: "2025-03-01T00:00:00Z",
-      updated_at: "2025-03-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    const query = vi.spyOn(sqlApi, "query");
-    render(() => <SpaceSqlDetailRoute />);
-    const preview = await screen.findByRole("button", {
-      name: "Run Query",
-    });
-    await waitFor(() => expect(preview).toBeEnabled());
-    const field = screen.getByRole("textbox", { name: "Default for count" });
-    fireEvent.input(field, { target: { value: "abc" } });
-    await waitFor(() => expect(preview).toBeDisabled());
-    fireEvent.click(preview);
-    expect(query).not.toHaveBeenCalled();
-    expect(field).toHaveValue("abc");
-    fireEvent.input(field, { target: { value: "24" } });
-    await waitFor(() => expect(preview).toBeEnabled());
-    query.mockRestore();
-  });
-
-  it("blocks saving a declared SQL argument while it is unused", async () => {
-    seedSqlEntry("default", {
-      id: "saved-query",
-      name: "Unused declaration",
-      kind: "user-query",
-      sql: "SELECT 1",
-      variables: [{ type: "integer", name: "unused", description: "" }],
-      created_at: "2025-03-01T00:00:00Z",
-      updated_at: "2025-03-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    const update = vi.spyOn(sqlApi, "update");
-    render(() => <SpaceSqlDetailRoute />);
-    fireEvent.input(
-      await screen.findByRole("textbox", { name: "Query name" }),
-      {
-        target: { value: "Changed name" },
-      },
-    );
-    expect(await screen.findByText("Argument is not referenced in SQL."))
-      .toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
-    );
-    expect(update).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Run Query" }))
-      .toBeDisabled();
-    update.mockRestore();
-  });
-
-  it("renames Saved SQL parameter references through the Rust document endpoint", async () => {
-    seedSqlEntry("default", {
-      id: "saved-query",
-      name: "By count",
-      kind: "user-query",
-      sql: "SELECT $count",
-      variables: [{ type: "integer", name: "count", description: "Count" }],
-      created_at: "2025-03-01T00:00:00Z",
-      updated_at: "2025-03-02T00:00:00Z",
-      revision_id: "rev-1",
-    });
-    const rename = vi.spyOn(ugoiteClient, "renameSqlDocumentParameter")
-      .mockImplementation(async (source, oldName, newName) => ({
-        contract_version: 27,
-        status: "parsed",
-        source: source.replaceAll(`$${oldName}`, `$${newName}`),
-        diagnostics: [],
-        tokens: [],
-        nodes: [],
-        conditions: [],
-      }));
-    const update = vi.spyOn(sqlApi, "update").mockResolvedValue({
-      id: "saved-query",
-      revisionId: "rev-2",
-    });
-
-    render(() => <SpaceSqlDetailRoute />);
-    fireEvent.input(
-      await screen.findByRole("textbox", { name: "Argument name for count" }),
-      { target: { value: "total" } },
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Rename argument" }),
-    );
-
-    await waitFor(() => {
-      expect(rename).toHaveBeenCalledWith("SELECT $count", "count", "total");
-      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
-        "SELECT $total",
-      );
-    });
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(update).toHaveBeenCalledWith("default", "saved-query", {
-        name: "By count",
-        kind: "user-query",
-        metadata: undefined,
-        sql: "SELECT $total",
-        variables: [{ type: "integer", name: "total", description: "Count" }],
-        parent_revision_id: "rev-1",
-      });
-    });
-    rename.mockRestore();
     update.mockRestore();
   });
 

@@ -80,6 +80,7 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
     match action {
         "domain.parse_sql_document"
         | "domain.normalize_sql_template"
+        | "domain.lint_sql"
         | "domain.collect_quoted_form_name_references"
         | "domain.collect_quoted_form_relation_names" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
         "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
@@ -260,6 +261,7 @@ fn invoke_domain(request: serde_json::Value) -> String {
     match request.get("action").and_then(serde_json::Value::as_str) {
         Some("domain.compile_variable_graph.v1") => return compile_variable_graph_v1(request),
         Some("domain.parse_sql_document") => return invoke_sql_document(request),
+        Some("domain.lint_sql") => return invoke_sql_lint(request),
         Some("domain.normalize_sql_template") => {
             return invoke_sql_template_normalization(request);
         }
@@ -282,6 +284,42 @@ fn invoke_domain(request: serde_json::Value) -> String {
             return invoke_sql_document_semantic_edit_transaction(request);
         }
         _ => {}
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.composition_form_query_sql")
+    {
+        let Some(payload) = request.get("value").cloned() else {
+            return serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "message": "value is required"},
+            })
+            .to_string();
+        };
+        let query = match serde_json::from_value::<ugoite_domain::composition::CompositionFormQuery>(
+            payload,
+        ) {
+            Ok(query) => query,
+            Err(error) => {
+                return serde_json::json!({
+                    "ok": false,
+                    "error": {"kind": "domain_validation", "message": error.to_string()},
+                })
+                .to_string();
+            }
+        };
+        return match ugoite_domain::composition::composition_form_query_sql(query) {
+            Ok(sql) => serde_json::json!({"ok": true, "value": {"sql": sql}}).to_string(),
+            Err(error) => serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "domain_validation",
+                    "code": error.code(),
+                    "message": error.message(),
+                },
+            })
+            .to_string(),
+        };
     }
 
     if request.get("action").and_then(serde_json::Value::as_str)
@@ -351,15 +389,6 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
-            "domain.composition_form_query_sql" => {
-                let query = serde_json::from_value::<
-                    ugoite_domain::composition::CompositionFormQuery,
-                >(payload)
-                .map_err(|error| error.to_string())?;
-                let sql = ugoite_domain::composition::composition_form_query_sql(query)
-                    .map_err(str::to_owned)?;
-                Ok(serde_json::json!({ "sql": sql }))
-            }
             "domain.analyze_sql_structure" => {
                 let sql = payload
                     .get("sql")
@@ -630,6 +659,40 @@ fn invoke_sql_document(request: serde_json::Value) -> String {
     match result {
         Ok(document) => serialize_sql_document_response(&document)
             .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn invoke_sql_lint(request: serde_json::Value) -> String {
+    let result = (|| -> Result<ugoite_domain::sql_lint::SqlLintResponse, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        let profile = match payload.get("profile") {
+            Some(value) => serde_json::from_value(value.clone())
+                .map_err(|_| "profile must be standard or composition".to_string())?,
+            None => ugoite_domain::sql_lint::SqlLintProfile::Standard,
+        };
+        Ok(ugoite_domain::sql_lint::lint_sql(sql, profile))
+    })();
+
+    match result {
+        Ok(value) => {
+            let envelope = serde_json::json!({"ok": true, "value": value});
+            if ensure_json_size(&envelope, MAX_SQL_DOCUMENT_RESPONSE_BYTES).is_err() {
+                return sql_document_response_too_large();
+            }
+            envelope.to_string()
+        }
         Err(message) => serde_json::json!({
             "ok": false,
             "error": {"kind": "domain_validation", "message": message},
@@ -1206,6 +1269,59 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn portable_sql_lint_matches_domain_profiles() {
+        for (sql, profile) in [
+            ("SELECT * FROM entries", "standard"),
+            ("SELECT * FROM entries", "composition"),
+            ("SELECT COUNT(*) FROM entries", "composition"),
+            ("SELECT {{month}}, note FROM entries", "composition"),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.lint_sql",
+                "value": {"sql": sql, "profile": profile},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], true, "{sql} ({profile}): {response}");
+            let profile = serde_json::from_value(profile.into()).unwrap();
+            let expected = ugoite_domain::sql_lint::lint_sql(sql, profile);
+            assert_eq!(response["value"], serde_json::to_value(expected).unwrap());
+        }
+    }
+
+    #[test]
+    fn composition_form_seed_uses_explicit_projectable_columns() {
+        let request = serde_json::json!({
+            "action": "domain.composition_form_query_sql",
+            "value": {
+                "relation": "Expenses",
+                "columns": [
+                    {"column": "amount", "label": "Amount"},
+                    {"column": "spent_on", "label": "Date"},
+                ],
+                "aggregate": null,
+            },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["sql"],
+            "SELECT \"amount\" AS \"Amount\", \"spent_on\" AS \"Date\" FROM \"Expenses\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\""
+        );
+
+        let no_columns = serde_json::json!({
+            "action": "domain.composition_form_query_sql",
+            "value": {"relation": "Expenses", "columns": [], "aggregate": null},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&no_columns.to_string())).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_validation");
+        assert_eq!(response["error"]["code"], "form_no_projectable_fields");
     }
 
     #[test]

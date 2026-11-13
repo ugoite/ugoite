@@ -96,6 +96,7 @@ export interface SQLWorkspaceProps {
   sql: string;
   onSqlChange?: (sql: string) => void;
   schema: SqlSchema;
+  lintProfile?: "standard" | "composition";
   readOnly?: boolean;
   variables?: readonly SQLWorkspaceVariable[];
   /**
@@ -369,6 +370,7 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           value={props.sql}
           onChange={(value) => props.onSqlChange?.(value)}
           schema={props.schema}
+          lintProfile={props.lintProfile}
           onDiagnostics={props.onDiagnostics}
           additionalDiagnostics={plannerDiagnostics()}
           disabled={editorReadOnly()}

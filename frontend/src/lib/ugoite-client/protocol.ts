@@ -82,6 +82,7 @@ export const UGOITE_API_OPERATIONS = [
   "composition.evaluate",
   "composition.save",
   "composition.restore",
+  "sql.lint",
   "sql.list",
   "sql.get",
   "sql.create",
@@ -1451,6 +1452,31 @@ export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
     value: { sql },
   });
 
+export type SqlLintProfile = "standard" | "composition";
+
+export interface SqlLintDiagnostic {
+  code: string;
+  severity: "error";
+  message: string;
+  range?: SqlDocumentSourceRange;
+}
+
+export interface SqlLintResponse {
+  contract_version: number;
+  profile: SqlLintProfile;
+  diagnostics: SqlLintDiagnostic[];
+}
+
+/** Lint SQL through Rust/WASM without Space access, planning, or execution. */
+export const lintSql = async (
+  sql: string,
+  profile: SqlLintProfile = "standard",
+): Promise<SqlLintResponse> =>
+  await invokeProtocol<SqlLintResponse>({
+    action: "domain.lint_sql",
+    value: { sql, profile },
+  });
+
 /** Normalize SQL template markers through the Rust domain authority. */
 export const normalizeSqlTemplate = async (
   sql: string,
@@ -1524,6 +1550,7 @@ export const applySqlDocumentSemanticEditTransaction = async (
 /** Rust owns Form SQL construction; server planning still binds and authorizes it. */
 export const compositionFormQuerySql = async (
   relation: string,
+  columns: readonly { column: string; label?: string }[],
   aggregate?: { kind: "count" } | {
     kind: "sum" | "avg" | "min" | "max";
     column: string;
@@ -1531,7 +1558,7 @@ export const compositionFormQuerySql = async (
 ): Promise<{ sql: string }> =>
   await invokeProtocol({
     action: "domain.composition_form_query_sql",
-    value: { relation, aggregate: aggregate ?? null },
+    value: { relation, columns, aggregate: aggregate ?? null },
   });
 
 export type SqlStructureColumnType =

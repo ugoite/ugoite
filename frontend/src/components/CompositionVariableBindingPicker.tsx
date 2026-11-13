@@ -61,6 +61,9 @@ const bindingFailureMessage = (cause: unknown) => {
     );
   }
   if (cause instanceof UgoiteApiError) {
+    if (cause.code === "form_no_projectable_fields") {
+      return t("composition.formNoProjectableFields");
+    }
     const key = cause.code &&
         Object.prototype.hasOwnProperty.call(bindingErrorKeys, cause.code)
       ? bindingErrorKeys[cause.code as keyof typeof bindingErrorKeys]
@@ -77,9 +80,10 @@ const formAggregateFields = (
   kind: CompositionFormAggregate | "",
 ) =>
   form.fields.filter((field) =>
-    kind === "sum" || kind === "avg"
+    field.projectable &&
+    (kind === "sum" || kind === "avg"
       ? numericFieldTypes.has(field.type)
-      : aggregateFieldTypes.has(field.type)
+      : aggregateFieldTypes.has(field.type))
   );
 
 export interface CompositionVariableBindingPickerProps {

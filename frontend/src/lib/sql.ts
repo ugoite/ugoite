@@ -2,10 +2,11 @@ import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import { isReservedMetadataForm } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
+import { lintSql } from "./ugoite-client";
 import { normalizeSqlTemplate, parseSqlDocument, UgoiteApiError } from "./ugoite-client/protocol";
 import type {
   SqlDocument,
-  SqlDocumentDiagnostic,
+  SqlLintProfile,
   SqlStructureColumnType,
   SqlStructureContext,
   SqlStructureVariableType,
@@ -665,61 +666,25 @@ function isValidSqlVariableTimestamp(value: string): boolean {
   return true;
 }
 
-function diagnosticForSqlDocument(
-  normalized: NormalizedSqlDocument,
-  sourceDiagnostic: SqlDocumentDiagnostic,
-): Diagnostic {
-  const byteToUtf16 = utf8ByteToUtf16Offsets(normalized.sql);
-  const normalizedStart = sourceDiagnostic.range
-    ? byteToUtf16.get(sourceDiagnostic.range.start)
-    : undefined;
-  const normalizedEnd = sourceDiagnostic.range
-    ? byteToUtf16.get(sourceDiagnostic.range.end)
-    : undefined;
-  const toSourceOffset = (offset: number): number => {
-    let shift = 0;
-    for (const replacement of normalized.replacements) {
-      if (offset <= replacement.normalizedStart) return offset + shift;
-      if (offset <= replacement.normalizedEnd) {
-        return offset === replacement.normalizedEnd
-          ? replacement.end
-          : replacement.start;
-      }
-      shift += replacement.end - replacement.start -
-        (replacement.normalizedEnd - replacement.normalizedStart);
-    }
-    return offset + shift;
-  };
-  const start = normalizedStart === undefined
-    ? undefined
-    : toSourceOffset(normalizedStart);
-  const end = normalizedEnd === undefined
-    ? undefined
-    : toSourceOffset(normalizedEnd);
-  const severity = sourceDiagnostic.code === "single_statement_required"
-    ? "warning"
-    : "error";
-  const message = sourceDiagnostic.code === "empty_document"
-    ? "Query is required"
-    : sourceDiagnostic.code === "select_required"
-    ? "Read-only query must start with SELECT"
-    : sourceDiagnostic.code === "single_statement_required"
-    ? "Only a single statement is supported"
-    : sourceDiagnostic.message;
-  const leadingWhitespace = normalized.source.length -
-    normalized.source.trimStart().length;
-  return {
-    from: start ?? leadingWhitespace,
-    to: end ?? Math.min(normalized.source.length, leadingWhitespace + 1),
-    severity,
-    message,
-  };
-}
-
-/** Convert Rust SQL Document diagnostics to CodeMirror's display shape. */
-export async function sqlLintDiagnostics(query: string): Promise<Diagnostic[]> {
-  const normalized = await normalizeSqlDocument(query);
-  return normalized.document.diagnostics.map((diagnostic) =>
-    diagnosticForSqlDocument(normalized, diagnostic)
-  );
+/** Convert portable Rust SQL lint diagnostics to CodeMirror's UTF-16 offsets. */
+export async function sqlLintDiagnostics(
+  query: string,
+  profile: SqlLintProfile = "standard",
+): Promise<Diagnostic[]> {
+  const response = await lintSql(query, profile);
+  const byteToUtf16 = utf8ByteToUtf16Offsets(query);
+  return response.diagnostics.map((diagnostic) => {
+    const from = diagnostic.range
+      ? byteToUtf16.get(diagnostic.range.start)
+      : undefined;
+    const to = diagnostic.range
+      ? byteToUtf16.get(diagnostic.range.end)
+      : undefined;
+    return {
+      from: from ?? 0,
+      to: to ?? query.length,
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+    };
+  });
 }

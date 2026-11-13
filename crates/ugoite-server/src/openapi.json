@@ -365,6 +365,73 @@
         }
       }
     },
+    "/sql/lint": {
+      "post": {
+        "summary": "Lint SQL syntax and static profile rules without reading Space data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlLintRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned SQL lint diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlLintResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SQL lint request exceeds the bounded source size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request Content-Type must be application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed SQL lint request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/config": {
       "get": {
         "summary": "Read Node Identity configuration and lifecycle",
@@ -14300,6 +14367,117 @@
           "revision_id": {
             "type": "string",
             "description": "Exact immutable Saved SQL revision."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlLintRequest": {
+        "type": "object",
+        "required": [
+          "sql"
+        ],
+        "properties": {
+          "sql": {
+            "type": "string",
+            "maxLength": 262144,
+            "description": "SQL source text. Linting does not resolve Forms, read rows, or check authorization."
+          },
+          "profile": {
+            "$ref": "#/components/schemas/SqlLintProfile",
+            "default": "standard"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlLintProfile": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "composition"
+        ],
+        "description": "Standard requires one SELECT and leaves wildcard projections available. Composition also rejects output projection wildcards."
+      },
+      "SqlLintResponse": {
+        "type": "object",
+        "required": [
+          "contract_version",
+          "profile",
+          "diagnostics"
+        ],
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "profile": {
+            "$ref": "#/components/schemas/SqlLintProfile"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlLintDiagnostic"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlLintDiagnostic": {
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/SqlLintDiagnosticCode"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/SqlLintSeverity"
+          },
+          "message": {
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/SqlSourceRange"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlLintDiagnosticCode": {
+        "type": "string",
+        "enum": [
+          "sql_too_large",
+          "invalid_template",
+          "invalid_syntax",
+          "empty_sql",
+          "single_statement_required",
+          "select_required",
+          "wildcard_projection"
+        ]
+      },
+      "SqlLintSeverity": {
+        "type": "string",
+        "enum": [
+          "error"
+        ]
+      },
+      "SqlSourceRange": {
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Inclusive UTF-8 byte offset in the submitted SQL source."
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Exclusive UTF-8 byte offset in the submitted SQL source."
           }
         },
         "additionalProperties": false

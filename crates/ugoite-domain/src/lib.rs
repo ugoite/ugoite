@@ -22,5 +22,6 @@ pub mod spreadsheet;
 pub mod sql_document;
 pub mod sql_form_references;
 pub mod sql_functions;
+pub mod sql_lint;
 pub mod sql_structure;
 pub mod text;

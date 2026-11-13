@@ -15,7 +15,7 @@ import { normalizeSqlTemplate } from "./ugoite-client";
 import type { Form } from "./types";
 
 describe("sql helpers", () => {
-  it("should flag incomplete SQL from the Rust SQL Document", async () => {
+  it("should flag incomplete SQL through the portable Rust linter", async () => {
     const diagnostics = await sqlLintDiagnostics("SELECT (");
     expect(diagnostics.length).toBeGreaterThan(0);
   });
@@ -47,12 +47,12 @@ describe("sql helpers", () => {
     ).toEqual([]);
   });
 
-  it("reports the read-only statement policy from Rust SQL Document", async () => {
+  it("reports the SELECT-only policy from the portable Rust linter", async () => {
     expect(
       (await sqlLintDiagnostics("DROP TABLE entries")).map((diag) =>
         diag.message
       ),
-    ).toEqual(["Read-only query must start with SELECT"]);
+    ).toEqual(["SQL must be a SELECT query"]);
   });
 
   it("classifies read-only policy from the top-level statement form", async () => {
@@ -61,7 +61,7 @@ describe("sql helpers", () => {
         .map((
           diagnostic,
         ) => diagnostic.message),
-    ).toEqual(["Read-only query must start with SELECT"]);
+    ).toEqual(["SQL must be a SELECT query"]);
 
     for (
       const query of [
@@ -75,7 +75,7 @@ describe("sql helpers", () => {
     ) {
       expect(
         (await sqlLintDiagnostics(query)).some((diagnostic) =>
-          diagnostic.message === "Read-only query must start with SELECT"
+          diagnostic.message === "SQL must be a SELECT query"
         ),
         query,
       ).toBe(true);
@@ -84,6 +84,18 @@ describe("sql helpers", () => {
 
   it("accepts a scalar SELECT with a nested relation-free query", async () => {
     expect(await sqlLintDiagnostics("SELECT (SELECT 1)")).toEqual([]);
+  });
+
+  it("checks projection wildcards only for Composition and maps UTF-8 ranges", async () => {
+    const sql = "SELECT '🧡', 店.* FROM records";
+    expect(await sqlLintDiagnostics(sql, "standard")).toEqual([]);
+    const diagnostics = await sqlLintDiagnostics(sql, "composition");
+    expect(diagnostics).toMatchObject([{
+      from: sql.indexOf("店.*"),
+      to: sql.indexOf("店.*") + "店.*".length,
+      severity: "error",
+      message: "Composition SQL must list projected columns explicitly",
+    }]);
   });
 
   it("accepts a SELECT whose top-level form is introduced by a CTE", async () => {
@@ -95,12 +107,14 @@ describe("sql helpers", () => {
       );
   });
 
-  it("uses Rust SQL Document as the source of statement diagnostics", async () => {
+  it("rejects non-SELECT statements even when they include a SELECT", async () => {
     expect(
       await sqlLintDiagnostics(
         "WITH source AS (SELECT * FROM entries) INSERT INTO entries SELECT * FROM source",
       ),
-    ).toEqual([]);
+    ).toMatchObject([
+      { message: "SQL query bodies must use SELECT", severity: "error" },
+    ]);
   });
 
   it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
@@ -387,14 +401,15 @@ describe("sql helpers", () => {
 
   it("should flag empty query", async () => {
     const diagnostics = await sqlLintDiagnostics("");
-    expect(diagnostics.some((d) => d.message.includes("required"))).toBe(true);
+    expect(diagnostics.some((d) => d.message.includes("must not be empty")))
+      .toBe(true);
   });
 
-  it("should warn about multiple statements", async () => {
+  it("should reject multiple statements", async () => {
     const diagnostics = await sqlLintDiagnostics(
       'SELECT * FROM "form_00000000000000000000000000000001"; SELECT 1 FROM foo',
     );
-    expect(diagnostics.some((d) => d.message.includes("single statement")))
+    expect(diagnostics.some((d) => d.message.includes("one SELECT statement")))
       .toBe(true);
   });
 
@@ -421,9 +436,9 @@ describe("sql helpers", () => {
       'SELECT * FROM "form_00000000000000000000000000000001"; INSERT INTO entries SELECT * FROM source',
     );
     expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
-      "Only a single statement is supported",
+      "SQL must contain one SELECT statement",
     ]);
-    expect(diagnostics[0]?.severity).toBe("warning");
+    expect(diagnostics[0]?.severity).toBe("error");
   });
 
   it("ignores trailing semicolon trivia instead of a second statement", async () => {
@@ -440,7 +455,7 @@ describe("sql helpers", () => {
       const diagnostics = await sqlLintDiagnostics(query);
       expect(
         diagnostics.some((diagnostic) =>
-          diagnostic.message.includes("single statement")
+          diagnostic.message.includes("one SELECT statement")
         ),
         query,
       ).toBe(false);
@@ -462,7 +477,7 @@ describe("sql helpers", () => {
     );
     expect(
       diagnostics.some((diagnostic) =>
-        diagnostic.message.includes("single statement")
+        diagnostic.message.includes("one SELECT statement")
       ),
     ).toBe(false);
     expect(diagnostics).toHaveLength(0);
@@ -470,7 +485,7 @@ describe("sql helpers", () => {
 
   it("keeps quoted identifiers opaque to Rust statement parsing", async () => {
     // `;` and SQL keywords inside "quoted identifiers" must not create a
-    // second-statement warning nor change the first-statement SELECT verdict.
+    // second-statement error nor change the first-statement SELECT verdict.
     for (
       const query of [
         'SELECT "select; insert" FROM "form_00000000000000000000000000000001"',
@@ -480,13 +495,13 @@ describe("sql helpers", () => {
       const diagnostics = await sqlLintDiagnostics(query);
       expect(
         diagnostics.some((diagnostic) =>
-          diagnostic.message.includes("single statement")
+          diagnostic.message.includes("one SELECT statement")
         ),
         query,
       ).toBe(false);
       expect(
         diagnostics.some((diagnostic) =>
-          diagnostic.message.includes("must start with SELECT")
+          diagnostic.message.includes("must be a SELECT query")
         ),
         query,
       ).toBe(false);
