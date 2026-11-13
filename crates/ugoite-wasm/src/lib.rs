@@ -308,8 +308,15 @@ fn invoke_domain(request: serde_json::Value) -> String {
                 .to_string();
             }
         };
-        return match ugoite_domain::composition::composition_form_query_sql(query) {
-            Ok(sql) => serde_json::json!({"ok": true, "value": {"sql": sql}}).to_string(),
+        return match ugoite_domain::composition::composition_form_query_seed(query) {
+            Ok(seed) => serde_json::json!({
+                "ok": true,
+                "value": {
+                    "sql": seed.sql,
+                    "projection_aliases": seed.projection_aliases,
+                },
+            })
+            .to_string(),
             Err(error) => serde_json::json!({
                 "ok": false,
                 "error": {
@@ -1311,6 +1318,10 @@ mod tests {
         assert_eq!(
             response["value"]["sql"],
             "SELECT \"amount\" AS \"Amount\", \"spent_on\" AS \"Date\" FROM \"Expenses\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\""
+        );
+        assert_eq!(
+            response["value"]["projection_aliases"],
+            serde_json::json!(["Amount", "Date"])
         );
 
         let no_columns = serde_json::json!({

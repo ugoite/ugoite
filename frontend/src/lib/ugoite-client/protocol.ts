@@ -1555,7 +1555,7 @@ export const compositionFormQuerySql = async (
     kind: "sum" | "avg" | "min" | "max";
     column: string;
   },
-): Promise<{ sql: string }> =>
+): Promise<{ sql: string; projection_aliases: string[] }> =>
   await invokeProtocol({
     action: "domain.composition_form_query_sql",
     value: { relation, columns, aggregate: aggregate ?? null },

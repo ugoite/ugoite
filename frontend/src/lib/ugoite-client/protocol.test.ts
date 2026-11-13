@@ -159,17 +159,24 @@ describe("portable Ugoite API protocol WASM", () => {
     ).toEqual({
       sql:
         'SELECT "title" AS "Title" FROM "form""identity" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
+      projection_aliases: ["Title"],
     });
     expect(
       await compositionFormQuerySql("form_id", [], { kind: "count" }),
-    ).toEqual({ sql: 'SELECT COUNT(*) AS value FROM "form_id"' });
+    ).toEqual({
+      sql: 'SELECT COUNT(*) AS value FROM "form_id"',
+      projection_aliases: ["value"],
+    });
     expect(
       await compositionFormQuerySql(
         "form_id",
         [],
         { kind: "sum", column: 'a"b' },
       ),
-    ).toEqual({ sql: 'SELECT SUM("a""b") AS value FROM "form_id"' });
+    ).toEqual({
+      sql: 'SELECT SUM("a""b") AS value FROM "form_id"',
+      projection_aliases: ["value"],
+    });
     await expect(compositionFormQuerySql("", [])).rejects.toThrow();
   });
 

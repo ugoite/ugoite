@@ -1267,8 +1267,6 @@ describe("CompositionStudio graph surface", () => {
   });
 
   it("creates a Form-backed table query and component in one picker selection", async () => {
-    const rustOwnedSql = 'SELECT 37 AS rust_authority FROM "Receipts"';
-    compositionFormQuerySqlMock.mockResolvedValueOnce({ sql: rustOwnedSql });
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "Receipts",
@@ -1291,6 +1289,7 @@ describe("CompositionStudio graph surface", () => {
             type: "json",
             required: false,
             sql_column: "payload",
+            label: "Amount paid",
           },
           "payload",
           2,
@@ -1315,7 +1314,7 @@ describe("CompositionStudio graph surface", () => {
             value_type: { scalar_type: "float", nullable: false },
           },
           {
-            name: "payload",
+            name: "Amount paid (2)",
             value_type: { scalar_type: "json", nullable: true },
           },
           {
@@ -1340,10 +1339,9 @@ describe("CompositionStudio graph surface", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("button", { name: /Change variable/ }))
       .toBeNull();
-    const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(authored.spec.variables[0].query).toMatchObject({
+    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
+    expect(previewInput.spec.variables[0].query).toMatchObject({
       kind: "inline_sql",
-      sql: rustOwnedSql,
       form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
       schema_fingerprint: "",
     });
@@ -1351,34 +1349,56 @@ describe("CompositionStudio graph surface", () => {
       "Receipts",
       [
         { column: "amount", label: "Amount paid" },
-        { column: "payload", label: "payload" },
+        { column: "payload", label: "Amount paid" },
         { column: "custom", label: "custom" },
       ],
       undefined,
     );
-    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(previewInput.spec.variables[0].query.sql).toBe(rustOwnedSql);
-    expect(authored.spec.components).toHaveLength(1);
-    expect(authored.spec.components[0]).toMatchObject({
-      kind: "table",
-      variable: authored.spec.variables[0].id,
-    });
+    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
+    expect(generated.projection_aliases).toEqual([
+      "Amount paid",
+      "Amount paid (2)",
+      "custom",
+    ]);
+    expect(previewInput.spec.variables[0].query.sql).toBe(generated.sql);
     fireEvent.click(block);
     expect(
       screen.getByRole("textbox", { name: "Display label for Amount paid" }),
     ).toHaveValue("Amount paid");
     expect(
-      screen.getByRole("textbox", { name: "Display label for payload" }),
-    ).toHaveValue("payload");
+      screen.getByRole("textbox", {
+        name: "Display label for Amount paid (2)",
+      }),
+    ).toHaveValue("Amount paid (2)");
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+      exact: true,
+    });
+    expect(saveButton).toBeEnabled();
     expect(
       screen.getByRole("textbox", { name: "Display label for custom" }),
     ).toHaveValue("custom");
     expect(
       screen.queryByRole("checkbox", { name: "Add result column _ugoite_id" }),
     ).not.toBeInTheDocument();
-    expect(authored.spec.layout.rows[0].items).toEqual([{
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+      spec: {
+        components: Array<{ id: string; presentation?: unknown }>;
+        layout: { rows: Array<{ items: unknown[] }> };
+      };
+    }).spec;
+    expect(savedSpec.components[0].presentation).toEqual({
+      columns: [
+        { column: "Amount paid", label: "Amount paid" },
+        { column: "Amount paid (2)", label: "Amount paid (2)" },
+        { column: "custom", label: "custom" },
+      ],
+    });
+    expect(savedSpec.layout.rows[0].items).toEqual([{
       kind: "component",
-      component: authored.spec.components[0].id,
+      component: savedSpec.components[0].id,
     }]);
   });
 

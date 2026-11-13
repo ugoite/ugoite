@@ -35,6 +35,14 @@ pub struct CompositionFormQuery {
     pub aggregate: Option<CompositionFormAggregate>,
 }
 
+/// Rust-owned SQL and the exact SELECT aliases exposed by its projection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionFormQueryOutput {
+    pub sql: String,
+    pub projection_aliases: Vec<String>,
+}
+
 /// One authorized, projectable Form field supplied to the SQL seed builder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,6 +65,13 @@ pub enum CompositionFormAggregate {
 pub fn composition_form_query_sql(
     query: CompositionFormQuery,
 ) -> Result<String, CompositionFormQueryError> {
+    Ok(composition_form_query_seed(query)?.sql)
+}
+
+/// Build a Form SQL seed and return its canonical projection aliases.
+pub fn composition_form_query_seed(
+    query: CompositionFormQuery,
+) -> Result<CompositionFormQueryOutput, CompositionFormQueryError> {
     let quote = |value: &str| {
         if value.trim().is_empty() || value.contains('\0') {
             return Err(CompositionFormQueryError::InvalidIdentifier);
@@ -65,6 +80,7 @@ pub fn composition_form_query_sql(
     };
     let relation = quote(&query.relation)?;
     let is_aggregate = query.aggregate.is_some();
+    let mut projection_aliases = Vec::new();
     let projection = match query.aggregate {
         None => {
             if query.columns.is_empty() {
@@ -88,6 +104,7 @@ pub fn composition_form_query_sql(
                         alias = format!("{base_alias} ({suffix})");
                         suffix += 1;
                     }
+                    projection_aliases.push(alias.clone());
                     let alias = quote(&alias)?;
                     Ok::<String, CompositionFormQueryError>(format!("{column} AS {alias}"))
                 })
@@ -95,17 +112,24 @@ pub fn composition_form_query_sql(
                 .join(", ");
             columns
         }
-        Some(CompositionFormAggregate::Count {}) => "COUNT(*) AS value".to_owned(),
+        Some(CompositionFormAggregate::Count {}) => {
+            projection_aliases.push("value".to_owned());
+            "COUNT(*) AS value".to_owned()
+        }
         Some(CompositionFormAggregate::Sum { column }) => {
+            projection_aliases.push("value".to_owned());
             format!("SUM({}) AS value", quote(&column)?)
         }
         Some(CompositionFormAggregate::Avg { column }) => {
+            projection_aliases.push("value".to_owned());
             format!("AVG({}) AS value", quote(&column)?)
         }
         Some(CompositionFormAggregate::Min { column }) => {
+            projection_aliases.push("value".to_owned());
             format!("MIN({}) AS value", quote(&column)?)
         }
         Some(CompositionFormAggregate::Max { column }) => {
+            projection_aliases.push("value".to_owned());
             format!("MAX({}) AS value", quote(&column)?)
         }
     };
@@ -114,7 +138,10 @@ pub fn composition_form_query_sql(
     } else {
         " ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\"".to_owned()
     };
-    Ok(format!("SELECT {projection} FROM {relation}{order_by}"))
+    Ok(CompositionFormQueryOutput {
+        sql: format!("SELECT {projection} FROM {relation}{order_by}"),
+        projection_aliases,
+    })
 }
 
 #[cfg(test)]
@@ -168,7 +195,7 @@ mod tests {
 
     #[test]
     fn form_seed_projects_fields_with_unique_aliases() {
-        let sql = composition_form_query_sql(CompositionFormQuery {
+        let seed = composition_form_query_seed(CompositionFormQuery {
             relation: "Expenses".into(),
             columns: vec![
                 CompositionFormQueryColumn {
@@ -187,6 +214,7 @@ mod tests {
             aggregate: None,
         })
         .unwrap();
+        let sql = seed.sql;
 
         assert_eq!(
             sql,
@@ -195,6 +223,10 @@ mod tests {
         assert!(!sql.contains("_ugoite_created_at\" AS"));
         assert!(!sql.contains("LIMIT"));
         assert_eq!(parse_generic_sql_statements(&sql).unwrap().len(), 1);
+        assert_eq!(
+            seed.projection_aliases,
+            ["Date", "Date (2)", "Date (2) (2)"]
+        );
     }
 
     #[test]

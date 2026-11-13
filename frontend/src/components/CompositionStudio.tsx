@@ -818,7 +818,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const projectableColumns = form.fields.filter((field) =>
         field.projectable
       ).map(({ column, name }) => ({ column, label: name }));
-      const { sql } = await compositionFormQuerySql(
+      const { sql, projection_aliases } = await compositionFormQuerySql(
         form.name,
         projectableColumns,
         component === "table"
@@ -873,9 +873,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }, component === "table" ? "table" : "scalar");
       if (component === "table") {
         resolved.tablePresentation = {
-          columns: projectableColumns.map(({ label }) => ({
-            column: label,
-            label,
+          columns: projection_aliases.map((alias) => ({
+            column: alias,
+            label: alias,
           })),
         };
       }
