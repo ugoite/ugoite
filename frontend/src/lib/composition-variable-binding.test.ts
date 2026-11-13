@@ -1,363 +1,186 @@
 import { describe, expect, it } from "vitest";
 import { canonicalizeCompositionDocument } from "./ugoite-client";
 import {
-  bindCompositionComponent,
-  commitResolvedCompositionBinding,
+  appendCompositionGraphComponent,
   compositionBindingDiagnostics,
-  compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
+  compositionGraphAuthoringDocument,
   compositionGraphDraftFromDocument,
-  compositionTablePresentationDiagnostics,
-  type CompositionVariableNode,
   createCompositionGraphDraft,
-  rebindResolvedCompositionComponent,
+  removeCompositionGraphComponent,
   renameCompositionVariable,
   setCompositionComponentVariable,
+  type CompositionGraphDraft,
+  type CompositionVariableNode,
 } from "./composition-variable-binding";
 
-const tableNode: CompositionVariableNode = {
+const rows: CompositionVariableNode = {
   id: "rows",
   kind: "query",
   returns: {
     kind: "table",
     columns: [{
       name: "amount",
-      value_type: { scalar_type: "decimal", nullable: false },
+      value_type: { scalar_type: "integer", nullable: false },
     }],
   },
-  query: { kind: "inline_sql", sql: 'SELECT amount FROM "G"', arguments: [] },
+  query: { kind: "inline_sql", sql: "SELECT amount", arguments: [] },
 };
-const scalarNode: CompositionVariableNode = {
+const total: CompositionVariableNode = {
   id: "total",
   kind: "query",
   returns: {
     kind: "scalar",
-    value_type: { scalar_type: "decimal", nullable: true },
+    value_type: { scalar_type: "integer", nullable: false },
   },
-  query: {
-    kind: "saved_sql",
-    entry_id: "saved-entry",
-    revision_id: "saved-revision",
-    column: "total",
-    label_source: "source",
-    arguments: [],
-  },
+  query: { kind: "inline_sql", sql: "SELECT COUNT(*)", arguments: [] },
 };
 
-describe("strict variable-only Composition bindings", () => {
-  it.each(["", "   "])(
-    "keeps unnamed authoring Work separate from strict save for %j",
-    async (name) => {
-      const draft = createCompositionGraphDraft(name);
-      draft.components = [{
-        id: "text",
-        kind: "text",
-        content: { kind: "literal", text: "Draft" },
-        style: "body",
-      }];
-      draft.layout.rows[0].items = [{ kind: "component", component: "text" }];
-      await expect(
-        canonicalizeCompositionDocument(
-          compositionGraphAuthoringDocument(draft),
-        ),
-      ).resolves.toHaveProperty("canonical_yaml");
-      await expect(
-        canonicalizeCompositionDocument(compositionGraphDocumentDraft(draft)),
-      ).rejects.toThrow();
-      expect(draft.name).toBe(name);
-      expect(compositionGraphDocumentDraft(draft).name).toBe(name);
-    },
-  );
-
-  it.each([tableNode, scalarNode])(
-    "normalizes omitted canonical arguments into editable Work for $query.kind",
-    (node) => {
-      const { arguments: _arguments, ...query } = node.query;
-      const canonical = compositionGraphDocumentDraft({
-        ...createCompositionGraphDraft("Report"),
-        variables: [node],
-      });
-      const document = {
-        ...canonical,
-        spec: { ...canonical.spec, variables: [{ ...node, query }] },
-      };
-      const decoded = compositionGraphDraftFromDocument(document);
-      expect(decoded.variables[0]).toMatchObject({
-        query: { ...query, arguments: [] },
-      });
-      expect(document.spec.variables[0].query).not.toHaveProperty("arguments");
-    },
-  );
-
-  it("rejects malformed argument collections instead of treating them as empty", () => {
-    const canonical = compositionGraphDocumentDraft({
-      ...createCompositionGraphDraft("Report"),
-      variables: [tableNode],
-    });
-    const document = {
-      ...canonical,
-      spec: {
-        ...canonical.spec,
-        variables: [{
-          ...tableNode,
-          query: { ...tableNode.query, arguments: null },
+describe("Composition graph authoring model", () => {
+  it("uses a temporary name only for authoring preview and keeps save strict", async () => {
+    const draft = {
+      ...createCompositionGraphDraft(" "),
+      components: [{
+        id: "text_1",
+        kind: "text" as const,
+        content: "Draft",
+        style: "body" as const,
+      }],
+      layout: {
+        kind: "flow" as const,
+        rows: [{
+          id: "main",
+          items: [{ kind: "component" as const, component: "text_1" }],
         }],
       },
     };
-    expect(() => compositionGraphDraftFromDocument(document)).toThrow(
-      "Invalid graph query arguments",
-    );
+    await expect(canonicalizeCompositionDocument(
+      compositionGraphAuthoringDocument(draft),
+    )).resolves.toHaveProperty("canonical_yaml");
+    await expect(canonicalizeCompositionDocument(
+      compositionGraphDocumentDraft(draft),
+    )).rejects.toThrow();
+    expect(draft.name).toBe(" ");
+  });
+
+  it("serializes Text content as a template string and accepts only current component kinds", () => {
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [rows],
+      components: [
+        { id: "table_1", kind: "table", variable: "rows" },
+        { id: "text_1", kind: "text", content: "Total: {{total}}", style: "body" },
+      ],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [
+            { kind: "component", component: "table_1" },
+            { kind: "component", component: "text_1" },
+          ],
+        }],
+      },
+    };
+    const document = compositionGraphDocumentDraft(draft);
+
+    expect(document.spec.components).toEqual(draft.components);
+    expect(compositionGraphDraftFromDocument(document)).toEqual(draft);
+  });
+
+  it("rejects a Saved SQL query variant", () => {
+    const query = {
+      kind: "saved_sql",
+      entry_id: "sql",
+      revision_id: "rev",
+      arguments: [],
+    };
+    const document = compositionGraphDocumentDraft({
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        ...rows,
+        query,
+      } as unknown as CompositionVariableNode],
+    });
+    expect(() => compositionGraphDraftFromDocument(document)).toThrow();
   });
 
   it.each([
-    ["legacy source list", { sources: [] }],
-    ["legacy source reference", {
-      components: [{ id: "table", kind: "table", source: "rows" }],
-    }],
-    ["direct Form reference", {
-      components: [{ id: "table", kind: "table", form_id: "form-id" }],
-    }],
-    ["legacy source id", {
-      components: [{ id: "table", kind: "table", source_id: "rows" }],
-    }],
-  ])("rejects %s in the graph-only editor decoder", (_label, change) => {
+    ["Metric", { id: "metric_1", kind: "metric", variable: "total" }],
+    ["Saved SQL display", { id: "saved_1", kind: "saved_sql", variable: "rows" }],
+    ["unknown component", { id: "unknown_1", kind: "chart", variable: "rows" }],
+    ["object Text content", { id: "text_1", kind: "text", content: { kind: "literal", text: "x" }, style: "body" }],
+    ["Table presentation", { id: "table_1", kind: "table", variable: "rows", presentation: {} }],
+  ])("rejects the removed %s component shape", (_label, component) => {
     const document = {
-      format: "ugoite.composition",
-      format_version: 1,
-      kind: "dashboard",
-      name: "Report",
+      ...compositionGraphDocumentDraft(createCompositionGraphDraft("Report")),
       spec: {
-        variables: [],
-        components: [],
-        layout: { kind: "flow", rows: [] },
-        ...change,
+        ...compositionGraphDocumentDraft(createCompositionGraphDraft("Report")).spec,
+        components: [component],
       },
     };
     expect(() => compositionGraphDraftFromDocument(document)).toThrow();
   });
 
-  it("serializes only the strict Composition document envelope and spec", () => {
-    const draft = {
+  it("adds, rebinds, and removes a Table component without changing query definitions", () => {
+    let draft: CompositionGraphDraft = {
       ...createCompositionGraphDraft("Report"),
-      variables: [tableNode],
-      components: [{
-        id: "table_1",
-        kind: "table" as const,
-        variable: "rows",
-        presentation: {
-          columns: [{ column: "amount", label: "Amount paid" }],
-        },
-      }],
-      layout: {
-        kind: "flow" as const,
-        rows: [{
-          id: "main",
-          items: [{ kind: "component" as const, component: "table_1" }],
-        }],
-      },
+      variables: [rows, { ...rows, id: "other_rows" }],
     };
-    const saved = compositionGraphDocumentDraft(draft);
-    expect(saved).toEqual({
-      format: "ugoite.composition",
-      format_version: 1,
-      kind: "dashboard",
-      name: "Report",
-      spec: {
-        variables: [tableNode],
-        components: [{
-          id: "table_1",
-          kind: "table",
-          variable: "rows",
-          presentation: {
-            columns: [{ column: "amount", label: "Amount paid" }],
-          },
-        }],
-        layout: draft.layout,
-      },
-    });
-    expect(JSON.stringify(saved)).not.toMatch(/source|form_id/);
-  });
-
-  it("inserts a compatible variable reference and layout item in one draft", () => {
-    const draft = {
-      ...createCompositionGraphDraft("Report"),
-      variables: [tableNode, scalarNode],
-    };
-    const inserted = bindCompositionComponent(draft, "table", "rows");
-    expect(inserted?.components).toEqual([{
-      id: "component_1",
+    draft = appendCompositionGraphComponent(draft, {
+      id: "table_1",
       kind: "table",
       variable: "rows",
-    }]);
-    expect(inserted?.layout).toEqual({
-      kind: "flow",
-      rows: [{
-        id: "main",
-        items: [{ kind: "component", component: "component_1" }],
-      }],
-    });
-    expect(JSON.stringify(inserted)).not.toContain("source_id");
-    expect(inserted?.components[0]).not.toHaveProperty("source");
-  });
-
-  it("rejects a table/scalar shape mismatch without changing the draft", () => {
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [tableNode, scalarNode],
-    };
-    expect(bindCompositionComponent(draft, "table", "total")).toBeUndefined();
-    expect(bindCompositionComponent(draft, "metric", "rows")).toBeUndefined();
-    expect(draft.components).toEqual([]);
-    expect(draft.layout.rows[0].items).toEqual([]);
-  });
-
-  it("adds a resolved Form or Saved SQL query and component together", () => {
-    const draft = createCompositionGraphDraft();
-    const inserted = commitResolvedCompositionBinding(draft, "metric", {
-      variable: scalarNode,
-    });
-    expect(inserted?.variables).toEqual([scalarNode]);
-    expect(inserted?.components).toEqual([{
-      id: "component_1",
-      kind: "metric",
-      variable: "total",
-    }]);
-    expect(inserted?.layout.rows[0].items).toEqual([{
-      kind: "component",
-      component: "component_1",
-    }]);
-  });
-
-  it("attaches a Form table view and clears it when the component changes source", () => {
-    const view = {
-      columns: [{ column: "amount", label: "Amount paid" }],
-    };
-    const inserted = commitResolvedCompositionBinding(
-      createCompositionGraphDraft("Report"),
-      "table",
-      { variable: tableNode, tablePresentation: view },
-    );
-    expect(inserted?.components[0]).toMatchObject({
-      kind: "table",
-      variable: "rows",
-      presentation: view,
-    });
-
-    const withSecondSource = {
-      ...inserted!,
-      variables: [
-        ...inserted!.variables,
-        { ...tableNode, id: "other_rows" },
-      ],
-    };
-    const rebound = rebindResolvedCompositionComponent(
-      withSecondSource,
-      "component_1",
-      {
-        variable: { ...tableNode, id: "other_rows" },
-        reuse_variable_id: "other_rows",
-      },
+    })!;
+    const rebound = setCompositionComponentVariable(
+      draft,
+      "table_1",
+      "other_rows",
     );
     expect(rebound?.components[0]).toEqual({
-      id: "component_1",
+      id: "table_1",
       kind: "table",
       variable: "other_rows",
     });
+    expect(rebound?.variables).toEqual(draft.variables);
+    expect(removeCompositionGraphComponent(rebound!, "table_1")?.components)
+      .toEqual([]);
   });
 
-  it("changes one component reference without mutating its shared query", () => {
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [scalarNode, { ...scalarNode, id: "other" }],
-      components: [{
-        id: "metric_1",
-        kind: "metric" as const,
-        variable: "total",
-      }],
-      layout: {
-        kind: "flow" as const,
-        rows: [{
-          id: "main",
-          items: [{ kind: "component" as const, component: "metric_1" }],
-        }],
-      },
-    };
-    const changed = setCompositionComponentVariable(draft, "metric_1", "other");
-    expect(changed?.components[0]).toEqual({
-      id: "metric_1",
-      kind: "metric",
-      variable: "other",
-    });
-    expect(changed?.variables).toEqual(draft.variables);
-  });
-
-  it("rejects a resolver that reuses a query with different meaning", () => {
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [scalarNode],
-      components: [{
-        id: "metric-1",
-        kind: "metric" as const,
-        variable: "total",
-      }],
-      layout: {
-        kind: "flow" as const,
-        rows: [{
-          id: "main",
-          items: [{ kind: "component" as const, component: "metric-1" }],
-        }],
-      },
-    };
-    expect(rebindResolvedCompositionComponent(draft, "metric-1", {
-      variable: {
-        ...scalarNode,
-        query: {
-          kind: "inline_sql",
-          sql: "SELECT 2",
-          arguments: [],
+  it("renames graph IDs in SQL bindings and placed references", () => {
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [
+        {
+          id: "day",
+          kind: "input",
+          value_type: { scalar_type: "date", nullable: false },
+          required: true,
         },
-      },
-      reuse_variable_id: "total",
-    })).toBeUndefined();
-  });
-
-  it("renames a variable and every query argument and component reference", () => {
-    const query: CompositionVariableNode = {
-      id: "summary",
-      kind: "query",
-      returns: {
-        kind: "scalar",
-        value_type: { scalar_type: "integer", nullable: false },
-      },
-      query: {
-        kind: "inline_sql",
-        sql: "SELECT COUNT(*) WHERE day = $day",
-        arguments: [{ name: "day", variable: "day" }],
-      },
-    };
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [{
-        id: "day",
-        kind: "input" as const,
-        value_type: { scalar_type: "date" as const, nullable: false },
-        required: true,
-      }, query],
-      components: [{ id: "input_1", kind: "input" as const, variable: "day" }],
+        {
+          ...total,
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT COUNT(*) WHERE day = {{day}}",
+            arguments: [{ name: "day", variable: "day" }],
+          },
+        },
+      ],
+      components: [{ id: "input_1", kind: "input", variable: "day" }],
       layout: {
-        kind: "flow" as const,
+        kind: "flow",
         rows: [{
           id: "main",
-          items: [{ kind: "component" as const, component: "input_1" }],
+          items: [{ kind: "component", component: "input_1" }],
         }],
       },
     };
+
     const renamed = renameCompositionVariable(draft, "day", "report_day");
+
     expect(renamed?.variables[0].id).toBe("report_day");
-    expect(
-      renamed?.variables[1].kind === "query" &&
-        renamed.variables[1].query.arguments[0].variable,
-    ).toBe("report_day");
+    expect(renamed?.variables[1].kind === "query" &&
+      renamed.variables[1].query.arguments[0].variable).toBe("report_day");
     expect(renamed?.components[0]).toEqual({
       id: "input_1",
       kind: "input",
@@ -365,89 +188,19 @@ describe("strict variable-only Composition bindings", () => {
     });
   });
 
-  it("marks a renamed Saved SQL binding as using the variable label", () => {
-    const from = "total";
-    const to = "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_total";
-    const renamed = renameCompositionVariable(
-      { ...createCompositionGraphDraft(), variables: [scalarNode] },
-      from,
-      to,
-    );
-    const node = renamed?.variables[0];
-    expect(node?.id).toBe(to);
-    expect(node?.kind === "query" && node.query.kind === "saved_sql"
-      ? node.query.label_source
-      : undefined).toBe("variable");
-  });
-
-  it("reports non-placed components and incompatible bindings", () => {
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [scalarNode],
-      components: [{
-        id: "table_1",
-        kind: "table" as const,
-        variable: "total",
-      }],
+  it("keeps structural diagnostics for missing variables and unplaced components", () => {
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [rows],
+      components: [
+        { id: "table_1", kind: "table", variable: "missing" },
+        { id: "text_1", kind: "text", content: "unplaced", style: "body" },
+      ],
     };
+
     expect(compositionBindingDiagnostics(draft)).toEqual([
       "unplaced_component",
-      "variable_type_mismatch",
+      "missing_variable",
     ]);
-  });
-
-  it("lets edited SQL resolve before a stale Table view is repaired", () => {
-    const draft = {
-      ...createCompositionGraphDraft(),
-      variables: [{
-        ...tableNode,
-        query: {
-          kind: "inline_sql" as const,
-          sql: "SELECT amount AS total FROM receipts",
-          arguments: [],
-          schema_fingerprint: "",
-        },
-      }],
-      components: [{
-        id: "table_1",
-        kind: "table" as const,
-        variable: "rows",
-        presentation: { columns: [{ column: "amount", label: "Amount" }] },
-      }],
-      layout: {
-        kind: "flow" as const,
-        rows: [{
-          id: "main",
-          items: [{ kind: "component" as const, component: "table_1" }],
-        }],
-      },
-    };
-    expect(compositionTablePresentationDiagnostics(draft)).toEqual([]);
-
-    const resolved = {
-      ...draft,
-      variables: [{
-        ...draft.variables[0],
-        returns: {
-          kind: "table" as const,
-          columns: [{
-            name: "total",
-            value_type: { scalar_type: "decimal" as const, nullable: false },
-          }],
-        },
-        query: { ...draft.variables[0].query, schema_fingerprint: "new" },
-      }],
-    };
-    expect(compositionTablePresentationDiagnostics(resolved)).toEqual([
-      "table_presentation_invalid",
-    ]);
-    const repaired = {
-      ...resolved,
-      components: [{
-        ...resolved.components[0],
-        presentation: { columns: [{ column: "total", label: "Total" }] },
-      }],
-    };
-    expect(compositionTablePresentationDiagnostics(repaired)).toEqual([]);
   });
 });

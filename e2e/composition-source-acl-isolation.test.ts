@@ -13,16 +13,13 @@ import {
 } from "./lib/webauthn.ts";
 
 const VARIABLE_ID = "query_key";
-const METRIC_QUERY_ID = "shared_metric";
+const SCALAR_QUERY_ID = "shared_scalar";
 const TABLE_QUERY_ID = "shared_rows";
 
 type CompositionSeed = {
   spaceId: string;
   formId: string;
   formName: string;
-  savedSqlId: string;
-  savedSqlRevisionId: string;
-  savedSqlName: string;
   protectedSql: string;
   compositionId: string;
   compositionRevisionId: string;
@@ -126,30 +123,10 @@ async function seedGraph(
   );
   expect(entryResponse.status()).toBe(201);
 
-  const savedSqlName = `Protected lookup ${options.compositionName}`;
   const sql = `SELECT ${sqlIdentifier(protectedColumn!)} AS value FROM ${
     sqlIdentifier(relation!)
   } WHERE ${sqlIdentifier(lookupColumn!)} = $query_key`;
-  const savedSqlResponse = await request.post(
-    getBackendUrl(`/spaces/${options.spaceId}/sql`),
-    {
-      data: {
-        name: savedSqlName,
-        kind: "user-query",
-        sql,
-        variables: [{ name: "query_key", type: "string", description: "" }],
-      },
-    },
-  );
-  expect([200, 201]).toContain(savedSqlResponse.status());
-  const savedSql = await savedSqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-
-  const argumentsForSavedSql = [{ name: "query_key", variable: VARIABLE_ID }];
+  const argumentsForQuery = [{ name: "query_key", variable: VARIABLE_ID }];
   const yaml = await completeCompositionGraphYaml(request, options.spaceId, {
     name: options.compositionName,
     variables: [
@@ -161,19 +138,18 @@ async function seedGraph(
         default: { kind: "string", value: "match" },
       },
       {
-        id: METRIC_QUERY_ID,
+        id: SCALAR_QUERY_ID,
         kind: "query",
         returns: {
           kind: "scalar",
           value_type: { scalar_type: "string", nullable: true },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          column: "value",
-          arguments: argumentsForSavedSql,
+          kind: "inline_sql",
+          sql,
+          arguments: argumentsForQuery,
+          form_bindings: [{ relation: relation!, form_id: form!.id! }],
+          schema_fingerprint: "",
         },
       },
       {
@@ -181,24 +157,29 @@ async function seedGraph(
         kind: "query",
         returns: { kind: "table", columns: [] },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          arguments: argumentsForSavedSql,
+          kind: "inline_sql",
+          sql,
+          arguments: argumentsForQuery,
+          form_bindings: [{ relation: relation!, form_id: form!.id! }],
+          schema_fingerprint: "",
         },
       },
     ],
     components: [
       { id: "query_input", kind: "input", variable: VARIABLE_ID },
-      { id: "result_metric", kind: "metric", variable: METRIC_QUERY_ID },
+      {
+        id: "result_text",
+        kind: "text",
+        content: "{{shared_scalar}}",
+        style: "body",
+      },
       { id: "result_table", kind: "table", variable: TABLE_QUERY_ID },
     ],
     rows: [{
       id: "primary",
       items: [
         { kind: "component", component: "query_input" },
-        { kind: "component", component: "result_metric" },
+        { kind: "component", component: "result_text" },
         { kind: "component", component: "result_table" },
       ],
     }],
@@ -219,9 +200,6 @@ async function seedGraph(
     spaceId: options.spaceId,
     formId: form!.id!,
     formName: options.formName,
-    savedSqlId: savedSql.id!,
-    savedSqlRevisionId: savedSql.revision_id!,
-    savedSqlName,
     protectedSql: sql,
     compositionId: composition.composition_id!,
     compositionRevisionId: composition.revision_id!,
@@ -262,7 +240,7 @@ const evaluateExactRevision = (
           revision_id: seed.compositionRevisionId,
         },
         variables: { [VARIABLE_ID]: "match" },
-        requested_queries: [METRIC_QUERY_ID, TABLE_QUERY_ID],
+        requested_queries: [SCALAR_QUERY_ID, TABLE_QUERY_ID],
       },
     },
   );
@@ -270,7 +248,7 @@ const evaluateExactRevision = (
 test.describe("Composition graph ACL and runtime isolation", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
-  test("evaluate rechecks Form and exact Saved SQL access after revocation", async ({ browser, request }) => {
+  test("evaluate rechecks Form access after revocation", async ({ browser, request }) => {
     test.setTimeout(180_000);
     const space = await createSpace(request, "acl-revocation");
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -327,8 +305,10 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect(browserEvaluationBody.authorization_fingerprint).toBe(
         authorizedBody.authorization_fingerprint,
       );
-      const metric = page.locator(".compositionGraphMetric strong");
-      await expect(metric).toHaveText(seed.protectedValue);
+      const text = page.locator(
+        '[data-component-id="result_text"] .compositionGraphText',
+      );
+      await expect(text).toHaveText(seed.protectedValue);
 
       const editorInvitation = await request.post(
         getBackendUrl(`/spaces/${seed.spaceId}/members/invitations`),
@@ -346,13 +326,18 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       await designPage.getByRole("button", { name: "Accept invitation" })
         .click();
       await expect(designPage).toHaveURL(/\/spaces$/);
-      await designPage.goto(getFrontendUrl(
-        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}/edit`,
-      ), { waitUntil: "domcontentloaded" });
+      await designPage.goto(
+        getFrontendUrl(
+          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}/edit`,
+        ),
+        { waitUntil: "domcontentloaded" },
+      );
       await expect(designPage.locator(".compositionGraphDesignValue").first())
         .toBeVisible({ timeout: 30_000 });
-      const designMetric = designPage.locator(".compositionGraphMetric strong");
-      await expect(designMetric).toHaveText(seed.protectedValue);
+      const designText = designPage.locator(
+        '[data-component-id="result_text"] .compositionGraphText',
+      );
+      await expect(designText).toHaveText(seed.protectedValue);
 
       const compositionRead = await viewerContext.request.get(
         getBackendUrl(
@@ -361,10 +346,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       );
       expect(compositionRead.ok()).toBe(true);
 
-      const assertRevokedEvaluation = async (
-        policyKind: "form" | "saved_sql",
-        resourceId: string,
-      ) => {
+      const assertRevokedEvaluation = async (resourceId: string) => {
         const denied = await evaluateExactRevision(viewerContext.request, seed);
         const bodyText = await denied.text();
         expect([200, 403]).toContain(denied.status());
@@ -377,16 +359,12 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           expect(body.diagnostics).toEqual(expect.arrayContaining([
             expect.objectContaining({
               code: "query_unavailable",
-              variable_id: METRIC_QUERY_ID,
+              variable_id: SCALAR_QUERY_ID,
             }),
           ]));
         }
         expect(responseContainsText(bodyText, resourceId)).toBe(false);
-        if (policyKind === "form") {
-          expect(responseContainsText(bodyText, seed.formName)).toBe(false);
-        } else {
-          expect(responseContainsText(bodyText, seed.savedSqlName)).toBe(false);
-        }
+        expect(responseContainsText(bodyText, seed.formName)).toBe(false);
 
         // Raw exact revision inspection remains available to the authorized
         // Space member even when its query dependencies are no longer readable.
@@ -396,7 +374,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         expect(raw.ok()).toBe(true);
         const rawBody = await raw.text();
         expect(rawBody).toContain(seed.compositionName);
-        expect(rawBody).toContain(policyKind);
+        expect(rawBody).toContain("form");
       };
 
       const snapshotUrl = getBackendUrl(
@@ -419,22 +397,24 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           return false;
         }
       }, { timeout: 40_000 });
-      const unavailableRuntimeEvaluation = page.waitForResponse(async (response) => {
-        if (
-          response.url() !==
-            getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`) ||
-          response.request().method() !== "POST"
-        ) return false;
-        try {
-          const body = await response.json() as EvaluationBody;
-          return body.diagnostics?.some((diagnostic) =>
-            diagnostic.code === "query_unavailable" &&
-            diagnostic.variable_id === METRIC_QUERY_ID
-          ) ?? false;
-        } catch {
-          return false;
-        }
-      });
+      const unavailableRuntimeEvaluation = page.waitForResponse(
+        async (response) => {
+          if (
+            response.url() !==
+              getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`) ||
+            response.request().method() !== "POST"
+          ) return false;
+          try {
+            const body = await response.json() as EvaluationBody;
+            return body.diagnostics?.some((diagnostic) =>
+              diagnostic.code === "query_unavailable" &&
+              diagnostic.variable_id === SCALAR_QUERY_ID
+            ) ?? false;
+          } catch {
+            return false;
+          }
+        },
+      );
       const unavailableDesignEvaluation = designPage.waitForResponse(
         async (response) => {
           if (
@@ -451,7 +431,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
             const body = await response.json() as EvaluationBody;
             return body.diagnostics?.some((diagnostic) =>
               diagnostic.code === "query_unavailable" &&
-              diagnostic.variable_id === METRIC_QUERY_ID
+              diagnostic.variable_id === SCALAR_QUERY_ID
             ) ?? false;
           } catch {
             return false;
@@ -503,7 +483,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         seed.protectedValue,
         { timeout: 10_000 },
       );
-      await expect(metric).toHaveCount(0);
+      await expect(text).not.toContainText(seed.protectedValue);
       const designInput = designPage.getByRole("textbox", {
         name: VARIABLE_ID,
         exact: true,
@@ -521,8 +501,8 @@ test.describe("Composition graph ACL and runtime isolation", () => {
             : "This source is unavailable or access may have changed."
         ),
       );
-      await expect(designMetric).toHaveCount(0);
-      await assertRevokedEvaluation("form", seed.formId);
+      await expect(designText).not.toContainText(seed.protectedValue);
+      await assertRevokedEvaluation(seed.formId);
 
       const restoreFormPolicy = await request.put(
         getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
@@ -540,21 +520,6 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect(JSON.stringify(await restoredEvaluation.json())).toContain(
         seed.protectedValue,
       );
-
-      const savedSqlPolicyResponse = await request.put(
-        getBackendUrl(
-          `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
-        ),
-        {
-          data: {
-            policy_id: crypto.randomUUID(),
-            inherit_space_role: false,
-            grants: [],
-          },
-        },
-      );
-      expect(savedSqlPolicyResponse.status()).toBe(200);
-      await assertRevokedEvaluation("saved_sql", seed.savedSqlId);
     } finally {
       await closeEditor?.();
       await close();
@@ -633,9 +598,9 @@ test.describe("Composition graph ACL and runtime isolation", () => {
     expect(ownerEvaluation.ok()).toBe(true);
     expect(await ownerEvaluation.text()).toContain(seed.protectedValue);
 
-    const savedSqlPolicyResponse = await request.put(
+    const formPolicyResponse = await request.put(
       getBackendUrl(
-        `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
+        `/spaces/${seed.spaceId}/policies/form/${seed.formName}`,
       ),
       {
         data: {
@@ -645,7 +610,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         },
       },
     );
-    expect(savedSqlPolicyResponse.status()).toBe(200);
+    expect(formPolicyResponse.status()).toBe(200);
 
     await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
       waitUntil: "domcontentloaded",
@@ -697,7 +662,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       expect([200, 403]).toContain(denied.status());
       const deniedBody = await denied.text();
       expect(deniedBody).not.toContain(seed.protectedValue);
-      expect(deniedBody).not.toContain(seed.savedSqlId);
+      expect(deniedBody).not.toContain(seed.formId);
       if (denied.ok()) {
         const body = JSON.parse(deniedBody) as EvaluationBody;
         expect(body.ok).toBe(false);

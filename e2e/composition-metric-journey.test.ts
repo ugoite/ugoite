@@ -9,7 +9,7 @@ import {
   type CompositionGraphSeed,
 } from "./lib/composition-graph.ts";
 
-const METRIC_SCALAR = 40;
+const SCALAR_VALUE = 40;
 const SECOND_AMOUNT = 2;
 type EvaluationBody = {
   ok: boolean;
@@ -40,13 +40,13 @@ async function createSpace(request: APIRequestContext): Promise<string> {
   return await getDefaultSpaceId(request);
 }
 
-async function seedMetricComposition(
+async function seedScalarTextComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
-  const formName = `MetricScalar${suffix}`;
-  const compositionName = `Metric scalar ${suffix}`;
+  const formName = `ScalarText${suffix}`;
+  const compositionName = `Scalar text ${suffix}`;
 
   const formResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -91,36 +91,21 @@ async function seedMetricComposition(
         form: formName,
         fields: {
           Date: "2026-04-10",
-          Merchant: "Metric-One",
-          Amount: METRIC_SCALAR,
+          Merchant: "Scalar-One",
+          Amount: SCALAR_VALUE,
         },
       },
     },
   );
   expect(entryResponse.status()).toBe(201);
 
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: `Metric scalar query ${suffix}`,
-        kind: "user-query",
-        sql: `SELECT ${sqlIdentifier(amountColumn!)} AS total, ${
-          sqlIdentifier(merchantColumn!)
-        } AS merchant FROM ${sqlIdentifier(relation!)} ORDER BY ${
-          sqlIdentifier(merchantColumn!)
-        } ASC`,
-        variables: [],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
+  const inlineQuery = (sql: string) => ({
+    kind: "inline_sql",
+    sql,
+    arguments: [],
+    form_bindings: [],
+    schema_fingerprint: "",
+  });
 
   const graph: CompositionGraphSeed = {
     name: compositionName,
@@ -133,34 +118,25 @@ async function seedMetricComposition(
           value_type: { scalar_type: "float", nullable: false },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          column: "total",
-          arguments: [],
-          form_bindings: [],
-          schema_fingerprint: "",
+          ...inlineQuery(
+            `SELECT ${sqlIdentifier(amountColumn!)} AS total FROM ${sqlIdentifier(relation!)} ORDER BY ${sqlIdentifier(merchantColumn!)} ASC`,
+          ),
         },
       },
       {
-        id: "metric_rows",
+        id: "scalar_rows",
         kind: "query",
         returns: { kind: "table", columns: [] },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          arguments: [],
-          form_bindings: [],
-          schema_fingerprint: "",
+          ...inlineQuery(
+            `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${sqlIdentifier(merchantColumn!)} AS merchant FROM ${sqlIdentifier(relation!)} ORDER BY ${sqlIdentifier(merchantColumn!)} ASC`,
+          ),
         },
       },
     ],
     components: [
-      { id: "total", kind: "metric", variable: "total_value" },
-      { id: "rows", kind: "table", variable: "metric_rows" },
+      { id: "total", kind: "text", content: "{{total_value}}", style: "body" },
+      { id: "rows", kind: "table", variable: "scalar_rows" },
     ],
     rows: [{
       id: "main",
@@ -194,16 +170,16 @@ async function seedMetricComposition(
   };
 }
 
-test.describe("Composition Metric Journey", () => {
+test.describe("Composition scalar Text Journey", () => {
   let seed: SeedState;
 
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    seed = await seedMetricComposition(request);
+    seed = await seedScalarTextComposition(request);
   });
 
-  test("API evaluates an exact Saved SQL revision and reports scalar cardinality failures", async ({ request }) => {
+  test("API evaluates an exact Composition revision and reports scalar cardinality failures", async ({ request }) => {
     test.setTimeout(120_000);
     const evaluate = () =>
       request.post(
@@ -216,7 +192,7 @@ test.describe("Composition Metric Journey", () => {
               composition_id: seed.compositionId,
               revision_id: seed.revisionId,
             },
-            requested_queries: ["total_value", "metric_rows"],
+            requested_queries: ["total_value", "scalar_rows"],
           },
         },
       );
@@ -229,12 +205,12 @@ test.describe("Composition Metric Journey", () => {
       entry_id: seed.compositionId,
       revision_id: seed.revisionId,
     });
-    expect(firstBody.query_results.total_value.value.value).toBeDefined();
+    expect(firstBody.query_results.total_value.value.kind).toBe("scalar");
     expect(JSON.stringify(firstBody.query_results.total_value.value))
-      .toContain(String(METRIC_SCALAR));
-    expect(firstBody.query_results.metric_rows.value.rows).toHaveLength(1);
-    expect(JSON.stringify(firstBody.query_results.metric_rows.value.rows))
-      .toContain("Metric-One");
+      .toContain(String(SCALAR_VALUE));
+    expect(firstBody.query_results.scalar_rows.value.rows).toHaveLength(1);
+    expect(JSON.stringify(firstBody.query_results.scalar_rows.value.rows))
+      .toContain("Scalar-One");
 
     const secondEntryResponse = await request.post(
       getBackendUrl("/spaces/" + seed.spaceId + "/entries"),
@@ -243,7 +219,7 @@ test.describe("Composition Metric Journey", () => {
           form: seed.formName,
           fields: {
             Date: "2026-04-11",
-            Merchant: "Metric-Two",
+            Merchant: "Scalar-Two",
             Amount: SECOND_AMOUNT,
           },
         },
@@ -270,7 +246,7 @@ test.describe("Composition Metric Journey", () => {
     expect(secondBody.query_diagnostics).toContainEqual(
       expect.objectContaining({
         code: "evaluation_aborted",
-        variable_id: "metric_rows",
+        variable_id: "scalar_rows",
       }),
     );
   });

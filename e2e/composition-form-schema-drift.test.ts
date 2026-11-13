@@ -10,6 +10,7 @@ import {
 type FormSummary = {
   id?: string;
   name?: string;
+  sql_relation?: string;
   fields?: Record<string, CompositionFormSeedField>;
 };
 
@@ -95,39 +96,42 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await page.getByLabel("Name", { exact: true }).fill(compositionName);
     const palette = page.getByRole("group", { name: "Add to design" });
     await palette.getByRole("button", { name: "Table", exact: true }).click();
-    const picker = page.getByRole("dialog", { name: "Table", exact: true });
-    await picker.getByRole("tab", { name: "Forms", exact: true }).click();
-    await picker.getByRole("button", { name: formName, exact: true }).click();
-    await expect(picker).toHaveCount(0);
+    await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+    await page.getByLabel("Variable ID", { exact: true }).press("Enter");
+    const variablesTab = page.getByRole("tab", {
+      name: "Variables",
+      exact: true,
+    });
+    await variablesTab.click();
+    await page.getByRole("button", { name: variableId, exact: true }).click();
+    const originalSql = expectedCompositionFormSeedSql(
+      formBefore?.sql_relation ?? formName,
+      formBefore?.fields,
+    );
+    await page.getByRole("button", { name: "Form", exact: true }).click();
+    await page.getByRole("group", { name: "Available Forms", exact: true })
+      .getByRole("button", { name: formName, exact: true }).click();
+    await page.getByRole("textbox", { name: "SQL", exact: true })
+      .fill(originalSql);
+    const initialQueryPreviewResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
+      response.request().method() === "POST"
+    );
+    await page.getByRole("button", { name: "Run Query", exact: true }).click();
+    const initialQueryPreview = await (await initialQueryPreviewResponse)
+      .json() as { ok?: boolean };
+    expect(initialQueryPreview.ok).toBe(true);
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
 
-    const tableName = `${variableId} results`;
+    const tableName = variableId;
     const initialTable = page.getByRole("table", { name: tableName });
     await expect(initialTable).toBeVisible();
-    await page.getByRole("button", {
-      name: `table, ${variableId}`,
-      exact: true,
-    }).click();
-    const tableInspector = page.locator(".compositionGraphInspector");
-    await expect(
-      tableInspector.getByRole("heading", { name: "Columns to display" }),
-    ).toBeVisible();
-    await expect(
-      tableInspector.getByRole("textbox", { name: "Display label for Title" }),
-    ).toHaveValue("Title");
-    await expect(
-      tableInspector.getByRole("textbox", {
-        name: "Display label for Summary",
-      }),
-    ).toHaveValue("Summary");
-    await tableInspector.getByRole("button", {
-      name: "Remove Summary from the Table",
-    }).click();
     await expect(initialTable.locator("thead")).toContainText("Title");
-    await expect(initialTable.locator("thead")).not.toContainText("Summary");
+    await expect(initialTable.locator("thead")).toContainText("Summary");
     await expect(initialTable.locator("tbody")).toContainText(
       "before schema change",
     );
-    await expect(initialTable.locator("tbody")).not.toContainText(
+    await expect(initialTable.locator("tbody")).toContainText(
       "original summary",
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -151,13 +155,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
           id?: string;
           query?: { schema_fingerprint?: string; sql?: string };
         }>;
-        components?: Array<{
-          kind?: string;
-          variable?: string;
-          presentation?: {
-            columns?: Array<{ column?: string; label?: string }>;
-          };
-        }>;
+        components?: Array<{ kind?: string; variable?: string }>;
       };
     };
     const originalQuery = originalDocument.spec?.variables?.find((variable) =>
@@ -167,15 +165,20 @@ test("Composition keeps a saved query executable after an unused Form field is a
       .toMatch(/^[0-9a-f]{64}$/);
     expect(
       normalizeCompositionFormSeedSql(originalQuery?.query?.sql ?? ""),
-    ).toBe(expectedCompositionFormSeedSql(formName, formBefore?.fields));
+    ).toBe(expectedCompositionFormSeedSql(
+      formBefore?.sql_relation ?? formName,
+      formBefore?.fields,
+    ));
     const originalTable = originalDocument.spec?.components?.find(
       (component) =>
         component.kind === "table" &&
         component.variable === variableId,
     );
-    expect(originalTable?.presentation?.columns).toEqual([
-      { column: "Title", label: "Title" },
-    ]);
+    expect(originalTable).toMatchObject({
+      kind: "table",
+      variable: variableId,
+    });
+    expect(originalTable).not.toHaveProperty("presentation");
 
     // This API call represents the external event: the same Form gains one
     // optional field while the browser journey remains responsible for repair.
@@ -203,10 +206,6 @@ test("Composition keeps a saved query executable after an unused Form field is a
     const formsAfter = await formsAfterResponse.json() as FormSummary[];
     const formAfter = formsAfter.find((form) => form.id === formId);
     expect(formAfter?.fields?.Notes?.sql_column).toBeTruthy();
-    const evolvedSql = expectedCompositionFormSeedSql(
-      formName,
-      formAfter?.fields,
-    );
     const evolvedEntry = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
@@ -247,6 +246,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
       "after schema change",
     );
     await expect(savedTable.locator("thead")).toContainText("Title");
+    await expect(savedTable.locator("thead")).toContainText("Summary");
     await expect(savedTable.locator("thead")).not.toContainText("Notes");
 
     await page.goto(
@@ -262,10 +262,8 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await studioTabs.getByRole("tab", { name: "Variables", exact: true })
       .click();
     await page.getByRole("button", { name: variableId, exact: true }).click();
-    // Form seeds use explicit projections, so repairing against the evolved
-    // schema includes the new field in the authored SQL.
     await page.getByRole("textbox", { name: "SQL", exact: true })
-      .fill(evolvedSql);
+      .fill(originalSql);
     const currentSchemaPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
       response.request().method() === "POST"
@@ -280,7 +278,10 @@ test("Composition keeps a saved query executable after an unused Form field is a
           returns?: { columns?: Array<{ name?: string }> };
         }>;
         query_results?: Record<string, {
-          value?: { columns?: Array<{ name?: string }> };
+          value?: {
+            columns?: Array<{ name?: string }>;
+            rows?: Array<Array<{ value?: unknown }>>;
+          };
         }>;
       };
     expect(currentSchemaPreview.ok).toBe(true);
@@ -290,175 +291,54 @@ test("Composition keeps a saved query executable after an unused Form field is a
     expect(currentSchemaQuery?.schema_fingerprint)
       .toMatch(/^[0-9a-f]{64}$/);
     expect(currentSchemaQuery?.schema_fingerprint)
-      .not.toBe(originalQuery?.query?.schema_fingerprint);
-    expect(currentSchemaQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "Notes" }),
-    );
+      .toBe(originalQuery?.query?.schema_fingerprint);
+    expect(currentSchemaQuery?.returns?.columns?.map((column) => column.name))
+      .toEqual(["Title", "Summary"]);
     expect(
       currentSchemaPreview.query_results?.[variableId]?.value?.columns?.map((
         column,
       ) => column.name),
     )
-      .toContain("Notes");
+      .toEqual(["Title", "Summary"]);
     const authoringPreview = page.getByRole("table").first();
-    await expect(authoringPreview).toContainText("Notes");
+    await expect(authoringPreview.locator("thead")).toContainText("Summary");
+    await expect(authoringPreview.locator("thead")).not.toContainText("Notes");
     await expect(authoringPreview).toContainText("current Form descriptor");
     await studioTabs.getByRole("tab", { name: "Design", exact: true }).click();
-    const repairedPreviewTable = page.getByRole("table", { name: tableName });
-    await expect(repairedPreviewTable).toBeVisible();
-
-    const savedRevisionEvaluations: Array<{
-      revisionId: string;
-      response: Awaited<ReturnType<typeof page.waitForResponse>>;
-    }> = [];
-    page.on("response", (response) => {
-      if (
-        response.request().method() !== "POST" ||
-        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-      ) return;
-      const body = response.request().postDataJSON() as {
-        target?: { kind?: string; revision_id?: string };
-      } | null;
-      if (
-        body?.target?.kind === "saved_revision" &&
-        body.target.revision_id
-      ) {
-        savedRevisionEvaluations.push({
-          revisionId: body.target.revision_id,
-          response,
-        });
-      }
-    });
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page).toHaveURL(
-      new RegExp(
-        `/spaces/${spaceId}/compositions/${original.compositionId}/[^/]+$`,
-      ),
-    );
-    const repaired = revisionFromUrl(page.url());
-    expect(repaired.compositionId).toBe(original.compositionId);
-    expect(repaired.revisionId).not.toBe(original.revisionId);
-    await expect.poll(() =>
-      savedRevisionEvaluations.some(({ revisionId }) =>
-        revisionId === repaired.revisionId
-      )
-    ).toBe(true);
-    const repairedEvaluationResponse = savedRevisionEvaluations.find((entry) =>
-      entry.revisionId === repaired.revisionId
-    )!.response;
-    const repairedEvaluation = await repairedEvaluationResponse.json() as {
-      ok?: boolean;
-      composition_revision?: { revision_id?: string };
-      queries?: Array<{
-        variable_id?: string;
-        schema_fingerprint?: string;
-        returns?: { columns?: Array<{ name?: string }> };
-      }>;
-      query_results?: Record<string, {
-        value?: {
-          kind?: string;
-          columns?: Array<{ name?: string }>;
-          rows?: Array<Array<{ value?: unknown }>>;
-        };
-      }>;
-    };
-    expect(repairedEvaluation.ok).toBe(true);
-    expect(repairedEvaluation.composition_revision?.revision_id)
-      .toBe(repaired.revisionId);
-    const repairedRows = repairedEvaluation.query_results?.[variableId]?.value;
-    expect(repairedRows?.kind).toBe("table");
-    expect(repairedRows?.columns).toContainEqual(
-      expect.objectContaining({ name: "Notes" }),
-    );
-    expect(JSON.stringify(repairedRows?.rows)).toContain(
+    const designTable = page.getByRole("table", { name: tableName });
+    await expect(designTable.locator("thead")).toContainText("Summary");
+    await expect(designTable.locator("thead")).not.toContainText("Notes");
+    await expect(designTable.locator("tbody")).toContainText(
       "current Form descriptor",
     );
-    expect(JSON.stringify(repairedRows?.rows)).toContain("after schema change");
-    const repairedRuntimeQuery = repairedEvaluation.queries?.find((query) =>
-      query.variable_id === variableId
-    );
-    expect(repairedRuntimeQuery?.schema_fingerprint)
-      .toBe(currentSchemaQuery?.schema_fingerprint);
-    expect(repairedRuntimeQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "Notes" }),
-    );
 
-    const repairedRevisionResponse = await request.get(
-      getBackendUrl(
-        `/spaces/${spaceId}/compositions/${repaired.compositionId}/history/${repaired.revisionId}`,
-      ),
+    const oldEvaluationAfterResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
+      response.request().method() === "POST"
     );
-    expect(repairedRevisionResponse.ok()).toBe(true);
-    const repairedRevision = await repairedRevisionResponse
-      .json() as SavedRevision;
-    const repairedDocument = parseYaml(
-      String(repairedRevision.fields["spec"]),
-    ) as {
-      spec?: {
-        variables?: Array<{
-          id?: string;
-          query?: { schema_fingerprint?: string; sql?: string };
-          returns?: { columns?: Array<{ name?: string }> };
-        }>;
-        components?: Array<{
-          kind?: string;
-          variable?: string;
-          presentation?: {
-            columns?: Array<{ column?: string; label?: string }>;
-          };
-        }>;
-      };
-    };
-    const repairedQuery = repairedDocument.spec?.variables?.find((variable) =>
-      variable.id === variableId
-    );
-    expect(repairedQuery?.query?.schema_fingerprint)
-      .toMatch(/^[0-9a-f]{64}$/);
-    expect(repairedQuery?.query?.schema_fingerprint)
-      .toBe(currentSchemaQuery?.schema_fingerprint);
-    expect(repairedQuery?.query?.schema_fingerprint)
-      .not.toBe(originalQuery?.query?.schema_fingerprint);
-    expect(
-      normalizeCompositionFormSeedSql(repairedQuery?.query?.sql ?? ""),
-    ).toBe(evolvedSql);
-    expect(repairedQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "Notes" }),
-    );
-    const repairedTable = repairedDocument.spec?.components?.find(
-      (component) =>
-        component.kind === "table" &&
-        component.variable === variableId,
-    );
-    expect(repairedTable?.presentation?.columns).toEqual([
-      { column: "Title", label: "Title" },
-    ]);
-
+    await page.goto(getFrontendUrl(oldRuntimePath), {
+      waitUntil: "domcontentloaded",
+    });
+    const oldAfterSchemaChange = await (await oldEvaluationAfterResponse)
+      .json() as { ok?: boolean; query_results?: Record<string, unknown> };
+    expect(oldAfterSchemaChange.ok).toBe(true);
+    expect(oldAfterSchemaChange.query_results).toHaveProperty(variableId);
     const newRuntimeTable = page.getByRole("table", { name: tableName });
-    await expect(newRuntimeTable).toBeVisible();
-    await expect(newRuntimeTable.locator("tbody")).toContainText(
-      "after schema change",
-    );
-    await expect(newRuntimeTable.locator("thead")).not.toContainText("Summary");
+    await expect(newRuntimeTable.locator("thead")).toContainText("Title");
+    await expect(newRuntimeTable.locator("thead")).toContainText("Summary");
     await expect(newRuntimeTable.locator("thead")).not.toContainText("Notes");
-    await expect(newRuntimeTable.locator("tbody")).not.toContainText(
-      "original summary",
-    );
-    await expect(newRuntimeTable.locator("tbody")).not.toContainText(
-      "current summary",
-    );
-    await expect(newRuntimeTable.locator("tbody")).not.toContainText(
+    await expect(newRuntimeTable.locator("tbody")).toContainText(
       "current Form descriptor",
     );
     const renderedTableHeaders = await newRuntimeTable.locator("thead")
       .innerText();
-    expect(renderedTableHeaders.trim()).toBe("Title");
-
+    expect(renderedTableHeaders.trim()).toBe("Title\nSummary");
     const originalRevisionAfterResponse = await request.get(
       originalRevisionPath,
     );
     expect(originalRevisionAfterResponse.ok()).toBe(true);
-    const originalRevisionAfter = await originalRevisionAfterResponse
-      .json() as SavedRevision;
+    const originalRevisionAfter =
+      (await originalRevisionAfterResponse.json()) as SavedRevision;
     expect(originalRevisionAfter).toEqual(originalRevision);
     const historyResponse = await request.get(
       getBackendUrl(
@@ -470,31 +350,9 @@ test("Composition keeps a saved query executable after an unused Form field is a
       total?: number;
       revisions?: Array<{ revision: { revision_id: string } }>;
     };
-    expect(history.total).toBe(2);
-    expect(
-      history.revisions?.map(({ revision }) =>
-        revision.revision_id
-      ),
-    )
-      .toContain(original.revisionId);
+    expect(history.total).toBe(1);
     expect(history.revisions?.map(({ revision }) => revision.revision_id))
-      .toContain(repaired.revisionId);
-
-    const oldEvaluationAfterResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-      response.request().method() === "POST"
-    );
-    await page.goto(getFrontendUrl(oldRuntimePath), {
-      waitUntil: "domcontentloaded",
-    });
-    const oldAfterRepair = await (await oldEvaluationAfterResponse)
-      .json() as {
-        ok?: boolean;
-        query_results?: Record<string, unknown>;
-      };
-    expect(oldAfterRepair.ok).toBe(true);
-    expect(oldAfterRepair.query_results).toHaveProperty(variableId);
-    await expect(page.getByRole("table", { name: tableName })).toBeVisible();
+      .toEqual([original.revisionId]);
 
     const buildInfoResponse = await request.get(
       getFrontendUrl("/build-info.json"),
@@ -510,21 +368,17 @@ test("Composition keeps a saved query executable after an unused Form field is a
         formVersion: formEvolution.headers()["x-ugoite-form-version"],
         compositionId: original.compositionId,
         originalRevisionId: original.revisionId,
-        repairedRevisionId: repaired.revisionId,
+        unusedFieldDoesNotRequireRepair: true,
         originalRevisionUnchanged: true,
-        oldRevisionResultCount:
-          Object.keys(oldAfterRepair.query_results ?? {}).length,
-        repairedSchemaFingerprint: repairedQuery!.query!.schema_fingerprint,
         originalSchemaFingerprint: originalQuery!.query!.schema_fingerprint,
         currentSchemaFingerprint: currentSchemaQuery!.schema_fingerprint,
-        projectedColumns: repairedQuery!.returns!.columns!.map((column) =>
+        projectedColumns: currentSchemaQuery!.returns!.columns!.map((column) =>
           column.name
         ),
-        repairedEvaluationColumns: repairedRows!.columns!.map((column) =>
-          column.name
-        ),
-        repairedEvaluationIncludesNewField: JSON.stringify(repairedRows?.rows)
-          .includes("current Form descriptor"),
+        oldRevisionResultCount: Object.keys(
+          oldAfterSchemaChange.query_results ?? {},
+        ).length,
+        unusedFieldHiddenFromResult: !renderedTableHeaders.includes("Notes"),
         renderedTableHeaders,
       }),
     );

@@ -89,26 +89,11 @@ describe("Composition explicit query count", () => {
     expect(request).not.toHaveProperty("limit");
   });
 
-  it("keeps an exact Saved SQL revision instead of using the moving head or copied SQL", () => {
+  it("requires the resolver's portable SQL for a Table count", () => {
     const { draft, response } = fixture();
-    const node = draft.variables[2];
-    if (node.kind !== "query") throw new Error("query fixture");
-    node.query = {
-      kind: "saved_sql",
-      entry_id: "saved",
-      revision_id: "pinned",
-      label_source: "source",
-      arguments: node.query.arguments,
-    };
     delete response.queries[0].portable_sql;
-    expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
-      {
-        sql: "",
-        saved_sql: { id: "saved", revision_id: "pinned" },
-        parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
-        parameter_types: { text: "string", minimum: "integer" },
-      },
-    );
+    expect(() => compositionQueryCountRequest(draft, response, "rows"))
+      .toThrow("A current validated table query is required");
   });
 
   it("preserves a valid zero-valued scalar argument for explicit Count", () => {

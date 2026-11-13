@@ -18,11 +18,6 @@ import {
 } from "./lib/composition-graph.ts";
 import { parse as parseYaml } from "yaml";
 
-type SavedSqlRevision = {
-  entryId: string;
-  revisionId: string;
-};
-
 type SeedState = {
   spaceId: string;
   compositionId: string;
@@ -32,9 +27,8 @@ type SeedState = {
 
 type ScalarQueryDefinition = {
   id: string;
-  savedSql: SavedSqlRevision;
-  column: string;
-  scalarType: "integer" | "float";
+  sql: string;
+  scalarType: "integer" | "float" | "decimal";
   nullable: boolean;
 };
 
@@ -44,27 +38,6 @@ function sqlIdentifier(value: string): string {
 
 async function createSpace(request: APIRequestContext): Promise<string> {
   return await getDefaultSpaceId(request);
-}
-
-async function createSavedSql(
-  request: APIRequestContext,
-  spaceId: string,
-  name: string,
-  sql: string,
-  variables: Array<{ name: string; type: string; description: string }> = [],
-): Promise<SavedSqlRevision> {
-  const response = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    { data: { name, kind: "user-query", sql, variables } },
-  );
-  expect([200, 201]).toContain(response.status());
-  const savedSql = await response.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-  return { entryId: savedSql.id!, revisionId: savedSql.revision_id! };
 }
 
 function compositionGraph(
@@ -82,11 +55,8 @@ function compositionGraph(
       },
     },
     query: {
-      kind: "saved_sql",
-      entry_id: query.savedSql.entryId,
-      revision_id: query.savedSql.revisionId,
-      label_source: "variable",
-      column: query.column,
+      kind: "inline_sql",
+      sql: query.sql,
       arguments: [],
       form_bindings: [],
       schema_fingerprint: "",
@@ -97,8 +67,9 @@ function compositionGraph(
     variables: queries.map(queryVariable),
     components: queries.map((query) => ({
       id: query.id,
-      kind: "metric",
-      variable: query.id,
+      kind: "text",
+      content: `{{${query.id}}}`,
+      style: "body",
     })),
     rows: [
       {
@@ -164,67 +135,40 @@ async function seedScalarStateComposition(
 
   const amount = sqlIdentifier(amountColumn!);
   const table = sqlIdentifier(relation!);
-  const aggregateSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar aggregate ${suffix}`,
-    `SELECT COUNT(*) AS row_count, COUNT(${amount}) AS amount_count, ` +
-      `SUM(${amount}) AS amount_sum, AVG(${amount}) AS amount_average ` +
-      `FROM ${table}`,
-  );
-  const nullSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar null ${suffix}`,
-    `SELECT SUM(${amount}) AS value FROM ${table} WHERE ${amount} < 0`,
-  );
-  const zeroSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar zero ${suffix}`,
-    `SELECT COUNT(*) AS value FROM ${table} WHERE ${amount} < 0`,
-  );
-
   const queries: ScalarQueryDefinition[] = [
     {
       id: "all_rows",
-      savedSql: aggregateSql,
-      column: "row_count",
+      sql: `SELECT COUNT(*) AS value FROM ${table}`,
       scalarType: "integer",
       nullable: false,
     },
     {
       id: "rows_with_amount",
-      savedSql: aggregateSql,
-      column: "amount_count",
+      sql: `SELECT COUNT(${amount}) AS value FROM ${table}`,
       scalarType: "integer",
       nullable: false,
     },
     {
       id: "amount_total",
-      savedSql: aggregateSql,
-      column: "amount_sum",
+      sql: `SELECT SUM(${amount}) AS value FROM ${table}`,
       scalarType: "float",
       nullable: true,
     },
     {
       id: "amount_average",
-      savedSql: aggregateSql,
-      column: "amount_average",
+      sql: `SELECT AVG(${amount}) AS value FROM ${table}`,
       scalarType: "float",
       nullable: true,
     },
     {
       id: "null_result",
-      savedSql: nullSql,
-      column: "value",
+      sql: `SELECT SUM(${amount}) AS value FROM ${table} WHERE ${amount} < 0`,
       scalarType: "float",
       nullable: true,
     },
     {
       id: "zero_result",
-      savedSql: zeroSql,
-      column: "value",
+      sql: `SELECT COUNT(*) AS value FROM ${table} WHERE ${amount} < 0`,
       scalarType: "integer",
       nullable: false,
     },
@@ -241,28 +185,8 @@ async function seedScalarStateComposition(
     compositionName,
   );
 
-  const zeroRowsSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar empty rows ${suffix}`,
-    `SELECT ${amount} AS value FROM ${table} WHERE ${amount} = $minimum`,
-    [{
-      name: "minimum",
-      type: "integer",
-      description: "Amount that must match the scalar result.",
-    }],
-  );
-  const multipleRowsSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar multiple rows ${suffix}`,
-    `SELECT ${amount} AS value FROM ${table} WHERE ${amount} <= $maximum`,
-    [{
-      name: "maximum",
-      type: "integer",
-      description: "Maximum amount included in the scalar result.",
-    }],
-  );
+  const zeroRowsSql = `SELECT ${amount} AS value FROM ${table} WHERE ${amount} = $minimum`;
+  const multipleRowsSql = `SELECT ${amount} AS value FROM ${table} WHERE ${amount} <= $maximum`;
   const zeroRowsYaml = await completeCompositionGraphYaml(request, spaceId, {
     name: `Empty scalar after Input ${suffix}`,
     variables: [
@@ -281,11 +205,8 @@ async function seedScalarStateComposition(
           value_type: { scalar_type: "float", nullable: true },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: zeroRowsSql.entryId,
-          revision_id: zeroRowsSql.revisionId,
-          label_source: "variable",
-          column: "value",
+          kind: "inline_sql",
+          sql: zeroRowsSql,
           arguments: [{ name: "minimum", variable: "minimum" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -306,11 +227,8 @@ async function seedScalarStateComposition(
           value_type: { scalar_type: "float", nullable: true },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: multipleRowsSql.entryId,
-          revision_id: multipleRowsSql.revisionId,
-          label_source: "variable",
-          column: "value",
+          kind: "inline_sql",
+          sql: multipleRowsSql,
           arguments: [{ name: "maximum", variable: "maximum" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -320,8 +238,8 @@ async function seedScalarStateComposition(
     components: [
       { id: "minimum_input", kind: "input", variable: "minimum" },
       { id: "maximum_input", kind: "input", variable: "maximum" },
-      { id: "zero_rows", kind: "metric", variable: "zero_rows" },
-      { id: "multiple_rows", kind: "metric", variable: "multiple_rows" },
+      { id: "zero_rows", kind: "text", content: "{{zero_rows}}", style: "body" },
+      { id: "multiple_rows", kind: "text", content: "{{multiple_rows}}", style: "body" },
     ],
     rows: [
       {
@@ -401,18 +319,8 @@ async function seedScalarCastFailureComposition(
   const amount = sqlIdentifier(amountColumn!);
   const numericText = sqlIdentifier(numericTextColumn!);
   const table = sqlIdentifier(relation!);
-  const castFailureSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar cast failure ${suffix}`,
-    `SELECT CAST(${numericText} AS BIGINT) AS value ` +
-      `FROM ${table} WHERE ${amount} = $maximum`,
-    [{
-      name: "maximum",
-      type: "integer",
-      description: "Amount whose text value is cast to an integer.",
-    }],
-  );
+  const castFailureSql = `SELECT CAST(${numericText} AS BIGINT) AS value ` +
+    `FROM ${table} WHERE ${amount} = $maximum`;
   const yaml = await completeCompositionGraphYaml(request, spaceId, {
     name: compositionName,
     variables: [
@@ -431,11 +339,8 @@ async function seedScalarCastFailureComposition(
           value_type: { scalar_type: "integer", nullable: false },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: castFailureSql.entryId,
-          revision_id: castFailureSql.revisionId,
-          label_source: "variable",
-          column: "value",
+          kind: "inline_sql",
+          sql: castFailureSql,
           arguments: [{ name: "maximum", variable: "maximum" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -444,7 +349,7 @@ async function seedScalarCastFailureComposition(
     ],
     components: [
       { id: "maximum_input", kind: "input", variable: "maximum" },
-      { id: "cast_failure", kind: "metric", variable: "cast_failure" },
+      { id: "cast_failure", kind: "text", content: "{{cast_failure}}", style: "body" },
     ],
     rows: [{
       id: "values",
@@ -503,23 +408,23 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricSection(page: Page, variableId: string) {
-  return page.getByRole("region", { name: variableId, exact: true });
-}
-
-function metricOutput(page: Page, variableId: string) {
-  return metricSection(page, variableId).locator("strong");
+function textOutput(page: Page, componentId: string) {
+  return page.locator(
+    `[data-component-id="${componentId}"] .compositionGraphText`,
+  );
 }
 
 const scalarResultTimeoutMs = 30_000;
 
-test("Composition preserves signed 64-bit SQL results in Table and Metric after reopening", async ({ page, request }) => {
+test("Composition preserves exact integer and decimal SQL results in Table and Text after reopening", async ({ page, request }) => {
   test.setTimeout(120_000);
   await waitForServers(request);
   const spaceId = await createSpace(request);
   const name = `Exact integer ${crypto.randomUUID().slice(0, 8)}`;
   const sql = "SELECT CAST('9223372036854775807' AS BIGINT) AS maximum, " +
-    "CAST('-9223372036854775808' AS BIGINT) AS minimum";
+    "CAST('-9223372036854775808' AS BIGINT) AS minimum, " +
+    "CAST('12345678901234567890.0000000000000001' AS DECIMAL(38, 16)) " +
+    "AS exact_decimal";
   const inline = {
     kind: "inline_sql",
     sql,
@@ -560,15 +465,28 @@ test("Composition preserves signed 64-bit SQL results in Table and Metric after 
           sql: "SELECT CAST('-9223372036854775808' AS BIGINT) AS minimum",
         },
       },
+      {
+        id: "exact_decimal",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "decimal", nullable: false },
+        },
+        query: {
+          ...inline,
+          sql: "SELECT CAST('12345678901234567890.0000000000000001' AS DECIMAL(38, 16)) AS exact_decimal",
+        },
+      },
     ],
     components: [
       { id: "table", kind: "table", variable: "bounds" },
-      { id: "max_metric", kind: "metric", variable: "maximum" },
-      { id: "min_metric", kind: "metric", variable: "minimum" },
+      { id: "maximum_text", kind: "text", content: "{{maximum}}", style: "body" },
+      { id: "minimum_text", kind: "text", content: "{{minimum}}", style: "body" },
+      { id: "decimal_text", kind: "text", content: "{{exact_decimal}}", style: "body" },
     ],
     rows: [{
       id: "values",
-      items: ["table", "max_metric", "min_metric"].map((component) => ({
+      items: ["table", "maximum_text", "minimum_text", "decimal_text"].map((component) => ({
         kind: "component" as const,
         component,
       })),
@@ -577,19 +495,23 @@ test("Composition preserves signed 64-bit SQL results in Table and Metric after 
   const seed = await saveCompositionSeed(request, spaceId, yaml, name);
   await openSavedComposition(page, seed);
   for (let visit = 0; visit < 2; visit++) {
-    const table = page.getByRole("table", { name: "bounds results" });
+    const table = page.getByRole("table", { name: "bounds" });
     await expect(table).toContainText("9223372036854775807", {
       timeout: scalarResultTimeoutMs,
     });
     await expect(table).toContainText("-9223372036854775808", {
       timeout: scalarResultTimeoutMs,
     });
-    await expect(metricOutput(page, "maximum")).toHaveText(
+    await expect(textOutput(page, "maximum_text")).toHaveText(
       "9223372036854775807",
       { timeout: scalarResultTimeoutMs },
     );
-    await expect(metricOutput(page, "minimum")).toHaveText(
+    await expect(textOutput(page, "minimum_text")).toHaveText(
       "-9223372036854775808",
+      { timeout: scalarResultTimeoutMs },
+    );
+    await expect(textOutput(page, "decimal_text")).toHaveText(
+      "12345678901234567890.0000000000000001",
       { timeout: scalarResultTimeoutMs },
     );
     if (visit === 0) await page.reload({ waitUntil: "domcontentloaded" });
@@ -637,29 +559,14 @@ test.describe("Composition scalar state journey", () => {
     };
   });
 
-  test("changing one Metric reference preserves its shared query and sibling", async ({ browser, context, request }) => {
+  test("changing one Text reference preserves its shared query and sibling", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
     const spaceId = await createSpace(request);
     const suffix = crypto.randomUUID().slice(0, 8);
-    const compositionName = `Shared scalar metrics ${suffix}`;
-    const sharedSql = await createSavedSql(
-      request,
-      spaceId,
-      `Shared scalar ${suffix}`,
-      "SELECT CAST(10 AS BIGINT) AS value",
-    );
-    const alternativeSql = await createSavedSql(
-      request,
-      spaceId,
-      `Alternative scalar ${suffix}`,
-      "SELECT CAST(20 AS BIGINT) AS value",
-    );
-    const savedSqlQuery = (savedSql: SavedSqlRevision) => ({
-      kind: "saved_sql" as const,
-      entry_id: savedSql.entryId,
-      revision_id: savedSql.revisionId,
-      label_source: "variable" as const,
-      column: "value",
+    const compositionName = `Shared scalar text ${suffix}`;
+    const inlineQuery = (sql: string) => ({
+      kind: "inline_sql" as const,
+      sql,
       arguments: [],
       form_bindings: [],
       schema_fingerprint: "",
@@ -674,7 +581,7 @@ test.describe("Composition scalar state journey", () => {
             kind: "scalar",
             value_type: { scalar_type: "integer", nullable: false },
           },
-          query: savedSqlQuery(sharedSql),
+          query: inlineQuery("SELECT CAST(10 AS BIGINT) AS value"),
         },
         {
           id: "alternative_value",
@@ -683,16 +590,16 @@ test.describe("Composition scalar state journey", () => {
             kind: "scalar",
             value_type: { scalar_type: "integer", nullable: false },
           },
-          query: savedSqlQuery(alternativeSql),
+          query: inlineQuery("SELECT CAST(20 AS BIGINT) AS value"),
         },
       ],
       components: [
-        { id: "metric_one", kind: "metric", variable: "shared_value" },
-        { id: "metric_two", kind: "metric", variable: "shared_value" },
+        { id: "text_one", kind: "text", content: "{{shared_value}}", style: "body" },
+        { id: "text_two", kind: "text", content: "{{shared_value}}", style: "body" },
       ],
       rows: [{
-        id: "metrics",
-        items: ["metric_one", "metric_two"].map((component) => ({
+        id: "values",
+        items: ["text_one", "text_two"].map((component) => ({
           kind: "component" as const,
           component,
         })),
@@ -716,17 +623,17 @@ test.describe("Composition scalar state journey", () => {
     const initialSpec = parseYaml(String(initialRevision.fields["spec"])) as {
       spec?: {
         variables?: Array<{ id?: string }>;
-        components?: Array<{ id?: string; variable?: string }>;
+        components?: Array<{ id?: string; content?: string }>;
       };
     };
     expect((initialSpec.spec?.variables ?? []).map(({ id }) => id).sort())
       .toEqual(["alternative_value", "shared_value"]);
-    expect((initialSpec.spec?.components ?? []).map(({ id, variable }) => [
+    expect((initialSpec.spec?.components ?? []).map(({ id, content }) => [
       id,
-      variable,
+      content,
     ])).toEqual([
-      ["metric_one", "shared_value"],
-      ["metric_two", "shared_value"],
+      ["text_one", "{{shared_value}}"],
+      ["text_two", "{{shared_value}}"],
     ]);
 
     const ownerContext = await browser.newContext({
@@ -745,34 +652,19 @@ test.describe("Composition scalar state journey", () => {
         page.getByRole("group", { name: "Add to design", exact: true })
           .first(),
       ).toBeVisible({ timeout: 30_000 });
-      const firstMetric = page.locator(
-        '.compositionGraphDesignValue[data-component-id="metric_one"] button.compositionGraphSelect',
+      const firstText = page.locator(
+        '.compositionGraphDesignValue[data-component-id="text_one"] button.compositionGraphTextSelect',
       );
-      await expect(firstMetric).toHaveAttribute(
-        "aria-label",
-        "metric, shared_value",
+      await firstText.click();
+      const firstTextEditor = page.locator(
+        "#composition-text-editor-text_one",
       );
-      await firstMetric.click();
-      await page.getByRole("button", {
-        name: "Change variable, shared_value",
-        exact: true,
-      }).click();
-      const metricPicker = page.getByRole("dialog", { name: "Metric" });
-      await metricPicker.getByRole("tab", {
-        name: "Variables",
-        exact: true,
-      }).click();
-      await metricPicker.getByRole("button", {
-        name: "alternative_value",
-        exact: true,
-      }).click();
-      await expect(metricPicker).toHaveCount(0);
+      await expect(firstTextEditor).toHaveValue("{{shared_value}}");
+      await firstTextEditor.fill("{{alternative_value}}");
+      await expect(firstTextEditor).toHaveValue("{{alternative_value}}");
       await expect(page.locator(
-        '.compositionGraphDesignValue[data-component-id="metric_one"] button.compositionGraphSelect',
-      )).toHaveAttribute("aria-label", "metric, alternative_value");
-      await expect(page.locator(
-        '.compositionGraphDesignValue[data-component-id="metric_two"] button.compositionGraphSelect',
-      )).toHaveAttribute("aria-label", "metric, shared_value");
+        '#composition-text-editor-text_two',
+      )).toHaveValue("{{shared_value}}");
 
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
@@ -797,9 +689,9 @@ test.describe("Composition scalar state journey", () => {
         spec?: {
           variables?: Array<{
             id?: string;
-            query?: { entry_id?: string; revision_id?: string };
+            query?: { kind?: string; sql?: string };
           }>;
-          components?: Array<{ id?: string; variable?: string }>;
+          components?: Array<{ id?: string; content?: string }>;
         };
       };
       const variables = editedSpec.spec?.variables ?? [];
@@ -809,30 +701,30 @@ test.describe("Composition scalar state journey", () => {
       ]);
       expect(variables.find(({ id }) => id === "shared_value")?.query)
         .toMatchObject({
-          entry_id: sharedSql.entryId,
-          revision_id: sharedSql.revisionId,
+          kind: "inline_sql",
+          sql: "SELECT CAST(10 AS BIGINT) AS value",
         });
       expect(variables.find(({ id }) => id === "alternative_value")?.query)
         .toMatchObject({
-          entry_id: alternativeSql.entryId,
-          revision_id: alternativeSql.revisionId,
+          kind: "inline_sql",
+          sql: "SELECT CAST(20 AS BIGINT) AS value",
         });
-      expect((editedSpec.spec?.components ?? []).map(({ id, variable }) => [
+      expect((editedSpec.spec?.components ?? []).map(({ id, content }) => [
         id,
-        variable,
+        content,
       ])).toEqual([
-        ["metric_one", "alternative_value"],
-        ["metric_two", "shared_value"],
+        ["text_one", "{{alternative_value}}"],
+        ["text_two", "{{shared_value}}"],
       ]);
 
       await openSavedComposition(page, {
         ...initial,
         compositionRevisionId: editedRevisionId,
       });
-      await expect(metricOutput(page, "alternative_value")).toHaveText("20", {
+      await expect(textOutput(page, "text_one")).toHaveText("20", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "shared_value")).toHaveText("10", {
+      await expect(textOutput(page, "text_two")).toHaveText("10", {
         timeout: scalarResultTimeoutMs,
       });
     } finally {
@@ -848,16 +740,16 @@ test.describe("Composition scalar state journey", () => {
       seeds.aggregates,
     );
     try {
-      await expect(metricOutput(page, "all_rows")).toHaveText("3", {
+      await expect(textOutput(page, "all_rows")).toHaveText("3", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "rows_with_amount")).toHaveText("2", {
+      await expect(textOutput(page, "rows_with_amount")).toHaveText("2", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "amount_total")).toHaveText("30", {
+      await expect(textOutput(page, "amount_total")).toHaveText("30", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "amount_average")).toHaveText("15", {
+      await expect(textOutput(page, "amount_average")).toHaveText("15", {
         timeout: scalarResultTimeoutMs,
       });
     } finally {
@@ -873,14 +765,14 @@ test.describe("Composition scalar state journey", () => {
         await openOwnerPage(browser, context, seeds.aggregates, edit);
       let aggregateStates: { null: string | null; zero: string | null };
       try {
-        const nullOutput = metricOutput(aggregatePage, "null_result");
+        const nullOutput = textOutput(aggregatePage, "null_result");
         await expect(nullOutput).toHaveText(
           await aggregatePage.locator("html").getAttribute("lang").then((
             locale,
           ) => locale === "ja" ? "データなし" : "No data"),
           { timeout: scalarResultTimeoutMs },
         );
-        const zeroOutput = metricOutput(aggregatePage, "zero_result");
+        const zeroOutput = textOutput(aggregatePage, "zero_result");
         await expect(zeroOutput).toHaveText("0", {
           timeout: scalarResultTimeoutMs,
         });
@@ -907,7 +799,7 @@ test.describe("Composition scalar state journey", () => {
           exact: true,
         });
         await expect(minimumInput).toHaveValue("10");
-        const zeroRowsOutput = metricOutput(page, "zero_rows");
+        const zeroRowsOutput = textOutput(page, "zero_rows");
         await expect(zeroRowsOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
         });
@@ -920,20 +812,17 @@ test.describe("Composition scalar state journey", () => {
         await expect(zeroRowsAlert).toContainText(
           await page.locator("html").getAttribute("lang").then((locale) =>
             locale === "ja"
-              ? "指標の結果がありません。"
-              : "The metric returned no rows."
+              ? "クエリが値を返しませんでした。"
+              : "The query returned no value."
           ),
           { timeout: scalarResultTimeoutMs },
         );
         const zeroRowsMessage = await zeroRowsAlert.textContent();
-        const zeroRowsMetric = page.getByRole("region", {
-          name: "zero_rows",
-          exact: true,
-        });
-        await expect(zeroRowsMetric).toHaveCount(0, {
+        const zeroRowsText = textOutput(page, "zero_rows");
+        await expect(zeroRowsText).toBeVisible({
           timeout: scalarResultTimeoutMs,
         });
-        const zeroRowsMetricCount = await zeroRowsMetric.count();
+        const zeroRowsTextCount = await zeroRowsText.count();
         await minimumInput.fill("10");
         await expect(zeroRowsOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
@@ -944,7 +833,7 @@ test.describe("Composition scalar state journey", () => {
           exact: true,
         });
         await expect(maximumInput).toHaveValue("10");
-        const multipleRowsOutput = metricOutput(page, "multiple_rows");
+        const multipleRowsOutput = textOutput(page, "multiple_rows");
         await expect(multipleRowsOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
         });
@@ -983,20 +872,17 @@ test.describe("Composition scalar state journey", () => {
         await expect(multipleRowsAlert).toContainText(
           await page.locator("html").getAttribute("lang").then((locale) =>
             locale === "ja"
-              ? "指標の結果が複数行です。"
-              : "The metric returned more than one row."
+              ? "クエリが複数の値を返しました。"
+              : "The query returned more than one value."
           ),
           { timeout: scalarResultTimeoutMs },
         );
         const multipleRowsMessage = await multipleRowsAlert.textContent();
-        const multipleRowsMetric = page.getByRole("region", {
-          name: "multiple_rows",
-          exact: true,
-        });
-        await expect(multipleRowsMetric).toHaveCount(0, {
+        const multipleRowsText = textOutput(page, "multiple_rows");
+        await expect(multipleRowsText).toBeVisible({
           timeout: scalarResultTimeoutMs,
         });
-        const multipleRowsMetricCount = await multipleRowsMetric.count();
+        const multipleRowsTextCount = await multipleRowsText.count();
         await maximumInput.fill("10");
         await expect(multipleRowsOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
@@ -1006,14 +892,14 @@ test.describe("Composition scalar state journey", () => {
           zeroRows: {
             initial: "10",
             emptyMessage: zeroRowsMessage,
-            metricCountAfterEmpty: zeroRowsMetricCount,
+            textCountAfterEmpty: zeroRowsTextCount,
           },
           multipleRows: {
             initial: "10",
             diagnostic: multipleRowsDiagnostic.result_diagnostic
               .result_diagnostic.code,
             message: multipleRowsMessage,
-            metricCountAfterFailure: multipleRowsMetricCount,
+            textCountAfterFailure: multipleRowsTextCount,
           },
         });
       } finally {
@@ -1037,7 +923,7 @@ test.describe("Composition scalar state journey", () => {
           name: "maximum",
           exact: true,
         });
-        const castOutput = metricOutput(page, "cast_failure");
+        const castOutput = textOutput(page, "cast_failure");
         await expect(maximumInput).toHaveValue("10");
         await expect(castOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
@@ -1066,7 +952,7 @@ test.describe("Composition scalar state journey", () => {
           .join(" ");
         expect(alertText).not.toContain("This source is unavailable");
         expect(alertText).not.toContain("データソースを利用できない");
-        await expect(castOutput).toHaveCount(0, {
+        await expect(castOutput.getByRole("alert")).toBeVisible({
           timeout: scalarResultTimeoutMs,
         });
 

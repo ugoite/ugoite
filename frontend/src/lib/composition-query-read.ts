@@ -19,14 +19,8 @@ export function compositionQueryCountRequest(
   ) {
     throw new Error("A current validated table query is required");
   }
-  const sql = node.query.kind === "saved_sql" ? "" : descriptor.portable_sql;
-  if (sql === undefined) {
-    throw new Error("A current validated table query is required");
-  }
-  if (
-    node.query.kind === "saved_sql" &&
-    (!node.query.entry_id.trim() || !node.query.revision_id.trim())
-  ) {
+  const sql = descriptor.portable_sql;
+  if (node.query.kind !== "inline_sql" || sql === undefined) {
     throw new Error("A current validated table query is required");
   }
   const parameters: Record<string, unknown> = Object.create(null);
@@ -67,17 +61,9 @@ export function compositionQueryCountRequest(
     parameter_types[argument.name] = valueType.scalar_type;
   }
   return {
-    // Exact Saved SQL is resolved again by the server. Inline queries use
-    // the resolver's stable Form IDs, never current-name rebinding.
+    // Inline queries use the resolver's stable Form IDs, never
+    // current-name rebinding.
     sql,
-    ...(node.query.kind === "saved_sql"
-      ? {
-        saved_sql: {
-          id: node.query.entry_id,
-          revision_id: node.query.revision_id,
-        },
-      }
-      : {}),
     composition_count_snapshot: evaluation.query_results[variableId]!
       .count_snapshot,
     parameters,

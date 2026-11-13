@@ -326,6 +326,10 @@ export type CompositionDocumentCanonicalization = {
   fingerprint: string;
 };
 
+export type CompositionTextTemplateSegment =
+  | { kind: "literal"; text: string }
+  | { kind: "variable"; variable: string };
+
 export type VariableGraphScalarType =
   | "string"
   | "boolean"
@@ -1619,6 +1623,15 @@ export const canonicalizeCompositionDocument = async (
   await invokeProtocol<CompositionDocumentCanonicalization>({
     action: "domain.canonicalize_composition_document",
     value: { document },
+  });
+
+/** Parse a Text template with the shared Rust domain contract. */
+export const parseCompositionTextTemplate = async (
+  template: string,
+): Promise<{ segments: CompositionTextTemplateSegment[] }> =>
+  await invokeProtocol({
+    action: "domain.parse_composition_text_template",
+    value: { template },
   });
 
 /** Parse raw variable text using the shared Rust variable-graph contract. */

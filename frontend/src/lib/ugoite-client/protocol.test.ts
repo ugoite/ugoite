@@ -12,6 +12,7 @@ import {
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseSqlDocument,
+  parseCompositionTextTemplate,
   parseVariableGraphInput,
   parseVariableGraphInputSync,
   prepareApiRequest,
@@ -136,6 +137,18 @@ const prereleaseSourceShapedCompositionDocument = {
 
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("parses Text templates and escaped literal markers in Rust", async () => {
+    await expect(
+      parseCompositionTextTemplate("A {{total}} ! \\{{literal}}"),
+    ).resolves.toEqual({
+      segments: [
+        { kind: "literal", text: "A " },
+        { kind: "variable", variable: "total" },
+        { kind: "literal", text: " ! {{literal}}" },
+      ],
+    });
+  });
 
   it("requires preparation before synchronously parsing a graph Input", async () => {
     vi.resetModules();
