@@ -505,9 +505,16 @@ test.describe("Composition Table and Text pagination", () => {
         countRequests.push(outgoing.postDataJSON() as Record<string, unknown>);
       }
     });
-    const firstPageResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-    );
+    const firstPageResponse = page.waitForResponse((response) => {
+      if (
+        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+      ) return false;
+      const body = response.request().postDataJSON() as {
+        requested_queries?: string[];
+        page?: unknown;
+      };
+      return !body.page && body.requested_queries?.includes("paged_rows");
+    });
     await studioRun.click();
     const firstEvaluation = await (await firstPageResponse).json() as {
       query_results?: Record<string, {
@@ -534,9 +541,15 @@ test.describe("Composition Table and Text pagination", () => {
       requested_queries: ["paged_rows", "matching_count_value"],
     });
 
-    const nextPageResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-    );
+    const nextPageResponse = page.waitForResponse((response) => {
+      if (
+        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+      ) return false;
+      const body = response.request().postDataJSON() as {
+        page?: { variable_id?: string };
+      };
+      return body.page?.variable_id === "paged_rows";
+    });
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await uiExpect(studioTable.locator("tbody tr")).toHaveCount(2);
     const nextEvaluation = await (await nextPageResponse).json() as {
