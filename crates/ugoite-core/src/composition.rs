@@ -827,7 +827,11 @@ fn resolve_parts(
                 // or forged values, and replace it with planner output.
                 if !options.allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
-                        || query.schema_fingerprint != metadata.schema_fingerprint)
+                        || !query_schema_fingerprint_matches(
+                            &query.schema_fingerprint,
+                            &metadata.result_columns,
+                            &metadata.schema_fingerprint,
+                        ))
                 {
                     diagnostics.push(CompositionDiagnostic::for_variable(
                         CompositionDiagnosticCode::QuerySchemaChanged,
@@ -915,7 +919,11 @@ fn resolve_parts(
                 // client descriptors never establish a result contract.
                 if !options.allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
-                        || query.schema_fingerprint != metadata.schema_fingerprint)
+                        || !query_schema_fingerprint_matches(
+                            &query.schema_fingerprint,
+                            &metadata.result_columns,
+                            &metadata.schema_fingerprint,
+                        ))
                 {
                     diagnostics.push(CompositionDiagnostic::for_variable(
                         CompositionDiagnosticCode::QuerySchemaChanged,
@@ -1313,6 +1321,19 @@ fn query_semantic_fingerprint(
     Ok(hex::encode(Sha256::digest(descriptor)))
 }
 
+fn query_schema_fingerprint_matches(
+    saved: &str,
+    result_columns: &[VariableGraphColumn],
+    current: &str,
+) -> bool {
+    saved == current
+        || serde_json::to_vec(result_columns)
+            .ok()
+            .map(|canonical| hex::encode(Sha256::digest(canonical)))
+            .as_deref()
+            == Some(saved)
+}
+
 fn schema_is_well_formed(columns: &[VariableGraphColumn], fingerprint: &str) -> bool {
     !columns.is_empty()
         && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
@@ -1382,6 +1403,34 @@ mod tests {
         .expect("table semantic fingerprint");
 
         assert_ne!(scalar_fingerprint, table_fingerprint);
+    }
+
+    #[test]
+    fn old_output_only_schema_fingerprints_remain_valid_when_form_sources_are_pinned() {
+        let columns = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
+        }];
+        let legacy = hex::encode(Sha256::digest(
+            serde_json::to_vec(&columns).expect("legacy column schema serializes"),
+        ));
+        let current = hex::encode(Sha256::digest(
+            serde_json::to_vec(&(columns.clone(), vec![(Uuid::nil(), 1, Vec::<u8>::new())]))
+                .expect("current source schema serializes"),
+        ));
+
+        assert_ne!(legacy, current);
+        assert!(query_schema_fingerprint_matches(
+            &legacy, &columns, &current
+        ));
+        assert!(!query_schema_fingerprint_matches(
+            "f".repeat(64).as_str(),
+            &columns,
+            &current
+        ));
     }
 
     #[test]

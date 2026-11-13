@@ -699,7 +699,7 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             sql_column_name(FieldId::new(100)?)
         ),
     };
-    let original_schema_fingerprint = service
+    let original_preview = service
         .preview_composition_local(
             &space_id,
             &canonicalize_composition(&document)
@@ -708,12 +708,13 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             &BTreeMap::new(),
             &[],
         )
-        .await?
+        .await?;
+    let original_query = &original_preview
         .plan
         .context("original schema preview")?
-        .queries[0]
-        .schema_fingerprint
-        .clone();
+        .queries[0];
+    let original_schema_fingerprint = original_query.schema_fingerprint.clone();
+    let original_result_columns = original_query.result_columns.clone();
     let saved = save_local_composition(&service, &space_id, document.clone()).await?;
 
     // Adding an unselected field leaves the SQL result projection unchanged,
@@ -772,10 +773,39 @@ async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
             && diagnostic.code == CompositionDiagnosticCode::QuerySchemaChanged
     }));
 
-    // Authoring preview resolves the current schema so the graph can be
-    // repaired. Saving that server-derived descriptor creates a new
-    // Composition revision that runtime can evaluate without exposing the old
-    // result under the changed schema.
+    let evolved_preview = service
+        .preview_composition_local(
+            &space_id,
+            &canonicalize_composition(&document)
+                .map_err(|code| anyhow::anyhow!(code.as_str()))?
+                .yaml,
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    let evolved_query = &evolved_preview
+        .plan
+        .as_ref()
+        .context("evolved Form schema preview")?
+        .queries[0];
+    assert_eq!(evolved_query.result_columns, original_result_columns);
+    assert_ne!(
+        evolved_query.schema_fingerprint,
+        original_schema_fingerprint
+    );
+
+    // The old query still selects only `title`. Update the draft explicitly to
+    // include the new field before previewing and saving the repaired revision.
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should use an inline SQL query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!(
+            "SELECT \"{}\" AS title, \"{}\" FROM \"Composition-Preview\"",
+            sql_column_name(FieldId::new(100)?),
+            sql_column_name(FieldId::new(101)?)
+        ),
+    };
     let draft_preview = service
         .preview_composition_local(
             &space_id,
