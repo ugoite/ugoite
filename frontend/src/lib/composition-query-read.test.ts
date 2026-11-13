@@ -43,6 +43,7 @@ function fixture(): {
           name: "minimum",
           variable: "floor",
         }],
+        form_bindings: [{ relation: "Original name", form_id: "form-immutable" }],
       },
     },
   ];
@@ -55,6 +56,7 @@ function fixture(): {
       variable_id: "rows",
       portable_sql:
         "SELECT * FROM form_immutable WHERE field_100 = $text AND field_101 > $minimum",
+      form_bindings: [{ relation: "Original name", form_id: "form-immutable" }],
       returns: { kind: "table", columns: [] },
     }],
     query_results: {
@@ -78,22 +80,40 @@ describe("Composition explicit query count", () => {
   it("uses Rust's immutable Form SQL and validated scalar dependencies without interpolation", () => {
     const { draft, response } = fixture();
     const request = compositionQueryCountRequest(draft, response, "rows");
+    const rows = draft.variables.find((entry) => entry.id === "rows");
+    if (rows?.kind !== "query") throw new Error("query fixture");
     expect(request).toEqual({
-      sql: response.queries[0].portable_sql,
+      sql: rows.query.sql,
       parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
       parameter_types: { text: "string", minimum: "integer" },
+      form_binding_guards: [{ name: "Original name", form_id: "form-immutable" }],
       composition_count_snapshot: "v1.opaque-count-coordinate",
     });
-    expect(request.sql).not.toContain("Original name");
     expect(request.sql).not.toContain("DROP TABLE");
     expect(request).not.toHaveProperty("limit");
   });
 
-  it("requires the resolver's portable SQL for a Table count", () => {
+  it("requires a current resolved Table query for a count", () => {
     const { draft, response } = fixture();
-    delete response.queries[0].portable_sql;
+    response.queries = [];
     expect(() => compositionQueryCountRequest(draft, response, "rows"))
       .toThrow("A current validated table query is required");
+  });
+
+  it("keeps opaque Form relation SQL unchanged for its exact count snapshot", () => {
+    const { draft, response } = fixture();
+    const rows = draft.variables.find((entry) => entry.id === "rows");
+    if (rows?.kind !== "query") throw new Error("query fixture");
+    rows.query.sql = 'SELECT * FROM "form_0123456789abcdef0123456789abcdef"';
+    rows.query.form_bindings = [{
+      relation: "form_0123456789abcdef0123456789abcdef",
+      form_id: "form-immutable",
+    }];
+    response.queries[0].form_bindings = rows.query.form_bindings;
+
+    const request = compositionQueryCountRequest(draft, response, "rows");
+    expect(request.sql).toBe(rows.query.sql);
+    expect(request).not.toHaveProperty("form_binding_guards");
   });
 
   it("preserves a valid zero-valued scalar argument for explicit Count", () => {

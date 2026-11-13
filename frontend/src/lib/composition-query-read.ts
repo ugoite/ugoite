@@ -19,10 +19,17 @@ export function compositionQueryCountRequest(
   ) {
     throw new Error("A current validated table query is required");
   }
-  const sql = descriptor.portable_sql;
-  if (node.query.kind !== "inline_sql" || sql === undefined) {
+  if (node.query.kind !== "inline_sql") {
     throw new Error("A current validated table query is required");
   }
+  const sql = node.query.sql;
+  // Count the exact SQL that produced the signed Composition snapshot. Form
+  // name references use the resolver's identity binding; legacy opaque Form
+  // relations already carry their stable ID and must not gain a generated
+  // alias, which would change the snapshot's SQL fingerprint.
+  const form_binding_guards = (descriptor.form_bindings ?? [])
+    .filter(({ relation }) => !/^form_[0-9a-f]{32}$/i.test(relation))
+    .map(({ relation, form_id }) => ({ name: relation, form_id }));
   const parameters: Record<string, unknown> = Object.create(null);
   const parameter_types: Record<string, string> = Object.create(null);
   for (const argument of node.query.arguments) {
@@ -68,5 +75,6 @@ export function compositionQueryCountRequest(
       .count_snapshot,
     parameters,
     parameter_types,
+    ...(form_binding_guards.length ? { form_binding_guards } : {}),
   };
 }
