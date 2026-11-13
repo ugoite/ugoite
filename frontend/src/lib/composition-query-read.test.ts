@@ -77,7 +77,7 @@ function fixture(): {
 }
 
 describe("Composition explicit query count", () => {
-  it("uses Rust's immutable Form SQL and validated scalar dependencies without interpolation", () => {
+  it("uses the exact graph SQL and validated scalar dependencies without interpolation", () => {
     const { draft, response } = fixture();
     const request = compositionQueryCountRequest(draft, response, "rows");
     const rows = draft.variables.find((entry) => entry.id === "rows");
@@ -86,10 +86,11 @@ describe("Composition explicit query count", () => {
       sql: rows.query.sql,
       parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
       parameter_types: { text: "string", minimum: "integer" },
-      form_binding_guards: [{ name: "Original name", form_id: "form-immutable" }],
       composition_count_snapshot: "v1.opaque-count-coordinate",
     });
     expect(request.sql).not.toContain("DROP TABLE");
+    expect(request.sql).not.toBe(response.queries[0].portable_sql);
+    expect(request).not.toHaveProperty("form_binding_guards");
     expect(request).not.toHaveProperty("limit");
   });
 
