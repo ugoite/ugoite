@@ -6699,6 +6699,49 @@ mod tests {
     }
 
     #[test]
+    fn composition_text_template_action_matches_the_native_domain_parser() {
+        for template in [
+            "合計：{{total}} 円 / {{total}}",
+            r"literal \{{braces}} and {{名前 with spaces}}",
+        ] {
+            let native_segments =
+                ugoite_domain::composition::parse_composition_text_template(template)
+                    .expect("valid template");
+            let expected = serde_json::json!({
+                "ok": true,
+                "value": {"segments": native_segments},
+            });
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_text_template",
+                "value": {"template": template},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response, expected, "template: {template:?}");
+        }
+
+        for template in ["{{unclosed", "{{}}", "{{outer{{inner}}}}"] {
+            let native_error =
+                ugoite_domain::composition::parse_composition_text_template(template)
+                    .expect_err("malformed template");
+            let expected = serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "domain_validation",
+                    "code": native_error.as_str(),
+                },
+            });
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_text_template",
+                "value": {"template": template},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response, expected, "template: {template:?}");
+        }
+    }
+
+    #[test]
     fn variable_graph_input_protocol_matches_native_domain_contract() {
         use ugoite_domain::composition::{
             parse_variable_graph_input, VariableGraphInputValue, VariableGraphScalarDescriptor,
