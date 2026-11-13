@@ -1418,8 +1418,11 @@ mod tests {
             serde_json::to_vec(&columns).expect("legacy column schema serializes"),
         ));
         let current = hex::encode(Sha256::digest(
-            serde_json::to_vec(&(columns.clone(), vec![(Uuid::nil(), 1, Vec::<u8>::new())]))
-                .expect("current source schema serializes"),
+            serde_json::to_vec(&(
+                columns.clone(),
+                vec![(Uuid::nil(), false, Vec::<u8>::new())],
+            ))
+            .expect("current source schema serializes"),
         ));
 
         assert_ne!(legacy, current);

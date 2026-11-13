@@ -1709,7 +1709,7 @@ fn query_schema_fingerprint(
     // even if an added field does not change the query's output columns.
     let source_schemas = forms
         .iter()
-        .map(|form| (form.id, form.version, &form.fields))
+        .map(|form| (form.id, form.allow_extra_attributes, &form.fields))
         .collect::<Vec<_>>();
     let canonical = serde_json::to_vec(&(columns, source_schemas))?;
     Ok(hex::encode(Sha256::digest(canonical)))
