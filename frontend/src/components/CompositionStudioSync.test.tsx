@@ -1474,6 +1474,28 @@ describe("CompositionStudio graph surface", () => {
       'SELECT "field_zulu" AS "Zulu", "field_alpha" AS "Alpha" FROM "Ordered records" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
     );
     expect(generated.projection_aliases).toEqual(["Zulu", "Alpha"]);
+    const block = await screen.findByRole("button", {
+      name: "table, ordered_records_rows",
+    });
+    fireEvent.click(block);
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+      exact: true,
+    });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+      spec: {
+        components: Array<{ presentation?: unknown }>;
+      };
+    }).spec;
+    expect(savedSpec.components[0].presentation).toEqual({
+      columns: [
+        { column: "Zulu", label: "Zulu" },
+        { column: "Alpha", label: "Alpha" },
+      ],
+    });
   });
 
   it("does not seed a Form table when it has no projectable fields", async () => {
