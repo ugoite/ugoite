@@ -98,12 +98,6 @@ features:
                 anchor: REQ-FE-082#criterion.form-seed-projectable-columns
               - kind: documents
                 anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns
-              - kind: documents
-                anchor: REQ-FE-082#criterion.inline-template-parameters
-              - kind: documents
-                anchor: REQ-FE-082#criterion.form-seed-projectable-columns
-              - kind: documents
-                anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns
           - id: sql-first-composition-architecture-contract
             adapter: declared
             path: docs/architecture/contracts/composition.md
