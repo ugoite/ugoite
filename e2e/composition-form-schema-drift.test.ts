@@ -432,7 +432,7 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
         component.variable === variableId,
     );
     expect(repairedTable?.presentation?.columns).toEqual([
-      { column: "field_100", label: "Title" },
+      { column: "Title", label: "Title" },
     ]);
 
     const newRuntimeTable = page.getByRole("table", { name: tableName });
