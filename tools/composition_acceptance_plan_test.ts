@@ -112,7 +112,7 @@ Deno.test(
     assertEquals(
       plan.criteria.find(({ id }) => id === "A09")?.manual_evidence_gaps,
       [
-        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Ordinary Form schema drift is rejected earlier as `query_schema_changed`; reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. A09 and SQL S-02 remain partial.",
+        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Missing referenced Form fields fail planner validation, and changed result descriptors fail closed; source-field changes that leave a valid query and the same result descriptor are outside the fingerprint guarantee. Reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. A09 and SQL S-02 remain partial.",
       ],
     );
     for (const id of ["A02", "A04", "A08", "A10", "A11", "A12", "A13"]) {
