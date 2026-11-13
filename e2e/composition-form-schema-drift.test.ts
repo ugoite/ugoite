@@ -196,6 +196,17 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     expect([200, 201]).toContain(formEvolution.status());
     expect(formEvolution.headers()["x-ugoite-form-id"]).toBe(formId);
     expect(formEvolution.headers()["x-ugoite-form-version"]).toBe("2");
+    const formsAfterResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsAfterResponse.ok()).toBe(true);
+    const formsAfter = await formsAfterResponse.json() as FormSummary[];
+    const formAfter = formsAfter.find((form) => form.id === formId);
+    expect(formAfter?.fields?.Notes?.sql_column).toBeTruthy();
+    const evolvedSql = expectedCompositionFormSeedSql(
+      formName,
+      formAfter?.fields,
+    );
     const evolvedEntry = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
@@ -253,6 +264,10 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     await studioTabs.getByRole("tab", { name: "Variables", exact: true })
       .click();
     await page.getByRole("button", { name: variableId, exact: true }).click();
+    // Form seeds use explicit projections, so repairing against the evolved
+    // schema includes the new field in the authored SQL.
+    await page.getByRole("textbox", { name: "SQL", exact: true })
+      .fill(evolvedSql);
     const currentSchemaPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
       response.request().method() === "POST"
@@ -279,16 +294,16 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     expect(currentSchemaQuery?.schema_fingerprint)
       .not.toBe(originalQuery?.query?.schema_fingerprint);
     expect(currentSchemaQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "field_102" }),
+      expect.objectContaining({ name: "Notes" }),
     );
     expect(
       currentSchemaPreview.query_results?.[variableId]?.value?.columns?.map((
         column,
       ) => column.name),
     )
-      .toContain("field_102");
+      .toContain("Notes");
     const authoringPreview = page.getByRole("table").first();
-    await expect(authoringPreview).toContainText("field_102");
+    await expect(authoringPreview).toContainText("Notes");
     await expect(authoringPreview).toContainText("current Form descriptor");
     await studioTabs.getByRole("tab", { name: "Design", exact: true }).click();
     const repairedPreviewTable = page.getByRole("table", { name: tableName });
@@ -355,7 +370,7 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     const repairedRows = repairedEvaluation.query_results?.[variableId]?.value;
     expect(repairedRows?.kind).toBe("table");
     expect(repairedRows?.columns).toContainEqual(
-      expect.objectContaining({ name: "field_102" }),
+      expect.objectContaining({ name: "Notes" }),
     );
     expect(JSON.stringify(repairedRows?.rows)).toContain(
       "current Form descriptor",
@@ -367,7 +382,7 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
     expect(repairedRuntimeQuery?.schema_fingerprint)
       .toBe(currentSchemaQuery?.schema_fingerprint);
     expect(repairedRuntimeQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "field_102" }),
+      expect.objectContaining({ name: "Notes" }),
     );
 
     const repairedRevisionResponse = await request.get(
@@ -405,9 +420,11 @@ test("Composition fails closed after a Form schema evolves and saves a repaired 
       .toBe(currentSchemaQuery?.schema_fingerprint);
     expect(repairedQuery?.query?.schema_fingerprint)
       .not.toBe(originalQuery?.query?.schema_fingerprint);
-    expect(repairedQuery?.query?.sql).toBe(originalQuery?.query?.sql);
+    expect(
+      normalizeCompositionFormSeedSql(repairedQuery?.query?.sql ?? ""),
+    ).toBe(evolvedSql);
     expect(repairedQuery?.returns?.columns).toContainEqual(
-      expect.objectContaining({ name: "field_102" }),
+      expect.objectContaining({ name: "Notes" }),
     );
     const repairedTable = repairedDocument.spec?.components?.find(
       (component) =>
