@@ -28,7 +28,7 @@ unrelated EntryBrowser controls remain established user paths.
 
 `spec.variables` contains typed constants, inputs, and query variables. Query
 variables own inline SQL, explicit parameter-to-variable bindings, server
-derived Form identity guards and result descriptors, and an ordered schema
+resolved Form bindings and result descriptors, and an ordered result-schema
 fingerprint. Their result kind is either `table<Row>` or `scalar<T>`. Query
 parameter names do not bind implicitly to graph variable names. A Composition
 query cannot reference a Saved SQL Entry or revision.
@@ -77,6 +77,13 @@ schema. Query values, pages, and input values remain transient Work. Unsupported
 historical Composition documents are not silently migrated or executed; raw
 inspect, export, and history remain available. A historical revision with the
 replaced shape cannot be restored as an executable Composition.
+
+Stored inline SQL keeps its authored Form names and bindings. For each
+evaluation, the authorized resolver binds those references to stable Form
+relation IDs; page execution and the matching Count request use the same
+ID-bound SQL. Renaming a bound Form or creating a same-name replacement does
+not retarget the saved query. Current publication and ACL checks still decide
+whether that Form can be read.
 
 Published Saved SQL API/CLI behavior, the `SQL` system Form, Space/Entry/Form
 0.1 semantics, EntryBrowser/FormTable controls, CI lanes, and merge queue policy

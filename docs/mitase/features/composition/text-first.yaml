@@ -185,6 +185,12 @@ features:
             selector: { kind: symbol, name: decodeTypedIntegerResponse }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
+          - id: composition-studio-count
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
       - id: cli
         role: implementation
         facet: cli
@@ -318,6 +324,26 @@ features:
                 criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
                 covers: [FEAT-COMP-010#binding.service/target.authoring-query-resolution]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: saved_graph_ignores_unused_form_field_changes } }
+          - id: stable-form-identity-for-page-and-count
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
+                covers: [FEAT-COMP-010#binding.service/target.authorized-query-evaluation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement } }
+          - id: composition-count-page-snapshot
+            adapter: typescript
+            path: e2e/composition-table-metric-pagination.test.ts
+            selector: { kind: test, name: "Studio counts inline Table SQL separately from paged reads" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.current-query-authority-and-schema
+                covers:
+                  - FEAT-COMP-010#binding.service/target.authorized-query-evaluation
+                  - FEAT-COMP-010#binding.frontend/target.composition-studio-count
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts inline Table SQL separately from paged reads" } }
           - id: current-form-acl-recheck
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
@@ -555,6 +581,15 @@ features:
           - target: FEAT-COMP-010#binding.frontend/target.reader-renderer
             role: browser-reader
         guarantees: [REQ-COMP-010#criterion.exact-scalar-query-contract]
+      - id: composition-query-binding-and-count-contract
+        kind: custom
+        source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract
+        participants:
+          - target: FEAT-COMP-010#binding.service/target.authorized-query-evaluation
+            role: server-evaluation
+          - target: FEAT-COMP-010#binding.frontend/target.composition-studio-count
+            role: browser-count
+        guarantees: [REQ-COMP-010#criterion.current-query-authority-and-schema]
       - id: rust-text-template-contract
         kind: custom
         source: FEAT-COMP-010#binding.sql-first-composition-contract/target.sql-first-semantic-contract

@@ -83,23 +83,18 @@ function fixture(): {
 }
 
 describe("Composition explicit query count", () => {
-  it("uses the exact graph SQL and validated scalar dependencies without interpolation", () => {
+  it("uses the resolved ID-bound SQL and validated scalar dependencies without interpolation", () => {
     const { draft, response } = fixture();
     const request = compositionQueryCountRequest(draft, response, "rows");
     const rows = draft.variables.find((entry) => entry.id === "rows");
     if (rows?.kind !== "query") throw new Error("query fixture");
     expect(request).toEqual({
-      sql: rows.query.sql,
+      sql: response.queries[0].portable_sql,
       parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
       parameter_types: { text: "string", minimum: "integer" },
-      form_binding_guards: [{
-        name: "Original name",
-        form_id: "01234567-89ab-cdef-0123-456789abcdef",
-      }],
       composition_count_snapshot: "v1.opaque-count-coordinate",
     });
     expect(request.sql).not.toContain("DROP TABLE");
-    expect(request.sql).not.toBe(response.queries[0].portable_sql);
     expect(request).not.toHaveProperty("limit");
   });
 
@@ -120,13 +115,14 @@ describe("Composition explicit query count", () => {
       form_id: "01234567-89ab-cdef-0123-456789abcdef",
     }];
     response.queries[0].form_bindings = rows.query.form_bindings;
+    response.queries[0].portable_sql = rows.query.sql;
 
     const request = compositionQueryCountRequest(draft, response, "rows");
     expect(request.sql).toBe(rows.query.sql);
     expect(request).not.toHaveProperty("form_binding_guards");
   });
 
-  it("guards a legacy-shaped Form name using its resolved identity", () => {
+  it("uses the resolver's stable relation when a Form name resembles an ID", () => {
     const { draft, response } = fixture();
     const rows = draft.variables.find((entry) => entry.id === "rows");
     if (rows?.kind !== "query") throw new Error("query fixture");
@@ -134,12 +130,15 @@ describe("Composition explicit query count", () => {
     const formId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
     rows.query.sql = `SELECT * FROM "${relation}"`;
     response.queries[0].form_bindings = [{ relation, form_id: formId }];
+    response.queries[0].portable_sql =
+      'SELECT * FROM form_ffffffffffffffffffffffffffffffff AS "form_0123456789abcdef0123456789abcdef"';
 
     expect(compositionQueryCountRequest(draft, response, "rows"))
       .toMatchObject({
-        sql: rows.query.sql,
-        form_binding_guards: [{ name: relation, form_id: formId }],
+        sql: response.queries[0].portable_sql,
       });
+    expect(compositionQueryCountRequest(draft, response, "rows"))
+      .not.toHaveProperty("form_binding_guards");
   });
 
   it("preserves a valid zero-valued scalar argument for explicit Count", () => {

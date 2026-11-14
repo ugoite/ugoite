@@ -22,14 +22,9 @@ export function compositionQueryCountRequest(
   if (node.query.kind !== "inline_sql") {
     throw new Error("A current validated table query is required");
   }
-  const sql = node.query.sql;
-  const form_binding_guards = (descriptor.form_bindings ?? [])
-    .filter(({ relation, form_id }) =>
-      relation !== `form_${form_id.replaceAll("-", "").toLowerCase()}`
-    )
-    .map(({ relation, form_id }) => ({ name: relation, form_id }));
-  // Use the exact graph SQL from evaluation. The same resolved identity guards
-  // bind human Form names on both requests; opaque Form ID relations stay raw.
+  const sql = descriptor.portable_sql;
+  if (!sql) throw new Error("A current validated table query is required");
+  // The evaluated page and Count use the resolver's same immutable Form IDs.
   const parameters: Record<string, unknown> = Object.create(null);
   const parameter_types: Record<string, string> = Object.create(null);
   for (const argument of node.query.arguments) {
@@ -75,6 +70,5 @@ export function compositionQueryCountRequest(
       .count_snapshot,
     parameters,
     parameter_types,
-    ...(form_binding_guards.length ? { form_binding_guards } : {}),
   };
 }

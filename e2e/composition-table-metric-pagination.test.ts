@@ -107,9 +107,9 @@ async function seedComposition(
   } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
     sqlIdentifier(amountColumn!)
   } >= $minimum ORDER BY ${sqlIdentifier(amountColumn!)} ASC`;
-  const countSql = `SELECT COUNT(*) AS matching_count FROM ${sqlIdentifier(relation!)} WHERE ${
-    sqlIdentifier(amountColumn!)
-  } >= $minimum`;
+  const countSql = `SELECT COUNT(*) AS matching_count FROM ${
+    sqlIdentifier(relation!)
+  } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`;
 
   const graph: CompositionGraphSeed = {
     name: compositionName,
@@ -377,8 +377,7 @@ test.describe("Composition Table and Text pagination", () => {
     const initialDesignEvaluation = await (await designInitialResponse)
       .json() as EvaluationResponse;
     expect(initialDesignEvaluation.ok).toBe(true);
-    const initialDesignTable =
-      initialDesignEvaluation.query_results.paged_rows;
+    const initialDesignTable = initialDesignEvaluation.query_results.paged_rows;
     expect(initialDesignTable.value.kind).toBe("table");
     expect(initialDesignTable.value.rows).toHaveLength(100);
     expect(initialDesignTable.has_more).toBe(true);
@@ -514,6 +513,7 @@ test.describe("Composition Table and Text pagination", () => {
       requested_queries: ["paged_rows"],
     });
     const firstEvaluation = await firstResponse.json() as {
+      queries?: Array<{ variable_id: string; portable_sql?: string }>;
       query_results?: Record<string, {
         value?: { kind: string; rows?: unknown[][] };
         count_snapshot?: string;
@@ -522,6 +522,10 @@ test.describe("Composition Table and Text pagination", () => {
       }>;
     };
     const firstPage = firstEvaluation.query_results?.paged_rows;
+    const resolvedQuery = firstEvaluation.queries?.find((query) =>
+      query.variable_id === "paged_rows"
+    );
+    expect(resolvedQuery?.portable_sql).toBeTruthy();
     expect(firstPage?.value?.kind).toBe("table");
     expect(firstPage?.value?.rows).toHaveLength(100);
     expect(firstPage?.has_more).toBe(true);
@@ -582,10 +586,11 @@ test.describe("Composition Table and Text pagination", () => {
     await page.getByRole("button", { name: "Count rows", exact: true }).click();
     expect(await (await countResponse).json()).toMatchObject({ count: 102 });
     expect(countRequests.at(-1)).toMatchObject({
-      sql: sourceBefore,
+      sql: resolvedQuery?.portable_sql,
       parameters: { minimum: 0 },
       composition_count_snapshot: nextPage?.count_snapshot,
     });
+    expect(countRequests.at(-1)).not.toHaveProperty("form_binding_guards");
     expect(countRequests.at(-1)).not.toHaveProperty("saved_sql");
     expect(nextPage?.count_snapshot).toMatch(/^v1\./);
     expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);

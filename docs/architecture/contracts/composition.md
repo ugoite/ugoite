@@ -45,6 +45,10 @@ fingerprint covers its ordered result columns and types. A changed or missing
 result descriptor, missing referenced field, or revoked access fails closed;
 changes to unused Form fields do not invalidate an unchanged query result
 contract.
+Stored SQL retains its authored Form names and bindings. Evaluation and its
+Count request use the same resolver-produced SQL with stable Form relation IDs,
+so a rename or same-name replacement cannot retarget a saved query; current
+Publication and ACL checks still apply to that Form ID.
 
 ## Components and Text
 

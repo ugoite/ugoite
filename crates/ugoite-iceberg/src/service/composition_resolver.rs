@@ -138,36 +138,6 @@ impl OwnedCurrentQueryDescriptor {
     }
 }
 
-/// Preserve the resolver's immutable Form identities when a caller explicitly
-/// copies a query or requests its count through the existing stateless SQL API.
-/// This is output metadata only: clients still receive ordinary SQL, which is
-/// parsed, planned and authorized again on every subsequent request.
-fn attach_portable_query_sql(
-    queries: &mut [ugoite_core::composition::ResolvedQueryRequest],
-    definitions: &[VariableGraphNode],
-) -> Result<()> {
-    for query in queries {
-        let node = definitions
-            .iter()
-            .find(|node| node.id == query.variable_id)
-            .ok_or_else(|| anyhow!("resolved query definition is missing"))?;
-        let VariableGraphNodeKind::Query {
-            query: definition, ..
-        } = &node.kind
-        else {
-            return Err(anyhow!("resolved query variable is not a query"));
-        };
-        let VariableGraphQueryDefinition::InlineSql { sql: source } = &definition.definition;
-        let bindings = query
-            .form_bindings
-            .iter()
-            .map(|binding| (binding.relation.clone(), sql_relation_name(binding.form_id)))
-            .collect();
-        query.portable_sql = Some(crate::index::resolve_saved_sql_bindings(source, &bindings)?.0);
-    }
-    Ok(())
-}
-
 impl UgoiteService {
     // Keep save-specific authorization and publication context explicit at
     // the resolver boundary so callers cannot silently drop either value.
@@ -700,14 +670,11 @@ impl UgoiteService {
         );
 
         Ok(match result {
-            Ok(mut plan) => {
-                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
-                CompositionResolution {
-                    variable_definitions,
-                    plan: Some(plan),
-                    diagnostics: Vec::new(),
-                }
-            }
+            Ok(plan) => CompositionResolution {
+                variable_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
             Err(diagnostics) => CompositionResolution {
                 variable_definitions,
                 plan: None,
@@ -996,15 +963,12 @@ impl UgoiteService {
         };
 
         Ok(match result {
-            Ok(mut plan) => {
-                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
-                CompositionPreview {
-                    draft_fingerprint: Some(draft_fingerprint),
-                    variable_definitions,
-                    plan: Some(plan),
-                    diagnostics: Vec::new(),
-                }
-            }
+            Ok(plan) => CompositionPreview {
+                draft_fingerprint: Some(draft_fingerprint),
+                variable_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
             Err(diagnostics) => CompositionPreview {
                 draft_fingerprint: Some(draft_fingerprint),
                 variable_definitions,

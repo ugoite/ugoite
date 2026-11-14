@@ -525,20 +525,16 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
     assert!(
         matches!(
             plan.queries[0].request.as_ref(),
-            Some(request) if request.sql.contains("\"Composition-Preview\"")
-                && request.form_binding_guards == vec![
-                    ugoite_core::sql_query::SqlFormBindingGuard {
-                        name: "Composition-Preview".to_owned(),
-                        form_id: form_id.to_string(),
-                    }
-                ]
+            Some(request) if request.sql.contains(&stable_relation)
+                && request.sql.contains("AS \"Composition-Preview\"")
+                && request.form_binding_guards.is_empty()
                 && plan.queries[0].portable_sql.as_deref().is_some_and(|sql| {
                     sql.contains(&stable_relation)
                         && sql.contains("AS \"Composition-Preview\"")
                 })
                 && plan.queries[0].schema_fingerprint.len() == 64
         ),
-        "resolved query did not preserve source SQL with its stable Form binding: {:?}",
+        "resolved query did not execute through its stable Form relation: {:?}",
         plan.queries[0]
     );
 
@@ -1525,13 +1521,8 @@ async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Re
     let plan = preview.plan.context("preview should return a plan")?;
     assert!(matches!(
         plan.queries[0].request.as_ref(),
-        Some(request) if request.sql.contains("\"Composition-Preview\"")
-            && request.form_binding_guards == vec![
-                ugoite_core::sql_query::SqlFormBindingGuard {
-                    name: "Composition-Preview".to_owned(),
-                    form_id: form_id.to_string(),
-                }
-            ]
+        Some(request) if request.sql.contains(&sql_relation_name(form_id))
+            && request.form_binding_guards.is_empty()
             && plan.queries[0].portable_sql.as_deref()
                 .is_some_and(|sql| sql.contains(&sql_relation_name(form_id)))
             && plan.queries[0].schema_fingerprint.len() == 64
@@ -2116,16 +2107,47 @@ async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacem
         resolved.queries[0].portable_sql.as_deref(),
         Some(sql.as_str())
     );
+    let evaluation = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            ugoite_iceberg::service::CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+    assert!(
+        evaluation.ok,
+        "saved query should survive Form rename and replacement: {:?}",
+        evaluation.query_diagnostics
+    );
+    let execution_request = evaluation
+        .plan
+        .as_ref()
+        .context("evaluated plan remains available")?
+        .queries[0]
+        .request
+        .as_ref()
+        .context("evaluation plan contains the stable SQL request")?;
+    assert_eq!(execution_request.sql, sql);
+    assert!(execution_request.form_binding_guards.is_empty());
     let count = service
         .count_sql(
             &space_id,
             ugoite_core::sql_query::SqlQueryCountRequest {
                 composition_count_snapshot: None,
                 binding_base: None,
-                form_binding_guards: Vec::new(),
-                sql,
-                parameters: Default::default(),
-                parameter_types: Default::default(),
+                form_binding_guards: execution_request.form_binding_guards.clone(),
+                sql: execution_request.sql.clone(),
+                parameters: execution_request.parameters.clone(),
+                parameter_types: execution_request.parameter_types.clone(),
                 saved_sql: None,
             },
         )

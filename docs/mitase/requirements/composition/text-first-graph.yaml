@@ -54,8 +54,11 @@ requirements:
         statement: >-
           Query planning and evaluation recheck current Form identity, ACL,
           Publication, SQL validity, explicit argument types, and the declared
-          result descriptor. Results are bounded transient Work; stale or
-          unauthorized values are not exposed as current Composition output.
+          result descriptor. Resolved page SQL and its Count request use the
+          same stable Form relation IDs, so renaming a bound Form or creating a
+          same-name replacement cannot retarget the query. Results are bounded
+          transient Work; stale or unauthorized values are not exposed as
+          current Composition output.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: current-shape-save-validation
         kind: security

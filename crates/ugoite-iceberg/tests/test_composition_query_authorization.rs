@@ -617,18 +617,17 @@ async fn inline_float_count_snapshot_matches_integer_json_zero() -> Result<()> {
         evaluation_request.parameter_types,
         BTreeMap::from([("minimum".to_string(), "float".to_string())])
     );
-    assert_eq!(evaluation_request.form_binding_guards.len(), 1);
-    assert_eq!(evaluation_request.form_binding_guards[0].name, form_name);
+    assert!(evaluation_request.form_binding_guards.is_empty());
     assert_eq!(
-        evaluation_request.form_binding_guards[0].form_id,
+        evaluation_request.sql,
         evaluation
             .plan
             .as_ref()
             .expect("saved Composition evaluation retains its resolved query")
             .queries[0]
-            .form_bindings[0]
-            .form_id
-            .to_string()
+            .portable_sql
+            .as_deref()
+            .expect("resolved query exposes its ID-bound SQL")
     );
     service
         .create_structured_entry_with_receipt(

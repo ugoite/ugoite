@@ -17,6 +17,7 @@ use ugoite_domain::composition::{
     VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
     VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::{EntryId, RevisionId};
 use uuid::Uuid;
 
@@ -313,8 +314,8 @@ pub struct ResolveInput<'a> {
 pub struct ResolvedQueryRequest {
     pub variable_id: String,
     pub request: Option<SqlQueryRequest>,
-    /// Authorized source rebound to immutable Form relation IDs by the service.
-    /// It may be used as a new inline definition; it grants no read authority.
+    /// Authorized SQL rebound to immutable Form relation IDs by the service
+    /// planner. It grants no read authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portable_sql: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -739,6 +740,7 @@ fn resolve_parts(
             Vec<VariableGraphColumn>,
             String,
             String,
+            String,
         ),
     >::new();
     let mut diagnostics = Vec::new();
@@ -820,10 +822,21 @@ fn resolve_parts(
                         }
                     }
                 }
-                // Keep the authored relation names in the request SQL. The
-                // query compiler carries these resolved identities as Form
-                // guards, while portable_sql exposes the ID-bound spelling.
-                query.form_bindings = metadata.form_bindings.clone();
+                // Execute the SQL against the resolver's immutable Form
+                // relations. The authored names remain in the saved graph and
+                // descriptor bindings; this transient graph uses IDs so a
+                // rename or duplicate display name cannot change the target.
+                query.definition = VariableGraphQueryDefinition::InlineSql {
+                    sql: metadata.bound_sql.clone(),
+                };
+                query.form_bindings = metadata
+                    .form_bindings
+                    .iter()
+                    .map(|binding| VariableGraphFormBinding {
+                        relation: sql_relation_name(binding.form_id),
+                        form_id: binding.form_id,
+                    })
+                    .collect();
                 query.schema_fingerprint = metadata.schema_fingerprint.clone();
                 let returns = returns.clone();
                 let fingerprint = query_semantic_fingerprint(
@@ -848,6 +861,7 @@ fn resolve_parts(
                         metadata.result_columns.clone(),
                         metadata.schema_fingerprint.clone(),
                         fingerprint,
+                        metadata.bound_sql.clone(),
                     ),
                 );
             }
@@ -902,6 +916,7 @@ fn resolve_parts(
                 result_columns,
                 schema_fingerprint,
                 query_semantic_fingerprint,
+                portable_sql,
             ) = derived
                 .remove(&item.variable_id)
                 .expect("every query descriptor was derived");
@@ -913,7 +928,7 @@ fn resolve_parts(
             ResolvedQueryRequest {
                 variable_id: item.variable_id,
                 request,
-                portable_sql: None,
+                portable_sql: Some(portable_sql),
                 deferred_arguments: item.deferred_arguments,
                 scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
                     .then_some(CompositionScalarCardinality::ExactlyOneRow),

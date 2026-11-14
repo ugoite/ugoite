@@ -29,6 +29,7 @@ use ugoite_domain::composition::{
     VariableGraph, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
     VariableGraphResultType, VariableGraphValidatedResult,
 };
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, RevisionId};
 use ugoite_domain::identity::Action;
 use uuid::Uuid;
@@ -1442,7 +1443,23 @@ fn apply_resolved_query_descriptors(
             continue;
         };
         *returns = descriptor.returns.clone();
-        query.form_bindings = descriptor.form_bindings.clone();
+        let portable_sql = descriptor
+            .portable_sql
+            .as_ref()
+            .ok_or_else(|| anyhow!("resolved inline query is missing portable SQL"))?;
+        query.definition = ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql {
+            sql: portable_sql.clone(),
+        };
+        query.form_bindings = descriptor
+            .form_bindings
+            .iter()
+            .map(
+                |binding| ugoite_domain::composition::VariableGraphFormBinding {
+                    relation: sql_relation_name(binding.form_id),
+                    form_id: binding.form_id,
+                },
+            )
+            .collect();
         query.schema_fingerprint = descriptor.schema_fingerprint.clone();
     }
     Ok(())
