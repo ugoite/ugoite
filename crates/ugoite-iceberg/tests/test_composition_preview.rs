@@ -1827,6 +1827,171 @@ async fn parameterized_inline_sql_preview_and_save_uses_server_schema() -> Resul
 }
 
 #[tokio::test]
+async fn authoring_preview_plans_integer_input_predicate_template() -> Result<()> {
+    let (service, space_id, _, _) = setup_preview_space().await?;
+    let form_name = "Composition-Minimum";
+    let form = service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "Amount": {"id": 100, "type": "integer", "required": true}
+                }
+            }),
+        )
+        .await?;
+    for (index, amount) in [7, 8].into_iter().enumerate() {
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                &format!("composition-minimum-{index}"),
+                form_name.to_owned(),
+                Vec::new(),
+                BTreeMap::from([("Amount".to_owned(), json!(amount))]),
+                BTreeMap::new(),
+                "owner",
+            )
+            .await?;
+    }
+
+    let document = CompositionDocument {
+        format: CompositionFormat::UgoiteComposition,
+        format_version: 1,
+        kind: CompositionKind::Dashboard,
+        name: "Minimum amount".to_owned(),
+        spec: CompositionSpec {
+            variables: vec![
+                VariableGraphNode {
+                    id: "minimum_amount".to_owned(),
+                    kind: VariableGraphNodeKind::Input {
+                        value_type: VariableGraphScalarDescriptor {
+                            scalar_type: VariableGraphScalarType::Integer,
+                            nullable: false,
+                        },
+                        required: true,
+                        default: Some(VariableGraphLiteral::Integer(0)),
+                    },
+                },
+                VariableGraphNode {
+                    id: "total_value".to_owned(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Scalar {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: true,
+                            },
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::InlineSql {
+                                sql: format!(
+                                    "SELECT SUM(\"{}\") AS total FROM \"{}\" WHERE \"{}\" >= {{{{minimum_amount}}}}",
+                                    sql_column_name(FieldId::new(100)?),
+                                    sql_relation_name(form.form_id),
+                                    sql_column_name(FieldId::new(100)?),
+                                ),
+                            },
+                            arguments: vec![VariableGraphArgumentBinding {
+                                name: "minimum_amount".to_owned(),
+                                variable: "minimum_amount".to_owned(),
+                            }],
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
+                },
+            ],
+            components: vec![
+                CompositionComponent::Input {
+                    id: "minimum_input".to_owned(),
+                    variable: "minimum_amount".to_owned(),
+                },
+                CompositionComponent::Text {
+                    id: "total_text".to_owned(),
+                    content: "Total: {{total_value}}".to_owned(),
+                    style: TextStyle::Body,
+                },
+            ],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_owned(),
+                    items: vec![
+                        FlowItem::Component {
+                            component: "minimum_input".to_owned(),
+                        },
+                        FlowItem::Component {
+                            component: "total_text".to_owned(),
+                        },
+                    ],
+                }],
+            },
+        },
+    };
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+    let principal_ids = [Uuid::from_u128(3_434_001)];
+    let preview = service
+        .preview_composition_authoring_authorized_for_principals_with_base(
+            &space_id,
+            &canonical.yaml,
+            &BTreeMap::new(),
+            &[],
+            &principal_ids,
+            None,
+        )
+        .await?;
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    let plan = preview.plan.context("preview should resolve SQL schema")?;
+    assert_eq!(plan.queries.len(), 1);
+    assert!(matches!(
+        plan.queries[0].request.as_ref(),
+        Some(request) if request.parameters.get("minimum_amount") == Some(&json!(0))
+    ));
+    let field = sql_column_name(FieldId::new(100)?);
+    let relation = sql_relation_name(form.form_id);
+    assert_eq!(
+        plan.queries[0]
+            .portable_sql
+            .as_deref()
+            .context("parameterized query should retain its inline SQL")?,
+        format!(
+            "SELECT SUM(\"{field}\") AS total FROM {relation} AS \"{relation}\" WHERE \"{field}\" >= $minimum_amount"
+        )
+    );
+    assert_eq!(plan.queries[0].schema_fingerprint.len(), 64);
+
+    let evaluation = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &principal_ids,
+            CompositionQueryEvaluationTarget::Draft {
+                yaml: canonical.yaml,
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::from([("minimum_amount".to_owned(), json!(8))]),
+            &[],
+            Some(&["total_value".to_owned()]),
+            None,
+        )
+        .await?;
+    assert!(evaluation.ok, "{:?}", evaluation.query_diagnostics);
+    assert!(matches!(
+        evaluation
+            .query_results
+            .get("total_value")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Scalar {
+            value: VariableGraphLiteral::Integer(8)
+        })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 async fn saves_reject_forged_complete_query_result_descriptors() -> Result<()> {
     let (service, space_id, document, _) = setup_preview_space().await?;
     let mut forged = apply_preview_query_descriptors(&service, &space_id, document).await?;

@@ -154,7 +154,7 @@ async function settleWithoutReferencedQuery(
 
 function textOutput(page: Page, componentId: string) {
   return page.locator(
-    `[data-component-id="${componentId}"] .compositionGraphText`,
+    `[data-component-id="${componentId}"] :is(p, h2).compositionGraphText`,
   );
 }
 

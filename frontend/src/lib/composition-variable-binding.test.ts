@@ -88,6 +88,35 @@ describe("Composition graph authoring model", () => {
     expect(compositionGraphDraftFromDocument(document)).toEqual(draft);
   });
 
+  it("treats omitted canonical variables as an empty graph", () => {
+    const document = compositionGraphDocumentDraft({
+      ...createCompositionGraphDraft("Report"),
+      components: [{
+        id: "text_1",
+        kind: "text",
+        content: "A text-only Composition",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_1" }],
+        }],
+      },
+    });
+    const { variables: _variables, ...canonicalSpec } = document.spec;
+
+    expect(compositionGraphDraftFromDocument({
+      ...document,
+      spec: canonicalSpec,
+    })).toEqual({
+      ...createCompositionGraphDraft("Report"),
+      components: document.spec.components,
+      layout: document.spec.layout,
+    });
+  });
+
   it("rejects a Saved SQL query variant", () => {
     const query = {
       kind: "saved_sql",

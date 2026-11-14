@@ -47,6 +47,38 @@ describe("CompositionGraphDesignCanvas", () => {
   });
   afterEach(() => cleanup());
 
+  it("keeps the Text preview semantic and exposes a separate edit button", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.components.push({
+      id: "headline",
+      kind: "text",
+      content: "Report title",
+      style: "heading",
+    });
+    initial.layout.rows[0].items.push({
+      kind: "component",
+      component: "headline",
+    });
+    const [draft, setDraft] = createSignal(initial);
+    const { container } = render(() => (
+      <CompositionGraphDesignCanvas {...baseProps(draft(), setDraft)} />
+    ));
+
+    const preview = await screen.findByRole("heading", {
+      name: "Report title",
+    });
+    expect(preview).toHaveClass("compositionGraphText");
+    expect(container.querySelectorAll(".compositionGraphText")).toHaveLength(1);
+
+    const editButton = screen.getByRole("button", { name: "Edit text" });
+    expect(editButton).toHaveClass("compositionGraphTextSelect");
+    expect(editButton).toHaveClass("compositionGraphSelect");
+    fireEvent.click(editButton);
+
+    expect(await screen.findByRole("textbox", { name: "Text" }))
+      .toHaveValue("Report title");
+  });
+
   it("edits Text directly, selects a local style, and inserts a scalar variable", async () => {
     const initial = createCompositionGraphDraft("Report");
     initial.variables.push({

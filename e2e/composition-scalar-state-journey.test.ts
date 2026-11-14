@@ -410,7 +410,7 @@ async function openSavedComposition(
 
 function textOutput(page: Page, componentId: string) {
   return page.locator(
-    `[data-component-id="${componentId}"] .compositionGraphText`,
+    `[data-component-id="${componentId}"] :is(p, h2).compositionGraphText`,
   );
 }
 
@@ -663,8 +663,8 @@ test.describe("Composition scalar state journey", () => {
       await firstTextEditor.fill("{{alternative_value}}");
       await expect(firstTextEditor).toHaveValue("{{alternative_value}}");
       await expect(page.locator(
-        '#composition-text-editor-text_two',
-      )).toHaveValue("{{shared_value}}");
+        '.compositionGraphDesignValue[data-component-id="text_two"] .compositionGraphTextSelect .compositionGraphText',
+      )).toHaveText("{{shared_value}}");
 
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(

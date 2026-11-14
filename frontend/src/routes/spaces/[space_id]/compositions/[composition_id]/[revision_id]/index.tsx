@@ -55,6 +55,7 @@ interface EvaluationState {
   evaluationId?: string;
   response?: Awaited<ReturnType<typeof compositionApi.evaluate>>;
   error?: string;
+  queryErrors?: Readonly<Record<string, string>>;
 }
 
 type GraphTablePage = CompositionEvaluationResponse["query_results"][string];
@@ -599,6 +600,7 @@ export default function CompositionRevisionRoute() {
       status: "loading",
       evaluationId,
       error: undefined,
+      queryErrors: undefined,
     }));
     try {
       const request = (id: string, requested?: string[]) =>
@@ -788,13 +790,20 @@ export default function CompositionRevisionRoute() {
       clearAccessTimer();
       setAccessSnapshotBlocked(true);
       lastEvaluatedInputs = undefined;
+      const errorMessage = formatUserFacingError(
+        error,
+        "composition.detailFailed",
+        "composition.evaluate",
+      );
+      const failedQueryIds = draft.variables.flatMap((node) =>
+        node.kind === "query" ? [node.id] : []
+      );
       setEvaluation({
         status: "error",
         evaluationId,
-        error: formatUserFacingError(
-          error,
-          "composition.detailFailed",
-          "composition.evaluate",
+        error: errorMessage,
+        queryErrors: Object.fromEntries(
+          failedQueryIds.map((id) => [id, errorMessage]),
         ),
       });
     }
@@ -1132,6 +1141,7 @@ export default function CompositionRevisionRoute() {
           <CompositionGraphRenderer
             draft={document().draft}
             evaluation={evaluation().response}
+            queryErrors={evaluation().queryErrors}
             rawInputs={rawInputs()}
             inputStates={inputStates()}
             blockedQueryIds={accessSnapshotBlocked()

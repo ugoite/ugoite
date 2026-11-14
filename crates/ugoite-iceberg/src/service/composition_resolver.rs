@@ -1110,7 +1110,12 @@ fn preview_inline_form_bindings(
                 .map(|binding| binding.relation.clone()),
         )
         .collect::<BTreeSet<_>>();
-    let relations = crate::index::quoted_form_name_references_with_bindings(sql, &binding_names)?;
+    // Draft SQL may use the portable {{name}} parameter spelling. Parse the
+    // normalized SQL when discovering Form references so parameter braces do
+    // not make an otherwise valid query fail before metadata planning.
+    let normalized_sql = crate::index::normalize_sql_template(sql)?;
+    let relations =
+        crate::index::quoted_form_name_references_with_bindings(&normalized_sql, &binding_names)?;
     if submitted_bindings.iter().any(|binding| {
         !relations.contains(&binding.relation)
             && !previous_bindings.iter().any(|previous| {

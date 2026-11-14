@@ -21,6 +21,7 @@ export interface CompositionGraphRendererProps {
     value: JSX.Element,
   ) => JSX.Element;
   evaluation?: CompositionEvaluationResponse;
+  queryErrors?: Readonly<Record<string, string>>;
   rawInputs: Readonly<Record<string, string>>;
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
   blockedQueryIds: ReadonlySet<string>;
@@ -118,6 +119,7 @@ function CompositionTextValue(props: {
   content: string;
   draft: CompositionGraphDraft;
   evaluation?: CompositionEvaluationResponse;
+  queryErrors?: Readonly<Record<string, string>>;
   rawInputs: Readonly<Record<string, string>>;
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
   blockedQueryIds: ReadonlySet<string>;
@@ -156,9 +158,10 @@ function CompositionTextValue(props: {
       const node = variableNode(props.draft, part.variable);
       return node?.kind === "query" ? [node.id] : [];
     });
-  const error = () => referencedQueries().map((id) =>
-    queryError(props.evaluation, id)
-  ).find((message) => message);
+  const error = () =>
+    referencedQueries().map((id) =>
+      props.queryErrors?.[id] ?? queryError(props.evaluation, id)
+    ).find((message) => message);
   const loading = () => !segments();
   const waitingForInputs = () => (segments() ?? []).some((part) => {
     if (part.kind !== "variable") return false;
@@ -175,17 +178,21 @@ function CompositionTextValue(props: {
         (!props.evaluation?.query_results[node.id] &&
           !queryError(props.evaluation, node.id)));
   });
-  const value = () => (segments() ?? []).map((part) =>
-    part.kind === "literal"
-      ? part.text
-      : safeText(variableValue(
-        props.draft,
-        props.evaluation,
-        props.rawInputs,
-        part.variable,
-        unavailable(),
-      ))
-  ).join("");
+  const value = () =>
+    (segments() ?? []).map((part) =>
+      part.kind === "literal" ? part.text : (() => {
+        const variable = variableValue(
+          props.draft,
+          props.evaluation,
+          props.rawInputs,
+          part.variable,
+          unavailable(),
+        );
+        return variable === null
+          ? t("composition.noValue")
+          : safeText(variable);
+      })()
+    ).join("");
 
   return (
     <Show
@@ -233,8 +240,11 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                       };
                       const error = () => {
                         const id = variableId();
-                        return id && !props.blockedQueryIds.has(id)
-                          ? queryError(props.evaluation, id)
+                        return id
+                          ? props.queryErrors?.[id] ??
+                            (!props.blockedQueryIds.has(id)
+                              ? queryError(props.evaluation, id)
+                              : undefined)
                           : undefined;
                       };
                       const blocked = () => {
@@ -259,6 +269,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                             evaluation={props.evaluation}
                             rawInputs={props.rawInputs}
                             inputStates={props.inputStates}
+                            queryErrors={props.queryErrors}
                             blockedQueryIds={props.blockedQueryIds}
                           />
                         );
@@ -308,7 +319,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         const result = () => queryResult()?.value;
                         rendered = (
                           <>
-                            <Show when={blocked() || (!result() && !error())}>
+                            <Show when={!error() && (blocked() || !result())}>
                               <p role="status">
                                 {blocked()
                                   ? t("composition.waitingForInputs")

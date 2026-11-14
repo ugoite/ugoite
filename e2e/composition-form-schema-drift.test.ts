@@ -96,8 +96,8 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await page.getByLabel("Name", { exact: true }).fill(compositionName);
     const palette = page.getByRole("group", { name: "Add to design" });
     await palette.getByRole("button", { name: "Table", exact: true }).click();
-    await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
-    await page.getByLabel("Variable ID", { exact: true }).press("Enter");
+    await page.getByLabel("Variable name", { exact: true }).fill(variableId);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
     const variablesTab = page.getByRole("tab", {
       name: "Variables",
       exact: true,

@@ -155,6 +155,49 @@ describe("CompositionGraphRenderer", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
+  it("uses the common no-value display for a null scalar", async () => {
+    const nullDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.kind === "query" && node.id === "total"
+          ? {
+            ...node,
+            returns: {
+              kind: "scalar",
+              value_type: { scalar_type: "integer", nullable: true },
+            },
+          }
+          : node
+      ),
+    };
+    const nullEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      query_results: {
+        ...evaluation.query_results,
+        total: {
+          value: { kind: "scalar", value: { kind: "null" } },
+          has_more: false,
+        },
+      },
+    };
+    render(() => (
+      <CompositionGraphRenderer
+        draft={nullDraft}
+        evaluation={nullEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByText(/Total: No data/)).toBeVisible();
+  });
+
   it("renders exact i64 and decimal scalar tokens without Number coercion", async () => {
     const maximum = "9223372036854775807";
     const decimal = "12345678901234567890.0000000000000001";
@@ -283,6 +326,28 @@ describe("CompositionGraphRenderer", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The query returned more than one value.",
+    );
+  });
+
+  it("shows a request failure beside the affected Text result", async () => {
+    render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={evaluation}
+        queryErrors={{ total: "SQL query execution failed" }}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set(["total"])}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "SQL query execution failed",
     );
   });
 });

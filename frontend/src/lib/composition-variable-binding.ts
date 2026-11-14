@@ -158,7 +158,8 @@ export const compositionGraphDraftFromDocument = (
     document.format_version !== 1 || document.kind !== "dashboard" ||
     typeof document.name !== "string" || !spec ||
     Object.hasOwn(spec, "sources") ||
-    !Array.isArray(spec.variables) || !Array.isArray(spec.components) ||
+    (spec.variables !== undefined && !Array.isArray(spec.variables)) ||
+    !Array.isArray(spec.components) ||
     !spec.layout || spec.layout.kind !== "flow" ||
     !Array.isArray(spec.layout.rows)
   ) throw new Error("Invalid graph-only Composition document");
@@ -170,7 +171,7 @@ export const compositionGraphDraftFromDocument = (
       Object.hasOwn(component, "source_id")
     ) throw new Error("Invalid graph component binding");
   }
-  const variables = spec.variables.map((node) => {
+  const variables = (spec.variables ?? []).map((node) => {
     if (
       !node || typeof node !== "object" ||
       !["constant", "input", "query"].includes(node.kind)

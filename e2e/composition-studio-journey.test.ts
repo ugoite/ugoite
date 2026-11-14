@@ -480,7 +480,7 @@ async function expectCompositionSemanticValues(
     )
   );
   const text = (await page.locator(
-    ".compositionGraphRender .compositionGraphValue .compositionGraphText",
+    ".compositionGraphRender .compositionGraphValue :is(p, h2).compositionGraphText",
   ).allTextContents()).map(normalizeSemanticText);
 
   expect({
@@ -568,7 +568,7 @@ test.describe("Composition Studio Journey", () => {
         "Transient report title",
       );
       await expect(page.locator(
-        '[data-component-id="report_title_text"] .compositionGraphText',
+        '[data-component-id="report_title_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("Transient report title");
       await expect.poll(() => evaluatePayloads.length).toBeGreaterThan(
         initialEvaluationCount,
@@ -576,11 +576,16 @@ test.describe("Composition Studio Journey", () => {
       expect(evaluatePayloads.at(-1)?.requested_queries).toEqual([]);
 
       await page.getByLabel("month_start", { exact: true }).fill("2026-02-01");
+      await page.getByLabel("month_end", { exact: true }).fill("2026-03-01");
+      await expect(page.getByLabel("month_start", { exact: true }))
+        .toHaveValue("2026-02-01");
+      await expect(page.getByLabel("month_end", { exact: true }))
+        .toHaveValue("2026-03-01");
       await expect(page.locator(
-        '[data-component-id="total_text"] .compositionGraphText',
+        '[data-component-id="total_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("30", { timeout: 30_000 });
       await expect(page.locator(
-        '[data-component-id="quantity_text"] .compositionGraphText',
+        '[data-component-id="quantity_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("5", { timeout: 30_000 });
       await expect(page.getByRole("table")).toContainText(seed.purposes[1]);
       await page.reload({ waitUntil: "domcontentloaded" });
@@ -622,16 +627,16 @@ test.describe("Composition Studio Journey", () => {
       expect(edited.revisionId).not.toBe(firstRevisionId);
       editedRevisionId = edited.revisionId;
       await expect(page.locator(
-        '[data-component-id="report_title_text"] .compositionGraphText',
+        '[data-component-id="report_title_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("Report: January expenses");
       await expect(page.locator(
-        '[data-component-id="total_text"] .compositionGraphText',
+        '[data-component-id="total_text"] :is(p, h2).compositionGraphText',
       )).toHaveText(seed.expectedTotal);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 2);
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.locator(
-        '[data-component-id="report_title_text"] .compositionGraphText',
+        '[data-component-id="report_title_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("Report: January expenses");
 
       await page.goto(
@@ -661,10 +666,10 @@ test.describe("Composition Studio Journey", () => {
       expect(restored.revisionId).not.toBe(editedRevisionId);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 3);
       await expect(page.locator(
-        '[data-component-id="report_title_text"] .compositionGraphText',
+        '[data-component-id="report_title_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("January expenses", { timeout: 30_000 });
       await expect(page.locator(
-        '[data-component-id="total_text"] .compositionGraphText',
+        '[data-component-id="total_text"] :is(p, h2).compositionGraphText',
       )).toHaveText(seed.expectedTotal, { timeout: 30_000 });
       await expect(page.getByRole("heading", { name: "total", exact: true }))
         .toHaveCount(0);
@@ -730,10 +735,10 @@ test.describe("Composition Studio Journey", () => {
       );
       const palette = page.getByRole("group", { name: "Add to design" });
       await palette.getByRole("button", { name: "Table", exact: true }).click();
-      const tableNameField = page.getByLabel("Variable ID", { exact: true });
+      const tableNameField = page.getByLabel("Variable name", { exact: true });
       await expect(tableNameField).toBeVisible();
       await tableNameField.fill(rowsVariable);
-      await tableNameField.press("Enter");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("tab", { name: "Variables", exact: true }).click();
       await page.getByRole("button", { name: rowsVariable, exact: true })
         .click();
@@ -764,9 +769,9 @@ test.describe("Composition Studio Journey", () => {
         .click();
       await page.getByRole("group", { name: "Add variable" })
         .getByRole("button", { name: "SQL", exact: true }).click();
-      const scalarNameField = page.getByLabel("Variable ID", { exact: true });
+      const scalarNameField = page.getByLabel("Variable name", { exact: true });
       await scalarNameField.fill(scalarVariable);
-      await scalarNameField.press("Enter");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("button", { name: "Form", exact: true }).click();
       await page.getByRole("group", { name: "Available Forms", exact: true })
         .getByRole("button", { name: seed.formName, exact: true }).click();
@@ -802,7 +807,7 @@ test.describe("Composition Studio Journey", () => {
       });
       await expect(designTable).toContainText(seed.purposes[1]);
       await expect(page.locator(
-        '[data-component-id="text_1"] .compositionGraphText',
+        '[data-component-id="text_1"] :is(p, h2).compositionGraphText',
       )).toHaveText("Total: 50", { timeout: 30_000 });
       expect(
         await page.evaluate(() =>
@@ -877,7 +882,7 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("table", { name: rowsVariable }))
         .toContainText(seed.purposes[0], { timeout: 30_000 });
       await expect(page.locator(
-        '[data-component-id="text_1"] .compositionGraphText',
+        '[data-component-id="text_1"] :is(p, h2).compositionGraphText',
       )).toHaveText("Total: 50", { timeout: 30_000 });
     } finally {
       await ownerContext.close();
@@ -942,7 +947,7 @@ test.describe("Composition Studio Journey", () => {
       { waitUntil: "domcontentloaded" },
     );
     await expect(page.locator(
-      '[data-component-id="average_text"] .compositionGraphText',
+      '[data-component-id="average_text"] :is(p, h2).compositionGraphText',
     )).toHaveText("Average: 25", { timeout: 30_000 });
     const response = await request.get(
       getBackendUrl(
@@ -1007,10 +1012,10 @@ test.describe("Composition Studio Journey", () => {
     await page.getByLabel("Name", { exact: true }).fill(`Table ${suffix}`);
     const palette = page.getByRole("group", { name: "Add to design" });
     await palette.getByRole("button", { name: "Table", exact: true }).click();
-    const variableName = page.getByLabel("Variable ID", { exact: true });
+    const variableName = page.getByLabel("Variable name", { exact: true });
     await expect(variableName).toBeVisible();
     await variableName.fill("studio_rows");
-    await variableName.press("Enter");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
 
     await page.getByRole("button", { name: "Form", exact: true }).click();
     const availableForms = page.getByRole("group", {
@@ -1148,7 +1153,7 @@ test.describe("Composition Studio Journey", () => {
       { waitUntil: "domcontentloaded" },
     );
     const text = page.locator(
-      '[data-component-id="matching_text"] .compositionGraphText',
+      '[data-component-id="matching_text"] :is(p, h2).compositionGraphText',
     );
     await expect(text).toHaveText("Matches: 2", { timeout: 30_000 });
     await page.getByLabel("minimum", { exact: true }).fill("25");
@@ -1219,7 +1224,7 @@ test.describe("Composition Studio Journey", () => {
       { waitUntil: "domcontentloaded" },
     );
     const text = page.locator(
-      '[data-component-id="result_text"] .compositionGraphText',
+      '[data-component-id="result_text"] :is(p, h2).compositionGraphText',
     );
     await expect(text).toHaveText("Value: 3", { timeout: 30_000 });
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
@@ -1345,6 +1350,7 @@ test.describe("Composition Studio Journey", () => {
     const palette = page.getByRole("group", { name: "Add to design" });
     for (const width of [320, 375, 390, 760, 1280]) {
       await page.setViewportSize({ width, height: 844 });
+      await page.getByRole("tab", { name: "Design", exact: true }).click();
       await palette.getByRole("button", { name: "Table", exact: true }).click();
       const picker = page.getByRole("dialog", { name: "Table", exact: true });
       await expect(picker.getByRole("button", { name: "rows", exact: true }))

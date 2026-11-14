@@ -360,6 +360,7 @@ export function CompositionGraphDesignCanvas(
         <CompositionGraphRenderer
           draft={props.draft}
           evaluation={preview.evaluation()}
+          queryErrors={preview.queryErrors()}
           rawInputs={preview.rawInputs()}
           inputStates={preview.inputStates()}
           blockedQueryIds={preview.blocked()}
@@ -381,25 +382,25 @@ export function CompositionGraphDesignCanvas(
                 role={component().kind !== "text" ? "group" : undefined}
                 tabIndex={component().kind !== "text" ? 0 : undefined}
                 aria-label={component().kind !== "text" ? componentName(component()) : undefined}
-                onClick={() => component().kind !== "text" && select()}
+                onClick={() => select()}
                 onFocus={() => component().kind !== "text" && select()}
               >
                 <Show
                   when={component().kind === "text" && isSelected()}
                   fallback={component().kind === "text"
                     ? (
-                      <button
-                        type="button"
-                        class="compositionGraphTextSelect"
-                        data-component-select="true"
-                        aria-label={t("composition.studioEditText")}
-                        onClick={select}
-                      >
-                        <span class={`compositionGraphText compositionGraphText--${component().kind === "text" ? component().style : "body"}`}>
-                          {value}
-                        </span>
-                        <UiIcon name="edit" />
-                      </button>
+                      <>
+                        {value}
+                        <button
+                          type="button"
+                          class="compositionGraphSelect compositionGraphTextSelect"
+                          data-component-select="true"
+                          aria-label={t("composition.studioEditText")}
+                          onClick={select}
+                        >
+                          <UiIcon name="edit" />
+                        </button>
+                      </>
                     )
                     : value}
                 >

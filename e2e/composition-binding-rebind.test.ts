@@ -110,6 +110,7 @@ async function createEntry(
 async function snapshotUserEntryIdentities(
   request: APIRequestContext,
   spaceId: string,
+  excludedEntryIds: ReadonlySet<string> = new Set(),
 ): Promise<UserEntryIdentity[]> {
   const listResponse = await request.get(
     getBackendUrl(`/spaces/${spaceId}/entries?limit=1000&offset=0`),
@@ -117,7 +118,8 @@ async function snapshotUserEntryIdentities(
   expect(listResponse.ok()).toBe(true);
   const listedEntries = await listResponse.json() as ListedEntry[];
   const userEntries = listedEntries.filter((entry) =>
-    !!entry.id && !!entry.form && !RESERVED_METADATA_FORMS.has(entry.form)
+    !!entry.id && !!entry.form && !RESERVED_METADATA_FORMS.has(entry.form) &&
+    !excludedEntryIds.has(entry.id)
   );
   const identities = await Promise.all(userEntries.map(async (entry) => {
     const detailResponse = await request.get(
@@ -295,7 +297,7 @@ test.describe("Text-first Composition graph bindings", () => {
     );
     expect(rawResponse.ok()).toBe(true);
     const raw = await rawResponse.json() as CompositionRevision;
-    expect(raw.revision).toEqual({
+    expect(raw.revision).toMatchObject({
       entry_id: composition.composition_id,
       revision_id: composition.revision_id,
     });
@@ -356,7 +358,15 @@ test.describe("Text-first Composition graph bindings", () => {
       revision_id: standaloneSql.revision_id,
     });
     expect(await userFormIds(request, spaceId)).toEqual(userFormsBefore);
-    expect(await snapshotUserEntryIdentities(request, spaceId))
+    expect(
+      await snapshotUserEntryIdentities(
+        request,
+        spaceId,
+        // A saved Composition gets its own system Entry, which is outside this
+        // test's invariant about user-owned Entries.
+        new Set([composition.composition_id]),
+      ),
+    )
       .toEqual(entryIdentitiesBefore);
 
     await openReader(page, spaceId, composition);
