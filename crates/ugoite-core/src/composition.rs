@@ -820,8 +820,9 @@ fn resolve_parts(
                         }
                     }
                 }
-                let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition;
-                *sql = metadata.bound_sql.clone();
+                // Keep the authored relation names in the request SQL. The
+                // query compiler carries these resolved identities as Form
+                // guards, while portable_sql exposes the ID-bound spelling.
                 query.form_bindings = metadata.form_bindings.clone();
                 query.schema_fingerprint = metadata.schema_fingerprint.clone();
                 let returns = returns.clone();

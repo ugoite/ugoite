@@ -525,15 +525,20 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
     assert!(
         matches!(
             plan.queries[0].request.as_ref(),
-            Some(request) if request.sql.contains(&stable_relation)
-                && request.sql.contains("AS \"Composition-Preview\"")
-                && plan.queries[0]
-                    .form_bindings
-                    .iter()
-                    .any(|binding| binding.form_id == form_id)
+            Some(request) if request.sql.contains("\"Composition-Preview\"")
+                && request.form_binding_guards == vec![
+                    ugoite_core::sql_query::SqlFormBindingGuard {
+                        name: "Composition-Preview".to_owned(),
+                        form_id: form_id.to_string(),
+                    }
+                ]
+                && plan.queries[0].portable_sql.as_deref().is_some_and(|sql| {
+                    sql.contains(&stable_relation)
+                        && sql.contains("AS \"Composition-Preview\"")
+                })
                 && plan.queries[0].schema_fingerprint.len() == 64
         ),
-        "resolved query did not use the stable relation and descriptor: {:?}",
+        "resolved query did not preserve source SQL with its stable Form binding: {:?}",
         plan.queries[0]
     );
 
@@ -1520,7 +1525,15 @@ async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Re
     let plan = preview.plan.context("preview should return a plan")?;
     assert!(matches!(
         plan.queries[0].request.as_ref(),
-        Some(request) if request.sql.contains(&sql_relation_name(form_id))
+        Some(request) if request.sql.contains("\"Composition-Preview\"")
+            && request.form_binding_guards == vec![
+                ugoite_core::sql_query::SqlFormBindingGuard {
+                    name: "Composition-Preview".to_owned(),
+                    form_id: form_id.to_string(),
+                }
+            ]
+            && plan.queries[0].portable_sql.as_deref()
+                .is_some_and(|sql| sql.contains(&sql_relation_name(form_id)))
             && plan.queries[0].schema_fingerprint.len() == 64
     ));
     Ok(())

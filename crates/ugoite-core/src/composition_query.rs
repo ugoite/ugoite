@@ -6,7 +6,7 @@
 //! access to the Space, Forms, and exact Form bindings.
 
 use crate::sql_query::{
-    SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
+    SqlFormBindingGuard, SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
     MAX_SQL_SCALAR_PROBE_ROWS,
 };
 use chrono::{DateTime, Datelike, NaiveDate};
@@ -21,6 +21,7 @@ use ugoite_domain::composition::{
     VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
     MAX_COMPOSITION_COLLECTION_ITEMS,
 };
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::sql_document::{normalize_sql_template, parse_sql_document, SqlDocumentStatus};
 use uuid::Uuid;
 
@@ -1051,7 +1052,15 @@ fn compile_validated_query_node_with_deferred_dependencies(
         execution_id: Some(execution_id),
         saved_sql: None,
         binding_base: None,
-        form_binding_guards: Vec::new(),
+        form_binding_guards: query
+            .form_bindings
+            .iter()
+            .filter(|binding| binding.relation != sql_relation_name(binding.form_id))
+            .map(|binding| SqlFormBindingGuard {
+                name: binding.relation.clone(),
+                form_id: binding.form_id.to_string(),
+            })
+            .collect(),
     };
     request.validate().map_err(|_| {
         vec![VariableGraphQueryRequestDiagnostic::for_node(
@@ -1572,9 +1581,10 @@ mod tests {
     use serde_json::json;
     use std::ops::{Deref, DerefMut};
     use ugoite_domain::composition::{
-        VariableGraphColumn, VariableGraphQuery, VariableGraphResultDiagnosticCode,
-        VariableGraphResultType, VariableGraphScalarDescriptor,
+        VariableGraphColumn, VariableGraphFormBinding, VariableGraphQuery,
+        VariableGraphResultDiagnosticCode, VariableGraphResultType, VariableGraphScalarDescriptor,
     };
+    use ugoite_domain::id::FormId;
 
     #[derive(Clone)]
     struct TestArgument {
@@ -1732,6 +1742,66 @@ mod tests {
 
     fn graph_for(node: impl Into<TestQueryNode>) -> VariableGraph {
         graph_from_nodes([node])
+    }
+
+    #[test]
+    fn compiled_requests_keep_selected_form_identity_guards() {
+        let selected_form = FormId::from_uuid(Uuid::from_u128(2));
+        let opaque_form = FormId::from_uuid(Uuid::from_u128(1));
+        let legacy_named_form = FormId::from_uuid(Uuid::from_u128(3));
+        let stable_relation = sql_relation_name(opaque_form);
+        let legacy_shaped_name = "form_0123456789abcdef0123456789abcdef";
+        let mut node = query_node(
+            "rows",
+            VariableGraphQueryDefinition::InlineSql {
+                sql: format!(
+                    "SELECT * FROM \"Shared\", \"{stable_relation}\", \"{legacy_shaped_name}\""
+                ),
+            },
+            VariableGraphResultType::Table {
+                columns: Vec::new(),
+            },
+            Vec::new(),
+        );
+        let VariableGraphNodeKind::Query { query, .. } = &mut node.node.kind else {
+            unreachable!("query_node constructs a query");
+        };
+        query.form_bindings = vec![
+            VariableGraphFormBinding {
+                relation: "Shared".to_owned(),
+                form_id: selected_form,
+            },
+            VariableGraphFormBinding {
+                relation: stable_relation,
+                form_id: opaque_form,
+            },
+            VariableGraphFormBinding {
+                relation: legacy_shaped_name.to_owned(),
+                form_id: legacy_named_form,
+            },
+        ];
+
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "rows",
+            Uuid::from_u128(10),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
+        assert_eq!(
+            request.form_binding_guards,
+            vec![
+                SqlFormBindingGuard {
+                    name: "Shared".to_owned(),
+                    form_id: selected_form.to_string(),
+                },
+                SqlFormBindingGuard {
+                    name: legacy_shaped_name.to_owned(),
+                    form_id: legacy_named_form.to_string(),
+                },
+            ]
+        );
     }
 
     fn graph_from_nodes(
