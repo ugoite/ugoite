@@ -6592,20 +6592,22 @@ mod tests {
         );
 
         let invalid_reference_yaml =
-            SQL_FIRST_COMPOSITION.replace("      variable: month_total", "      variable: missing");
+            SQL_FIRST_COMPOSITION.replace("{{month_total}}", "{{missing}}");
+        assert_ne!(invalid_reference_yaml, SQL_FIRST_COMPOSITION);
         let native_invalid_reference =
             ugoite_domain::composition::canonicalize_composition_yaml(&invalid_reference_yaml)
                 .unwrap_err();
-        let invalid_metric_request = serde_json::json!({
+        let invalid_reference_request = serde_json::json!({
             "action": "domain.canonicalize_composition",
             "value": {"yaml": invalid_reference_yaml},
         });
-        let invalid_metric_response: Value =
-            serde_json::from_str(&super::invoke_json(&invalid_metric_request.to_string())).unwrap();
+        let invalid_reference_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_reference_request.to_string()))
+                .unwrap();
         assert_eq!(native_invalid_reference.as_str(), "invalid_composition");
-        assert_eq!(invalid_metric_response["ok"], false);
+        assert_eq!(invalid_reference_response["ok"], false);
         assert_eq!(
-            invalid_metric_response["error"]["code"],
+            invalid_reference_response["error"]["code"],
             native_invalid_reference.as_str()
         );
 

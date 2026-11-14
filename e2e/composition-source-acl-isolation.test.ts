@@ -335,7 +335,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       await expect(designPage.locator(".compositionGraphDesignValue").first())
         .toBeVisible({ timeout: 30_000 });
       const designText = designPage.locator(
-        '[data-component-id="result_text"] .compositionGraphText',
+        '[data-component-id="result_text"] p.compositionGraphText',
       );
       await expect(designText).toHaveText(seed.protectedValue);
 
