@@ -155,13 +155,7 @@ export function createCompositionDesignEvaluation(options: {
         if (current()) {
           setEvaluation(undefined);
           setPages({});
-          const message = t("composition.queryFailed");
-          setError(message);
-          setQueryErrors(Object.fromEntries(
-            draft.variables.flatMap((node) =>
-              node.kind === "query" ? [[node.id, message]] : []
-            ),
-          ));
+          setError(t("composition.queryFailed"));
         }
         return;
       }
@@ -240,9 +234,6 @@ export function createCompositionDesignEvaluation(options: {
           ? t("composition.bindingSourceUnavailable")
           : t("composition.queryFailed");
         setError(message);
-        setQueryErrors(Object.fromEntries(
-          failedQueryIds.map((id) => [id, message]),
-        ));
       }
     } catch {
       if (!current()) return;
