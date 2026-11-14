@@ -1,7 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
-import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionGraphRenderer } from "./CompositionGraphRenderer";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
 import {
@@ -10,6 +9,7 @@ import {
 } from "~/lib/composition-variable-binding";
 import { setLocale } from "~/lib/i18n";
 
+const text = "Total: {{total}} <img src=x onerror=alert(1)>";
 const draft: CompositionGraphDraft = {
   ...createCompositionGraphDraft("Report"),
   variables: [
@@ -26,14 +26,8 @@ const draft: CompositionGraphDraft = {
       returns: {
         kind: "table",
         columns: [
-          {
-            name: "name",
-            value_type: { scalar_type: "string", nullable: false },
-          },
-          {
-            name: "amount",
-            value_type: { scalar_type: "integer", nullable: false },
-          },
+          { name: "name", value_type: { scalar_type: "string", nullable: false } },
+          { name: "amount", value_type: { scalar_type: "integer", nullable: false } },
         ],
       },
       query: { kind: "inline_sql", sql: "SELECT name, amount", arguments: [] },
@@ -51,7 +45,7 @@ const draft: CompositionGraphDraft = {
   components: [
     { id: "input_1", kind: "input", variable: "minimum" },
     { id: "table_1", kind: "table", variable: "rows" },
-    { id: "metric_1", kind: "metric", variable: "total" },
+    { id: "text_1", kind: "text", content: text, style: "heading" },
   ],
   layout: {
     kind: "flow",
@@ -59,8 +53,8 @@ const draft: CompositionGraphDraft = {
       id: "main",
       items: [
         { kind: "component", component: "input_1" },
-        { kind: "component", component: "metric_1" },
         { kind: "component", component: "table_1" },
+        { kind: "component", component: "text_1" },
       ],
     }],
   },
@@ -72,21 +66,23 @@ const evaluation: CompositionEvaluationResponse = {
   computed_query_ids: ["rows", "total"],
   variable_values: { minimum: { kind: "integer", value: "1" } },
   queries: [],
-  component_bindings: [],
+  component_bindings: [{
+    component_id: "text_1",
+    kind: "text",
+    text_segments: [
+      { kind: "literal", text: "Total: " },
+      { kind: "variable", variable: "total" },
+      { kind: "literal", text: " <img src=x onerror=alert(1)>" },
+    ],
+  }],
   dependencies: {},
   query_results: {
     rows: {
       value: {
         kind: "table",
         columns: [
-          {
-            name: "name",
-            value_type: { scalar_type: "string", nullable: false },
-          },
-          {
-            name: "amount",
-            value_type: { scalar_type: "integer", nullable: false },
-          },
+          { name: "name", value_type: { scalar_type: "string", nullable: false } },
+          { name: "amount", value_type: { scalar_type: "integer", nullable: false } },
         ],
         rows: [
           [{ kind: "string", value: "Alpha" }, { kind: "integer", value: "4" }],
@@ -107,7 +103,7 @@ describe("CompositionGraphRenderer", () => {
   beforeEach(() => setLocale("en"));
   afterEach(() => cleanup());
 
-  it("renders typed query values and requests continuation by variable and cursor", () => {
+  it("renders Input and Table values and requests the next page", () => {
     const onNext = vi.fn();
     const onPrevious = vi.fn();
     render(() => (
@@ -126,8 +122,7 @@ describe("CompositionGraphRenderer", () => {
     ));
 
     expect(screen.getByRole("textbox", { name: "minimum" })).toHaveValue("2");
-    expect(screen.getByLabelText("total")).toHaveTextContent("2");
-    const table = screen.getByRole("table", { name: "rows results" });
+    const table = screen.getByRole("table", { name: "rows" });
     expect(table).toHaveTextContent("Alpha");
     expect(table).toHaveTextContent("Beta");
     expect(table.querySelectorAll("thead th")).toHaveLength(2);
@@ -138,27 +133,152 @@ describe("CompositionGraphRenderer", () => {
     expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
-  it("renders i64 values exactly in Table cells and Metrics", () => {
+  it("renders scalar Text references as escaped plain text", async () => {
+    const { container } = render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={evaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: /Total: 2/ }))
+      .toBeVisible();
+    expect(screen.getByText(text.replace("{{total}}", "2"))).toBeVisible();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("uses the common no-value display for a null scalar", async () => {
+    const nullDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.kind === "query" && node.id === "total"
+          ? {
+            ...node,
+            returns: {
+              kind: "scalar",
+              value_type: { scalar_type: "integer", nullable: true },
+            },
+          }
+          : node
+      ),
+    };
+    const nullEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      query_results: {
+        ...evaluation.query_results,
+        total: {
+          value: { kind: "scalar", value: { kind: "null" } },
+          has_more: false,
+        },
+      },
+    };
+    render(() => (
+      <CompositionGraphRenderer
+        draft={nullDraft}
+        evaluation={nullEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByText(/Total: No data/)).toBeVisible();
+  });
+
+  it("renders exact i64 and decimal scalar tokens without Number coercion", async () => {
     const maximum = "9223372036854775807";
-    const largeEvaluation: CompositionEvaluationResponse = {
+    const decimal = "12345678901234567890.0000000000000001";
+    const exactDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: [
+        {
+          id: "maximum",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: maximum },
+        },
+        {
+          id: "precise",
+          kind: "constant",
+          value_type: { scalar_type: "decimal", nullable: false },
+          value: { kind: "decimal", value: decimal },
+        },
+      ],
+      components: [{
+        id: "text_exact",
+        kind: "text",
+        content: "{{maximum}} / {{precise}}",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_exact" }],
+        }],
+      },
+    };
+    const exactEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      component_bindings: [{
+        component_id: "text_exact",
+        kind: "text",
+        text_segments: [
+          { kind: "variable", variable: "maximum" },
+          { kind: "literal", text: " / " },
+          { kind: "variable", variable: "precise" },
+        ],
+      }],
+    };
+    render(() => (
+      <CompositionGraphRenderer
+        draft={exactDraft}
+        evaluation={exactEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByText(`${maximum} / ${decimal}`)).toBeVisible();
+  });
+
+  it("keeps exact i64 result tokens in Table cells", () => {
+    const maximum = "9223372036854775807";
+    const exactEvaluation: CompositionEvaluationResponse = {
       ...evaluation,
       query_results: {
         ...evaluation.query_results,
         rows: {
-          ...evaluation.query_results.rows,
           value: {
             kind: "table",
-            columns: evaluation.query_results.rows.value.kind === "table"
-              ? evaluation.query_results.rows.value.columns
-              : [],
+            columns: [
+              { name: "name", value_type: { scalar_type: "string", nullable: false } },
+              { name: "amount", value_type: { scalar_type: "integer", nullable: false } },
+            ],
             rows: [[
               { kind: "string", value: "Large" },
               { kind: "integer", value: maximum },
             ]],
           },
-        },
-        total: {
-          value: { kind: "scalar", value: { kind: "integer", value: maximum } },
           has_more: false,
         },
       },
@@ -166,7 +286,7 @@ describe("CompositionGraphRenderer", () => {
     render(() => (
       <CompositionGraphRenderer
         draft={draft}
-        evaluation={largeEvaluation}
+        evaluation={exactEvaluation}
         rawInputs={{}}
         inputStates={{}}
         blockedQueryIds={new Set()}
@@ -178,556 +298,21 @@ describe("CompositionGraphRenderer", () => {
       />
     ));
 
-    expect(screen.getByRole("cell", { name: maximum })).toBeInTheDocument();
-    expect(screen.getByLabelText("total")).toHaveTextContent(maximum);
+    expect(screen.getByRole("cell", { name: maximum })).toBeVisible();
   });
 
-  it("announces an empty table after successful evaluation without keeping previous rows", () => {
-    const [result, setResult] = createSignal(evaluation);
-    render(() => (
-      <CompositionGraphRenderer
-        draft={draft}
-        evaluation={result()}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(screen.getByRole("table")).toHaveTextContent("Alpha");
-    setResult({
+  it("shows scalar execution diagnostics next to the referencing Text", async () => {
+    const withDiagnostic: CompositionEvaluationResponse = {
       ...evaluation,
-      query_results: {
-        ...evaluation.query_results,
-        rows: {
-          value: {
-            ...evaluation.query_results.rows.value,
-            kind: "table",
-            rows: [],
-          },
-          has_more: false,
-        },
-      },
-    });
-    expect(screen.getByRole("table")).not.toHaveTextContent("Alpha");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "The query returned no rows.",
-    );
-    expect(screen.queryByRole("button", { name: "Next" })).not
-      .toBeInTheDocument();
-  });
-
-  it("shows the selected Saved SQL output alias for an opaque generated variable", () => {
-    const variableId =
-      "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_opaque_value";
-    const savedSqlDraft: CompositionGraphDraft = {
-      ...draft,
-      variables: draft.variables.map((node) =>
-        node.id === "total"
-          ? {
-            ...node,
-            id: variableId,
-            query: {
-              kind: "saved_sql",
-              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
-              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
-              column: "total_amount",
-              label_source: "source",
-              arguments: [],
-            },
-          }
-          : node
-      ),
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: variableId }
-          : component
-      ),
-    };
-    const savedSqlEvaluation: CompositionEvaluationResponse = {
-      ...evaluation,
-      computed_query_ids: ["rows", variableId],
-      query_results: {
-        ...evaluation.query_results,
-        [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: "20" } },
-          has_more: false,
-        },
-      },
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={savedSqlDraft}
-        evaluation={savedSqlEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("heading", { name: "total_amount", exact: true }))
-      .toBeVisible();
-    expect(screen.getByRole("region", { name: "total_amount", exact: true }))
-      .toHaveTextContent("20");
-    expect(screen.queryByRole("region", { name: variableId }))
-      .not.toBeInTheDocument();
-  });
-
-  it("uses the declared variable label when its ID matches a generated pattern", () => {
-    const variableId =
-      "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_all_rows";
-    const namedVariableDraft: CompositionGraphDraft = {
-      ...draft,
-      variables: draft.variables.map((node) =>
-        node.id === "total"
-          ? {
-            ...node,
-            id: variableId,
-            query: {
-              kind: "saved_sql",
-              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
-              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
-              column: "row_count",
-              label_source: "variable",
-              arguments: [],
-            },
-          }
-          : node
-      ),
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: variableId }
-          : component
-      ),
-    };
-    const namedVariableEvaluation: CompositionEvaluationResponse = {
-      ...evaluation,
-      computed_query_ids: ["rows", variableId],
-      query_results: {
-        ...evaluation.query_results,
-        [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
-          has_more: false,
-        },
-      },
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={namedVariableDraft}
-        evaluation={namedVariableEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("heading", { name: variableId, exact: true }))
-      .toBeVisible();
-    expect(screen.getByRole("region", { name: variableId, exact: true }))
-      .toHaveTextContent("3");
-    expect(screen.queryByRole("region", { name: "row_count" }))
-      .not.toBeInTheDocument();
-  });
-
-  it("does not expose a generated ID for a direct Saved SQL scalar metric", () => {
-    const variableId = "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_value";
-    const directScalarDraft: CompositionGraphDraft = {
-      ...draft,
-      variables: draft.variables.map((node) =>
-        node.id === "total"
-          ? {
-            ...node,
-            id: variableId,
-            query: {
-              kind: "saved_sql",
-              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
-              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
-              label_source: "source",
-              arguments: [],
-            },
-          }
-          : node
-      ),
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: variableId }
-          : component
-      ),
-    };
-    const directScalarEvaluation: CompositionEvaluationResponse = {
-      ...evaluation,
-      computed_query_ids: ["rows", variableId],
-      query_results: {
-        ...evaluation.query_results,
-        [variableId]: {
-          value: { kind: "scalar", value: { kind: "integer", value: "20" } },
-          has_more: false,
-        },
-      },
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={directScalarDraft}
-        evaluation={directScalarEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("heading", { name: "Metric result", exact: true }))
-      .toBeVisible();
-    expect(screen.getByRole("region", { name: "Metric result", exact: true }))
-      .toHaveTextContent("20");
-    expect(screen.queryByText(variableId)).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: variableId })).not
-      .toBeInTheDocument();
-  });
-
-  it("renders a Metric bound directly to an evaluated integer input", () => {
-    const directInputMetricDraft: CompositionGraphDraft = {
-      ...draft,
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: "minimum" }
-          : component
-      ),
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={directInputMetricDraft}
-        evaluation={evaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent("1");
-  });
-
-  it("renders the exact current integer input when REST returns a rounded number", () => {
-    const directInputMetricDraft: CompositionGraphDraft = {
-      ...draft,
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: "minimum" }
-          : component
-      ),
-    };
-    const roundedEvaluation = {
-      ...evaluation,
-      variable_values: { minimum: 9007199254740992 },
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={directInputMetricDraft}
-        evaluation={roundedEvaluation}
-        rawInputs={{ minimum: "9007199254740993" }}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent("9007199254740993");
-  });
-
-  it("hides an unsafe bare integer Metric value instead of substituting default", () => {
-    const directInputMetricDraft: CompositionGraphDraft = {
-      ...draft,
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: "minimum" }
-          : component
-      ),
-    };
-    const roundedEvaluation = {
-      ...evaluation,
-      variable_values: { minimum: 9007199254740992 },
-    };
-    const exactDefaultDraft = structuredClone(directInputMetricDraft);
-    const defaultInput = exactDefaultDraft.variables.find((node) =>
-      node.id === "minimum"
-    );
-    if (defaultInput?.kind === "input") {
-      defaultInput.default = {
-        kind: "integer",
-        value: "9007199254740993",
-      };
-    }
-
-    const { unmount } = render(() => (
-      <CompositionGraphRenderer
-        draft={exactDefaultDraft}
-        evaluation={roundedEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent(/^minimum\s*$/);
-    expect(screen.queryByText("9007199254740993")).not.toBeInTheDocument();
-    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
-    unmount();
-
-    const noDefaultDraft = structuredClone(exactDefaultDraft);
-    const input = noDefaultDraft.variables.find((node) => node.id === "minimum");
-    if (input?.kind === "input") delete input.default;
-    const { unmount: unmountUnsafe } = render(() => (
-      <CompositionGraphRenderer
-        draft={noDefaultDraft}
-        evaluation={roundedEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent(/^minimum\s*$/);
-    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
-    unmountUnsafe();
-
-    const safeEvaluation = {
-      ...evaluation,
-      variable_values: { minimum: 42 },
-    };
-    render(() => (
-      <CompositionGraphRenderer
-        draft={noDefaultDraft}
-        evaluation={safeEvaluation}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent("42");
-  });
-
-  it("hides an unsafe integer instead of reporting no data from a null default", () => {
-    const nullableInputMetricDraft: CompositionGraphDraft = {
-      ...draft,
-      variables: draft.variables.map((node) =>
-        node.id === "minimum" && node.kind === "input"
-          ? {
-            ...node,
-            value_type: { ...node.value_type, nullable: true },
-            required: false,
-            default: { kind: "null" } as const,
-          }
-          : node
-      ),
-      components: draft.components.map((component) =>
-        component.kind === "metric"
-          ? { ...component, variable: "minimum" }
-          : component
-      ),
-    };
-
-    render(() => (
-      <CompositionGraphRenderer
-        draft={nullableInputMetricDraft}
-        evaluation={{
-          ...evaluation,
-          variable_values: { minimum: 9007199254740992 },
-        }}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByRole("region", { name: "minimum", exact: true }))
-      .toHaveTextContent(/^minimum\s*$/);
-    expect(screen.queryByText("9007199254740992")).not.toBeInTheDocument();
-  });
-
-  it("renders evaluated JSON and current raw string inputs in text bindings", () => {
-    const textDraft: CompositionGraphDraft = {
-      name: "Report",
-      variables: [{
-        id: "report_title",
-        kind: "input",
-        value_type: { scalar_type: "string", nullable: false },
-        required: true,
-        default: { kind: "string", value: "Previous title" },
+      query_diagnostics: [{
+        code: "scalar_multiple_rows",
+        variable_id: "total",
       }],
-      components: [
-        { id: "title_input", kind: "input", variable: "report_title" },
-        {
-          id: "title_text",
-          kind: "text",
-          content: { kind: "variable", variable: "report_title" },
-          style: "body",
-        },
-      ],
-      layout: {
-        kind: "flow",
-        rows: [{
-          id: "main",
-          items: [
-            { kind: "component", component: "title_input" },
-            { kind: "component", component: "title_text" },
-          ],
-        }],
-      },
     };
-    const [rawInputs, setRawInputs] = createSignal<Record<string, string>>({});
-    const [inputStates, setInputStates] = createSignal<
-      Record<string, "pending" | "invalid" | "missing">
-    >({});
-    render(() => (
-      <CompositionGraphRenderer
-        draft={textDraft}
-        evaluation={{
-          ...evaluation,
-          computed_query_ids: [],
-          variable_values: {
-            report_title: "Previous title",
-          },
-          query_results: {},
-        }}
-        rawInputs={rawInputs()}
-        inputStates={inputStates()}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={(variableId, raw) => {
-          setRawInputs((current) => ({ ...current, [variableId]: raw }));
-          setInputStates((current) => ({
-            ...current,
-            [variableId]: "pending",
-          }));
-        }}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    const input = screen.getByRole("textbox", { name: "report_title" });
-    expect(screen.getByText("Previous title")).toBeVisible();
-
-    fireEvent.input(input, { target: { value: "Transient report title" } });
-
-    expect(input).toHaveValue("Transient report title");
-    expect(screen.getByText("Transient report title")).toBeVisible();
-    expect(screen.queryByText("Previous title")).not.toBeInTheDocument();
-  });
-
-  it("renders a one-row NULL scalar distinctly from zero rows", () => {
-    render(() => (
-      <CompositionGraphRenderer
-        draft={{
-          ...draft,
-          variables: draft.variables.map((node) =>
-            node.id === "total" && node.kind === "query"
-              ? {
-                ...node,
-                returns: {
-                  kind: "scalar",
-                  value_type: { scalar_type: "integer", nullable: true },
-                },
-              }
-              : node
-          ),
-        }}
-        evaluation={{
-          ...evaluation,
-          query_results: {
-            ...evaluation.query_results,
-            total: {
-              value: { kind: "scalar", value: { kind: "null" } },
-              has_more: false,
-            },
-          },
-        }}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-
-    expect(screen.getByLabelText("total")).toHaveTextContent("No data");
-    expect(screen.getByLabelText("total")).not.toHaveTextContent("0");
-  });
-
-  it("surfaces a query diagnostic in its local component", () => {
     render(() => (
       <CompositionGraphRenderer
         draft={draft}
-        evaluation={{
-          ...evaluation,
-          query_diagnostics: [{
-            code: "sql_error",
-            variable_id: "total",
-            result_diagnostic: {
-              code: "result_error",
-              result_diagnostic: { code: "scalar_multiple_rows" },
-            },
-          }],
-        }}
+        evaluation={withDiagnostic}
         rawInputs={{}}
         inputStates={{}}
         blockedQueryIds={new Set()}
@@ -739,52 +324,19 @@ describe("CompositionGraphRenderer", () => {
       />
     ));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "The metric returned more than one row.",
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The query returned more than one value.",
     );
-    expect(screen.getByRole("table", { name: "rows results" })).toBeVisible();
   });
 
-  it("shows a local aborted state for successful siblings of a failed selected evaluation", () => {
-    render(() => (
-      <CompositionGraphRenderer
-        draft={draft}
-        evaluation={{
-          ...evaluation,
-          ok: false,
-          query_results: {},
-          query_diagnostics: [
-            { code: "evaluation_aborted", variable_id: "total" },
-            { code: "result_validation_failed", variable_id: "rows" },
-          ],
-        }}
-        rawInputs={{}}
-        inputStates={{}}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(
-      screen.getAllByRole("alert").some((alert) =>
-        alert.textContent ===
-          "Another query failed. This evaluation did not produce a result."
-      ),
-    ).toBe(true);
-    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-  });
-
-  it("hides stale metrics while an invalid input blocks their query", () => {
+  it("shows a request failure beside the affected Text result", async () => {
     render(() => (
       <CompositionGraphRenderer
         draft={draft}
         evaluation={evaluation}
-        rawInputs={{ minimum: "not an integer" }}
-        inputStates={{ minimum: "invalid" }}
+        queryErrors={{ total: "SQL query execution failed" }}
+        rawInputs={{}}
+        inputStates={{}}
         blockedQueryIds={new Set(["total"])}
         previousPageQueryIds={new Set()}
         pageBusy={false}
@@ -794,41 +346,8 @@ describe("CompositionGraphRenderer", () => {
       />
     ));
 
-    expect(screen.queryByLabelText("total")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Waiting for input…",
-    );
-  });
-  it("hides stale scalar displays for an invalid input while leaving independent results usable", () => {
-    const graph = structuredClone(draft);
-    graph.components.push({
-      id: "input-value",
-      kind: "metric",
-      variable: "minimum",
-    });
-    graph.layout.rows[0].items.push({
-      kind: "component",
-      component: "input-value",
-    });
-    render(() => (
-      <CompositionGraphRenderer
-        draft={graph}
-        evaluation={evaluation}
-        rawInputs={{ minimum: "bad" }}
-        inputStates={{ minimum: "invalid" }}
-        blockedQueryIds={new Set()}
-        previousPageQueryIds={new Set()}
-        pageBusy={false}
-        onInput={vi.fn()}
-        onNext={vi.fn()}
-        onPrevious={vi.fn()}
-      />
-    ));
-    expect(screen.getByRole("textbox", { name: "minimum" })).toHaveValue("bad");
-    expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");
-    expect(screen.getByRole("table")).toHaveTextContent("Alpha");
-    expect(screen.getByRole("region", { name: "total" })).toHaveTextContent(
-      "2",
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "SQL query execution failed",
     );
   });
 });

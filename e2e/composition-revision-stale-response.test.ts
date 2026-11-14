@@ -47,8 +47,7 @@ async function createSpace(request: APIRequestContext): Promise<string> {
 
 function compositionGraph(
   name: string,
-  savedSqlId: string,
-  savedSqlRevisionId: string,
+  sql: string,
   cutoff: string,
 ): CompositionGraphSeed {
   return {
@@ -69,11 +68,8 @@ function compositionGraph(
           value_type: { scalar_type: "float", nullable: true },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSqlId,
-          revision_id: savedSqlRevisionId,
-          label_source: "variable",
-          column: "total",
+          kind: "inline_sql",
+          sql,
           arguments: [{ name: "start_date", variable: "cutoff_date" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -82,7 +78,7 @@ function compositionGraph(
     ],
     components: [
       { id: "cutoff", kind: "input", variable: "cutoff_date" },
-      { id: "total", kind: "metric", variable: "total_value" },
+      { id: "total", kind: "text", content: "{{total_value}}", style: "body" },
     ],
     rows: [{
       id: "main",
@@ -148,38 +144,16 @@ async function seedRevisionPair(
     expect(response.status()).toBe(201);
   }
 
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: `Revision race total ${suffix}`,
-        kind: "user-query",
-        sql: `SELECT SUM(${sqlIdentifier(amountColumn!)}) AS total FROM ${
-          sqlIdentifier(relation!)
-        } WHERE ${sqlIdentifier(dateColumn!)} >= $start_date`,
-        variables: [{
-          type: "date",
-          name: "start_date",
-          description: "First included date.",
-        }],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
+  const sql = `SELECT SUM(${sqlIdentifier(amountColumn!)}) AS total FROM ${
+    sqlIdentifier(relation!)
+  } WHERE ${sqlIdentifier(dateColumn!)} >= $start_date`;
 
   const firstYaml = await completeCompositionGraphYaml(
     request,
     spaceId,
     compositionGraph(
       compositionName,
-      savedSql.id!,
-      savedSql.revision_id!,
+      sql,
       FIRST_CUTOFF,
     ),
   );
@@ -188,8 +162,7 @@ async function seedRevisionPair(
     spaceId,
     compositionGraph(
       compositionName,
-      savedSql.id!,
-      savedSql.revision_id!,
+      sql,
       SECOND_CUTOFF,
     ),
   );
@@ -267,7 +240,7 @@ test.describe("Composition revision stale response", () => {
     seed = await seedRevisionPair(request);
   });
 
-  test("discard a delayed metric response after navigating to another exact revision", async ({ page }) => {
+  test("discard a delayed Text response after navigating to another exact revision", async ({ page }) => {
     test.setTimeout(120_000);
     await page.addInitScript((config) => {
       type InitProbe = RevisionProbe;
@@ -373,7 +346,7 @@ test.describe("Composition revision stale response", () => {
     await expect(secondRevisionLink).toBeVisible();
     await secondRevisionLink.click();
     await expect(page).toHaveURL(new RegExp(`${secondPath}$`));
-    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+    await expect(page.locator('[data-component-id="total"] .compositionGraphText')).toHaveText(
       String(SECOND_TOTAL),
       { timeout: 15_000 },
     );
@@ -381,13 +354,13 @@ test.describe("Composition revision stale response", () => {
     await expect(page.locator("[role='status']")).toHaveCount(0);
     const currentBeforeRelease = {
       url: new URL(page.url()).pathname,
-      metric: await page.locator(".compositionGraphMetric strong")
+      text: await page.locator('[data-component-id="total"] .compositionGraphText')
         .textContent(),
       alerts: await page.locator("[role='alert']").allTextContents(),
       loading: await page.locator("[role='status']").count(),
     };
     expect(currentBeforeRelease.url).toBe(secondPath);
-    expect(currentBeforeRelease.metric?.trim()).toBe(String(SECOND_TOTAL));
+    expect(currentBeforeRelease.text?.trim()).toBe(String(SECOND_TOTAL));
 
     await page.evaluate(() => {
       (window as ProbeWindow).__compositionRevisionProbe!.release();
@@ -410,13 +383,13 @@ test.describe("Composition revision stale response", () => {
 
     const currentAfterRelease = {
       url: new URL(page.url()).pathname,
-      metric: await page.locator(".compositionGraphMetric strong")
+      text: await page.locator('[data-component-id="total"] .compositionGraphText')
         .textContent(),
       alerts: await page.locator("[role='alert']").allTextContents(),
       loading: await page.locator("[role='status']").count(),
     };
     expect(currentAfterRelease).toEqual(currentBeforeRelease);
-    expect(currentAfterRelease.metric?.trim()).toBe(String(SECOND_TOTAL));
+    expect(currentAfterRelease.text?.trim()).toBe(String(SECOND_TOTAL));
     const probe = await readProbe(page);
     expect(probe?.targets).toEqual([seed.firstRevisionId]);
     expect(probe?.oldValues).toEqual([{ kind: "float", value: FIRST_TOTAL }]);

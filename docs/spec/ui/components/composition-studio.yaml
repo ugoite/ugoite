@@ -2,65 +2,78 @@
 title: "Composition Studio"
 ---
 
-**Status: incremental SQL authoring changes are implemented; the full v0.2.2 Composition model and Studio migration remain planned.** Composition inline SQL uses Rust-backed template normalization and Form seeds project only projectable user-data columns. The historical Structure Toolbar and current graph/component model remain during this step; the complete target is tracked by #4888 and the deprecated prerelease UI criteria remain preserved in REQ-FE-079. See REQ-FE-082 for the current SQL template and Form seed contract. The normative Composition graph model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
+**Status: Text-first Composition authoring is the current target.** The browser
+uses the strict typed graph and SQL contract in
+[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md),
+[REQ-COMP-010](../../../mitase/requirements/composition/text-first-graph.yaml),
+and [REQ-FE-083](../../../mitase/requirements/frontend/composition-text-first.yaml).
+SQL template normalization and optional Form seeds remain in REQ-FE-082. The
+prior Composition UI criteria remain historical in REQ-FE-079.
 
-## Modes and variable graph
+## Modes and variables
 
-The only mode controls are Design and Variables. The selected control owns its name; its panel does not repeat that name as a visible heading.
+Studio opens in Design. Its only modes are Design and Variables; the selected
+mode control owns its name, and the panel does not repeat it as a heading.
 
-Variables shows one typed graph. A row presents its meaningful variable name and kind icon. Adding a value, input, or SQL variable starts from +, asks for a unique nonblank variable name, and adds the graph node only after that name is submitted. The Design canvas uses the same in-place name prompt when adding its first Input; committing creates the named variable and its Input reference together. Cancel leaves the graph unchanged. While a name is pending, Save is unavailable. A constant edits its typed literal, an input edits its type and default, and a query edits its SQL document in the shared Workspace. Query outputs show a table or scalar shape only when that distinction is unambiguous. The list has no common SQL subtitle, separate label field, or explanatory cards.
+Variables lists a meaningful variable name with a kind icon beside one focused
+editor. Variables are typed constants, inputs, or inline SQL query results.
+Names, types, SQL output aliases, field names, and Text content appear only
+where they carry meaning. UUIDs and explanatory row copy are not primary-path
+labels. A query stores one SQL source with explicit typed graph bindings and a
+server-derived table or scalar result descriptor. Parameter diagnostics stay
+near the SQL or binding control; there is no separate Arguments page.
 
-Desktop places the variable rail beside its editor. On narrow screens the rail is a drawer that closes after selection. Drawer, selection, loading, and diagnostics are transient Work.
+The SQL editor is text-first. Rust owns SQL and `{{name}}` parameter
+normalization, parsing, and diagnostics. Lint, authorized schema check, and
+explicit execution are separate actions. Form is optional when creating a
+query; its starter uses explicit projectable user-data columns and never
+silently replaces authored SQL. Composition wildcard restrictions do not
+change ordinary SQL or published Saved SQL behavior.
 
-## Shared SQL Workspace
+## Saved revisions and historical shapes
 
-Every query variable uses the shared SQL text editor defined in [sql-workspace.yaml](sql-workspace.yaml). Saved SQL has no SQL-construction toolbar. Composition retains its host-owned Structure Toolbar during the planned Studio migration. Composition query variables store SQL source and use the Rust template normalizer to derive execution parameters; `{{name}}` markers in quoted strings, quoted identifiers, and comments remain literal text. Only explicit typed graph bindings supply parameter values. Rust owns parsing, validation, typing, compilation, and serialization; the browser does not define another SQL parser or generator.
+Before saving, the server validates the current graph and derives query Form
+bindings and result descriptors from current authorized planning. It does not
+trust submitted bindings or schema fingerprints. Saves retain append-only
+history and their existing idempotent receipt and stale-revision conflict
+behavior. The replaced prerelease graph shape is not silently converted or
+restored as an executable Composition. Exact reads, raw inspection, export, and
+history remain available for those stored revisions without migration; the
+user must create a current-shape Composition to execute it.
 
-The Workspace provides Form/relation, columns, filter, sort, structure, and arguments actions. Arguments can be added from an empty state and bind SQL parameter names explicitly to graph variables. A missing, unused, or mistyped argument is a local diagnostic and blocks saving or execution. Parameter values appear only when declared and supplied. The SQL body, result table, and local diagnostic remain in the same editor surface. Composition uses the shared argument editor for add, rename, type change, and removal. A rename applies Rust's parameter edit and the explicit binding together, and stale edits cannot replace newer SQL or another session. A type change disconnects an incompatible binding without changing the upstream scalar. Only unreferenced declarations can be removed. Values and defaults remain owned by graph inputs and constants; Composition does not expose a second argument-default editor.
+## Design canvas
 
-The feature matrix in ADR-025 is the acceptance boundary: every SQL construct admitted by the Rust executor must have an equivalent typed GUI operation and round-trip fixture. The current structure toolbar is not evidence of full admitted-grammar coverage. CTEs, joins, nested expressions, set operations, and other constructs remain incomplete until their executor and GUI contracts are verified together.
+The canvas offers Text, Table, and Input only. Insertion is completed in the
+canvas without opening a second Inspector. The two mode controls are Design
+and Variables; Metric and Saved SQL binding pickers are not offered.
 
-## Design canvas and binding picker
+- Text starts editable in its placed position. Its plain template uses
+  `{{variable_id}}`; a compact adjacent control selects Title, Heading, Body,
+  or Caption. The Rust parser supplies literal and scalar-reference parts.
+- Table references one table query variable. Its SQL projection owns displayed
+  columns, aliases, and order. The component has no independent column
+  projection editor.
+- Input references one input variable. Its current value is transient Work,
+  not part of the Composition document.
 
-The canvas keeps the four add actions Input, Text, Table, and Value visible together, including on an empty draft. The name field has a localized placeholder, and Save is separate from the two mode controls. An unselected canvas uses the full width; an Inspector appears only after explicit selection and can be closed. Empty literal Text remains visually empty in Design and runtime, and its edit control opens the in-place editor. Tables keep readable cells inside their own horizontal scroll region at narrow widths.
+When Table or Input needs a variable that is not yet declared, creation moves
+to Variables and returns to the pending Design placement only on success.
+Cancel or failure leaves no unplaced component or dangling reference. Existing
+variables can be selected without changing their shared query definition.
 
-The canvas offers Input, Text, Table, and Value. Input references one input variable. Text holds literal content or a string scalar reference. Table references a table result variable. Value references a compatible scalar variable. Display components do not store Form IDs, SQL text, Saved SQL revisions, SQL arguments, source IDs, or result schemas.
+## Reader
 
-A Table may carry an ordered display-only view whose columns pair an exact query-result column key with a human label. During this incremental step, Form-to-Table creation asks Rust to seed an explicit projection from all projectable user-data fields, with unique labels. It never selects `*` or adds metadata fields to the projection. A Form with no projectable fields shows a local error and leaves the draft unchanged; it does not fall back to `_ugoite_id`. The remaining Table presentation editor is part of the planned Composition model migration. Existing views continue to project the current query result for display; they do not rewrite SQL, mutate Entries, or change column types and values. An absent view presents the complete query result. Editing a query to change its output columns keeps the view in draft Work until the author updates its selected columns; save rejects stale view keys against the resolved result schema.
+Reader and Design share the same result renderer. Reader does not show mode
+controls, component selection, Text editing, or style controls. Text is rendered
+as text, not HTML or evaluated markup. A stale, failed, unauthorized, or
+missing value is not replaced with an older result. Table paging remains
+bounded and server-owned; empty results keep their SQL result headings.
 
-The Table Inspector presents selected columns using their saved display labels. Unselected result columns are kept behind a collapsed “Add result columns” disclosure so technical metadata does not crowd the selected Form fields. The disclosure changes only which exact result keys are selected; it does not change their labels or query meaning. Repeated display labels receive ordinal context in accessible editing and removal names. The disclosure summary and each optional-column choice have a 44px minimum touch target.
+## Responsive and accessible behavior
 
-“Show every result column” appears only when the current view omits or contains unavailable result keys. It adds missing current columns after the existing selection, preserving selected order and headings while dropping unavailable keys. When result names are ambiguous, the action clears the keyed view so the default positional result can be shown.
-
-Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs. Variables is the default tab; the picker never silently applies a previous choice. Empty and loading panels expose a local status instead of a blank panel. Variable choices are filtered by result type. Choosing a Form or exact Saved SQL revision resolves or reuses a compatible query variable and inserts the component atomically. Form Table selection creates explicit SQL for projectable user-data columns; if none are projectable, the picker shows a local error and does not insert a query or Table. Form Value requires an explicit aggregate and any required column. Saved SQL pins an exact revision; a scalar result must have exactly one row and one selected column. The picker never assumes COUNT or picks a first row or column.
-
-Opening Saved SQL shows the listed revisions immediately. Only the chosen
-revision is prepared, using explicitly bound Composition variables. Listing
-candidates does not run query probes, wait for other candidates, or fabricate
-argument values. Incompatible results and unavailable revisions are reported
-locally after selection, and leave the draft unchanged.
-
-Reuse is based on semantic query identity, exact bindings, result descriptor, and authorized context, not a matching display name. An edited query variable is not reused just because its name matches. Resolution, permission, descriptor, type, or revision failure leaves no partial query variable or component.
-
-Adding a component closes the picker and leaves the canvas visible; it does not open an Inspector. Selecting a placed Table or Value exposes one variable reference action. That action opens the same picker and changes only the selected component reference, leaving shared query variables intact. Removing a component does not remove its variable.
-
-At runtime, each Input component presents its variable name with an accessible name and an input control at least 44px high. Repeated controls follow component order during keyboard navigation and fit a 390px viewport without page-level horizontal overflow.
-
-When a selected evaluation fails, every selected result and page is cleared.
-The failed query retains its local cause; successful siblings announce that the
-evaluation produced no result instead of remaining in Loading. An unselected
-result survives only while its Publication and authorization identity match.
-Repairing the input recomputes and publishes the affected closure together.
-
-A successful Table result with zero rows retains its column headings and announces the shared SQL empty-result status. It does not retain previous rows or display a loading message.
-
-The picker has one modal focus owner. Full rows select candidates; Escape closes the picker and restores focus. Controls expose accessible names, visible focus, and at least 44px targets. The picker and drawer fit 320px layouts without horizontal page overflow or a second navigation surface over the canvas.
-
-## Names and state
-
-Composition name, variable name, SQL output alias, Form field name, Text content, and accessible name each appear where they carry meaning. Binding-only UUIDs are not ordinary primary-path labels. There are no Composition tags, source aliases, or editable component labels.
-Saved SQL metric label selection follows the explicit `label_source` contract in [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md); it is not inferred from variable ID format.
-
-A new Composition can preview and insert existing Forms or exact Saved SQL before it is named. Authoring probes use a transient nonempty document title; the editor name remains untouched, and an unnamed definition still cannot be saved. Text editing retains its input node, focus, selection and composition session while its live definition changes.
-
-Inputs, constants under edit, preview values, query results, pages, cursors, loading state, and errors remain Work. Evaluation is stateless and does not append Entry history or persist result rows.
+Controls remain keyboard reachable with visible focus and useful accessible
+names. Text editing retains focus and supports multiline input. Variable lists
+and pickers fit narrow screens without page-level horizontal overflow. Reader
+tables scroll within their own region. Current implementation evidence is
+tracked by the Composition Studio feature and verification bindings; this file
+does not claim manual device or screen-reader validation that has not run.

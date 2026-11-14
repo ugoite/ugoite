@@ -41,10 +41,7 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
             anyhow::bail!("expected scalar query variable")
         };
         let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-            &mut query.definition
-        else {
-            anyhow::bail!("expected inline SQL")
-        };
+            &mut query.definition;
         *sql = invalid_sql.to_owned();
         if fingerprinted_descriptor {
             query.schema_fingerprint = "previously-resolved-schema".to_owned();
@@ -140,10 +137,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         anyhow::bail!("expected scalar query variable")
     };
     let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-        &mut query.definition
-    else {
-        anyhow::bail!("expected inline SQL")
-    };
+        &mut query.definition;
     *sql = "SELECT 1 AS total UNION ALL SELECT 2 AS total".to_owned();
 
     let history_before_rejected_update = service
@@ -196,10 +190,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         anyhow::bail!("expected scalar query variable")
     };
     let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-        &mut query.definition
-    else {
-        anyhow::bail!("expected inline SQL")
-    };
+        &mut query.definition;
     *sql = "SELECT 2 AS total".to_owned();
     let repaired_save = service
         .save_composition_authorized_for_principals(
@@ -242,10 +233,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
         anyhow::bail!("repaired stored document lost its scalar query")
     };
     let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-        &query.definition
-    else {
-        anyhow::bail!("repaired stored query is no longer inline SQL")
-    };
+        &query.definition;
     assert_eq!(sql, "SELECT 2 AS total");
     Ok(())
 }
@@ -272,10 +260,7 @@ async fn nullable_sql_null_first_save_is_valid_and_resolves_nullable_descriptor(
         value_type.nullable = true;
     }
     let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-        &mut query.definition
-    else {
-        anyhow::bail!("expected inline SQL")
-    };
+        &mut query.definition;
     *sql = "SELECT CAST(NULL AS BIGINT) AS total".to_owned();
     let saved = service
         .save_composition_authorized_for_principals(

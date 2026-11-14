@@ -97,10 +97,9 @@ impl UgoiteService {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
 
-        // Local Core saves have no caller ACL boundary, but saved SQL sources
-        // still persist only source descriptors derived from current local
-        // Forms and exact Saved SQL revisions. This lets the CLI remain fully
-        // usable without routing Composition saves through the server.
+        // Local Core saves have no caller ACL boundary, but SQL query
+        // descriptors still derive from current local Forms. This lets the CLI
+        // remain fully usable without routing Composition saves through the server.
         let workspace_path = self.workspace_path(space_id);
         if let Some(result) = composition::recover_published_composition_save(
             &self.operator,
@@ -160,85 +159,39 @@ impl UgoiteService {
             // nonempty spoof. An empty schema fingerprint marks the result
             // descriptor incomplete and lets the planner fill it in.
             let draft_descriptor = query.schema_fingerprint.is_empty();
-            match &query.definition {
-                ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
-                    let bindings = composition_inline_form_bindings_for_save(
-                        &node.id,
-                        sql,
-                        &query.form_bindings,
-                        previous_document.as_ref(),
-                        &forms,
-                    )?;
-                    let metadata = self
-                        .derive_inline_sql_query_metadata(
-                            space_id,
-                            &source_for_planning,
-                            Some(&bindings),
-                            &variables,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await?
-                        .ok_or_else(|| {
-                            AppError::invalid_input(
-                                ErrorCode::InvalidInput,
-                                "Composition SQL query cannot be resolved",
-                            )
-                        })?;
-                    super::composition_resolver::reconcile_query_returns_with_schema(
-                        returns,
-                        &metadata.result_columns,
-                        draft_descriptor,
-                    )?;
-                    query.form_bindings = metadata.form_bindings;
-                    query.schema_fingerprint = metadata.schema_fingerprint;
-                }
-                ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some(entry_id),
-                    revision_id: Some(revision_id),
-                    ..
-                } => {
-                    let metadata = self
-                        .derive_saved_sql_query_metadata(
-                            space_id,
-                            &source_for_planning,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await?
-                        .ok_or_else(|| {
-                            AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
-                        })?;
-                    if metadata.entry_id != *entry_id || metadata.revision_id != *revision_id {
-                        return Err(AppError::not_found(
-                            ErrorCode::EntryNotFound,
-                            "Saved SQL revision not found",
-                        )
-                        .into());
-                    }
-                    super::composition_save_validation::validate_saved_sql_arguments(
-                        &query.arguments,
-                        &metadata.parameter_types,
-                        &variables,
-                    )?;
-                    super::composition_resolver::reconcile_query_returns_with_schema(
-                        returns,
-                        &metadata.result_columns,
-                        draft_descriptor,
-                    )?;
-                    query.form_bindings = metadata.form_bindings;
-                    query.schema_fingerprint = metadata.schema_fingerprint;
-                }
-                ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql { .. } => {
-                    return Err(AppError::not_found(
-                        ErrorCode::EntryNotFound,
-                        "Saved SQL revision not found",
+            let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+                &query.definition;
+            let bindings = composition_inline_form_bindings_for_save(
+                &node.id,
+                sql,
+                &query.form_bindings,
+                previous_document.as_ref(),
+                &forms,
+            )?;
+            let metadata = self
+                .derive_inline_sql_query_metadata(
+                    space_id,
+                    &source_for_planning,
+                    Some(&bindings),
+                    &variables,
+                    None,
+                    None,
+                    None,
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Composition SQL query cannot be resolved",
                     )
-                    .into());
-                }
-            }
+                })?;
+            super::composition_resolver::reconcile_query_returns_with_schema(
+                returns,
+                &metadata.result_columns,
+                draft_descriptor,
+            )?;
+            query.form_bindings = metadata.form_bindings;
+            query.schema_fingerprint = metadata.schema_fingerprint;
         }
         if !request.document.has_complete_query_descriptors() {
             return Err(AppError::invalid_input(

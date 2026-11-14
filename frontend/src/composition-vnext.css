@@ -541,6 +541,10 @@
   color: var(--ui-foreground);
   background: transparent;
 }
+.compositionGraphSelect:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
 .compositionGraphText--title {
   font-size: 2rem;
   font-weight: 700;

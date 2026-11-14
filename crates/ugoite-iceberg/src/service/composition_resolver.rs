@@ -16,7 +16,6 @@ use ugoite_core::composition::{
     resolve_composition_preview_with_query_selection, resolve_composition_with_query_selection,
     returns_from_schema, CompositionDiagnostic, CompositionRevisionRef, CurrentQueryDescriptor,
     InlineSqlQueryMetadata, PreviewCompositionPlan, ResolveInput, ResolvedCompositionPlan,
-    SavedSqlRevisionMetadata,
 };
 use ugoite_core::composition_query::selected_query_dependency_closure_for_graph;
 use ugoite_core::error::{AppError, ErrorCode};
@@ -25,7 +24,7 @@ use ugoite_core::query::{
     SqlFunctionPolicy,
 };
 use ugoite_core::sql_query::{
-    SavedSqlRevisionRef, SqlResultColumnType, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
+    SqlResultColumnType, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
 };
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, variable_graph_dependency_order,
@@ -35,15 +34,13 @@ use ugoite_domain::composition::{
     VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
-use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
+use ugoite_domain::id::FormId;
 use uuid::Uuid;
 
 use super::{
-    validate_storage_id, UgoiteService, MAX_AUTHORIZED_SCOPE_FORMS,
-    MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+    UgoiteService, MAX_AUTHORIZED_SCOPE_FORMS, MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
 };
-use crate::integrity::RealIntegrityProvider;
-use crate::{iceberg_store, saved_sql};
+use crate::iceberg_store;
 
 /// The semantic outcome of resolving one exact Composition revision.
 ///
@@ -97,10 +94,6 @@ enum OwnedCurrentQueryDescriptor {
         variable_id: String,
         schema: Option<InlineSqlQueryMetadata>,
     },
-    SavedSql {
-        variable_id: String,
-        revision: Option<SavedSqlRevisionMetadata>,
-    },
 }
 
 /// Return a deterministic order that derives every upstream query result
@@ -141,69 +134,8 @@ impl OwnedCurrentQueryDescriptor {
                 variable_id,
                 metadata: schema.as_ref(),
             },
-            Self::SavedSql {
-                variable_id,
-                revision,
-            } => CurrentQueryDescriptor::SavedSql {
-                variable_id,
-                metadata: revision.as_ref(),
-            },
         }
     }
-}
-
-/// Preserve the resolver's immutable Form identities when a caller explicitly
-/// copies a query or requests its count through the existing stateless SQL API.
-/// This is output metadata only: clients still receive ordinary SQL, which is
-/// parsed, planned and authorized again on every subsequent request.
-fn attach_portable_query_sql(
-    queries: &mut [ugoite_core::composition::ResolvedQueryRequest],
-    definitions: &[VariableGraphNode],
-) -> Result<()> {
-    for query in queries {
-        let node = definitions
-            .iter()
-            .find(|node| node.id == query.variable_id)
-            .ok_or_else(|| anyhow!("resolved query definition is missing"))?;
-        let VariableGraphNodeKind::Query {
-            query: definition, ..
-        } = &node.kind
-        else {
-            return Err(anyhow!("resolved query variable is not a query"));
-        };
-        let source = match &definition.definition {
-            VariableGraphQueryDefinition::InlineSql { sql } => sql.as_str(),
-            VariableGraphQueryDefinition::SavedSql { .. } => query
-                .sql_text
-                .as_deref()
-                .ok_or_else(|| anyhow!("resolved Saved SQL source is missing"))?,
-        };
-        let bindings = query
-            .form_bindings
-            .iter()
-            .map(|binding| (binding.relation.clone(), sql_relation_name(binding.form_id)))
-            .collect();
-        let (mut sql, _) = crate::index::resolve_saved_sql_bindings(source, &bindings)?;
-        if let VariableGraphQueryDefinition::SavedSql {
-            column: Some(column),
-            ..
-        } = &definition.definition
-        {
-            // A scalar Saved SQL binding can select one output of a wider
-            // result. Make that projection explicit in the independent copy.
-            let statements = crate::sql_parser::parse_sql(&sql)?;
-            if statements.len() != 1 {
-                return Err(anyhow!("resolved Saved SQL must contain one query"));
-            }
-            sql = format!(
-                "SELECT \"{}\" FROM ({}) AS \"__ugoite_saved_scalar\"",
-                column.replace('"', "\"\""),
-                statements[0]
-            );
-        }
-        query.portable_sql = Some(sql);
-    }
-    Ok(())
 }
 
 impl UgoiteService {
@@ -258,94 +190,6 @@ impl UgoiteService {
             .find(|form| form.id == form_id))
     }
 
-    async fn get_saved_sql_revision_descriptor_local(
-        &self,
-        space_id: &str,
-        source: &SavedSqlRevisionRef,
-    ) -> Result<Option<saved_sql::SavedSqlRevisionDescriptor>> {
-        validate_storage_id(validate_sql_id(&source.id))?;
-        validate_storage_id(validate_revision_id(&source.revision_id))?;
-        self.validate_complete_space(space_id).await?;
-
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let revision = match saved_sql::read_sql_revision(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &source.id,
-            &source.revision_id,
-            &integrity,
-        )
-        .await
-        {
-            Ok(revision) => revision,
-            Err(error)
-                if error.chain().any(|cause| {
-                    cause
-                        .downcast_ref::<AppError>()
-                        .is_some_and(|app| app.code() == ErrorCode::EntryNotFound)
-                }) =>
-            {
-                return Ok(None);
-            }
-            Err(error) => return Err(error),
-        };
-
-        let mut variables = BTreeMap::new();
-        for variable in revision.variables.as_array().into_iter().flatten() {
-            let name = variable
-                .get("name")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("Saved SQL variable name is missing"))?;
-            let var_type = variable
-                .get("type")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("Saved SQL variable type is missing"))?;
-            variables.insert(
-                name.to_owned(),
-                saved_sql::SavedSqlVariableDescriptor {
-                    var_type: var_type.to_owned(),
-                },
-            );
-        }
-        Ok(Some(saved_sql::SavedSqlRevisionDescriptor {
-            id: source.id.clone(),
-            revision_id: source.revision_id.clone(),
-            variables,
-        }))
-    }
-
-    async fn read_saved_sql_revision_for_metadata(
-        &self,
-        space_id: &str,
-        source: &SavedSqlRevisionRef,
-    ) -> Result<Option<saved_sql::ResolvedSavedSqlRevision>> {
-        validate_storage_id(validate_sql_id(&source.id))?;
-        validate_storage_id(validate_revision_id(&source.revision_id))?;
-        self.validate_complete_space(space_id).await?;
-        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        match saved_sql::read_sql_revision(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &source.id,
-            &source.revision_id,
-            &integrity,
-        )
-        .await
-        {
-            Ok(revision) => Ok(Some(revision)),
-            Err(error)
-                if error.chain().any(|cause| {
-                    cause
-                        .downcast_ref::<AppError>()
-                        .is_some_and(|app| app.code() == ErrorCode::EntryNotFound)
-                }) =>
-            {
-                Ok(None)
-            }
-            Err(error) => Err(error),
-        }
-    }
-
     /// Derive trusted metadata for an inline SQL query variable.
     // The metadata plan must carry the same access/publication snapshot used
     // by its caller; bundling these inputs would obscure that invariant.
@@ -363,9 +207,7 @@ impl UgoiteService {
         let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
             return Err(anyhow!("expected a query variable"));
         };
-        let VariableGraphQueryDefinition::InlineSql { sql } = &query.definition else {
-            return Err(anyhow!("expected an inline SQL query variable"));
-        };
+        let VariableGraphQueryDefinition::InlineSql { sql } = &query.definition;
         let parameter_types = query_parameter_types(query.arguments.as_slice(), variables)?;
         let planned = self
             .plan_sql_query_metadata(
@@ -383,148 +225,6 @@ impl UgoiteService {
             form_bindings: planned.form_bindings,
             parameter_names: planned.parameter_names,
             result_columns: planned.result_columns,
-            schema_fingerprint: planned.schema_fingerprint,
-        }))
-    }
-
-    /// Derive the descriptor for the exact Saved SQL revision pinned by a query variable.
-    pub(crate) async fn derive_saved_sql_query_metadata(
-        &self,
-        space_id: &str,
-        node: &VariableGraphNode,
-        principal_ids: Option<&[Uuid]>,
-        authorization_state: Option<&super::AuthorizationState>,
-        publication_override: Option<&crate::PublicationRef>,
-    ) -> Result<Option<SavedSqlRevisionMetadata>> {
-        let VariableGraphNodeKind::Query { query, returns } = &node.kind else {
-            return Err(anyhow!("expected a query variable"));
-        };
-        let VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some(entry_id),
-            revision_id: Some(revision_id),
-            column,
-            ..
-        } = &query.definition
-        else {
-            return Ok(None);
-        };
-        let saved_sql = SavedSqlRevisionRef {
-            id: entry_id.clone(),
-            revision_id: revision_id.clone(),
-        };
-        let (descriptor, revision) = if let Some(state) = authorization_state {
-            let principal_ids = principal_ids
-                .ok_or_else(|| anyhow!("authorization state requires principal IDs"))?;
-            validate_storage_id(validate_sql_id(&saved_sql.id))?;
-            validate_storage_id(validate_revision_id(&saved_sql.revision_id))?;
-            super::ensure_saved_sql_access(state, principal_ids, &saved_sql)?;
-            self.validate_complete_space(space_id).await?;
-            let Some(revision) = self
-                .read_saved_sql_revision_for_metadata(space_id, &saved_sql)
-                .await?
-            else {
-                return Ok(None);
-            };
-            let descriptor = saved_sql_revision_descriptor(&saved_sql, &revision)?;
-            (descriptor, revision)
-        } else {
-            let descriptor = match principal_ids {
-                Some(principal_ids) => conceal_sql_query_lookup(
-                    self.get_saved_sql_revision_descriptor_authorized_for_principals(
-                        space_id,
-                        &saved_sql,
-                        principal_ids,
-                    )
-                    .await,
-                    ErrorCode::EntryNotFound,
-                )?,
-                None => {
-                    self.get_saved_sql_revision_descriptor_local(space_id, &saved_sql)
-                        .await?
-                }
-            };
-            let Some(descriptor) = descriptor else {
-                return Ok(None);
-            };
-            let Some(revision) = self
-                .read_saved_sql_revision_for_metadata(space_id, &saved_sql)
-                .await?
-            else {
-                return Ok(None);
-            };
-            (descriptor, revision)
-        };
-        let bindings = revision
-            .bindings
-            .iter()
-            .map(|binding| {
-                let form_id = Uuid::parse_str(&binding.form_id)
-                    .map(FormId::from_uuid)
-                    .map_err(|error| anyhow!("Saved SQL Form binding ID is invalid: {error}"))?;
-                Ok(VariableGraphFormBinding {
-                    relation: binding.name.clone(),
-                    form_id,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let parameter_types = descriptor
-            .variables
-            .iter()
-            .map(|(name, variable)| (name.clone(), variable.var_type.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let planned = self
-            .plan_sql_query_metadata(
-                space_id,
-                &revision.sql,
-                Some(&bindings),
-                &parameter_types,
-                principal_ids,
-                authorization_state,
-                publication_override,
-            )
-            .await?;
-        let Some(planned) = planned else {
-            return Ok(None);
-        };
-        let result_columns = if let Some(column) = column {
-            let matches = planned
-                .result_columns
-                .iter()
-                .filter(|candidate| candidate.name == *column)
-                .cloned()
-                .collect::<Vec<_>>();
-            match matches.as_slice() {
-                [column] if matches!(returns, VariableGraphResultType::Scalar { .. }) => {
-                    vec![column.clone()]
-                }
-                _ => return Ok(None),
-            }
-        } else {
-            planned.result_columns
-        };
-        let parameter_types = parameter_types
-            .iter()
-            .map(|(name, type_name)| {
-                let scalar_type =
-                    variable_graph_scalar_type_for_sql(type_name).ok_or_else(|| {
-                        anyhow!("Saved SQL parameter type is unsupported by the query binder")
-                    })?;
-                Ok((
-                    name.clone(),
-                    VariableGraphScalarDescriptor {
-                        scalar_type,
-                        nullable: true,
-                    },
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>>>()?;
-        Ok(Some(SavedSqlRevisionMetadata {
-            entry_id: descriptor.id,
-            revision_id: descriptor.revision_id,
-            sql_text: revision.sql,
-            parameter_types,
-            form_bindings: planned.form_bindings,
-            result_columns,
             schema_fingerprint: planned.schema_fingerprint,
         }))
     }
@@ -970,14 +670,11 @@ impl UgoiteService {
         );
 
         Ok(match result {
-            Ok(mut plan) => {
-                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
-                CompositionResolution {
-                    variable_definitions,
-                    plan: Some(plan),
-                    diagnostics: Vec::new(),
-                }
-            }
+            Ok(plan) => CompositionResolution {
+                variable_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
             Err(diagnostics) => CompositionResolution {
                 variable_definitions,
                 plan: None,
@@ -1266,15 +963,12 @@ impl UgoiteService {
         };
 
         Ok(match result {
-            Ok(mut plan) => {
-                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
-                CompositionPreview {
-                    draft_fingerprint: Some(draft_fingerprint),
-                    variable_definitions,
-                    plan: Some(plan),
-                    diagnostics: Vec::new(),
-                }
-            }
+            Ok(plan) => CompositionPreview {
+                draft_fingerprint: Some(draft_fingerprint),
+                variable_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
             Err(diagnostics) => CompositionPreview {
                 draft_fingerprint: Some(draft_fingerprint),
                 variable_definitions,
@@ -1284,9 +978,9 @@ impl UgoiteService {
         })
     }
 
-    /// Read current query descriptors through the caller's authorization
-    /// boundary, shared by saved-revision resolution and draft preview.
-    // Current query resolution carries the selected IDs and the same pinned
+    /// Read current inline-query descriptors through the caller's authorization
+    /// boundary for saved-revision resolution and draft preview.
+    // Query resolution carries the selected IDs and the same pinned
     // access/publication context through each descriptor lookup.
     #[allow(clippy::too_many_arguments)]
     async fn read_current_queries(
@@ -1372,55 +1066,6 @@ impl UgoiteService {
                         }
                     }
                 }
-                VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some(entry_id),
-                    revision_id: Some(revision_id),
-                    ..
-                } => {
-                    let revision = self
-                        .derive_saved_sql_query_metadata(
-                            space_id,
-                            &node,
-                            principal_ids,
-                            authorization_state,
-                            publication_override,
-                        )
-                        .await?;
-                    // The query node carries the exact immutable revision.
-                    // No latest-revision lookup is available on this path.
-                    if revision.as_ref().is_some_and(|current| {
-                        current.entry_id != *entry_id || current.revision_id != *revision_id
-                    }) {
-                        owned.push(OwnedCurrentQueryDescriptor::SavedSql {
-                            variable_id: node.id.clone(),
-                            revision: None,
-                        });
-                    } else {
-                        owned.push(OwnedCurrentQueryDescriptor::SavedSql {
-                            variable_id: node.id.clone(),
-                            revision: revision.clone(),
-                        });
-                        if let Some(metadata) = revision.as_ref() {
-                            if let VariableGraphNodeKind::Query { returns, query } =
-                                &mut planning_variables[node_index].kind
-                            {
-                                if let Some(inferred) =
-                                    returns_from_schema(returns, &metadata.result_columns)
-                                {
-                                    *returns = inferred;
-                                }
-                                query.form_bindings = metadata.form_bindings.clone();
-                                query.schema_fingerprint = metadata.schema_fingerprint.clone();
-                            }
-                        }
-                    }
-                }
-                VariableGraphQueryDefinition::SavedSql { .. } => {
-                    owned.push(OwnedCurrentQueryDescriptor::SavedSql {
-                        variable_id: node.id.clone(),
-                        revision: None,
-                    });
-                }
             }
         }
         Ok(owned)
@@ -1465,7 +1110,12 @@ fn preview_inline_form_bindings(
                 .map(|binding| binding.relation.clone()),
         )
         .collect::<BTreeSet<_>>();
-    let relations = crate::index::quoted_form_name_references_with_bindings(sql, &binding_names)?;
+    // Draft SQL may use the portable {{name}} parameter spelling. Parse the
+    // normalized SQL when discovering Form references so parameter braces do
+    // not make an otherwise valid query fail before metadata planning.
+    let normalized_sql = crate::index::normalize_sql_template(sql)?;
+    let relations =
+        crate::index::quoted_form_name_references_with_bindings(&normalized_sql, &binding_names)?;
     if submitted_bindings.iter().any(|binding| {
         !relations.contains(&binding.relation)
             && !previous_bindings.iter().any(|previous| {
@@ -1552,34 +1202,6 @@ struct PlannedSqlQueryMetadata {
     schema_fingerprint: String,
 }
 
-fn saved_sql_revision_descriptor(
-    source: &SavedSqlRevisionRef,
-    revision: &saved_sql::ResolvedSavedSqlRevision,
-) -> Result<saved_sql::SavedSqlRevisionDescriptor> {
-    let mut variables = BTreeMap::new();
-    for variable in revision.variables.as_array().into_iter().flatten() {
-        let name = variable
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Saved SQL variable name is missing"))?;
-        let var_type = variable
-            .get("type")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Saved SQL variable type is missing"))?;
-        variables.insert(
-            name.to_owned(),
-            saved_sql::SavedSqlVariableDescriptor {
-                var_type: var_type.to_owned(),
-            },
-        );
-    }
-    Ok(saved_sql::SavedSqlRevisionDescriptor {
-        id: source.id.clone(),
-        revision_id: source.revision_id.clone(),
-        variables,
-    })
-}
-
 fn variable_graph_sql_type(variable_type: VariableGraphScalarType) -> &'static str {
     match variable_type {
         VariableGraphScalarType::String => "string",
@@ -1590,22 +1212,6 @@ fn variable_graph_sql_type(variable_type: VariableGraphScalarType) -> &'static s
         VariableGraphScalarType::Date => "date",
         VariableGraphScalarType::Timestamp => "timestamp",
         VariableGraphScalarType::Json => "json",
-    }
-}
-
-fn variable_graph_scalar_type_for_sql(type_name: &str) -> Option<VariableGraphScalarType> {
-    match type_name {
-        "string" => Some(VariableGraphScalarType::String),
-        "boolean" => Some(VariableGraphScalarType::Boolean),
-        "integer" | "int64" | "long" => Some(VariableGraphScalarType::Integer),
-        "float" | "float64" | "double" => Some(VariableGraphScalarType::Float),
-        "decimal" => Some(VariableGraphScalarType::Decimal),
-        "date" => Some(VariableGraphScalarType::Date),
-        "timestamp" | "timestamp_tz" | "timestamp_ns" | "timestamp_tz_ns" => {
-            Some(VariableGraphScalarType::Timestamp)
-        }
-        "json" => Some(VariableGraphScalarType::Json),
-        _ => None,
     }
 }
 

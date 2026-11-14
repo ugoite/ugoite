@@ -358,6 +358,35 @@ fn invoke_domain(request: serde_json::Value) -> String {
     }
 
     if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.parse_composition_text_template")
+    {
+        let Some(template) = request
+            .get("value")
+            .and_then(|value| value.get("template"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": "template_required"},
+            })
+            .to_string();
+        };
+
+        return match ugoite_domain::composition::parse_composition_text_template(template) {
+            Ok(segments) => serde_json::json!({
+                "ok": true,
+                "value": { "segments": segments },
+            })
+            .to_string(),
+            Err(error) => serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": error.as_str()},
+            })
+            .to_string(),
+        };
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition")
     {
         let Some(yaml) = request
@@ -6563,20 +6592,22 @@ mod tests {
         );
 
         let invalid_reference_yaml =
-            SQL_FIRST_COMPOSITION.replace("      variable: month_total", "      variable: missing");
+            SQL_FIRST_COMPOSITION.replace("{{month_total}}", "{{missing}}");
+        assert_ne!(invalid_reference_yaml, SQL_FIRST_COMPOSITION);
         let native_invalid_reference =
             ugoite_domain::composition::canonicalize_composition_yaml(&invalid_reference_yaml)
                 .unwrap_err();
-        let invalid_metric_request = serde_json::json!({
+        let invalid_reference_request = serde_json::json!({
             "action": "domain.canonicalize_composition",
             "value": {"yaml": invalid_reference_yaml},
         });
-        let invalid_metric_response: Value =
-            serde_json::from_str(&super::invoke_json(&invalid_metric_request.to_string())).unwrap();
+        let invalid_reference_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_reference_request.to_string()))
+                .unwrap();
         assert_eq!(native_invalid_reference.as_str(), "invalid_composition");
-        assert_eq!(invalid_metric_response["ok"], false);
+        assert_eq!(invalid_reference_response["ok"], false);
         assert_eq!(
-            invalid_metric_response["error"]["code"],
+            invalid_reference_response["error"]["code"],
             native_invalid_reference.as_str()
         );
 
@@ -6667,6 +6698,49 @@ mod tests {
             invalid_layout_response["error"]["code"],
             native_invalid_layout.as_str()
         );
+    }
+
+    #[test]
+    fn composition_text_template_action_matches_the_native_domain_parser() {
+        for template in [
+            "合計：{{total}} 円 / {{total}}",
+            r"literal \{{braces}} and {{名前 with spaces}}",
+        ] {
+            let native_segments =
+                ugoite_domain::composition::parse_composition_text_template(template)
+                    .expect("valid template");
+            let expected = serde_json::json!({
+                "ok": true,
+                "value": {"segments": native_segments},
+            });
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_text_template",
+                "value": {"template": template},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response, expected, "template: {template:?}");
+        }
+
+        for template in ["{{unclosed", "{{}}", "{{outer{{inner}}}}"] {
+            let native_error =
+                ugoite_domain::composition::parse_composition_text_template(template)
+                    .expect_err("malformed template");
+            let expected = serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "domain_validation",
+                    "code": native_error.as_str(),
+                },
+            });
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_text_template",
+                "value": {"template": template},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response, expected, "template: {template:?}");
+        }
     }
 
     #[test]

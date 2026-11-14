@@ -33,6 +33,9 @@ export function createCompositionDesignEvaluation(options: {
   const [blocked, setBlocked] = createSignal<Set<string>>(new Set());
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string>();
+  const [queryErrors, setQueryErrors] = createSignal<Record<string, string>>(
+    {},
+  );
   const [pages, setPages] = createSignal<
     Record<
       string,
@@ -63,6 +66,11 @@ export function createCompositionDesignEvaluation(options: {
   const invalidate = (ids: readonly string[]) => {
     ids.forEach((id) => pending.add(id));
     setBlocked((current) => new Set([...current, ...ids]));
+    setQueryErrors((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => !ids.includes(id)),
+      )
+    );
     setPages((current) =>
       Object.fromEntries(
         Object.entries(current).filter(([id]) => !ids.includes(id)),
@@ -106,6 +114,7 @@ export function createCompositionDesignEvaluation(options: {
     setBlocked((current) => new Set([...current, ...unavailable]));
     setBusy(true);
     setError(undefined);
+    setQueryErrors({});
     try {
       const principal = await options.principal?.();
       if (!current()) return;
@@ -215,29 +224,30 @@ export function createCompositionDesignEvaluation(options: {
       if (!response.ok && !response.query_diagnostics?.length) {
         setEvaluation(undefined);
         setPages({});
-        invalidate(
-          options.draft().variables.filter((node) => node.kind === "query").map(
-            (node) => node.id,
-          ),
+        const failedQueryIds = draft.variables.flatMap((node) =>
+          node.kind === "query" ? [node.id] : []
         );
-        setError(
-          response.diagnostics?.some((diagnostic) =>
-              diagnostic.code === "query_unavailable"
-            )
-            ? t("composition.bindingSourceUnavailable")
-            : t("composition.queryFailed"),
-        );
+        invalidate(failedQueryIds);
+        const message = response.diagnostics?.some((diagnostic) =>
+            diagnostic.code === "query_unavailable"
+          )
+          ? t("composition.bindingSourceUnavailable")
+          : t("composition.queryFailed");
+        setError(message);
       }
     } catch {
       if (!current()) return;
       setEvaluation(undefined);
       setPages({});
-      invalidate(
-        options.draft().variables.filter((node) => node.kind === "query").map((
-          node,
-        ) => node.id),
+      const failedQueryIds = draft.variables.flatMap((node) =>
+        node.kind === "query" ? [node.id] : []
       );
-      setError(t("composition.queryFailed"));
+      invalidate(failedQueryIds);
+      const message = t("composition.queryFailed");
+      setError(message);
+      setQueryErrors(Object.fromEntries(
+        failedQueryIds.map((id) => [id, message]),
+      ));
     } finally {
       if (current()) setBusy(false);
     }
@@ -266,6 +276,7 @@ export function createCompositionDesignEvaluation(options: {
         setInputStates({});
         setEvaluation(undefined);
         setPages({});
+        setQueryErrors({});
         setBlocked(new Set());
         previousDraft = undefined;
         previousScope = scope;
@@ -398,6 +409,7 @@ export function createCompositionDesignEvaluation(options: {
     blocked,
     busy,
     error,
+    queryErrors,
     saveSnapshot,
     onInput,
     previousIds: () =>

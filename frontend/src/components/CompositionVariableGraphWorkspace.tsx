@@ -30,7 +30,10 @@ import { buildSqlStructureContexts, type SqlSchema } from "~/lib/sql";
 import type { Form, SqlVariable } from "~/lib/types";
 import { normalizeSqlDocument } from "~/lib/sql";
 import { t } from "~/lib/i18n";
-import { parseVariableGraphInput } from "~/lib/ugoite-client";
+import {
+  parseCompositionTextTemplate,
+  parseVariableGraphInput,
+} from "~/lib/ugoite-client";
 import {
   replaceSqlFormBindingGuard,
   retainReferencedSqlFormBindingGuards,
@@ -63,7 +66,6 @@ export interface CompositionVariableGraphWorkspaceProps {
   onRemove: (id: string) => void;
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
-  sqlBodies?: Readonly<Record<string, string>>;
   parameterDeclarations?: Readonly<
     Record<
       string,
@@ -155,11 +157,16 @@ export function CompositionVariableGraphWorkspace(
     new Set<string>(),
   );
   const parseGenerations = new Map<string, number>();
+  const renameGenerations = new Map<string, number>();
+  const [invalidRenames, setInvalidRenames] = createSignal(new Set<string>());
   const formGuardGenerations = new Map<string, number>();
   const [formGuardPruningPending, setFormGuardPruningPending] = createSignal<
     Record<string, boolean>
   >({});
-  onCleanup(() => formGuardGenerations.clear());
+  onCleanup(() => {
+    formGuardGenerations.clear();
+    renameGenerations.clear();
+  });
   let mobileDialog: HTMLElement | undefined;
   let mobileOpener: HTMLElement | null = null;
   let addVariableButton: HTMLButtonElement | undefined;
@@ -288,8 +295,41 @@ export function CompositionVariableGraphWorkspace(
     });
   });
   const rename = (node: CompositionVariableNode, raw: string) => {
-    const next = renameCompositionVariable(props.draft, node.id, raw);
-    if (next) {
+    const newId = raw.trim();
+    const sourceDraft = props.draft;
+    const next = renameCompositionVariable(sourceDraft, node.id, newId);
+    if (!next) return;
+    const generation = (renameGenerations.get(node.id) ?? 0) + 1;
+    renameGenerations.set(node.id, generation);
+    setInvalidRenames((current) => new Set(current).add(node.id));
+    props.onEditValidityChange?.(node.id, false);
+    const rewritten = Promise.all(
+      sourceDraft.components.map(async (component) => {
+        if (component.kind !== "text") return component;
+        const { segments } = await parseCompositionTextTemplate(
+          component.content,
+        );
+        const content = segments.map((segment) =>
+          segment.kind === "literal"
+            ? segment.text.replaceAll("{{", "\\{{")
+            : `{{${segment.variable === node.id ? newId : segment.variable}}}`
+        ).join("");
+        return { ...component, content };
+      }),
+    );
+    void rewritten.then((components) => {
+      if (
+        renameGenerations.get(node.id) !== generation ||
+        props.draft !== sourceDraft
+      ) return;
+      const current = sourceDraft.variables.find((entry) =>
+        entry.id === node.id
+      );
+      if (!current) return;
+      const renamed = {
+        ...next,
+        components,
+      };
       const newId = raw.trim();
       const hasRaw = Object.hasOwn(rawValues(), node.id);
       const rawValue = rawValues()[node.id];
@@ -310,13 +350,15 @@ export function CompositionVariableGraphWorkspace(
         if (wasPendingOrInvalid && hasRaw) next.add(newId);
         return next;
       });
+      setInvalidRenames((current) => {
+        const next = new Set(current);
+        next.delete(node.id);
+        return next;
+      });
       props.onEditValidityChange?.(node.id, undefined);
-      if (wasPendingOrInvalid && hasRaw) {
-        props.onEditValidityChange?.(newId, false);
-      }
       batch(() => {
         props.onVariableRenamed?.(node.id, newId);
-        props.onDraftChange(next);
+        props.onDraftChange(renamed);
         if (props.selectedVariableId === node.id) props.onSelect(raw.trim());
       });
       if (hasRaw && (node.kind === "constant" || node.kind === "input")) {
@@ -328,7 +370,14 @@ export function CompositionVariableGraphWorkspace(
           )
         );
       }
-    }
+      props.onEditValidityChange?.(newId, wasPendingOrInvalid && hasRaw
+        ? false
+        : true);
+    }).catch(() => {
+      if (renameGenerations.get(node.id) !== generation) return;
+      setInvalidRenames((current) => new Set(current).add(node.id));
+      props.onEditValidityChange?.(node.id, false);
+    });
   };
   const updateArgument = (
     node: Extract<CompositionVariableNode, { kind: "query" }>,
@@ -490,6 +539,7 @@ export function CompositionVariableGraphWorkspace(
               <div class="compositionVariableEditorHeader">
                 <input
                   class="ui-input compositionVariableName"
+                  aria-invalid={invalidRenames().has(node().id) || undefined}
                   aria-label={t("composition.studioVariableId")}
                   value={node().id}
                   onInput={(event) => rename(node(), event.currentTarget.value)}
@@ -675,11 +725,62 @@ export function CompositionVariableGraphWorkspace(
                       CompositionVariableNode,
                       { kind: "query" }
                     >;
-                  const sql = () => {
-                    const definition = query().query;
-                    return definition.kind === "inline_sql"
-                      ? definition.sql
-                      : props.sqlBodies?.[query().id] ?? "";
+                  const sql = () => query().query.sql;
+                  const [shapePending, setShapePending] = createSignal(false);
+                  const [shapeError, setShapeError] = createSignal<string>();
+                  const setQueryShape = async (shape: "scalar" | "table") => {
+                    const source = props.draft;
+                    const selected = query();
+                    if (selected.returns.kind === shape) return;
+                    setShapePending(true);
+                    setShapeError(undefined);
+                    try {
+                      const planned = await props.onPlanColumnsForQuery?.(
+                        selected.id,
+                      );
+                      if (!planned || !(await planned.isCurrent())) {
+                        setShapeError(t("composition.queryFailed"));
+                        return;
+                      }
+                      const current = props.draft.variables.find((entry) =>
+                        entry.id === selected.id && entry.kind === "query"
+                      );
+                      if (
+                        props.draft !== source || current?.kind !== "query" ||
+                        current.query.sql !== selected.query.sql
+                      ) return;
+                      const columns = planned.result_columns ?? [];
+                      if (shape === "scalar") {
+                        if (columns.length !== 1) {
+                          setShapeError(
+                            t("composition.querySingleValueNeedsOneColumn"),
+                          );
+                          return;
+                        }
+                        if (columns[0].value_type.scalar_type === "json") {
+                          setShapeError(
+                            t("composition.querySingleValueUnsupportedType"),
+                          );
+                          return;
+                        }
+                        updateNode({
+                          ...current,
+                          returns: {
+                            kind: "scalar",
+                            value_type: columns[0].value_type,
+                          },
+                        });
+                      } else {
+                        updateNode({
+                          ...current,
+                          returns: { kind: "table", columns },
+                        });
+                      }
+                    } catch {
+                      setShapeError(t("composition.queryFailed"));
+                    } finally {
+                      setShapePending(false);
+                    }
                   };
                   const isFormGuardPruningPending = () =>
                     formGuardPruningPending()[query().id] ?? false;
@@ -861,15 +962,27 @@ export function CompositionVariableGraphWorkspace(
                     );
                   return (
                     <>
+                      <select
+                        class="ui-input compositionVariableQueryShape"
+                        aria-label={t("composition.queryResultShape")}
+                        value={query().returns.kind}
+                        disabled={shapePending}
+                        onChange={(event) =>
+                          void setQueryShape(
+                            event.currentTarget.value as "scalar" | "table",
+                          )}
+                      >
+                        <option value="table">{t("composition.queryResultTable")}</option>
+                        <option value="scalar">{t("composition.queryResultSingleValue")}</option>
+                      </select>
+                      <Show when={shapeError()}>
+                        {(message) => <p class="ui-text-danger" role="alert">{message()}</p>}
+                      </Show>
                       <SQLWorkspace
                         id={`composition-variable-${query().id}`}
                         sql={sql()}
-                        {...(query().query.kind === "inline_sql"
-                          ? {
-                            onSqlChange: (sql: string) =>
-                              updateSqlAndFormGuards(sql),
-                          }
-                          : { readOnly: true })}
+                        onSqlChange={(sql: string) =>
+                          updateSqlAndFormGuards(sql)}
                         schema={props.sqlSchema}
                         lintProfile="composition"
                         actions={[
@@ -891,8 +1004,7 @@ export function CompositionVariableGraphWorkspace(
                           ? () => props.onCountQuery?.(query().id)
                           : undefined}
                       />
-                      <Show when={query().query.kind === "inline_sql"}>
-                        <SqlStructureToolbar
+                      <SqlStructureToolbar
                           onPlanColumns={props.onPlanColumnsForQuery
                             ? () => props.onPlanColumnsForQuery!(query().id)
                             : undefined}
@@ -1024,7 +1136,6 @@ export function CompositionVariableGraphWorkspace(
                             sqlArguments.loading || !!sqlArguments.error}
                           onActionsChange={setActions}
                         />
-                      </Show>
                       <Show when={argumentError()}>
                         {(error) => (
                           <p class="ui-text-danger" role="alert">{error()}</p>

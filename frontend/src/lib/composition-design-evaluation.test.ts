@@ -208,6 +208,29 @@ describe("Composition Design Work evaluation", () => {
     expect(state.error()).toBeDefined();
   });
 
+  it("keeps source-unavailable diagnostics global instead of duplicating them per component", async () => {
+    const { state } = setup();
+    evaluate.mockImplementationOnce(async (_space, request) => ({
+      ...response(request),
+      ok: false,
+      computed_query_ids: [],
+      query_results: {},
+      diagnostics: [
+        { code: "query_unavailable", variable_id: "rows" },
+        { code: "query_unavailable", variable_id: "stable" },
+      ],
+    }));
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(state.evaluation()).toBeUndefined();
+    expect(state.error()).toBe(
+      "This source is unavailable or access may have changed. Choose a source again or check your access.",
+    );
+    expect(state.queryErrors()).toEqual({});
+    expect(state.blocked()).toEqual(new Set(["rows", "stable"]));
+  });
+
   it("keeps existing Composition identity bindings and authorization on draft evaluation", async () => {
     setup({ entryId: "composition", revisionId: "revision" });
     await vi.advanceTimersByTimeAsync(250);

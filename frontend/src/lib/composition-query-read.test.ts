@@ -43,6 +43,10 @@ function fixture(): {
           name: "minimum",
           variable: "floor",
         }],
+        form_bindings: [{
+          relation: "Original name",
+          form_id: "01234567-89ab-cdef-0123-456789abcdef",
+        }],
       },
     },
   ];
@@ -55,6 +59,10 @@ function fixture(): {
       variable_id: "rows",
       portable_sql:
         "SELECT * FROM form_immutable WHERE field_100 = $text AND field_101 > $minimum",
+      form_bindings: [{
+        relation: "Original name",
+        form_id: "01234567-89ab-cdef-0123-456789abcdef",
+      }],
       returns: { kind: "table", columns: [] },
     }],
     query_results: {
@@ -75,40 +83,62 @@ function fixture(): {
 }
 
 describe("Composition explicit query count", () => {
-  it("uses Rust's immutable Form SQL and validated scalar dependencies without interpolation", () => {
+  it("uses the resolved ID-bound SQL and validated scalar dependencies without interpolation", () => {
     const { draft, response } = fixture();
     const request = compositionQueryCountRequest(draft, response, "rows");
+    const rows = draft.variables.find((entry) => entry.id === "rows");
+    if (rows?.kind !== "query") throw new Error("query fixture");
     expect(request).toEqual({
       sql: response.queries[0].portable_sql,
       parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
       parameter_types: { text: "string", minimum: "integer" },
       composition_count_snapshot: "v1.opaque-count-coordinate",
     });
-    expect(request.sql).not.toContain("Original name");
     expect(request.sql).not.toContain("DROP TABLE");
     expect(request).not.toHaveProperty("limit");
   });
 
-  it("keeps an exact Saved SQL revision instead of using the moving head or copied SQL", () => {
+  it("requires a current resolved Table query for a count", () => {
     const { draft, response } = fixture();
-    const node = draft.variables[2];
-    if (node.kind !== "query") throw new Error("query fixture");
-    node.query = {
-      kind: "saved_sql",
-      entry_id: "saved",
-      revision_id: "pinned",
-      label_source: "source",
-      arguments: node.query.arguments,
-    };
-    delete response.queries[0].portable_sql;
-    expect(compositionQueryCountRequest(draft, response, "rows")).toMatchObject(
-      {
-        sql: "",
-        saved_sql: { id: "saved", revision_id: "pinned" },
-        parameters: { text: "'; DROP TABLE ignored; --", minimum: null },
-        parameter_types: { text: "string", minimum: "integer" },
-      },
-    );
+    response.queries = [];
+    expect(() => compositionQueryCountRequest(draft, response, "rows"))
+      .toThrow("A current validated table query is required");
+  });
+
+  it("keeps opaque Form relation SQL unchanged for its exact count snapshot", () => {
+    const { draft, response } = fixture();
+    const rows = draft.variables.find((entry) => entry.id === "rows");
+    if (rows?.kind !== "query") throw new Error("query fixture");
+    rows.query.sql = 'SELECT * FROM "form_0123456789abcdef0123456789abcdef"';
+    rows.query.form_bindings = [{
+      relation: "form_0123456789abcdef0123456789abcdef",
+      form_id: "01234567-89ab-cdef-0123-456789abcdef",
+    }];
+    response.queries[0].form_bindings = rows.query.form_bindings;
+    response.queries[0].portable_sql = rows.query.sql;
+
+    const request = compositionQueryCountRequest(draft, response, "rows");
+    expect(request.sql).toBe(rows.query.sql);
+    expect(request).not.toHaveProperty("form_binding_guards");
+  });
+
+  it("uses the resolver's stable relation when a Form name resembles an ID", () => {
+    const { draft, response } = fixture();
+    const rows = draft.variables.find((entry) => entry.id === "rows");
+    if (rows?.kind !== "query") throw new Error("query fixture");
+    const relation = "form_0123456789abcdef0123456789abcdef";
+    const formId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    rows.query.sql = `SELECT * FROM "${relation}"`;
+    response.queries[0].form_bindings = [{ relation, form_id: formId }];
+    response.queries[0].portable_sql =
+      'SELECT * FROM form_ffffffffffffffffffffffffffffffff AS "form_0123456789abcdef0123456789abcdef"';
+
+    expect(compositionQueryCountRequest(draft, response, "rows"))
+      .toMatchObject({
+        sql: response.queries[0].portable_sql,
+      });
+    expect(compositionQueryCountRequest(draft, response, "rows"))
+      .not.toHaveProperty("form_binding_guards");
   });
 
   it("preserves a valid zero-valued scalar argument for explicit Count", () => {

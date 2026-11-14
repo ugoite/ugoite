@@ -7,13 +7,11 @@ requirements:
     title: Composition Studio graph interactions
     description: >-
       Historical prerelease Studio criteria retained verbatim for audit. The
-      v0.2.2 SQL template and Form seed decisions are specified by REQ-FE-082;
-      the remaining Composition UI and graph redesign is tracked separately.
-      Historical verification bindings are not current evidence for this
-      implementation: their assertions were attached to the previous Studio
-      targets and included the superseded Form seed behavior. Verification of
-      the remaining historical graph and UI criteria is an explicit evidence
-      gap pending the Composition model and Studio work tracked by #4888.
+      current Text-first Composition browser contract is specified by
+      REQ-FE-083 and ADR-027; SQL templates and Form seeds remain specified by
+      REQ-FE-082. Historical verification bindings are not evidence for the
+      replacement UI because they target the prior picker, Metric, Table
+      presentation, and SQL construction controls.
     priority: high
     status: deprecated
     criteria:
@@ -206,7 +204,7 @@ requirements:
       - id: form-seed-projectable-columns
         kind: behavior
         statement: >-
-          A Composition Form seed explicitly projects every supplied
+          A SQL Form seed explicitly projects every supplied
           projectable user-data column in source order, uses quoted identifiers
           and unique aliases, and excludes metadata fields from the projection.
           The generated SQL contains no `SELECT *` or synthetic `LIMIT`.
@@ -214,8 +212,7 @@ requirements:
       - id: form-seed-without-projectable-columns
         kind: behavior
         statement: >-
-          A Form with no projectable user-data columns returns a typed local
-          diagnostic. The Composition draft remains unchanged and inserts no
-          query variable or Table; metadata such as `_ugoite_id` is not added
-          as a fallback projection.
+          A Form with no projectable user-data columns returns the typed Rust
+          diagnostic. The SQL editor applies no partial seed, and metadata
+          such as `_ugoite_id` is not added as a fallback projection.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-006#rule.governance]

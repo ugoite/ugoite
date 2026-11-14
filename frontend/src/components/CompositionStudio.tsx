@@ -11,7 +11,6 @@ import {
 import { BackLink } from "~/components/BackLink";
 import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
 import type {
-  SQLWorkspaceAction,
   SQLWorkspacePreview,
 } from "~/components/SQLWorkspace";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
@@ -22,26 +21,13 @@ import {
 } from "~/lib/composition-api";
 import { stringifyCompositionDocument } from "~/lib/exact-integer";
 import {
-  CompositionBindingDiagnosticError,
   compositionBindingDiagnostics,
-  type CompositionBindingProvider,
-  type CompositionBindingSession,
-  type CompositionComponent,
-  type CompositionFormChoice,
   compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
   type CompositionGraphDraft,
   type CompositionLiteral,
-  type CompositionQueryDefinition,
-  type CompositionQueryReturn,
-  type CompositionResolvedBinding,
-  type CompositionSavedSqlChoice,
-  type CompositionSavedSqlRevisionRef,
-  type CompositionScalarDescriptor,
-  compositionTablePresentationDiagnostics,
   type CompositionVariableNode,
   createCompositionGraphDraft,
-  sameResolvedQueryMeaning,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
 import { compositionQueryCountRequest } from "~/lib/composition-query-read";
@@ -66,133 +52,27 @@ import {
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import {
   authApi,
-  compositionFormQuerySql,
   formApi,
   sqlApi,
 } from "~/lib/ugoite-client";
-import type { Form, SqlEntry } from "~/lib/types";
-import { buildSqlSchema } from "~/lib/sql";
 import type { SqlResultColumnType } from "~/lib/types";
+import { buildSqlSchema } from "~/lib/sql";
 
 export type CompositionStudioSaveMode = CompositionSaveTarget;
 
 export interface CompositionStudioProps {
   spaceId: string;
   initialDraft?: CompositionGraphDraft;
-  initialSavedSqlBinding?: CompositionSavedSqlRevisionRef;
   saveMode: CompositionStudioSaveMode;
   backHref: string;
   backLabel: string;
 }
-
-const draftQuery = (
-  kind: "inline_sql" | "saved_sql",
-  details: Record<string, unknown>,
-  arguments_: Array<{ name: string; variable: string }> = [],
-  returns: CompositionQueryReturn = { kind: "table", columns: [] },
-): CompositionVariableNode & { kind: "query" } => ({
-  id: "__binding_candidate",
-  kind: "query",
-  returns,
-  query: {
-    kind,
-    ...details,
-    arguments: arguments_,
-    form_bindings: [],
-    schema_fingerprint: "",
-  } as CompositionQueryDefinition,
-});
 
 const inputDefaultValue = (node: CompositionVariableNode): unknown => {
   if (node.kind === "input" && node.default) {
     return node.default.kind === "null" ? null : node.default.value;
   }
   return undefined;
-};
-
-const scalarFor = (
-  type: string,
-  nullable = false,
-): CompositionScalarDescriptor => ({
-  scalar_type: type as CompositionScalarDescriptor["scalar_type"],
-  nullable,
-});
-
-const variableSlug = (value: string): string =>
-  value.normalize("NFKD").toLowerCase()
-    .replace(/\p{M}/gu, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-const formScalarType = (
-  type: string,
-): CompositionScalarDescriptor["scalar_type"] | undefined => {
-  switch (type) {
-    case "string":
-    case "boolean":
-    case "integer":
-    case "float":
-    case "decimal":
-    case "date":
-    case "timestamp":
-    case "json":
-      return type;
-    case "long":
-      return "integer";
-    case "markdown":
-    case "sql":
-    case "row_reference":
-      return "string";
-    case "timestamp_tz":
-    case "timestamp_ns":
-    case "timestamp_tz_ns":
-      return "timestamp";
-    case "double":
-      return "float";
-    default:
-      return undefined;
-  }
-};
-
-const formChoice = (form: Form): CompositionFormChoice | undefined => {
-  if (!form.id || !form.name.trim()) return undefined;
-  return {
-    id: form.id,
-    name: form.name,
-    relation: form.name,
-    fields: Object.entries(form.fields ?? {}).map(([name, field]) => ({
-      name: field.label?.trim() || name,
-      column: field.sql_column?.trim() || name,
-      type: field.type ? formScalarType(field.type) ?? field.type : "other",
-      projectable: field.query_capability?.projectable === true,
-    })),
-  };
-};
-
-const savedSqlChoice = (
-  entry: SqlEntry,
-): CompositionSavedSqlChoice | undefined => {
-  if (entry.kind !== "user-query" || !entry.revision_id) return undefined;
-  const types = new Set([
-    "string",
-    "boolean",
-    "integer",
-    "float",
-    "date",
-    "timestamp",
-  ]);
-  if (entry.variables.some((argument) => !types.has(argument.type))) {
-    return undefined;
-  }
-  return {
-    entry_id: entry.id,
-    revision_id: entry.revision_id,
-    name: entry.name?.trim() || entry.id,
-    arguments: entry.variables.map(({ name, type }) => ({
-      name,
-      type: type as CompositionSavedSqlChoice["arguments"][number]["type"],
-    })),
-  };
 };
 
 export function CompositionStudio(props: CompositionStudioProps) {
@@ -247,8 +127,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     new Set<string>(),
   );
   const editorValid = () =>
-    invalidEditorVariables().size === 0 &&
-    compositionTablePresentationDiagnostics(draft()).length === 0;
+    invalidEditorVariables().size === 0;
   const [saveGeneration, setSaveGeneration] = createSignal(0);
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
@@ -311,49 +190,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     () => props.spaceId,
     (spaceId) => formApi.list(spaceId),
   );
-  const [sqlResource] = createResource(
-    () => props.spaceId,
-    (spaceId) => sqlApi.list(spaceId),
-  );
-  const forms = () =>
-    (formsResource() ?? []).flatMap((form) => {
-      const choice = formChoice(form);
-      return choice ? [choice] : [];
-    });
-  const savedSql = () =>
-    (sqlResource() ?? []).flatMap((entry) => {
-      const choice = savedSqlChoice(entry);
-      return choice ? [choice] : [];
-    });
-  const savedSqlForPicker = () => {
-    const exact = props.initialSavedSqlBinding;
-    return exact
-      ? savedSql().filter((entry) =>
-        entry.entry_id === exact.entry_id &&
-        entry.revision_id === exact.revision_id
-      )
-      : savedSql();
-  };
-  const savedSqlSeedUnavailable = () =>
-    Boolean(
-      props.initialSavedSqlBinding && !sqlResource.loading &&
-        !sqlResource.error && savedSqlForPicker().length === 0,
-    );
-  let seedNameApplied = false;
-  createEffect(() => {
-    const exact = props.initialSavedSqlBinding;
-    if (
-      !exact || seedNameApplied || sqlResource.loading || sqlResource.error
-    ) return;
-    const entry = (sqlResource() ?? []).find((candidate) =>
-      candidate.id === exact.entry_id &&
-      candidate.revision_id === exact.revision_id
-    );
-    if (!entry) return;
-    seedNameApplied = true;
-    const name = entry.name?.trim() || entry.id;
-    setDraft((current) => current.name.trim() ? current : { ...current, name });
-  });
   const sqlSchema = () => buildSqlSchema(formsResource() ?? []);
 
   const literalValue = (literal: { kind: string; value?: unknown }) =>
@@ -558,17 +394,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setQueryPreviews((all) => ({ ...all, [variableId]: page.preview }));
   };
 
-  const session = createMemo<CompositionBindingSession>(() => {
-    const identity = routeIdentity();
-    return {
-      session_id: crypto.randomUUID(),
-      space_id: identity.spaceId,
-      document_revision: props.saveMode.kind === "update"
-        ? props.saveMode.baseRevisionId
-        : null,
-      principal_generation: "not-captured",
-    };
-  });
   const getPrincipalGeneration = async () => {
     const authSession = await authApi.getSession();
     if (!authSession.authenticated) return "anonymous";
@@ -576,19 +401,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (!accountId) throw new Error("Authenticated account is unavailable");
     return `account:${accountId}`;
   };
-  const isSessionCurrent = async (value: CompositionBindingSession) => {
-    if (
-      value.session_id !== session().session_id ||
-      value.space_id !== props.spaceId ||
-      value.document_revision !== session().document_revision
-    ) return false;
-    try {
-      return value.principal_generation === await getPrincipalGeneration();
-    } catch {
-      return false;
-    }
-  };
-
   const previewCandidate = async (
     candidate: CompositionGraphDraft,
     signal?: AbortSignal,
@@ -616,378 +428,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
           : []
       ),
     );
-  };
-
-  // Exact Saved SQL source is returned by the authorized graph resolver.
-  // Do not consult sql.get (the moving head) to populate a pinned editor.
-  const savedQueryIdentity = createMemo(() => {
-    const current = draft();
-    const queries = current.variables.filter((
-      node,
-    ): node is Extract<CompositionVariableNode, { kind: "query" }> =>
-      node.kind === "query" && node.query.kind === "saved_sql"
-    );
-    if (!queries.length) return undefined;
-    return JSON.stringify({
-      spaceId: props.spaceId,
-      base: props.saveMode,
-      queries: queries.map((node) => ({ id: node.id, query: node.query })),
-      argumentTypes: queries.flatMap((node) =>
-        node.query.arguments.map((argument) => {
-          const variable = current.variables.find((entry) =>
-            entry.id === argument.variable
-          );
-          return variable?.kind === "query"
-            ? variable.returns
-            : variable?.value_type;
-        })
-      ),
-    });
-  });
-  let metadataController: AbortController | undefined;
-  onCleanup(() => metadataController?.abort());
-  const [savedQueryMetadata] = createResource(
-    savedQueryIdentity,
-    async (identity) => {
-      metadataController?.abort();
-      const controller = new AbortController();
-      metadataController = controller;
-      const response = await previewCandidate(draft(), controller.signal);
-      if (!response.ok || !response.plan) {
-        throw new Error(
-          t("composition.queryFailed"),
-        );
-      }
-      return {
-        identity,
-        queries: response.plan.queries,
-        bodies: Object.fromEntries(
-          response.plan.queries.flatMap((query) =>
-            query.sql_text === undefined
-              ? []
-              : [[query.variable_id, query.sql_text]]
-          ),
-        ),
-      };
-    },
-  );
-  const sqlBodies = () => {
-    if (savedQueryMetadata.error) return {};
-    const metadata = savedQueryMetadata();
-    return metadata?.identity === savedQueryIdentity()
-      ? metadata?.bodies ?? {}
-      : {};
-  };
-  const actionsForQuery = (variableId: string): SQLWorkspaceAction[] => {
-    const node = draft().variables.find((entry) => entry.id === variableId);
-    if (node?.kind !== "query" || node.query.kind !== "saved_sql") return [];
-    const metadata = savedQueryMetadata.error
-      ? undefined
-      : savedQueryMetadata();
-    const query = metadata?.identity === savedQueryIdentity()
-      ? metadata?.queries.find((entry) => entry.variable_id === variableId)
-      : undefined;
-    return [{
-      kind: "copy",
-      icon: "edit",
-      label: t("composition.editInlineCopy"),
-      disabled: !query?.portable_sql,
-      disabledReason: !query?.portable_sql
-        ? t("composition.queryFailed")
-        : undefined,
-      onActivate: () => {
-        if (
-          !query?.portable_sql || metadata?.identity !== savedQueryIdentity()
-        ) return;
-        onDraftChange({
-          ...draft(),
-          variables: draft().variables.map((entry) =>
-            entry.id === variableId && entry.kind === "query"
-              ? {
-                ...entry,
-                query: {
-                  kind: "inline_sql",
-                  sql: query.portable_sql!,
-                  arguments: entry.query.arguments,
-                },
-              }
-              : entry
-          ),
-        });
-      },
-    }];
-  };
-
-  const bindFromPreview = async (
-    candidate: CompositionGraphDraft,
-    candidateNode: CompositionVariableNode & { kind: "query" },
-    expectedKind: CompositionQueryReturn["kind"],
-  ): Promise<CompositionResolvedBinding> => {
-    const componentKind = expectedKind === "table" ? "table" : "metric";
-    const componentIds = new Set(candidate.components.map(({ id }) => id));
-    let componentIndex = 0;
-    const previewComponents: CompositionComponent[] = [];
-    const makePreviewComponent = (): CompositionComponent => {
-      let id = `__binding_preview_${componentIndex++}`;
-      while (componentIds.has(id)) id = `__binding_preview_${componentIndex++}`;
-      componentIds.add(id);
-      return { id, kind: componentKind, variable: candidateNode.id };
-    };
-    const rows = candidate.layout.rows.length > 0
-      ? candidate.layout.rows
-      : [{ id: "__binding_preview_row", items: [] }];
-    let placedProbe = false;
-    const previewRows = rows.map((row) => {
-      if (row.items.length > 0 && placedProbe) return row;
-      const component = makePreviewComponent();
-      previewComponents.push(component);
-      placedProbe = true;
-      return {
-        ...row,
-        items: [...row.items, {
-          kind: "component" as const,
-          component: component.id,
-        }],
-      };
-    });
-    // Empty rows all receive a probe while existing nonempty rows stay intact.
-    const withCandidate: CompositionGraphDraft = {
-      ...candidate,
-      variables: [...candidate.variables, candidateNode],
-      components: [...candidate.components, ...previewComponents],
-      layout: { ...candidate.layout, rows: previewRows },
-    };
-    const response = await previewCandidate(withCandidate);
-    const planned = response.plan?.queries.find((query) =>
-      query.variable_id === candidateNode.id
-    );
-    if (!response.ok || !planned) {
-      const diagnostic = response.diagnostics?.find((candidate) =>
-        candidate.variable_id === candidateNode.id &&
-        (candidate.code === "query_unavailable" ||
-          candidate.code === "query_schema_changed")
-      );
-      if (
-        diagnostic?.code === "query_unavailable" ||
-        diagnostic?.code === "query_schema_changed"
-      ) {
-        throw new CompositionBindingDiagnosticError(diagnostic.code);
-      }
-      throw new Error("query preview rejected");
-    }
-    if (expectedKind && planned.returns.kind !== expectedKind) {
-      throw new Error("query result shape does not fit component");
-    }
-    if (
-      planned.returns.kind === "scalar" &&
-      planned.scalar_cardinality !== "exactly_one_row"
-    ) throw new Error("scalar query must return exactly one row");
-    const variable: CompositionVariableNode & { kind: "query" } = {
-      ...candidateNode,
-      returns: planned.returns,
-      query: {
-        ...candidateNode.query,
-        form_bindings: planned.form_bindings,
-        schema_fingerprint: planned.schema_fingerprint,
-      },
-    };
-    const match = candidate.variables.find((node) =>
-      sameResolvedQueryMeaning(node, variable)
-    );
-    return {
-      variable,
-      ...(match ? { reuse_variable_id: match.id } : {}),
-    };
-  };
-
-  const provider: CompositionBindingProvider = {
-    resolveForm: async ({ form_id, component, aggregate, draft: current }) => {
-      const form = forms().find((candidate) => candidate.id === form_id);
-      if (!form) throw new Error("Form unavailable");
-      if (component === "metric" && !aggregate) {
-        throw new Error("Aggregate selection required");
-      }
-      if (
-        aggregate && aggregate.kind !== "count" &&
-        !form.fields.some((field) =>
-          field.projectable && field.column === aggregate.column
-        )
-      ) {
-        throw new Error("Aggregate field unavailable");
-      }
-      const projectableColumns = form.fields.filter((field) =>
-        field.projectable
-      ).map(({ column, name }) => ({ column, label: name }));
-      const { sql, projection_aliases } = await compositionFormQuerySql(
-        form.name,
-        projectableColumns,
-        component === "table"
-          ? undefined
-          : aggregate!.kind === "count"
-          ? { kind: "count" }
-          : { kind: aggregate!.kind, column: aggregate!.column! },
-      );
-      const returns: CompositionQueryReturn = component === "table"
-        ? { kind: "table", columns: [] }
-        : {
-          kind: "scalar",
-          value_type: scalarFor(
-            "integer",
-            aggregate!.kind === "sum" || aggregate!.kind === "avg",
-          ),
-        };
-      const formSlug = variableSlug(form.name);
-      const formPrefix = /^[a-z]/.test(formSlug)
-        ? formSlug
-        : formSlug
-        ? `form_${formSlug}`
-        : "form";
-      const aggregateField = component === "metric" && aggregate?.column
-        ? form.fields.find((field) =>
-          field.projectable && field.column === aggregate.column
-        )
-        : undefined;
-      const aggregateFieldSlug = aggregateField
-        ? variableSlug(aggregateField.name)
-        : "";
-      const variableSuffix = component === "table" ? "rows" : aggregate!.kind +
-        (aggregateFieldSlug ? `_${aggregateFieldSlug}` : "");
-      const id = `${formPrefix}_${variableSuffix}`;
-      const candidate = draftQuery("inline_sql", { sql }, [], returns);
-      candidate.kind === "query" &&
-        (candidate.query.form_bindings = [{
-          relation: form.name,
-          form_id: form.id,
-        }]);
-      const uniqueId = (base: string) => {
-        let value = base;
-        let suffix = 2;
-        while (current.variables.some((node) => node.id === value)) {
-          value = `${base}_${suffix++}`;
-        }
-        return value;
-      };
-      const resolved = await bindFromPreview(current, {
-        ...candidate,
-        id: uniqueId(id),
-      }, component === "table" ? "table" : "scalar");
-      if (component === "table") {
-        resolved.tablePresentation = {
-          columns: projection_aliases.map((alias) => ({
-            column: alias,
-            label: alias,
-          })),
-        };
-      }
-      return resolved;
-    },
-    prepareSavedSql: async (
-      {
-        entry_id,
-        revision_id,
-        component,
-        arguments: arguments_,
-        draft: current,
-      },
-    ) => {
-      const entry = savedSql().find((candidate) =>
-        candidate.entry_id === entry_id && candidate.revision_id === revision_id
-      );
-      if (!entry) throw new Error("Saved SQL revision unavailable");
-      if (arguments_.some((argument) => !argument.variable)) {
-        throw new Error("Saved SQL arguments must be explicitly bound");
-      }
-      const args = entry.arguments.map((argument) =>
-        arguments_.find((item) => item.name === argument.name) ??
-          { name: argument.name, variable: "" }
-      );
-      const base = draftQuery("saved_sql", {
-        entry_id,
-        revision_id,
-        label_source: "source",
-      }, args);
-      const withId = (column?: string) => ({
-        ...base,
-        id: (() => {
-          const name = variableSlug(entry.name);
-          const prefix = name && /^[a-z]/.test(name)
-            ? name
-            : name
-            ? `query_${name}`
-            : "query";
-          const stem = `${prefix}_${
-            column
-              ? variableSlug(column) || "value"
-              : component === "table"
-              ? "table"
-              : "value"
-          }`;
-          let value = stem;
-          let suffix = 2;
-          while (current.variables.some((node) => node.id === value)) {
-            value = `${stem}_${suffix++}`;
-          }
-          return value;
-        })(),
-        query: {
-          ...base.query,
-          ...(column ? { column } : {}),
-        },
-      });
-      if (component === "table") {
-        try {
-          return { table: await bindFromPreview(current, withId(), "table") };
-        } catch (tableError) {
-          try {
-            return {
-              scalars: [{
-                column: "value",
-                binding: await bindFromPreview(current, withId(), "scalar"),
-              }],
-            };
-          } catch {
-            throw tableError;
-          }
-        }
-      }
-      let descriptor: CompositionResolvedBinding;
-      try {
-        descriptor = await bindFromPreview(current, withId(), "scalar");
-      } catch {
-        // The Saved SQL revision can return either a scalar or a table. Probe
-        // each shape through the same typed preview contract before offering
-        // a Metric binding; no shape is inferred from SQL text in the client.
-        descriptor = await bindFromPreview(current, withId(), "table");
-      }
-      if (descriptor.variable.returns.kind !== "table") {
-        if (component === "table") throw new Error("Saved SQL is not a table");
-        if (descriptor.variable.returns.kind !== "scalar") {
-          throw new Error("Saved SQL has no scalar result");
-        }
-        return {
-          scalars: [{ column: "value", binding: descriptor }],
-        };
-      }
-      if (component === "table") {
-        return { table: descriptor };
-      }
-      const columns = descriptor.variable.returns.columns;
-      const scalars = await Promise.all(columns.map(async (column) => {
-        const scalarQuery = withId(column.name);
-        scalarQuery.returns = {
-          kind: "scalar",
-          value_type: scalarFor(
-            column.value_type.scalar_type,
-            column.value_type.nullable,
-          ),
-        };
-        return {
-          column: column.name,
-          binding: await bindFromPreview(current, scalarQuery, "scalar"),
-        };
-      }));
-      return { scalars };
-    },
   };
 
   const saveRequest = async (
@@ -1123,14 +563,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
           };
         }),
       };
-      if (compositionTablePresentationDiagnostics(verified).length > 0) {
-        setDraft(verified);
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-        pendingSave = undefined;
-        setSaveRetryAvailable(false);
-        setSaveError(t("composition.studioTableViewChanged"));
-        return;
-      }
       const canonical = await compositionApi.canonicalizeDocument(
         compositionGraphDocumentDraft(verified),
       );
@@ -1256,10 +688,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
             />
           </div>
         </header>
-        <Show when={formsResource.loading || sqlResource.loading}>
+        <Show when={formsResource.loading}>
           <LocalBusyIndicator label={t("common.loading")} />
         </Show>
         <CompositionGraphStudio
+          spaceId={props.spaceId}
           draft={draft()}
           previewBase={props.saveMode.kind === "update"
             ? {
@@ -1267,23 +700,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
               revisionId: props.saveMode.baseRevisionId,
             }
             : undefined}
-          forms={forms()}
-          formsLoading={formsResource.loading}
-          savedSql={savedSqlForPicker()}
-          savedSqlLoading={sqlResource.loading}
-          savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
-          initialSavedSqlBinding={props.initialSavedSqlBinding}
-          provider={provider}
-          session={session()}
           getPrincipalGeneration={getPrincipalGeneration}
-          isSessionCurrent={isSessionCurrent}
           onSaveSnapshotReady={(getter) => {
             getSaveInputSnapshot = getter;
           }}
           sqlSchema={sqlSchema()}
           sqlForms={formsResource() ?? []}
-          sqlBodies={sqlBodies()}
-          actionsForQuery={actionsForQuery}
           previewForQuery={(variableId) =>
             queryPreviews()[variableId] ?? {
               status: "idle",
@@ -1291,7 +713,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
             }}
           onPlanColumnsForQuery={async (variableId) => {
             const currentDraft = draft();
-            const currentSession = session();
             const currentSpace = props.spaceId;
             const response = await previewCandidate(currentDraft);
             const query = response.plan?.queries.find((query) =>
@@ -1302,9 +723,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
             }
             return {
               columns: query.result_columns.map((column) => column.name),
+              result_columns: query.result_columns,
               isCurrent: () =>
-                draft() === currentDraft && props.spaceId === currentSpace &&
-                isSessionCurrent(currentSession),
+                draft() === currentDraft && props.spaceId === currentSpace,
             };
           }}
           onRunQuery={(variableId) => void runQuery(variableId)}
@@ -1315,7 +736,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             if (evaluation?.next) void runQuery(variableId, evaluation.next);
           }}
           onDraftChange={onDraftChange}
-          onQueryChange={(variableId, sql, formBindings) => {
+          onQueryChange={(variableId, sql, formBindings, queryArguments) => {
             onDraftChange({
               ...draft(),
               variables: draft().variables.map((node) =>
@@ -1328,6 +749,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
                       sql,
                       schema_fingerprint: "",
                       ...(formBindings ? { form_bindings: formBindings } : {}),
+                      ...(queryArguments ? { arguments: queryArguments } : {}),
                     },
                   }
                   : node

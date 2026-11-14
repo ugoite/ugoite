@@ -18,7 +18,10 @@ import type { CompositionVariableCreationKind } from "~/components/CompositionVa
 import { buildSqlSchema } from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 
-const { parseInputMock } = vi.hoisted(() => ({ parseInputMock: vi.fn() }));
+const { parseInputMock, parseTemplateMock } = vi.hoisted(() => ({
+  parseInputMock: vi.fn(),
+  parseTemplateMock: vi.fn(),
+}));
 
 const creationProps = (
   draft: () => CompositionGraphDraft,
@@ -78,7 +81,53 @@ vi.mock("~/lib/ugoite-client", () => ({
     diagnostics: [],
   }),
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+  parseCompositionTextTemplate: (...args: unknown[]) =>
+    parseTemplateMock(...args),
 }));
+
+vi.mock("./SqlQueryEditor", () => ({
+  SqlQueryEditor: (props: {
+    id?: string;
+    value: string;
+    ariaLabel?: string;
+    lintProfile?: "standard" | "composition";
+    disabled?: boolean;
+    additionalDiagnostics?: readonly { message: string }[];
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      id={props.id}
+      aria-label={props.ariaLabel}
+      data-lint-profile={props.lintProfile ?? "standard"}
+      data-planner-diagnostics={props.additionalDiagnostics?.map((item) =>
+        item.message
+      ).join("|") ?? ""}
+      value={props.value}
+      readOnly={props.disabled}
+      onInput={(event) => props.onChange(event.currentTarget.value)}
+    />
+  ),
+}));
+
+const parseTemplate = (template: string) => {
+  const segments: Array<
+    { kind: "literal"; text: string } | { kind: "variable"; variable: string }
+  > = [];
+  const marker = /\{\{([^{}]+)\}\}/gu;
+  let cursor = 0;
+  for (const match of template.matchAll(marker)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      segments.push({ kind: "literal", text: template.slice(cursor, index) });
+    }
+    segments.push({ kind: "variable", variable: match[1] });
+    cursor = index + match[0].length;
+  }
+  if (cursor < template.length || segments.length === 0) {
+    segments.push({ kind: "literal", text: template.slice(cursor) });
+  }
+  return { segments };
+};
 
 describe("CompositionVariableGraphWorkspace", () => {
   it("retains an i64 default as exact decimal text while editing", async () => {
@@ -291,8 +340,11 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
   });
 
-  it("commits a variable rename while the ID field is edited", () => {
+  it("commits a variable rename and rewrites Rust-parsed Text references", async () => {
     setLocale("en");
+    parseTemplateMock.mockImplementation(async (template: string) =>
+      parseTemplate(template)
+    );
     const [draft, setDraft] = createSignal<CompositionGraphDraft>(
       createCompositionGraphDraft("Report"),
     );
@@ -321,14 +373,99 @@ describe("CompositionVariableGraphWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     expect(draft().variables[0]?.id).toBe("month_start");
+    setDraft({
+      ...draft(),
+      components: [{
+        id: "text_1",
+        kind: "text",
+        content: "Start: {{month_start}}",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_1" }],
+        }],
+      },
+    });
     fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
       target: { value: "period_start" },
     });
 
-    expect(draft().variables[0]?.id).toBe("period_start");
+    await waitFor(() => {
+      expect(draft().variables[0]?.id).toBe("period_start");
+      expect(draft().components[0]).toMatchObject({
+        kind: "text",
+        content: "Start: {{period_start}}",
+      });
+    });
     expect(selected()).toBe("period_start");
     expect(screen.getByRole("button", { name: "period_start" }))
       .toBeVisible();
+  });
+
+  it("discards a stale asynchronous Text reference rewrite", async () => {
+    setLocale("en");
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    parseTemplateMock.mockReset()
+      .mockReturnValueOnce(new Promise((resolve) => resolveFirst = resolve))
+      .mockReturnValueOnce(new Promise((resolve) => resolveSecond = resolve));
+    const initial: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "date_value",
+        kind: "input",
+        value_type: { scalar_type: "date", nullable: false },
+        required: true,
+      }],
+      components: [{
+        id: "text_1",
+        kind: "text",
+        content: "Date: {{date_value}}",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_1" }],
+        }],
+      },
+    };
+    const [draft, setDraft] = createSignal(initial);
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="date_value"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(name, { target: { value: "first_date" } });
+    fireEvent.input(name, { target: { value: "latest_date" } });
+    expect(parseTemplateMock).toHaveBeenCalledTimes(2);
+
+    const parsedDateTemplate = {
+      segments: [
+        { kind: "literal", text: "Date: " },
+        { kind: "variable", variable: "date_value" },
+      ],
+    };
+    resolveSecond(parsedDateTemplate);
+    await waitFor(() => expect(draft().variables[0]?.id).toBe("latest_date"));
+    resolveFirst(parsedDateTemplate);
+    await Promise.resolve();
+
+    expect(draft().components[0]).toMatchObject({
+      content: "Date: {{latest_date}}",
+    });
+    expect(draft().variables[0]?.id).toBe("latest_date");
   });
 
   it("binds declared SQL arguments only to compatible graph variables", () => {
@@ -397,8 +534,9 @@ describe("CompositionVariableGraphWorkspace", () => {
     });
   });
 
-  it("keeps SQL and argument bindings current through consecutive graph edits", async () => {
+  it("keeps SQL lint, parameter bindings, and execution errors local to the selected query", async () => {
     setLocale("en");
+    const runQuery = vi.fn();
     const [draft, setDraft] = createSignal<CompositionGraphDraft>({
       ...createCompositionGraphDraft("Report"),
       variables: [
@@ -435,6 +573,12 @@ describe("CompositionVariableGraphWorkspace", () => {
         onRemove={() => {}}
         sqlSchema={buildSqlSchema([])}
         parameterDeclarations={{ rows: [{ name: "minimum", type: "integer" }] }}
+        previewForQuery={() => ({
+          status: "error",
+          isCurrent: true,
+          error: "Query execution failed",
+        })}
+        onRunQuery={runQuery}
         onQueryChange={(id, sql) =>
           setDraft((current) => ({
             ...current,
@@ -446,6 +590,18 @@ describe("CompositionVariableGraphWorkspace", () => {
           }))}
       />
     ));
+    const editor = screen.getByRole("textbox", { name: "SQL" });
+    expect(editor).toHaveValue("SELECT $minimum");
+    expect(editor).toHaveAttribute("data-lint-profile", "composition");
+    const queryWorkspace = editor.closest(".sql-workspace");
+    const runQueryButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runQueryButton).toBeEnabled());
+    expect(within(queryWorkspace!).getByRole("alert")).toHaveTextContent(
+      "Query execution failed",
+    );
+    fireEvent.click(runQueryButton);
+    expect(runQuery).toHaveBeenCalledWith("rows");
+
     const binding = screen.getByRole("combobox", { name: "minimum" });
     fireEvent.change(binding, { target: { value: "ceiling" } });
     await waitFor(() => expect(binding).toHaveValue("ceiling"));
@@ -461,10 +617,7 @@ describe("CompositionVariableGraphWorkspace", () => {
           : node
       ),
     }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "SQL" }).textContent)
-        .toContain(editedSql)
-    );
+    await waitFor(() => expect(editor).toHaveValue(editedSql));
     fireEvent.change(binding, { target: { value: "floor" } });
     expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
       query: {

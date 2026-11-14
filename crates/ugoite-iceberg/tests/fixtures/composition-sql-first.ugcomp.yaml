@@ -18,13 +18,14 @@ spec:
         form_bindings: []
         schema_fingerprint: ''
   components:
-    - id: total_metric
-      kind: metric
-      variable: total
+    - id: total
+      kind: text
+      content: "Total: {{total}}"
+      style: body
   layout:
     kind: flow
     rows:
       - id: main
         items:
           - kind: component
-            component: total_metric
+            component: total

@@ -19,6 +19,7 @@ const {
   accessSnapshotMock,
   navigateMock,
   parseMock,
+  parseTextMock,
   accessChangeHandlers,
   routeParams,
 } = vi.hoisted(() => {
@@ -35,6 +36,7 @@ const {
     accessSnapshotMock: vi.fn(),
     navigateMock: vi.fn(),
     parseMock: vi.fn(),
+    parseTextMock: vi.fn(),
     accessChangeHandlers: [] as Array<(spaceId: string) => void>,
     routeParams: {
       get: () => getRouteParams(),
@@ -85,6 +87,7 @@ vi.mock("~/lib/composition-access-changes", () => ({
 
 vi.mock("~/lib/ugoite-client", () => ({
   parseVariableGraphInput: (...args: unknown[]) => parseMock(...args),
+  parseCompositionTextTemplate: (...args: unknown[]) => parseTextMock(...args),
 }));
 
 const query = (variable_id: string, ...dependencies: string[]) => ({
@@ -122,7 +125,18 @@ const evaluation = (
   computed_query_ids,
   variable_values: {},
   queries: [query("rows", "day"), query("stable")],
-  component_bindings: [],
+  component_bindings: [
+    {
+      component_id: "text-rows",
+      kind: "text",
+      text_segments: [{ kind: "variable", variable: "rows" }],
+    },
+    {
+      component_id: "text-stable",
+      kind: "text",
+      text_segments: [{ kind: "variable", variable: "stable" }],
+    },
+  ],
   dependencies: {
     variable_consumers: {
       day: { query_variable_ids: ["rows"] },
@@ -175,8 +189,8 @@ const graphDocument = {
     ],
     components: [
       { id: "input-day", kind: "input", variable: "day" },
-      { id: "metric-rows", kind: "metric", variable: "rows" },
-      { id: "metric-stable", kind: "metric", variable: "stable" },
+      { id: "text-rows", kind: "text", content: "{{rows}}", style: "body" },
+      { id: "text-stable", kind: "text", content: "{{stable}}", style: "body" },
     ],
     layout: {
       kind: "flow",
@@ -184,8 +198,8 @@ const graphDocument = {
         id: "main",
         items: [
           { kind: "component", component: "input-day" },
-          { kind: "component", component: "metric-rows" },
-          { kind: "component", component: "metric-stable" },
+          { kind: "component", component: "text-rows" },
+          { kind: "component", component: "text-stable" },
         ],
       }],
     },
@@ -256,7 +270,7 @@ const tableWithInputGraphDocument = {
     components: [
       { id: "day-input", kind: "input", variable: "day" },
       ...tableGraphDocument.spec.components,
-      { id: "count-metric", kind: "metric", variable: "filtered_count" },
+      { id: "count-text", kind: "text", content: "{{filtered_count}}", style: "body" },
     ],
     layout: {
       kind: "flow",
@@ -265,7 +279,7 @@ const tableWithInputGraphDocument = {
         items: [
           { kind: "component", component: "day-input" },
           { kind: "component", component: "rows-table" },
-          { kind: "component", component: "count-metric" },
+          { kind: "component", component: "count-text" },
         ],
       }],
     },
@@ -304,6 +318,13 @@ describe("Composition saved revision graph evaluation", () => {
     parseMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw ? { status: "valid", value: raw } : { status: "unset" }
     );
+    parseTextMock.mockImplementation(async (template: string) => ({
+      segments: template === "{{rows}}"
+        ? [{ kind: "variable", variable: "rows" }]
+        : template === "{{stable}}"
+        ? [{ kind: "variable", variable: "stable" }]
+        : [{ kind: "literal", text: template }],
+    }));
   });
   afterEach(() => {
     cleanup();
@@ -333,6 +354,17 @@ describe("Composition saved revision graph evaluation", () => {
     render(() => <CompositionRevisionRoute />);
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
     await screen.findByText("10");
+    expect(
+      window.document.querySelector(
+        '[data-component-id="text-stable"] .compositionGraphText',
+      ),
+    ).toHaveTextContent("10");
+    expect(screen.queryByRole("tablist", { name: "Studio mode" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Add to design" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Text" }))
+      .not.toBeInTheDocument();
 
     fireEvent.input(screen.getByLabelText("day"), {
       target: { value: "2026-10-20" },
@@ -344,7 +376,11 @@ describe("Composition saved revision graph evaluation", () => {
     );
     expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
     expect(evaluateMock.mock.calls[1][1]).not.toHaveProperty("query_results");
-    expect(screen.getByLabelText("stable")).toHaveTextContent("10");
+    expect(
+      document.querySelector(
+        '[data-component-id="text-stable"] .compositionGraphText',
+      ),
+    ).toHaveTextContent("10");
   });
 
   it("fails closed when a focus-return authority check is unavailable", async () => {
@@ -1342,7 +1378,11 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Waiting for input…",
     );
-    expect(screen.getByLabelText("stable")).toHaveTextContent("10");
+    expect(
+      document.querySelector(
+        '[data-component-id="text-stable"] .compositionGraphText',
+      ),
+    ).toHaveTextContent("10");
   });
 
   it("drops late evaluations when a dynamic route changes Space", async () => {
@@ -1608,7 +1648,7 @@ describe("Composition saved revision graph evaluation", () => {
 
     render(() => <CompositionRevisionRoute />);
 
-    const table = await screen.findByRole("table", { name: "rows results" });
+    const table = await screen.findByRole("table", { name: "rows" });
     expect(table).toHaveTextContent("alpha row");
     expect(table).toHaveTextContent("beta row");
     expect(evaluateMock.mock.calls[0][1].target).toEqual({
@@ -1718,7 +1758,7 @@ describe("Composition saved revision graph evaluation", () => {
     );
 
     render(() => <CompositionRevisionRoute />);
-    const table = await screen.findByRole("table", { name: "rows results" });
+    const table = await screen.findByRole("table", { name: "rows" });
     expect(table).toHaveTextContent("alpha row");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
@@ -1889,9 +1929,9 @@ describe("Composition saved revision graph evaluation", () => {
         { component_id: "day-input", kind: "input", variable_id: "day" },
         { component_id: "rows-table", kind: "table", variable_id: "rows" },
         {
-          component_id: "count-metric",
-          kind: "metric",
-          variable_id: "filtered_count",
+          component_id: "count-text",
+          kind: "text",
+          text_segments: [{ kind: "variable", variable: "filtered_count" }],
         },
       ],
       dependencies: {
@@ -1957,7 +1997,7 @@ describe("Composition saved revision graph evaluation", () => {
     });
 
     render(() => <CompositionRevisionRoute />);
-    const table = await screen.findByRole("table", { name: "rows results" });
+    const table = await screen.findByRole("table", { name: "rows" });
     expect(table).toHaveTextContent("alpha row");
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(table).toHaveTextContent("gamma row"));
@@ -2021,7 +2061,11 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock.mock.calls[2][1]).not.toHaveProperty(
       "requested_queries",
     );
-    expect(screen.getByLabelText("stable")).toHaveTextContent("20");
+    expect(
+      document.querySelector(
+        '[data-component-id="text-stable"] .compositionGraphText',
+      ),
+    ).toHaveTextContent("20");
   });
 
   it("retries affected queries with unchanged valid input after a failed evaluation", async () => {
@@ -2238,7 +2282,11 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");
     fireEvent.input(screen.getByLabelText("day"), { target: { value: "2" } });
     await screen.findByText("2");
-    expect(screen.getByLabelText("stable")).toHaveTextContent("7");
+    expect(
+      window.document.querySelector(
+        '[data-component-id="text-stable"] .compositionGraphText',
+      ),
+    ).toHaveTextContent("7");
     expect(evaluateMock.mock.calls.at(-1)?.[1].requested_queries).toEqual([
       "rows",
     ]);

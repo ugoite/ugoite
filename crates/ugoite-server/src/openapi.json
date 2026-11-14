@@ -16162,20 +16162,20 @@
             "type": "string",
             "enum": [
               "input",
-              "metric",
               "table",
               "text"
             ]
           },
           "variable_id": {
             "type": "string",
-            "description": "The single typed graph value referenced by this component."
+            "description": "The typed graph value bound to an Input or Table component."
           },
-          "expected_result_type": {
-            "$ref": "#/components/schemas/CompositionResultFieldType"
-          },
-          "presentation": {
-            "$ref": "#/components/schemas/CompositionMetricPresentation"
+          "text_segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionTextTemplatePart"
+            },
+            "description": "Ordered Rust-parsed literal and variable parts for a Text component."
           }
         },
         "additionalProperties": false
@@ -16188,7 +16188,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/CompositionVariableConsumers"
             },
-            "description": "Variable ID to input, text, query, metric, and table consumers."
+            "description": "Variable ID to input, text, query, and table consumers."
           }
         },
         "additionalProperties": false
@@ -16217,13 +16217,6 @@
             },
             "uniqueItems": true
           },
-          "metric_component_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "uniqueItems": true
-          },
           "table_component_ids": {
             "type": "array",
             "items": {
@@ -16234,43 +16227,42 @@
         },
         "additionalProperties": false
       },
-      "CompositionMetricPresentation": {
+      "CompositionTextTemplatePart": {
         "oneOf": [
           {
             "type": "object",
             "required": [
-              "kind"
+              "kind",
+              "text"
             ],
             "properties": {
               "kind": {
                 "type": "string",
-                "const": "number"
+                "const": "literal"
               },
-              "unit": {
+              "text": {
                 "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "variable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "variable"
               },
-              "fraction_digits": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0,
-                "maximum": 255
+              "variable": {
+                "type": "string"
               }
             },
             "additionalProperties": false
           }
-        ]
-      },
-      "CompositionResultFieldType": {
-        "type": "string",
-        "enum": [
-          "string",
-          "boolean",
-          "integer",
-          "float",
-          "decimal",
-          "date",
-          "timestamp",
-          "json"
         ]
       },
       "CompositionDiagnostic": {
@@ -17090,10 +17082,6 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Existing stateless SQL query request compiled from the graph; absent until scalar query dependencies resolve or an authoring preview has unset Input dependencies."
-          },
-          "sql_text": {
-            "type": "string",
-            "description": "Authorized source text from the exact pinned Saved SQL revision; omitted for inline SQL."
           },
           "deferred_arguments": {
             "type": "array",

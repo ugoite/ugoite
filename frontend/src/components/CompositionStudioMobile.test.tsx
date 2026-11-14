@@ -16,11 +16,10 @@ import {
 } from "~/lib/composition-variable-binding";
 import { setLocale } from "~/lib/i18n";
 
-const { navigateMock, formsMock, savedSqlMock, routePathMock } = vi.hoisted(
+const { navigateMock, formsMock, routePathMock } = vi.hoisted(
   () => ({
     navigateMock: vi.fn(),
     formsMock: vi.fn(),
-    savedSqlMock: vi.fn(),
     routePathMock: { value: "/spaces/space-1/compositions/new" },
   }),
 );
@@ -42,7 +41,7 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
   return {
     compositionFormQuerySql: actual.compositionFormQuerySql,
     formApi: { list: (...args: unknown[]) => formsMock(...args) },
-    sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
+    sqlApi: { count: vi.fn() },
   };
 });
 
@@ -54,7 +53,7 @@ const tableDraft = (): CompositionGraphDraft => {
     returns: { kind: "table", columns: [] },
     query: {
       kind: "inline_sql",
-      sql: 'SELECT * FROM "form_1"',
+      sql: "SELECT 1 AS amount",
       arguments: [],
       form_bindings: [],
       schema_fingerprint: "",
@@ -63,17 +62,16 @@ const tableDraft = (): CompositionGraphDraft => {
   return draft;
 };
 
-describe("CompositionStudio narrow binding picker", () => {
+describe("CompositionStudio table binding picker", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
     routePathMock.value = "/spaces/space-1/compositions/new";
     formsMock.mockResolvedValue([]);
-    savedSqlMock.mockResolvedValue([]);
   });
   afterEach(() => cleanup());
 
-  it("keeps one modal owner and restores focus after Escape", async () => {
+  it("keeps one table picker modal and restores focus after Escape", async () => {
     const appRoot = document.createElement("div");
     appRoot.id = "app";
     document.body.append(appRoot);
@@ -95,15 +93,11 @@ describe("CompositionStudio narrow binding picker", () => {
     expect(screen.getAllByRole("dialog")).toEqual([picker]);
     expect(picker).toHaveAttribute("aria-modal", "true");
     expect(appRoot).toHaveAttribute("inert");
-    expect(within(picker).getByRole("tab", { name: "Variables" }))
-      .toHaveAttribute(
-        "aria-selected",
-        "true",
-      );
-    expect(within(picker).getByRole("tab", { name: "Forms" }))
+    expect(within(picker).getByRole("button", { name: "rows" }))
       .toBeInTheDocument();
-    expect(within(picker).getByRole("tab", { name: "Saved SQL" }))
+    expect(within(picker).getByRole("button", { name: "New table query" }))
       .toBeInTheDocument();
+    expect(within(picker).queryByRole("tab")).toBeNull();
 
     fireEvent.keyDown(picker, { key: "Escape" });
     await waitFor(() => {
