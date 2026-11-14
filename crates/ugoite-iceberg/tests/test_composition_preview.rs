@@ -1988,6 +1988,51 @@ async fn authoring_preview_plans_integer_input_predicate_template() -> Result<()
             value: VariableGraphLiteral::Integer(8)
         })
     ));
+
+    let mut document_with_descriptors = document;
+    for node in &mut document_with_descriptors.spec.variables {
+        let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
+            continue;
+        };
+        let descriptor = plan
+            .queries
+            .iter()
+            .find(|planned| planned.variable_id == node.id)
+            .with_context(|| format!("preview omitted query variable {}", node.id))?;
+        *returns = descriptor.returns.clone();
+        query.form_bindings = descriptor.form_bindings.clone();
+        query.schema_fingerprint = descriptor.schema_fingerprint.clone();
+    }
+    let saved = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document_with_descriptors,
+            },
+            "preview-test",
+            &principal_ids,
+        )
+        .await
+        .context("authorized save should accept the parameterized Form query")?;
+    assert!(saved.document.has_complete_query_descriptors());
+    let saved_query = saved
+        .document
+        .spec
+        .variables
+        .iter()
+        .find(|node| node.id == "total_value")
+        .and_then(|node| match &node.kind {
+            VariableGraphNodeKind::Query { query, .. } => Some(query),
+            _ => None,
+        })
+        .context("saved query descriptor")?;
+    assert_eq!(
+        saved_query.schema_fingerprint,
+        plan.queries[0].schema_fingerprint
+    );
+    assert_eq!(saved_query.form_bindings, plan.queries[0].form_bindings);
     Ok(())
 }
 

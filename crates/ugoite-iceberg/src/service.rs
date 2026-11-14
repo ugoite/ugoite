@@ -248,8 +248,14 @@ fn composition_inline_form_bindings_for_save(
                 .map(|binding| binding.relation.clone()),
         )
         .collect::<BTreeSet<_>>();
-    let references = index::quoted_form_name_references_with_bindings(sql, &binding_names)
+    // Composition SQL accepts the portable `{{name}}` spelling. Normalize it
+    // before asking the SQL parser to discover Form references, just as the
+    // metadata planner does.
+    let normalized_sql = index::normalize_sql_template(sql)
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let references =
+        index::quoted_form_name_references_with_bindings(&normalized_sql, &binding_names)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     if submitted_bindings.iter().any(|binding| {
         !references.contains(&binding.relation)
             && !previous_bindings.iter().any(|previous| {
@@ -5463,8 +5469,11 @@ impl UgoiteService {
                 };
                 let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
                     &query.definition;
-                let mut referenced = index::quoted_form_name_references(sql)?;
-                referenced.extend(index::quoted_form_relation_names(sql)?);
+                let normalized_sql = index::normalize_sql_template(sql).map_err(|error| {
+                    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+                })?;
+                let mut referenced = index::quoted_form_name_references(&normalized_sql)?;
+                referenced.extend(index::quoted_form_relation_names(&normalized_sql)?);
                 referenced.extend(
                     query
                         .form_bindings

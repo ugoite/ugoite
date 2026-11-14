@@ -434,8 +434,11 @@ impl UgoiteService {
             };
             let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
                 &query.definition;
-            if !crate::index::quoted_form_name_references(sql)?.is_empty()
-                || !crate::index::quoted_form_relation_names(sql)?.is_empty()
+            let normalized_sql = crate::index::normalize_sql_template(sql).map_err(|error| {
+                AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+            })?;
+            if !crate::index::quoted_form_name_references(&normalized_sql)?.is_empty()
+                || !crate::index::quoted_form_relation_names(&normalized_sql)?.is_empty()
             {
                 return Err(AppError::invalid_input(
                     ErrorCode::InvalidInput,
