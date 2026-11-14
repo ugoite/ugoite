@@ -303,12 +303,16 @@ test("Composition keeps a saved query executable after an unused Form field is a
     const authoringPreview = page.getByRole("table").first();
     await expect(authoringPreview.locator("thead")).toContainText("Summary");
     await expect(authoringPreview.locator("thead")).not.toContainText("Notes");
-    await expect(authoringPreview).toContainText("current Form descriptor");
+    await expect(authoringPreview).toContainText("current summary");
+    await expect(authoringPreview).not.toContainText("current Form descriptor");
     await studioTabs.getByRole("tab", { name: "Design", exact: true }).click();
     const designTable = page.getByRole("table", { name: tableName });
     await expect(designTable.locator("thead")).toContainText("Summary");
     await expect(designTable.locator("thead")).not.toContainText("Notes");
     await expect(designTable.locator("tbody")).toContainText(
+      "current summary",
+    );
+    await expect(designTable.locator("tbody")).not.toContainText(
       "current Form descriptor",
     );
 

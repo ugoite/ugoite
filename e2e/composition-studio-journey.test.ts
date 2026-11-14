@@ -4,6 +4,7 @@ import {
   type BrowserContext,
   expect,
   type Page,
+  type Response,
   test,
 } from "@playwright/test";
 import {
@@ -441,6 +442,25 @@ async function openToolFromSavedTools(
   return path;
 }
 
+function isDraftQueryEvaluation(
+  response: Response,
+  variableId: string,
+  sql: string,
+): boolean {
+  if (
+    !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
+    response.request().method() !== "POST"
+  ) return false;
+  const body = response.request().postDataJSON() as {
+    target?: { kind?: string; yaml?: string };
+    requested_queries?: string[];
+  };
+  return body.target?.kind === "draft" &&
+    body.target.yaml?.includes(`id: ${variableId}`) === true &&
+    body.target.yaml?.includes(sql) === true &&
+    body.requested_queries?.includes(variableId) === true;
+}
+
 type CompositionSemanticValues = {
   inputs: Record<string, string>;
   text: string[];
@@ -587,7 +607,15 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.locator(
         '[data-component-id="quantity_text"] :is(p, h2).compositionGraphText',
       )).toHaveText("5", { timeout: 30_000 });
-      await expect(page.getByRole("table")).toContainText(seed.purposes[1]);
+      const changedTable = page.getByRole("table", { name: "studio_rows" });
+      await expect(changedTable.getByRole("columnheader")).toHaveText([
+        "total",
+        "quantity",
+      ]);
+      await expect(changedTable.locator("tbody tr")).toHaveCount(1);
+      await expect(
+        changedTable.locator("tbody tr").getByRole("cell"),
+      ).toHaveText(["30", "5"]);
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByLabel("month_start", { exact: true })).toHaveValue(
         seed.monthStart,
@@ -748,8 +776,7 @@ test.describe("Composition Studio Journey", () => {
       });
       await tableEditor.fill(tableSql);
       const tablePreviewResponse = page.waitForResponse((response) =>
-        new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-        response.request().method() === "POST"
+        isDraftQueryEvaluation(response, rowsVariable, tableSql)
       );
       await page.getByRole("button", { name: "Run Query", exact: true })
         .click();
@@ -772,14 +799,16 @@ test.describe("Composition Studio Journey", () => {
       const scalarNameField = page.getByLabel("Variable name", { exact: true });
       await scalarNameField.fill(scalarVariable);
       await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: scalarVariable, exact: true })
+        .click();
       await page.getByRole("button", { name: "Form", exact: true }).click();
       await page.getByRole("group", { name: "Available Forms", exact: true })
         .getByRole("button", { name: seed.formName, exact: true }).click();
       await page.getByRole("textbox", { name: "SQL", exact: true })
         .fill(scalarSql);
       const scalarPreviewResponse = page.waitForResponse((response) =>
-        new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-        response.request().method() === "POST"
+        isDraftQueryEvaluation(response, scalarVariable, scalarSql)
       );
       await page.getByRole("button", { name: "Run Query", exact: true })
         .click();
@@ -1017,6 +1046,9 @@ test.describe("Composition Studio Journey", () => {
     await variableName.fill("studio_rows");
     await page.getByRole("button", { name: "Add", exact: true }).click();
 
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "studio_rows", exact: true })
+      .click();
     await page.getByRole("button", { name: "Form", exact: true }).click();
     const availableForms = page.getByRole("group", {
       name: "Available Forms",
@@ -1030,8 +1062,7 @@ test.describe("Composition Studio Journey", () => {
     const editor = page.getByRole("textbox", { name: "SQL", exact: true });
     await editor.fill(sql);
     const emptyPreview = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-      response.request().method() === "POST"
+      isDraftQueryEvaluation(response, "studio_rows", sql)
     );
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     expect((await (await emptyPreview).json() as { ok?: boolean }).ok).toBe(
@@ -1156,7 +1187,11 @@ test.describe("Composition Studio Journey", () => {
       '[data-component-id="matching_text"] :is(p, h2).compositionGraphText',
     );
     await expect(text).toHaveText("Matches: 2", { timeout: 30_000 });
-    await page.getByLabel("minimum", { exact: true }).fill("25");
+    const minimumInput = page.getByRole("textbox", {
+      name: "minimum",
+      exact: true,
+    });
+    await minimumInput.fill("25");
     await expect(text).toHaveText("Matches: 1", { timeout: 30_000 });
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page).toHaveURL(
@@ -1165,9 +1200,7 @@ test.describe("Composition Studio Journey", () => {
       ),
       { timeout: 30_000 },
     );
-    await expect(page.getByLabel("minimum", { exact: true })).toHaveValue(
-      "15",
-    );
+    await expect(minimumInput).toHaveValue("15");
     await expect(text).toHaveText("Matches: 2", { timeout: 30_000 });
   });
 

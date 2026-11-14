@@ -662,9 +662,7 @@ test.describe("Composition scalar state journey", () => {
       await expect(firstTextEditor).toHaveValue("{{shared_value}}");
       await firstTextEditor.fill("{{alternative_value}}");
       await expect(firstTextEditor).toHaveValue("{{alternative_value}}");
-      await expect(page.locator(
-        '.compositionGraphDesignValue[data-component-id="text_two"] .compositionGraphTextSelect .compositionGraphText',
-      )).toHaveText("{{shared_value}}");
+      await expect(textOutput(page, "text_two")).toHaveText("10");
 
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
