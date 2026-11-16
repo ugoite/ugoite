@@ -825,6 +825,12 @@ test.describe("Composition Studio Journey", () => {
         .getByRole("button", { name: seed.formName, exact: true }).click();
       await page.getByRole("textbox", { name: "SQL", exact: true })
         .fill(scalarSql);
+      const queryResultShape = page.getByRole("combobox", {
+        name: "Query result",
+        exact: true,
+      });
+      await queryResultShape.selectOption("scalar");
+      await expect(queryResultShape).toHaveValue("scalar");
       const scalarPreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, scalarVariable, scalarSql)
       );
