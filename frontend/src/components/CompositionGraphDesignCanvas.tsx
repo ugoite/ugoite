@@ -65,8 +65,6 @@ export function CompositionGraphDesignCanvas(
     string | null | undefined
   >();
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
-  const selected = () =>
-    props.draft.components.find((component) => component.id === selectedId());
   let addButton: HTMLButtonElement | undefined;
   let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
