@@ -866,6 +866,7 @@ test.describe("Composition Studio Journey", () => {
         timeout: 30_000,
       });
       await expect(designTable).toContainText(seed.purposes[1]);
+      await designTable.click();
       await expect(page.locator(
         '[data-component-id="text_1"] :is(p, h2).compositionGraphText',
       )).toHaveText("Total: 50", { timeout: 30_000 });
