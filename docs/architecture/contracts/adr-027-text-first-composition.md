@@ -2,13 +2,13 @@
 title: "ADR-027 — Text-first Composition graph and Studio"
 ---
 
-**Status: Accepted; implementation in progress.** This decision replaces the
-Composition query and component shape defined by ADR-025. Although that shape
-has not been released as a stable public format, it is now saveable from the
-current `main` branch. Replacing it without a migration can make existing
-Composition revisions non-executable, so this change is scheduled for the next
-minor version under the repository compatibility rule. This decision does not
-authorize release preparation, version changes, or publication.
+**Status: Accepted and implemented on `main` by PR #4893.** This decision
+replaces the Composition query and component shape defined by ADR-025. Although
+that shape has not been released as a stable public format, it is now saveable
+from the current `main` branch. Replacing it without a migration can make
+existing Composition revisions non-executable, so this change is scheduled for
+the next minor version under the repository compatibility rule. This decision
+does not authorize release preparation, version changes, or publication.
 
 ## Context
 

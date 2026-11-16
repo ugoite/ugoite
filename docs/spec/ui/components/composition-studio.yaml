@@ -67,7 +67,10 @@ Reader and Design share the same result renderer. Reader does not show mode
 controls, component selection, Text editing, or style controls. Text is rendered
 as text, not HTML or evaluated markup. A stale, failed, unauthorized, or
 missing value is not replaced with an older result. Table paging remains
-bounded and server-owned; empty results keep their SQL result headings.
+bounded and server-owned; empty results keep their SQL result headings. When a
+Table exceeds the viewport width, its own region scrolls so every projected
+column remains reachable without widening the page. Scalar Text remains
+available while the Table is scrolled.
 
 ## Responsive and accessible behavior
 
