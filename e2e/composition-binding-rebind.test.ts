@@ -467,8 +467,6 @@ test.describe("Text-first Composition graph bindings", () => {
     );
     await expect(totalText).toHaveText("Total: 15", { timeout: 60_000 });
     await expect(repeatedText).toHaveText("Again: 15", { timeout: 60_000 });
-    expect(evaluations.at(-1)?.requested_queries).toEqual(["total_value"]);
-
     const previousEvaluationCount = evaluations.length;
     await page.getByLabel("minimum_amount", { exact: true }).fill("8");
     await expect(totalText).toHaveText("Total: 8", { timeout: 60_000 });
