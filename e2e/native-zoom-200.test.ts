@@ -1,9 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  getBackendUrl,
-  getDefaultSpaceId,
-  getFrontendUrl,
-} from "./lib/client.ts";
+import { getDefaultSpaceId, getFrontendUrl } from "./lib/client.ts";
 import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
@@ -61,26 +57,7 @@ async function runXdotool(args: string[]): Promise<string> {
 test("U-04 partial evidence: Composition Design remains usable at native 200% zoom", async ({ page, request }) => {
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);
-  const sqlName = `Native zoom metric ${suffix}`;
   const compositionName = `Native zoom composition ${suffix}`;
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: sqlName,
-        kind: "user-query",
-        sql: "SELECT 1 AS metric",
-        variables: [],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
 
   const buildInfoResponse = await page.request.get(
     getFrontendUrl("/build-info.json"),
@@ -141,18 +118,35 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
   const palette = page.getByRole("group", { name: "Add to design" });
   await palette.getByLabel("Input", { exact: true })
     .selectOption({ label: "zoom_input" });
-  await palette.getByRole("button", { name: "Metric", exact: true }).click();
-  const metricDialog = page.getByRole("dialog", {
-    name: "Metric",
-    exact: true,
-  });
-  await expect(metricDialog).toBeVisible();
-  await metricDialog.getByRole("tab", { name: "Saved SQL", exact: true })
-    .click();
-  await metricDialog.getByRole("button", { name: sqlName, exact: true })
-    .click();
-  await expect(metricDialog).toHaveCount(0);
-  await expect(page.locator(".compositionGraphMetric strong")).toHaveText("1");
+  await page.getByRole("tablist", { name: "Studio mode" })
+    .getByRole("tab", { name: "Variables", exact: true }).click();
+  await page.getByRole("button", { name: "Add variable", exact: true }).click();
+  await page.getByRole("group", { name: "Add variable" })
+    .getByRole("button", { name: "SQL", exact: true }).click();
+  const queryName = page.getByLabel("Variable ID", { exact: true });
+  await queryName.fill("zoom_total");
+  await queryName.press("Enter");
+  await page.getByRole("textbox", { name: "SQL", exact: true })
+    .fill("SELECT 1 AS total");
+  const queryPreviewResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
+    response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Run Query", exact: true }).click();
+  expect((await (await queryPreviewResponse).json() as { ok?: boolean }).ok)
+    .toBe(true);
+  await page.getByLabel("Query result", { exact: true })
+    .selectOption("scalar");
+  await page.getByRole("tablist", { name: "Studio mode" })
+    .getByRole("tab", { name: "Design", exact: true }).click();
+  await palette.getByRole("button", { name: "Text", exact: true }).click();
+  const textEditor = page.locator("#composition-text-editor-text_1");
+  await expect(textEditor).toBeVisible();
+  await textEditor.fill("{{zoom_total}}");
+  const compositionText = page.locator(
+    '[data-component-id="text_1"] .compositionGraphText',
+  );
+  await expect(compositionText).toHaveText("1");
 
   const afterCreation = await measure(page);
   expect(afterCreation.innerWidth).toBe(640);
@@ -181,7 +175,9 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
   await expect(
     page.getByRole("tab", { name: "Design", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+  await expect(
+    page.locator('[data-component-id="text_1"] .compositionGraphText'),
+  ).toHaveText(
     "1",
     { timeout: 30_000 },
   );
@@ -194,12 +190,14 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
   expect(savedDesignAt200.innerWidth).toBe(640);
   expect(savedDesignAt200.devicePixelRatio).toBe(2);
   expect(savedDesignAt200.horizontalOverflow).toBe(false);
-  const savedMetric = page.locator(".compositionGraphMetric");
-  await expect(savedMetric).toBeVisible();
-  await savedMetric.evaluate((element) =>
+  const savedText = page.locator(
+    '[data-component-id="text_1"] .compositionGraphText',
+  );
+  await expect(savedText).toBeVisible();
+  await savedText.evaluate((element) =>
     element.scrollIntoView({ block: "center" })
   );
-  await expect(savedMetric).toBeInViewport({ ratio: 0.9 });
+  await expect(savedText).toBeInViewport({ ratio: 0.9 });
   await expect(page.getByRole("textbox", { name: "zoom_input" }))
     .toBeInViewport({ ratio: 0.9 });
 
@@ -207,7 +205,7 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
   await Deno.mkdir(evidenceDir, { recursive: true });
   const screenshot = `${evidenceDir}/composition-native-zoom-200.png`;
   const resultRow = page.locator(".compositionGraphCanvasRow").filter({
-    has: savedMetric,
+    has: savedText,
   });
   await expect(resultRow).toBeVisible();
   const resultBox = await resultRow.boundingBox();
@@ -215,11 +213,11 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
     .boundingBox();
   const inputBox = await page.getByRole("textbox", { name: "zoom_input" })
     .boundingBox();
-  const metricBox = await savedMetric.boundingBox();
+  const textBox = await savedText.boundingBox();
   expect(resultBox).toBeTruthy();
   expect(tabsBox).toBeTruthy();
   expect(inputBox).toBeTruthy();
-  expect(metricBox).toBeTruthy();
+  expect(textBox).toBeTruthy();
   const intersects = (
     left: NonNullable<typeof tabsBox>,
     right: NonNullable<typeof resultBox>,
@@ -229,7 +227,7 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
     left.y < right.y + right.height &&
     left.y + left.height > right.y;
   expect(intersects(tabsBox!, resultBox!)).toBe(false);
-  const hitTestAt = async (box: NonNullable<typeof metricBox>) =>
+  const hitTestAt = async (box: NonNullable<typeof textBox>) =>
     await page.evaluate(({ x, y }) => {
       const target = document.elementFromPoint(x, y);
       return {
@@ -244,17 +242,16 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
     resultRow: { text: await resultRow.innerText(), box: resultBox },
     tabsBox,
     inputBox,
-    metricBox,
+    textBox,
     inputHit: await hitTestAt(inputBox!),
-    metricHit: await hitTestAt(metricBox!),
+    textHit: await hitTestAt(textBox!),
   };
   expect(screenshotTarget.inputHit).toMatchObject({
     tag: "INPUT",
     className: "ui-input",
   });
-  expect(screenshotTarget.metricHit).toMatchObject({
-    tag: "H2",
-    className: "compositionGraphMetricLabel",
+  expect(screenshotTarget.textHit).toMatchObject({
+    tag: "P",
   });
   const cdp = await page.context().newCDPSession(page);
   const cdpCapture = await cdp.send("Page.captureScreenshot", {
@@ -288,7 +285,7 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
     afterCreation,
     savedDesignAt200,
     inputVariable: "zoom_input",
-    metricValue: "1",
+    textValue: "1",
     screenshotTarget,
     screenshot,
   };
@@ -337,7 +334,12 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
     components: [
       { id: "first_input", kind: "input", variable: "first_amount" },
       { id: "second_input", kind: "input", variable: "second_amount" },
-      { id: "total_metric", kind: "metric", variable: "total" },
+      {
+        id: "total_text",
+        kind: "text",
+        content: "{{total}}",
+        style: "body",
+      },
     ],
     rows: [
       {
@@ -350,7 +352,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
       },
       {
         id: "result",
-        items: [{ kind: "component", component: "total_metric" }],
+        items: [{ kind: "component", component: "total_text" }],
       },
     ],
   });
@@ -378,8 +380,10 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await expect(inputs).toHaveCount(2);
   await expect(firstInput).toHaveAccessibleName("first_amount");
   await expect(secondInput).toHaveAccessibleName("second_amount");
-  const metric = page.locator(".compositionGraphMetric strong");
-  await expect(metric).toHaveText("3", { timeout: 30_000 });
+  const text = page.locator(
+    '[data-component-id="total_text"] .compositionGraphText',
+  );
+  await expect(text).toHaveText("3", { timeout: 30_000 });
 
   const beforeNativeZoom = await measure(page);
   expect(beforeNativeZoom.innerWidth).toBeGreaterThanOrEqual(1200);
@@ -463,17 +467,17 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await firstInput.fill("4");
   await expect(firstInput).toHaveValue("4");
   await expect(secondInput).toHaveValue("2");
-  await expect(metric).toHaveText("6", { timeout: 30_000 });
+  await expect(text).toHaveText("6", { timeout: 30_000 });
 
   const afterInputChange = await measure(page);
   expect(afterInputChange.innerWidth).toBe(640);
   expect(afterInputChange.devicePixelRatio).toBe(2);
   expect(afterInputChange.horizontalOverflow).toBe(false);
-  await expect(metric).toBeVisible();
-  await expect(metric).toBeInViewport({ ratio: 0.9 });
+  await expect(text).toBeVisible();
+  await expect(text).toBeInViewport({ ratio: 0.9 });
   await expect(firstInput).toBeInViewport({ ratio: 0.9 });
   await expect(secondInput).toBeInViewport({ ratio: 0.9 });
-  const metricIntersection = await assertIntersectsViewport(metric);
+  const textIntersection = await assertIntersectsViewport(text);
 
   const evidenceDir = "../docs/architecture/testing/evidence";
   await Deno.mkdir(evidenceDir, { recursive: true });
@@ -482,15 +486,15 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
       `${evidenceDir}/composition-runtime-native-zoom-200-first-input.png`,
     secondInput:
       `${evidenceDir}/composition-runtime-native-zoom-200-second-input.png`,
-    metric: `${evidenceDir}/composition-runtime-native-zoom-200-metric.png`,
-    metricViewport:
-      `${evidenceDir}/composition-runtime-native-zoom-200-metric-viewport.png`,
-    metricViewportDevice:
-      `${evidenceDir}/composition-runtime-native-zoom-200-metric-viewport-device.png`,
-    metricResult:
-      `${evidenceDir}/composition-runtime-native-zoom-200-metric-result.png`,
-    metricResultDevice:
-      `${evidenceDir}/composition-runtime-native-zoom-200-metric-result-device.png`,
+    text: `${evidenceDir}/composition-runtime-native-zoom-200-text.png`,
+    textViewport:
+      `${evidenceDir}/composition-runtime-native-zoom-200-text-viewport.png`,
+    textViewportDevice:
+      `${evidenceDir}/composition-runtime-native-zoom-200-text-viewport-device.png`,
+    textResult:
+      `${evidenceDir}/composition-runtime-native-zoom-200-text-result.png`,
+    textResultDevice:
+      `${evidenceDir}/composition-runtime-native-zoom-200-text-result-device.png`,
   };
   await firstInput.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
@@ -512,39 +516,40 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await secondInput.focus();
   await expect(secondInput).toBeFocused();
   await page.screenshot({ path: screenshots.secondInput });
-  const metricResult = page.locator(".compositionGraphMetric");
-  await metricResult.evaluate((element) =>
+  const textResult = page.locator('[data-component-id="total_text"]');
+  await textResult.evaluate((element) =>
     element.scrollIntoView({ block: "center", inline: "nearest" })
   );
-  await expect(metric).toBeInViewport({ ratio: 0.9 });
-  const metricPaintText = await metricResult.evaluate(async (element) => {
+  await expect(text).toBeInViewport({ ratio: 0.9 });
+  const textPaintValue = await textResult.evaluate(async (element) => {
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
-    return element.querySelector("strong")?.textContent?.trim() ?? "";
+    return element.querySelector(".compositionGraphText")?.textContent
+      ?.trim() ?? "";
   });
-  expect(metricPaintText).toBe("6");
-  const metricScreenshotIntersection = await assertIntersectsViewport(metric);
-  await page.screenshot({ path: screenshots.metric, fullPage: true });
-  await page.screenshot({ path: screenshots.metricViewport });
+  expect(textPaintValue).toBe("6");
+  const textScreenshotIntersection = await assertIntersectsViewport(text);
+  await page.screenshot({ path: screenshots.text, fullPage: true });
+  await page.screenshot({ path: screenshots.textViewport });
   await page.screenshot({
-    path: screenshots.metricViewportDevice,
+    path: screenshots.textViewportDevice,
     scale: "device",
   });
-  await expect(metric).toHaveText("6");
-  await expect(metricResult).toContainText("6");
-  const metricResultScreenshotIntersection = await assertIntersectsViewport(
-    metricResult,
+  await expect(text).toHaveText("6");
+  await expect(textResult).toContainText("6");
+  const textResultScreenshotIntersection = await assertIntersectsViewport(
+    textResult,
   );
-  const metricResultScreenshotBounds = await assertFullyWithinViewport(
-    metricResult,
+  const textResultScreenshotBounds = await assertFullyWithinViewport(
+    textResult,
   );
-  await expect(metricResult.locator("strong")).toHaveText("6");
-  const metricScreenshotText = await metricResult.locator("strong").innerText();
-  expect(metricScreenshotText).toBe("6");
-  await metricResult.screenshot({ path: screenshots.metricResult });
-  await metricResult.screenshot({
-    path: screenshots.metricResultDevice,
+  await expect(text).toHaveText("6");
+  const textScreenshotValue = await text.innerText();
+  expect(textScreenshotValue).toBe("6");
+  await textResult.screenshot({ path: screenshots.textResult });
+  await textResult.screenshot({
+    path: screenshots.textResultDevice,
     scale: "device",
   });
   const report = {
@@ -576,19 +581,18 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
       },
     ],
     tabOrder: ["first_amount", "second_amount"],
-    metric: { before: "3", afterChangingFirstInputTo: "6", visible: true },
-    metricViewportIntersection: metricIntersection,
-    metricScreenshotViewportIntersection: metricScreenshotIntersection,
-    metricResultScreenshotViewportIntersection:
-      metricResultScreenshotIntersection,
-    metricResultScreenshotViewportBounds: metricResultScreenshotBounds,
-    metricScreenshotText,
+    text: { before: "3", afterChangingFirstInputTo: "6", visible: true },
+    textViewportIntersection: textIntersection,
+    textScreenshotViewportIntersection: textScreenshotIntersection,
+    textResultScreenshotViewportIntersection: textResultScreenshotIntersection,
+    textResultScreenshotViewportBounds: textResultScreenshotBounds,
+    textScreenshotValue,
     beforeNativeZoom,
     afterNativeZoom,
     afterInputChange,
     screenshots,
-    metricPaintText,
-    metricScreenshotMode:
+    textPaintValue,
+    textScreenshotMode:
       "two animation frames after ordinary scroll; full-page, CSS-scale viewport/result, and device-scale viewport/result captures",
   };
   console.log(`NATIVE_ZOOM_RUNTIME_EVIDENCE ${JSON.stringify(report)}`);

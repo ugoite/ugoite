@@ -21,7 +21,7 @@ type SeedState = {
   revisionId: string;
 };
 
-type HeldQueryKind = "metric" | "table";
+type HeldQueryKind = "text" | "table";
 type GenerationProbe = {
   held: Record<HeldQueryKind, number[]>;
   delivered: Record<HeldQueryKind, number[]>;
@@ -30,7 +30,7 @@ type GenerationProbe = {
 type ProbeWindow = Window & { __compositionGenerationProbe?: GenerationProbe };
 
 type UiSnapshot = {
-  metric: string | null;
+  text: string | null;
   rows: string[];
   alerts: string[];
   loading: number;
@@ -83,30 +83,16 @@ async function seedRapidVariableComposition(
     expect(entryResponse.status()).toBe(201);
   }
 
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: `Generation aggregate ${suffix}`,
-        kind: "user-query",
-        sql: `SELECT SUM(${sqlIdentifier(amountColumn!)}) AS total FROM ${
-          sqlIdentifier(relation!)
-        } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`,
-        variables: [{
-          type: "float",
-          name: "minimum",
-          description: "Minimum amount included in the total.",
-        }],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
+  const sql = `SELECT SUM(${sqlIdentifier(amountColumn!)}) AS total FROM ${
+    sqlIdentifier(relation!)
+  } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`;
+  const inlineQuery = {
+    kind: "inline_sql",
+    sql,
+    arguments: [{ name: "minimum", variable: "minimum" }],
+    form_bindings: [],
+    schema_fingerprint: "",
   };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
 
   const graph: CompositionGraphSeed = {
     name: `Latest generation ${suffix}`,
@@ -125,35 +111,18 @@ async function seedRapidVariableComposition(
           kind: "scalar",
           value_type: { scalar_type: "float", nullable: true },
         },
-        query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          column: "total",
-          arguments: [{ name: "minimum", variable: "minimum" }],
-          form_bindings: [],
-          schema_fingerprint: "",
-        },
+        query: inlineQuery,
       },
       {
         id: "totals_rows",
         kind: "query",
         returns: { kind: "table", columns: [] },
-        query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          arguments: [{ name: "minimum", variable: "minimum" }],
-          form_bindings: [],
-          schema_fingerprint: "",
-        },
+        query: inlineQuery,
       },
     ],
     components: [
       { id: "minimum_input", kind: "input", variable: "minimum" },
-      { id: "total", kind: "metric", variable: "total_value" },
+      { id: "total", kind: "text", content: "{{total_value}}", style: "body" },
       { id: "totals_table", kind: "table", variable: "totals_rows" },
     ],
     rows: [
@@ -195,7 +164,9 @@ async function seedRapidVariableComposition(
 
 async function readUi(page: Page): Promise<UiSnapshot> {
   return await page.evaluate(() => ({
-    metric: document.querySelector(".compositionGraphMetric strong")
+    text: document.querySelector(
+      '[data-component-id="total"] .compositionGraphText',
+    )
       ?.textContent?.trim() ?? null,
     rows: Array.from(document.querySelectorAll("tbody tr td"))
       .map((cell) => cell.textContent?.trim() ?? ""),
@@ -213,11 +184,11 @@ async function readProbe(page: Page): Promise<{
     const probe = (window as ProbeWindow).__compositionGenerationProbe;
     return {
       held: {
-        metric: [...(probe?.held.metric ?? [])],
+        text: [...(probe?.held.text ?? [])],
         table: [...(probe?.held.table ?? [])],
       },
       delivered: {
-        metric: [...(probe?.delivered.metric ?? [])],
+        text: [...(probe?.delivered.text ?? [])],
         table: [...(probe?.delivered.table ?? [])],
       },
     };
@@ -249,11 +220,11 @@ test.describe("Composition latest variable generation", () => {
     seed = await seedRapidVariableComposition(request);
   });
 
-  test("Rapid typed-variable edits keep only the latest Metric and Table result", async ({ page }) => {
+  test("Rapid typed-variable edits keep only the latest Text and Table result", async ({ page }) => {
     test.setTimeout(180_000);
     await page.addInitScript((spaceId) => {
       type Gate = { promise: Promise<void>; release: () => void };
-      type Kind = "metric" | "table";
+      type Kind = "text" | "table";
       type Probe = {
         held: Record<Kind, number[]>;
         delivered: Record<Kind, number[]>;
@@ -267,8 +238,8 @@ test.describe("Composition latest variable generation", () => {
         gates.set(minimum, { promise, release });
       }
       const probe: Probe = {
-        held: { metric: [], table: [] },
-        delivered: { metric: [], table: [] },
+        held: { text: [], table: [] },
+        delivered: { text: [], table: [] },
         release: (minimum) => gates.get(minimum)?.release(),
       };
       (window as InitWindow).__compositionGenerationProbe = probe;
@@ -308,10 +279,10 @@ test.describe("Composition latest variable generation", () => {
           : await nativeFetch(input, { ...init, signal: undefined });
         // One graph evaluation carries both the scalar and table query
         // results for this exact input snapshot.
-        probe.held.metric.push(minimum);
+        probe.held.text.push(minimum);
         probe.held.table.push(minimum);
         await gate.promise;
-        probe.delivered.metric.push(minimum);
+        probe.delivered.text.push(minimum);
         probe.delivered.table.push(minimum);
         return response;
       };
@@ -326,29 +297,33 @@ test.describe("Composition latest variable generation", () => {
 
     const minimumInput = page.getByRole("textbox").first();
     await expect(minimumInput).toHaveValue("0");
-    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+    await expect(
+      page.locator('[data-component-id="total"] .compositionGraphText'),
+    ).toHaveText(
       "6",
     );
     await expect(page.getByRole("table")).toContainText("6");
     for (const minimum of [1, 2, 3]) {
       await minimumInput.fill(String(minimum));
-      await waitForValueInProbe(page, "held", "metric", minimum);
+      await waitForValueInProbe(page, "held", "text", minimum);
       await waitForValueInProbe(page, "held", "table", minimum);
     }
 
     const held = await readProbe(page);
-    expect(held.held.metric).toEqual([1, 2, 3]);
+    expect(held.held.text).toEqual([1, 2, 3]);
     expect(held.held.table).toEqual([1, 2, 3]);
 
     await page.evaluate(() => {
       (window as ProbeWindow).__compositionGenerationProbe!.release(3);
     });
-    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+    await expect(
+      page.locator('[data-component-id="total"] .compositionGraphText'),
+    ).toHaveText(
       "3",
     );
     await expect(page.getByRole("table")).toContainText("3");
     const latestResult = await readUi(page);
-    expect(latestResult.metric).toBe("3");
+    expect(latestResult.text).toBe("3");
     expect(latestResult.rows).toContain("3");
     expect(latestResult.alerts).toEqual([]);
 
@@ -356,7 +331,7 @@ test.describe("Composition latest variable generation", () => {
       await page.evaluate((minimum) => {
         (window as ProbeWindow).__compositionGenerationProbe!.release(minimum);
       }, staleMinimum);
-      await waitForValueInProbe(page, "delivered", "metric", staleMinimum);
+      await waitForValueInProbe(page, "delivered", "text", staleMinimum);
       await waitForValueInProbe(page, "delivered", "table", staleMinimum);
       await page.evaluate(() =>
         new Promise<void>((resolve) => {
@@ -369,9 +344,11 @@ test.describe("Composition latest variable generation", () => {
     }
 
     const probe = await readProbe(page);
-    expect(probe.delivered.metric).toEqual([3, 2, 1]);
+    expect(probe.delivered.text).toEqual([3, 2, 1]);
     expect(probe.delivered.table).toEqual([3, 2, 1]);
-    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+    await expect(
+      page.locator('[data-component-id="total"] .compositionGraphText'),
+    ).toHaveText(
       "3",
     );
     await expect(page.getByRole("table")).toContainText("3");

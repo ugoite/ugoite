@@ -8,6 +8,12 @@ bodies are rejected before planning. The executor exposes only authorized Form
 relations and the Core-approved aggregate registry. Parser success alone does
 not establish execution admission.
 
+**Status:** This matrix preserves the former ADR-025 executor-to-GUI coverage
+inventory for historical context. ADR-027 supersedes that authoring target with
+text-first SQL and the Text/Table/Input Composition model. The matrix is not
+evidence that the new Composition model is complete; its current criteria and
+verification are tracked separately.
+
 ## Sources of truth and current scope
 
 The checked inventory is

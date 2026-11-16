@@ -220,7 +220,9 @@ mod tests {
             sql,
             "SELECT \"spent_on\" AS \"Date\", \"category\" AS \"Date (2)\", \"amount\" AS \"Date (2) (2)\" FROM \"Expenses\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\""
         );
+        assert!(!sql.contains("SELECT *"));
         assert!(!sql.contains("_ugoite_created_at\" AS"));
+        assert!(!sql.contains("_ugoite_id\" AS"));
         assert!(!sql.contains("LIMIT"));
         assert_eq!(parse_generic_sql_statements(&sql).unwrap().len(), 1);
         assert_eq!(

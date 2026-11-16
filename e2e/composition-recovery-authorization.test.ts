@@ -72,6 +72,7 @@ async function seedGraphComposition(
   );
   expect(formsResponse.ok()).toBe(true);
   const forms = await formsResponse.json() as Array<{
+    id?: string;
     name?: string;
     sql_relation?: string;
     fields?: Record<string, { sql_column?: string }>;
@@ -79,6 +80,7 @@ async function seedGraphComposition(
   const form = forms.find((candidate) => candidate.name === formName);
   const relation = form?.sql_relation;
   const valueColumn = form?.fields?.["Private value"]?.sql_column;
+  expect(form?.id).toBeTruthy();
   expect(relation).toBeTruthy();
   expect(valueColumn).toBeTruthy();
 
@@ -93,29 +95,9 @@ async function seedGraphComposition(
   );
   expect(entryResponse.status()).toBe(201);
 
-  const savedSqlName = `Recovery source ${suffix}`;
-  const savedSqlText = `SELECT ${sqlIdentifier(valueColumn!)} AS value FROM ${
+  const inlineSql = `SELECT ${sqlIdentifier(valueColumn!)} AS value FROM ${
     sqlIdentifier(relation!)
   }`;
-  const savedSqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: savedSqlName,
-        kind: "user-query",
-        sql: savedSqlText,
-        variables: [],
-      },
-    },
-  );
-  expect([200, 201]).toContain(savedSqlResponse.status());
-  const savedSql = await savedSqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-
   const yaml = await completeCompositionGraphYaml(request, spaceId, {
     name: compositionName,
     variables: [{
@@ -123,11 +105,11 @@ async function seedGraphComposition(
       kind: "query",
       returns: { kind: "table", columns: [] },
       query: {
-        kind: "saved_sql",
-        entry_id: savedSql.id!,
-        revision_id: savedSql.revision_id!,
-        label_source: "variable",
+        kind: "inline_sql",
+        sql: inlineSql,
         arguments: [],
+        form_bindings: [{ relation: relation!, form_id: form!.id! }],
+        schema_fingerprint: "",
       },
     }],
     components: [{

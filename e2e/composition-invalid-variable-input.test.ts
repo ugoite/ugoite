@@ -73,31 +73,6 @@ async function seedInvalidInputComposition(
     expect(entryResponse.status()).toBe(201);
   }
 
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: `Minimum amount count ${suffix}`,
-        kind: "user-query",
-        sql: `SELECT COUNT(*) AS matching_rows FROM ${
-          sqlIdentifier(relation!)
-        } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`,
-        variables: [{
-          type: "integer",
-          name: "minimum",
-          description: "Minimum amount to include.",
-        }],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-
   const graph: CompositionGraphSeed = {
     name: `Invalid variable input ${suffix}`,
     variables: [
@@ -116,10 +91,10 @@ async function seedInvalidInputComposition(
           value_type: { scalar_type: "integer", nullable: false },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
+          kind: "inline_sql",
+          sql: `SELECT COUNT(*) AS matching_rows FROM ${
+            sqlIdentifier(relation!)
+          } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`,
           arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -129,7 +104,7 @@ async function seedInvalidInputComposition(
     components: [
       { id: "first_input", kind: "input", variable: "minimum_amount" },
       { id: "second_input", kind: "input", variable: "minimum_amount" },
-      { id: "matching_rows_metric", kind: "metric", variable: "matching_rows" },
+      { id: "matching_rows_text", kind: "text", content: "{{matching_rows}}", style: "body" },
     ],
     rows: [
       {
@@ -141,7 +116,7 @@ async function seedInvalidInputComposition(
       },
       {
         id: "result",
-        items: [{ kind: "component", component: "matching_rows_metric" }],
+        items: [{ kind: "component", component: "matching_rows_text" }],
       },
     ],
   };
@@ -167,14 +142,20 @@ async function seedInvalidInputComposition(
   };
 }
 
-async function settleWithoutMetricQuery(
+async function settleWithoutReferencedQuery(
   page: Page,
-  getMetricQueryCount: () => number,
+  getQueryCount: () => number,
   expectedCount: number,
 ): Promise<void> {
-  // Composition resolution and metric execution each have a debounce window.
+  // Composition resolution and query execution each have a debounce window.
   await page.waitForTimeout(400);
-  expect(getMetricQueryCount()).toBe(expectedCount);
+  expect(getQueryCount()).toBe(expectedCount);
+}
+
+function textOutput(page: Page, componentId: string) {
+  return page.locator(
+    `[data-component-id="${componentId}"] :is(p, h2).compositionGraphText`,
+  );
 }
 
 test.describe("Composition invalid variable Input", () => {
@@ -208,7 +189,7 @@ test.describe("Composition invalid variable Input", () => {
     const inputs = page.locator(".compositionGraphInput input");
     const firstInput = inputs.nth(0);
     const secondInput = inputs.nth(1);
-    const metric = page.locator(".compositionGraphMetric strong");
+    const result = textOutput(page, "matching_rows_text");
     await expect(firstInput).toHaveAccessibleName("minimum_amount");
     await expect(secondInput).toHaveAccessibleName("minimum_amount");
     const firstInputBox = await firstInput.boundingBox();
@@ -229,7 +210,7 @@ test.describe("Composition invalid variable Input", () => {
     await expect(secondInput).toBeFocused();
     await expect(firstInput).toHaveValue("5");
     await expect(secondInput).toHaveValue("5");
-    await expect(metric).toHaveText("2", { timeout: 30_000 });
+    await expect(result).toHaveText("2", { timeout: 30_000 });
     expect(evaluationCount).toBeGreaterThan(0);
     const successfulEvaluationCount = evaluationCount;
 
@@ -250,12 +231,12 @@ test.describe("Composition invalid variable Input", () => {
     await expect(secondInput).toHaveValue("-");
     await expect(firstInput).toHaveAttribute("aria-invalid", "true");
     await expect(secondInput).toHaveAttribute("aria-invalid", "true");
-    await expect(metric).toHaveCount(0);
+    await expect(result).not.toHaveText("2");
     await expect(page.getByRole("alert").first()).toBeVisible();
     const invalidResult = await (await invalidEvaluation).json();
     expect(invalidResult.ok).toBe(true);
     expect(invalidResult.computed_query_ids).toEqual([]);
-    await settleWithoutMetricQuery(
+    await settleWithoutReferencedQuery(
       page,
       () => evaluationCount,
       successfulEvaluationCount + 1,
@@ -282,7 +263,7 @@ test.describe("Composition invalid variable Input", () => {
     await expect(secondInput).toHaveValue("");
     await expect(firstInput).toHaveAttribute("aria-invalid", "true");
     await expect(secondInput).toHaveAttribute("aria-invalid", "true");
-    await expect(metric).toHaveCount(0);
+    await expect(result).not.toHaveText("2");
     const unsetResponse = await explicitUnsetEvaluation;
     expect(unsetResponse.ok()).toBe(true);
     const unsetResult = await unsetResponse.json() as {
@@ -291,7 +272,7 @@ test.describe("Composition invalid variable Input", () => {
     };
     expect(unsetResult.ok).toBe(true);
     expect(unsetResult.computed_query_ids).toEqual([]);
-    await settleWithoutMetricQuery(
+    await settleWithoutReferencedQuery(
       page,
       () => evaluationCount,
       successfulEvaluationCount + 2,
@@ -300,7 +281,7 @@ test.describe("Composition invalid variable Input", () => {
     await firstInput.fill("2");
     await expect(firstInput).toHaveValue("2");
     await expect(secondInput).toHaveValue("2");
-    await expect(metric).toHaveText("3", { timeout: 30_000 });
+    await expect(result).toHaveText("3", { timeout: 30_000 });
     expect(evaluationCount).toBeGreaterThan(successfulEvaluationCount);
   });
 });
@@ -341,8 +322,8 @@ test("independent Composition results update while another Input is invalid in D
     components: [
       { id: "bad_input", kind: "input", variable: "bad" },
       { id: "other_input", kind: "input", variable: "other" },
-      { id: "dependent_metric", kind: "metric", variable: "dependent" },
-      { id: "stable_metric", kind: "metric", variable: "stable" },
+      { id: "dependent_text", kind: "text", content: "{{dependent}}", style: "body" },
+      { id: "stable_text", kind: "text", content: "{{stable}}", style: "body" },
     ],
     rows: [{
       id: "inputs",
@@ -352,7 +333,7 @@ test("independent Composition results update while another Input is invalid in D
       })),
     }, {
       id: "results",
-      items: ["dependent_metric", "stable_metric"].map((component) => ({
+      items: ["dependent_text", "stable_text"].map((component) => ({
         kind: "component",
         component,
       })),
@@ -381,13 +362,16 @@ test("independent Composition results update while another Input is invalid in D
     });
     const bad = page.getByRole("textbox", { name: "bad", exact: true });
     const other = page.getByRole("textbox", { name: "other", exact: true });
-    const metrics = page.locator(".compositionGraphMetric strong");
-    await expect(metrics).toHaveText(["1", "2"], { timeout: 30_000 });
+    const dependent = textOutput(page, "dependent_text");
+    const stable = textOutput(page, "stable_text");
+    await expect(dependent).toHaveText("1", { timeout: 30_000 });
+    await expect(stable).toHaveText("2", { timeout: 30_000 });
     await bad.fill("-");
     await expect(bad).toHaveAttribute("aria-invalid", "true");
-    await expect(metrics).toHaveText(["2"]);
+    await expect(dependent).not.toHaveText("1");
+    await expect(stable).toHaveText("2");
     await other.fill("7");
-    await expect(metrics).toHaveText(["7"], { timeout: 30_000 });
+    await expect(stable).toHaveText("7", { timeout: 30_000 });
     const requestForStable = evaluations.findLast((value) =>
       value.variables?.other === 7
     );
@@ -395,7 +379,8 @@ test("independent Composition results update while another Input is invalid in D
     expect(requestForStable?.variables).not.toHaveProperty("bad");
     expect(requestForStable?.unset_variables).toContain("bad");
     await bad.fill("3");
-    await expect(metrics).toHaveText(["3", "7"], { timeout: 30_000 });
+    await expect(dependent).toHaveText("3", { timeout: 30_000 });
+    await expect(stable).toHaveText("7", { timeout: 30_000 });
     expect(evaluations.at(-1)?.requested_queries).toEqual(["dependent"]);
     page.off("request", record);
   }
@@ -435,12 +420,12 @@ test("a failed selected evaluation clears successful siblings and repairs togeth
     ],
     components: [
       { id: "amount_input", kind: "input", variable: "amount" },
-      { id: "echo_metric", kind: "metric", variable: "echo" },
-      { id: "nonnegative_metric", kind: "metric", variable: "nonnegative" },
+      { id: "echo_text", kind: "text", content: "{{echo}}", style: "body" },
+      { id: "nonnegative_text", kind: "text", content: "{{nonnegative}}", style: "body" },
     ],
     rows: [{
       id: "content",
-      items: ["amount_input", "echo_metric", "nonnegative_metric"].map(
+      items: ["amount_input", "echo_text", "nonnegative_text"].map(
         (component) => ({ kind: "component", component }),
       ),
     }],
@@ -453,8 +438,10 @@ test("a failed selected evaluation clears successful siblings and repairs togeth
       waitUntil: "domcontentloaded",
     });
     const amount = page.getByRole("textbox", { name: "amount", exact: true });
-    const metrics = page.locator(".compositionGraphMetric strong");
-    await expect(metrics).toHaveText(["1", "1"], { timeout: 30_000 });
+    const echo = textOutput(page, "echo_text");
+    const nonnegative = textOutput(page, "nonnegative_text");
+    await expect(echo).toHaveText("1", { timeout: 30_000 });
+    await expect(nonnegative).toHaveText("1", { timeout: 30_000 });
     const failed = page.waitForResponse((response) => {
       if (
         response.request().method() !== "POST" ||
@@ -480,13 +467,15 @@ test("a failed selected evaluation clears successful siblings and repairs togeth
         code: "result_validation_failed",
       }),
     ]));
-    await expect(metrics).toHaveCount(0);
+    await expect(echo).not.toHaveText("1");
+    await expect(nonnegative).not.toHaveText("1");
     await expect(
       page.getByRole("alert").filter({
         hasText: "This evaluation did not produce a result",
       }).first(),
     ).toBeVisible();
     await amount.fill("2");
-    await expect(metrics).toHaveText(["2", "2"], { timeout: 30_000 });
+    await expect(echo).toHaveText("2", { timeout: 30_000 });
+    await expect(nonnegative).toHaveText("2", { timeout: 30_000 });
   }
 });

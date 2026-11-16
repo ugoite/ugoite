@@ -10,12 +10,10 @@ import {
   type CompositionGraphSeed,
 } from "./lib/composition-graph.ts";
 
-type SavedSqlRevision = { entryId: string; revisionId: string };
-
 type SeedState = {
   spaceId: string;
   formName: string;
-  tableSql: SavedSqlRevision;
+  tableSql: string;
   compositionId: string;
   revisionId: string;
   compositionName: string;
@@ -36,44 +34,13 @@ async function createSpace(request: APIRequestContext): Promise<string> {
   return await getDefaultSpaceId(request);
 }
 
-async function createSavedSql(
-  request: APIRequestContext,
-  spaceId: string,
-  name: string,
-  sql: string,
-): Promise<SavedSqlRevision> {
-  const response = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name,
-        kind: "user-query",
-        sql,
-        variables: [{
-          type: "float",
-          name: "minimum",
-          description: "Minimum amount to include.",
-        }],
-      },
-    },
-  );
-  expect([200, 201]).toContain(response.status());
-  const savedSql = await response.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-  return { entryId: savedSql.id!, revisionId: savedSql.revision_id! };
-}
-
 async function seedComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
-  const formName = `PageMetric${suffix}`;
-  const compositionName = `Page metric ${suffix}`;
+  const formName = `PageText${suffix}`;
+  const compositionName = `Page text ${suffix}`;
 
   const formResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -135,24 +102,14 @@ async function seedComposition(
     );
   }
 
-  const metricSql = await createSavedSql(
-    request,
-    spaceId,
-    `Matching count ${suffix}`,
-    `SELECT COUNT(*) AS matching_count FROM ${sqlIdentifier(relation!)} WHERE ${
-      sqlIdentifier(amountColumn!)
-    } >= $minimum`,
-  );
-  const tableSql = await createSavedSql(
-    request,
-    spaceId,
-    `Paged table source ${suffix}`,
-    `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
-      sqlIdentifier(merchantColumn!)
-    } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
-      sqlIdentifier(amountColumn!)
-    } >= $minimum ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
-  );
+  const tableSql = `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
+    sqlIdentifier(merchantColumn!)
+  } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
+    sqlIdentifier(amountColumn!)
+  } >= $minimum ORDER BY ${sqlIdentifier(amountColumn!)} ASC`;
+  const countSql = `SELECT COUNT(*) AS matching_count FROM ${
+    sqlIdentifier(relation!)
+  } WHERE ${sqlIdentifier(amountColumn!)} >= $minimum`;
 
   const graph: CompositionGraphSeed = {
     name: compositionName,
@@ -169,10 +126,8 @@ async function seedComposition(
         kind: "query",
         returns: { kind: "table", columns: [] },
         query: {
-          kind: "saved_sql",
-          entry_id: tableSql.entryId,
-          revision_id: tableSql.revisionId,
-          label_source: "variable",
+          kind: "inline_sql",
+          sql: tableSql,
           arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -186,11 +141,8 @@ async function seedComposition(
           value_type: { scalar_type: "integer", nullable: false },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: metricSql.entryId,
-          revision_id: metricSql.revisionId,
-          label_source: "variable",
-          column: "matching_count",
+          kind: "inline_sql",
+          sql: countSql,
           arguments: [{ name: "minimum", variable: "minimum_amount" }],
           form_bindings: [],
           schema_fingerprint: "",
@@ -200,9 +152,10 @@ async function seedComposition(
     components: [
       { id: "minimum_input", kind: "input", variable: "minimum_amount" },
       {
-        id: "matching_count",
-        kind: "metric",
-        variable: "matching_count_value",
+        id: "matching_count_text",
+        kind: "text",
+        content: "{{matching_count_value}}",
+        style: "body",
       },
       { id: "rows", kind: "table", variable: "paged_rows" },
     ],
@@ -214,7 +167,7 @@ async function seedComposition(
       {
         id: "results",
         items: [
-          { kind: "component", component: "matching_count" },
+          { kind: "component", component: "matching_count_text" },
           { kind: "component", component: "rows" },
         ],
       },
@@ -244,20 +197,6 @@ async function seedComposition(
     revisionId: savedComposition.revision_id!,
     compositionName,
   };
-}
-
-async function getSavedSqlSource(
-  request: APIRequestContext,
-  spaceId: string,
-  savedSqlId: string,
-): Promise<string> {
-  const response = await request.get(
-    getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-  );
-  expect(response.ok()).toBe(true);
-  const savedSql = await response.json() as { sql?: string };
-  expect(savedSql.sql).toBeTruthy();
-  return savedSql.sql!;
 }
 
 async function snapshotPersistedCompositionWork(
@@ -312,7 +251,7 @@ async function snapshotPersistedCompositionWork(
   };
 }
 
-test.describe("Composition Table and Metric pagination", () => {
+test.describe("Composition Table and Text pagination", () => {
   let seed: SeedState;
 
   test.beforeAll(async ({ request }) => {
@@ -327,9 +266,9 @@ test.describe("Composition Table and Metric pagination", () => {
     seed = await seedComposition(request);
   });
 
-  test("Table pagination leaves the SQL Metric and typed Input unchanged", async ({ page, request }) => {
+  test("Table pagination leaves the SQL Text and typed Input unchanged", async ({ page, request }) => {
     test.setTimeout(120_000);
-    // This scenario resolves a Form-backed table and Saved SQL metric over
+    // This scenario resolves a Form-backed table and SQL text over
     // 102 Entries. Keep those async page assertions bounded without using the
     // five-second default for this larger fixture.
     const uiExpect = expect.configure({ timeout: 20_000 });
@@ -356,10 +295,12 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(page).toHaveURL(new RegExp(`${path}$`));
 
     const input = page.getByLabel("minimum_amount", { exact: true });
-    const metric = page.locator(".compositionGraphMetric strong");
+    const scalarText = page.locator(
+      '[data-component-id="matching_count_text"] p.compositionGraphText',
+    );
     const table = page.getByRole("table");
     await uiExpect(input).toHaveValue("1");
-    await uiExpect(metric).toHaveText("101");
+    await uiExpect(scalarText).toHaveText("101");
     await uiExpect(table.locator("tbody tr")).toHaveCount(100);
     await uiExpect(table).toContainText("Pager-001");
     await uiExpect(page.getByRole("button", { name: "Next", exact: true }))
@@ -368,7 +309,7 @@ test.describe("Composition Table and Metric pagination", () => {
     expect(initialEvaluations).toBeGreaterThan(0);
 
     await input.fill("0");
-    await uiExpect(metric).toHaveText("102");
+    await uiExpect(scalarText).toHaveText("102");
     await uiExpect(table.locator("tbody tr")).toHaveCount(100);
     await uiExpect(table).toContainText("Pager-000");
     const evaluationsAfterInputChange = fullEvaluationCount;
@@ -380,14 +321,14 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(table.locator("tbody tr")).toHaveCount(2);
     await uiExpect(table).toContainText("Pager-100");
     await uiExpect(input).toHaveValue("0");
-    await uiExpect(metric).toHaveText("102");
+    await uiExpect(scalarText).toHaveText("102");
     expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
 
     await page.getByRole("button", { name: "Previous", exact: true }).click();
     await uiExpect(table.locator("tbody tr")).toHaveCount(100);
     await uiExpect(table).toContainText("Pager-000");
     await uiExpect(input).toHaveValue("0");
-    await uiExpect(metric).toHaveText("102");
+    await uiExpect(scalarText).toHaveText("102");
     expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
 
     // Reopen the same revision in Design. The graph preview uses its own
@@ -436,8 +377,7 @@ test.describe("Composition Table and Metric pagination", () => {
     const initialDesignEvaluation = await (await designInitialResponse)
       .json() as EvaluationResponse;
     expect(initialDesignEvaluation.ok).toBe(true);
-    const initialDesignTable =
-      initialDesignEvaluation.query_results.paged_rows;
+    const initialDesignTable = initialDesignEvaluation.query_results.paged_rows;
     expect(initialDesignTable.value.kind).toBe("table");
     expect(initialDesignTable.value.rows).toHaveLength(100);
     expect(initialDesignTable.has_more).toBe(true);
@@ -448,10 +388,12 @@ test.describe("Composition Table and Metric pagination", () => {
       name: "minimum_amount",
       exact: true,
     });
-    const designMetric = page.locator(".compositionGraphMetric strong");
+    const designText = page.locator(
+      '[data-component-id="matching_count_text"] p.compositionGraphText',
+    );
     const designTable = page.getByRole("table");
     await uiExpect(designInput).toHaveValue("1");
-    await uiExpect(designMetric).toHaveText("101");
+    await uiExpect(designText).toHaveText("101");
     await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
 
     const zeroInputEvaluation = page.waitForResponse((incoming) => {
@@ -472,7 +414,7 @@ test.describe("Composition Table and Metric pagination", () => {
     expect(zeroDesignTable.value.rows).toHaveLength(100);
     expect(zeroDesignTable.has_more).toBe(true);
     await uiExpect(designInput).toHaveValue("0");
-    await uiExpect(designMetric).toHaveText("102");
+    await uiExpect(designText).toHaveText("102");
     await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
     expect(designPageRequests).toHaveLength(0);
 
@@ -510,13 +452,13 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(designTable).toContainText("Pager-100");
     await uiExpect(designTable).toContainText("Pager-101");
     await uiExpect(designInput).toHaveValue("0");
-    await uiExpect(designMetric).toHaveText("102");
+    await uiExpect(designText).toHaveText("102");
 
     await page.getByRole("button", { name: "Previous", exact: true }).click();
     await uiExpect(designTable.locator("tbody tr")).toHaveCount(100);
     await uiExpect(designTable).toContainText("Pager-000");
     await uiExpect(designInput).toHaveValue("0");
-    await uiExpect(designMetric).toHaveText("102");
+    await uiExpect(designText).toHaveText("102");
     expect(designPageRequests).toHaveLength(1);
 
     expect(await snapshotPersistedCompositionWork(request, seed)).toEqual(
@@ -524,16 +466,12 @@ test.describe("Composition Table and Metric pagination", () => {
     );
   });
 
-  test("Studio counts the pinned Table SQL separately and preserves its source while paging", async ({ page, request }) => {
+  test("Studio counts inline Table SQL separately from paged reads", async ({ page, request }) => {
     test.setTimeout(120_000);
     const uiExpect = expect.configure({ timeout: 20_000 });
     const revisionPath =
       `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.revisionId}`;
-    const sourceBefore = await getSavedSqlSource(
-      request,
-      seed.spaceId,
-      seed.tableSql.entryId,
-    );
+    const sourceBefore = seed.tableSql;
     expect(sourceBefore).not.toMatch(/\bLIMIT\b/i);
 
     await page.goto(getFrontendUrl(`${revisionPath}/edit`), {
@@ -550,27 +488,32 @@ test.describe("Composition Table and Metric pagination", () => {
       name: "Run Query",
       exact: true,
     });
-    const evaluationRequests: Array<Record<string, unknown>> = [];
     const countRequests: Array<Record<string, unknown>> = [];
     page.on("request", (outgoing) => {
       const path = new URL(outgoing.url()).pathname;
-      if (
-        path.endsWith("/compositions/evaluate") &&
-        outgoing.method() === "POST"
-      ) {
-        evaluationRequests.push(
-          outgoing.postDataJSON() as Record<string, unknown>,
-        );
-      }
       if (path.endsWith("/sql/query/count") && outgoing.method() === "POST") {
         countRequests.push(outgoing.postDataJSON() as Record<string, unknown>);
       }
     });
-    const firstPageResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-    );
+    const firstPageResponse = page.waitForResponse((response) => {
+      if (
+        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+      ) return false;
+      const body = response.request().postDataJSON() as {
+        requested_queries?: string[];
+        page?: unknown;
+      };
+      return !body.page &&
+        body.requested_queries?.length === 1 &&
+        body.requested_queries[0] === "paged_rows";
+    });
     await studioRun.click();
-    const firstEvaluation = await (await firstPageResponse).json() as {
+    const firstResponse = await firstPageResponse;
+    expect(firstResponse.request().postDataJSON()).toMatchObject({
+      requested_queries: ["paged_rows"],
+    });
+    const firstEvaluation = await firstResponse.json() as {
+      queries?: Array<{ variable_id: string; portable_sql?: string }>;
       query_results?: Record<string, {
         value?: { kind: string; rows?: unknown[][] };
         count_snapshot?: string;
@@ -579,6 +522,10 @@ test.describe("Composition Table and Metric pagination", () => {
       }>;
     };
     const firstPage = firstEvaluation.query_results?.paged_rows;
+    const resolvedQuery = firstEvaluation.queries?.find((query) =>
+      query.variable_id === "paged_rows"
+    );
+    expect(resolvedQuery?.portable_sql).toBeTruthy();
     expect(firstPage?.value?.kind).toBe("table");
     expect(firstPage?.value?.rows).toHaveLength(100);
     expect(firstPage?.has_more).toBe(true);
@@ -591,16 +538,23 @@ test.describe("Composition Table and Metric pagination", () => {
     )
       .toBeEnabled();
     expect(countRequests).toHaveLength(0);
-    expect(evaluationRequests.at(-1)).toMatchObject({
-      requested_queries: ["paged_rows"],
-    });
 
-    const nextPageResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-    );
+    const nextPageResponse = page.waitForResponse((response) => {
+      if (
+        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+      ) return false;
+      const body = response.request().postDataJSON() as {
+        page?: { variable_id?: string };
+      };
+      return body.page?.variable_id === "paged_rows";
+    });
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await uiExpect(studioTable.locator("tbody tr")).toHaveCount(2);
-    const nextEvaluation = await (await nextPageResponse).json() as {
+    const nextResponse = await nextPageResponse;
+    expect(nextResponse.request().postDataJSON()).toMatchObject({
+      page: { variable_id: "paged_rows", cursor: firstPage?.next },
+    });
+    const nextEvaluation = await nextResponse.json() as {
       query_results?: Record<string, {
         value?: { kind: string; rows?: unknown[][] };
         has_more: boolean;
@@ -614,9 +568,6 @@ test.describe("Composition Table and Metric pagination", () => {
     expect(JSON.stringify(nextPage?.value?.rows)).toContain("Pager-101");
     expect(JSON.stringify(nextPage?.value?.rows)).not.toContain("Pager-102");
     expect(nextPage?.has_more).toBe(false);
-    expect(evaluationRequests.at(-1)).toMatchObject({
-      page: { variable_id: "paged_rows", cursor: firstPage?.next },
-    });
 
     const appendedEntryResponse = await request.post(
       getBackendUrl(`/spaces/${seed.spaceId}/entries`),
@@ -635,14 +586,12 @@ test.describe("Composition Table and Metric pagination", () => {
     await page.getByRole("button", { name: "Count rows", exact: true }).click();
     expect(await (await countResponse).json()).toMatchObject({ count: 102 });
     expect(countRequests.at(-1)).toMatchObject({
-      sql: "",
-      saved_sql: {
-        id: seed.tableSql.entryId,
-        revision_id: seed.tableSql.revisionId,
-      },
+      sql: resolvedQuery?.portable_sql,
       parameters: { minimum: 0 },
       composition_count_snapshot: nextPage?.count_snapshot,
     });
+    expect(countRequests.at(-1)).not.toHaveProperty("form_binding_guards");
+    expect(countRequests.at(-1)).not.toHaveProperty("saved_sql");
     expect(nextPage?.count_snapshot).toMatch(/^v1\./);
     expect(String(countRequests.at(-1)?.sql ?? "")).not.toMatch(/\bLIMIT\b/i);
     const validCountRequest = countRequests.at(-1)!;
@@ -666,9 +615,5 @@ test.describe("Composition Table and Metric pagination", () => {
       },
     );
     expect(tamperedSnapshotResponse.status()).toBe(422);
-    expect(
-      await getSavedSqlSource(request, seed.spaceId, seed.tableSql.entryId),
-    )
-      .toBe(sourceBefore);
   });
 });

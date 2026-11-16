@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 mod canonical;
 mod form_query;
+mod text_template;
 pub use form_query::{
     composition_form_query_seed, composition_form_query_sql, CompositionFormAggregate,
     CompositionFormQuery, CompositionFormQueryColumn, CompositionFormQueryError,
@@ -24,6 +25,9 @@ mod yaml;
 
 use variable_binding::{compile_variable_graph_bindings, VariableGraphComponentBinding};
 
+pub use text_template::{
+    parse_composition_text_template, CompositionTextTemplateError, CompositionTextTemplatePart,
+};
 pub use variable_graph::{
     compile_variable_graph, validate_variable_graph_result, variable_graph_dependency_order,
     variable_graph_literal_matches, CompiledVariableGraph, VariableGraph,
@@ -31,8 +35,7 @@ pub use variable_graph::{
     VariableGraphDiagnosticCode, VariableGraphFormBinding, VariableGraphLiteral, VariableGraphNode,
     VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
     VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode, VariableGraphResultType,
-    VariableGraphSavedSqlLabelSource, VariableGraphScalarDescriptor, VariableGraphScalarType,
-    VariableGraphValidatedResult,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
 };
 pub use variable_graph_input::{
     parse_variable_graph_input, resolve_variable_graph_inputs, ResolvedVariableGraphInputs,
@@ -166,36 +169,30 @@ impl CompositionSpec {
         let graph_components = self
             .components
             .iter()
-            .map(|component| match component {
-                CompositionComponent::Input { id, variable } => {
-                    VariableGraphComponentBinding::Input {
-                        id: id.clone(),
-                        variable: variable.clone(),
+            .map(|component| {
+                let binding = match component {
+                    CompositionComponent::Input { id, variable } => {
+                        VariableGraphComponentBinding::Input {
+                            id: id.clone(),
+                            variable: variable.clone(),
+                        }
                     }
-                }
-                CompositionComponent::Text { id, content, .. } => {
-                    VariableGraphComponentBinding::Text {
+                    CompositionComponent::Text { id, .. } => VariableGraphComponentBinding::Text {
                         id: id.clone(),
-                        variable: match content {
-                            CompositionTextContent::Literal { .. } => None,
-                            CompositionTextContent::Variable { variable } => Some(variable.clone()),
-                        },
+                        variables: component
+                            .variable_ids()
+                            .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?,
+                    },
+                    CompositionComponent::Table { id, variable } => {
+                        VariableGraphComponentBinding::Table {
+                            id: id.clone(),
+                            variable: variable.clone(),
+                        }
                     }
-                }
-                CompositionComponent::Metric { id, variable, .. } => {
-                    VariableGraphComponentBinding::Metric {
-                        id: id.clone(),
-                        variable: variable.clone(),
-                    }
-                }
-                CompositionComponent::Table { id, variable, .. } => {
-                    VariableGraphComponentBinding::Table {
-                        id: id.clone(),
-                        variable: variable.clone(),
-                    }
-                }
+                };
+                Ok(binding)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, CompositionDiagnosticCode>>()?;
 
         let mut components_by_id = HashMap::with_capacity(self.components.len());
         for component in &self.components {
@@ -207,8 +204,7 @@ impl CompositionSpec {
             match component {
                 CompositionComponent::Input { .. }
                 | CompositionComponent::Text { .. }
-                | CompositionComponent::Table { .. }
-                | CompositionComponent::Metric { .. } => {}
+                | CompositionComponent::Table { .. } => {}
             }
         }
 
@@ -390,95 +386,6 @@ fn unique_by<T, K: Eq + std::hash::Hash>(items: &[T], key: impl Fn(&T) -> K) -> 
     items.iter().all(|item| seen.insert(key(item)))
 }
 
-/// Portable logical type used when returning one metric value.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionResultFieldType {
-    String,
-    Boolean,
-    Integer,
-    Float,
-    Decimal,
-    Date,
-    Timestamp,
-    Json,
-}
-
-impl CompositionResultFieldType {
-    /// Whether this result type can be selected by a single-value metric.
-    pub const fn supports_metric(self) -> bool {
-        !matches!(self, Self::Json)
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::String => "string",
-            Self::Boolean => "boolean",
-            Self::Integer => "integer",
-            Self::Float => "float",
-            Self::Decimal => "decimal",
-            Self::Date => "date",
-            Self::Timestamp => "timestamp",
-            Self::Json => "json",
-        }
-    }
-}
-
-/// Portable formatting hints for a metric value. These fields affect display
-/// only; they do not alter the stored definition or query semantics.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionMetricPresentation {
-    Number {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        unit: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fraction_digits: Option<u8>,
-    },
-}
-
-/// An ordered, display-only projection of columns from a Table query result.
-/// Column keys remain exact SQL result names; labels never become data keys.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionTablePresentation {
-    pub columns: Vec<CompositionTablePresentationColumn>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionTablePresentationColumn {
-    pub column: String,
-    pub label: String,
-}
-
-impl CompositionTablePresentation {
-    pub(crate) fn is_well_formed(&self) -> bool {
-        !self.columns.is_empty()
-            && self
-                .columns
-                .iter()
-                .all(|column| !column.column.trim().is_empty() && !column.label.trim().is_empty())
-            && self
-                .columns
-                .iter()
-                .map(|column| column.column.as_str())
-                .collect::<HashSet<_>>()
-                .len()
-                == self.columns.len()
-    }
-}
-
-impl CompositionMetricPresentation {
-    pub(crate) fn is_well_formed(&self) -> bool {
-        match self {
-            Self::Number { unit, .. } => {
-                unit.as_deref().is_none_or(|value| !value.trim().is_empty())
-            }
-        }
-    }
-}
-
 /// A visual component supported by the dashboard renderer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -489,80 +396,55 @@ pub enum CompositionComponent {
     },
     Text {
         id: String,
-        content: CompositionTextContent,
+        content: String,
         style: TextStyle,
-    },
-    Metric {
-        id: String,
-        /// Scalar value supplied by a constant, input, or query variable.
-        variable: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        presentation: Option<CompositionMetricPresentation>,
     },
     Table {
         id: String,
         /// Table value supplied by a query variable.
         variable: String,
-        /// Optional display-only column view; None shows every query column.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        presentation: Option<CompositionTablePresentation>,
     },
-}
-
-/// Text content is a literal or a direct reference to a string variable.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionTextContent {
-    Literal { text: String },
-    Variable { variable: String },
 }
 
 impl CompositionComponent {
     pub fn id(&self) -> &str {
         match self {
-            Self::Input { id, .. }
-            | Self::Text { id, .. }
-            | Self::Metric { id, .. }
-            | Self::Table { id, .. } => id,
+            Self::Input { id, .. } | Self::Text { id, .. } | Self::Table { id, .. } => id,
         }
     }
 
-    /// The referenced variable, if the component reads one.
+    /// The direct variable for an Input or Table component.
+    ///
+    /// Text references are templates and should use `variable_ids`.
     pub fn variable_id(&self) -> Option<&str> {
         match self {
-            Self::Input { variable, .. }
-            | Self::Metric { variable, .. }
-            | Self::Table { variable, .. } => Some(variable),
-            Self::Text {
-                content: CompositionTextContent::Variable { variable },
-                ..
-            } => Some(variable),
-            Self::Text {
-                content: CompositionTextContent::Literal { .. },
-                ..
-            } => None,
+            Self::Input { variable, .. } | Self::Table { variable, .. } => Some(variable),
+            Self::Text { .. } => None,
         }
     }
 
-    pub(crate) fn metric_shape_is_well_formed(&self) -> bool {
-        let Self::Metric { presentation, .. } = self else {
-            return true;
-        };
-
-        presentation
-            .as_ref()
-            .is_none_or(CompositionMetricPresentation::is_well_formed)
-    }
-
-    pub(crate) fn table_shape_is_well_formed(&self) -> bool {
-        let Self::Table {
-            presentation: Some(presentation),
-            ..
-        } = self
-        else {
-            return true;
-        };
-        presentation.is_well_formed()
+    /// Return the unique graph variables referenced by this component.
+    pub fn variable_ids(&self) -> Result<Vec<String>, CompositionTextTemplateError> {
+        match self {
+            Self::Input { variable, .. } | Self::Table { variable, .. } => {
+                Ok(vec![variable.clone()])
+            }
+            Self::Text { content, .. } => {
+                let mut seen = HashSet::new();
+                Ok(parse_composition_text_template(content)?
+                    .into_iter()
+                    .filter_map(|part| match part {
+                        CompositionTextTemplatePart::Variable { variable }
+                            if seen.insert(variable.clone()) =>
+                        {
+                            Some(variable)
+                        }
+                        CompositionTextTemplatePart::Variable { .. }
+                        | CompositionTextTemplatePart::Literal { .. } => None,
+                    })
+                    .collect())
+            }
+        }
     }
 }
 
@@ -633,8 +515,6 @@ pub enum CompositionDiagnosticCode {
     MetricResultTypeMismatch,
     MetricScalarNoRows,
     MetricScalarMultipleRows,
-    MetricResultColumnMissing,
-    MetricResultColumnAmbiguous,
 }
 
 impl CompositionDiagnosticCode {
@@ -653,8 +533,6 @@ impl CompositionDiagnosticCode {
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
             Self::MetricScalarNoRows => "metric_scalar_no_rows",
             Self::MetricScalarMultipleRows => "metric_scalar_multiple_rows",
-            Self::MetricResultColumnMissing => "metric_result_column_missing",
-            Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
         }
     }
 }
@@ -663,8 +541,7 @@ impl CompositionDiagnosticCode {
 mod tests {
     use super::{
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
-        CompositionMetricPresentation, VariableGraphNodeKind, VariableGraphResultType,
-        VariableGraphScalarDescriptor, VariableGraphScalarType,
+        VariableGraphNodeKind,
     };
 
     const GRAPH: &str = include_str!("../tests/fixtures/composition/sql-first.ugcomp.yaml");
@@ -741,10 +618,10 @@ mod tests {
     #[test]
     fn components_reference_only_graph_variables_of_compatible_shape() {
         let mut document = parse_composition_yaml(GRAPH).unwrap();
-        let CompositionComponent::Metric { variable, .. } = &mut document.spec.components[2] else {
-            panic!("fixture component should be a Metric");
+        let CompositionComponent::Text { content, .. } = &mut document.spec.components[2] else {
+            panic!("fixture component should be Text");
         };
-        *variable = "expense_rows".to_owned();
+        *content = "Rows: {{expense_rows}}".to_owned();
         assert_eq!(
             document.spec.components_in_render_order(),
             Err(CompositionDiagnosticCode::InvalidComposition)
@@ -762,26 +639,55 @@ mod tests {
     }
 
     #[test]
-    fn numeric_metric_presentation_is_checked_against_scalar_type() {
+    fn text_component_collects_unique_scalar_dependencies() {
+        let document = parse_composition_yaml(GRAPH).unwrap();
+        let CompositionComponent::Text { content, .. } = &document.spec.components[2] else {
+            panic!("fixture component should be Text");
+        };
+        assert_eq!(content, "Total: {{month_total}}");
+        assert_eq!(
+            document.spec.components[2].variable_ids().unwrap(),
+            ["month_total"]
+        );
+        let repeated = CompositionComponent::Text {
+            id: "repeated".to_owned(),
+            content: "{{month_total}} / {{month_total}}".to_owned(),
+            style: super::TextStyle::Body,
+        };
+        assert_eq!(repeated.variable_ids().unwrap(), ["month_total"]);
+    }
+
+    #[test]
+    fn text_references_reject_malformed_and_non_scalar_values() {
+        for content in ["{{missing}}", "{{unclosed", "{{expense_rows}}"] {
+            let mut document = parse_composition_yaml(GRAPH).unwrap();
+            let CompositionComponent::Text { content: text, .. } = &mut document.spec.components[2]
+            else {
+                panic!("fixture component should be Text");
+            };
+            *text = content.to_owned();
+            assert_eq!(
+                document.spec.components_in_render_order(),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "template: {content:?}"
+            );
+        }
+
         let mut document = parse_composition_yaml(GRAPH).unwrap();
-        let VariableGraphNodeKind::Query { returns, .. } = &mut document.spec.variables[3].kind
-        else {
-            panic!("fixture node should be a query");
-        };
-        *returns = VariableGraphResultType::Scalar {
-            value_type: VariableGraphScalarDescriptor {
-                scalar_type: VariableGraphScalarType::Date,
-                nullable: false,
+        document.spec.variables.push(super::VariableGraphNode {
+            id: "payload".to_owned(),
+            kind: VariableGraphNodeKind::Constant {
+                value_type: super::VariableGraphScalarDescriptor {
+                    scalar_type: super::VariableGraphScalarType::Json,
+                    nullable: false,
+                },
+                value: super::VariableGraphLiteral::Json(serde_json::json!({"ok": true})),
             },
-        };
-        let CompositionComponent::Metric { presentation, .. } = &mut document.spec.components[2]
-        else {
-            panic!("fixture component should be a Metric");
-        };
-        *presentation = Some(CompositionMetricPresentation::Number {
-            unit: None,
-            fraction_digits: None,
         });
+        let CompositionComponent::Text { content, .. } = &mut document.spec.components[2] else {
+            panic!("fixture component should be Text");
+        };
+        *content = "{{payload}}".to_owned();
         assert_eq!(
             super::canonicalize_composition(&document),
             Err(CompositionDiagnosticCode::InvalidComposition)

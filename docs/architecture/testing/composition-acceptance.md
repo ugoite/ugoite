@@ -1,15 +1,21 @@
 ---
-title: "SQL-first Composition acceptance plan"
+title: "Historical SQL-first Composition acceptance plan"
 ---
 
-This matrix tracks the unreleased typed query graph and its restored Browser
-workflows. It records implementation and validation evidence; it does not
-announce or authorize a release. The prior source-based Composition evidence is
-retained in the
+> Historical matrix for the prereplacement typed graph. Its present-tense
+> descriptions refer to the candidate captured when this matrix was current;
+> they do not describe the text-first Composition target. Current requirements
+> and evidence are bound by [ADR-027](../contracts/adr-027-text-first-composition.md),
+> REQ-COMP-010, REQ-FE-083, FEAT-COMP-010, and FEAT-COMP-015. This page records
+> history only and does not authorize a release.
+
+This matrix tracks the former unreleased typed query graph and its Browser
+workflows. It preserves implementation and validation evidence from that
+candidate. The prior source-based Composition evidence is retained in the
 [prereplacement snapshot](history/composition-prereplacement-acceptance.md) and
 does not make that grammar executable.
 
-The current document contract is in the
+The then-current document contract was in the
 [Composition contract](../contracts/composition.md),
 [ADR-024](../contracts/adr-024-composition-sql-first.md), and
 [ADR-025](../contracts/adr-025-composition-query-variable-graph.md). The primary

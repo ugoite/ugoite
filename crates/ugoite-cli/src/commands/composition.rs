@@ -19,13 +19,12 @@ use ugoite_api_client::{
     CompositionEvaluationTarget, CompositionFormBinding,
     CompositionGraphQueryResult as ApiCompositionGraphQueryResult, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionMetricPresentation as ApiCompositionMetricPresentation,
-    CompositionPublicationReceipt, CompositionQuery, CompositionQueryResultType,
-    CompositionRawRevision, CompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionResultFieldType as ApiCompositionResultFieldType,
-    CompositionRevisionMetadata, CompositionRevisionReference,
-    CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
-    CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
+    CompositionListPage, CompositionPublicationReceipt, CompositionQuery,
+    CompositionQueryResultType, CompositionRawRevision, CompositionRestoreRequest,
+    CompositionRestoreResponse, CompositionResultColumn, CompositionRevisionMetadata,
+    CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
+    CompositionSaveResponse, CompositionScalarCardinality, CompositionScalarDescriptor,
+    CompositionScalarType, CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
     CompositionVariableConsumers,
 };
 use ugoite_core::composition::{
@@ -34,10 +33,11 @@ use ugoite_core::composition::{
 };
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, parse_variable_graph_input,
-    CanonicalComposition, CompositionDiagnosticCode, CompositionMetricPresentation,
-    VariableGraphInputValue, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
-    VariableGraphValidatedResult, MAX_COMPOSITION_YAML_BYTES,
+    CanonicalComposition, CompositionDiagnosticCode,
+    CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphInputValue,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
 use ugoite_iceberg::service::{
@@ -985,48 +985,16 @@ fn composition_result_column(
     }
 }
 
-fn composition_result_field_type(
-    result_type: ugoite_domain::composition::CompositionResultFieldType,
-) -> ApiCompositionResultFieldType {
-    match result_type {
-        ugoite_domain::composition::CompositionResultFieldType::String => {
-            ApiCompositionResultFieldType::String
+fn composition_text_template_part(
+    part: DomainCompositionTextTemplatePart,
+) -> ApiCompositionTextTemplatePart {
+    match part {
+        DomainCompositionTextTemplatePart::Literal { text } => {
+            ApiCompositionTextTemplatePart::Literal { text }
         }
-        ugoite_domain::composition::CompositionResultFieldType::Boolean => {
-            ApiCompositionResultFieldType::Boolean
+        DomainCompositionTextTemplatePart::Variable { variable } => {
+            ApiCompositionTextTemplatePart::Variable { variable }
         }
-        ugoite_domain::composition::CompositionResultFieldType::Integer => {
-            ApiCompositionResultFieldType::Integer
-        }
-        ugoite_domain::composition::CompositionResultFieldType::Float => {
-            ApiCompositionResultFieldType::Float
-        }
-        ugoite_domain::composition::CompositionResultFieldType::Decimal => {
-            ApiCompositionResultFieldType::Decimal
-        }
-        ugoite_domain::composition::CompositionResultFieldType::Date => {
-            ApiCompositionResultFieldType::Date
-        }
-        ugoite_domain::composition::CompositionResultFieldType::Timestamp => {
-            ApiCompositionResultFieldType::Timestamp
-        }
-        ugoite_domain::composition::CompositionResultFieldType::Json => {
-            ApiCompositionResultFieldType::Json
-        }
-    }
-}
-
-fn composition_metric_presentation(
-    presentation: CompositionMetricPresentation,
-) -> ApiCompositionMetricPresentation {
-    match presentation {
-        CompositionMetricPresentation::Number {
-            unit,
-            fraction_digits,
-        } => ApiCompositionMetricPresentation::Number {
-            unit,
-            fraction_digits,
-        },
     }
 }
 
@@ -1044,7 +1012,6 @@ fn composition_dependency_index(
                         input_component_ids: consumers.input_component_ids,
                         text_component_ids: consumers.text_component_ids,
                         query_variable_ids: consumers.query_variable_ids,
-                        metric_component_ids: consumers.metric_component_ids,
                         table_component_ids: consumers.table_component_ids,
                     },
                 )
@@ -1098,7 +1065,6 @@ fn composition_queries_and_bindings(
             Ok(CompositionQuery {
                 variable_id: query.variable_id,
                 request,
-                sql_text: query.sql_text,
                 portable_sql: query.portable_sql,
                 deferred_arguments,
                 returns: composition_query_result_type(query.returns),
@@ -1116,15 +1082,15 @@ fn composition_queries_and_bindings(
             component_id: binding.component_id,
             kind: match binding.kind {
                 ResolvedComponentKind::Input => CompositionComponentKind::Input,
-                ResolvedComponentKind::Metric => CompositionComponentKind::Metric,
                 ResolvedComponentKind::Tabular => CompositionComponentKind::Table,
                 ResolvedComponentKind::Text => CompositionComponentKind::Text,
             },
             variable_id: binding.variable_id,
-            expected_result_type: binding
-                .expected_result_type
-                .map(composition_result_field_type),
-            presentation: binding.presentation.map(composition_metric_presentation),
+            text_segments: binding
+                .text_segments
+                .into_iter()
+                .map(composition_text_template_part)
+                .collect(),
         })
         .collect();
     Ok((queries, component_bindings))
@@ -1407,8 +1373,9 @@ mod tests {
     };
     use ugoite_core::error::{AppError, ErrorCode};
     use ugoite_domain::composition::{
-        VariableGraphNode, VariableGraphNodeKind, VariableGraphScalarDescriptor,
-        VariableGraphScalarType, MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
+        CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphNode,
+        VariableGraphNodeKind, VariableGraphScalarDescriptor, VariableGraphScalarType,
+        MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
     };
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
@@ -1426,7 +1393,7 @@ mod tests {
     );
     const REMOVED_SOURCE_GRAMMAR: &[u8] =
         include_bytes!("../../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
-    const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+    const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
 
     #[test]
     fn local_graph_evaluation_uses_the_portable_response_shape() {
@@ -1445,12 +1412,11 @@ mod tests {
                 queries: Vec::new(),
                 component_bindings: vec![ugoite_core::composition::ResolvedComponentBinding {
                     component_id: "count".to_string(),
-                    kind: ugoite_core::composition::ResolvedComponentKind::Metric,
-                    variable_id: Some("total".to_string()),
-                    expected_result_type: Some(
-                        ugoite_domain::composition::CompositionResultFieldType::Integer,
-                    ),
-                    presentation: None,
+                    kind: ugoite_core::composition::ResolvedComponentKind::Text,
+                    variable_id: None,
+                    text_segments: vec![DomainCompositionTextTemplatePart::Variable {
+                        variable: "total".to_string(),
+                    }],
                 }],
                 dependencies: ugoite_core::composition::CompositionDependencyIndex::default(),
             }),
@@ -1463,11 +1429,10 @@ mod tests {
         let response = local_composition_evaluation_response(response)
             .expect("Core graph response maps to the portable API response");
         let value = serde_json::to_value(response).expect("portable response serializes");
-        assert_eq!(value["component_bindings"][0]["kind"], "metric");
-        assert_eq!(value["component_bindings"][0]["variable_id"], "total");
+        assert_eq!(value["component_bindings"][0]["kind"], "text");
         assert_eq!(
-            value["component_bindings"][0]["expected_result_type"],
-            "integer"
+            value["component_bindings"][0]["text_segments"],
+            json!([{"kind": "variable", "variable": "total"}])
         );
         assert!(value.get("plan").is_none());
         assert!(value.get("metrics").is_none());
@@ -1510,7 +1475,7 @@ mod tests {
         assert_eq!(value.document["spec"]["variables"][3]["kind"], "query");
         assert_eq!(
             value.document["spec"]["variables"][3]["query"]["kind"],
-            "saved_sql"
+            "inline_sql"
         );
     }
 
@@ -1536,6 +1501,17 @@ mod tests {
         assert!(response.value.is_none());
         assert_eq!(
             response.error.expect("diagnostic").code,
+            CompositionDiagnosticCode::InvalidComposition
+        );
+
+        let old_text_shape = b"format: ugoite.composition\nformat_version: 1\nname: Old text\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+        let old_text_response = lint_yaml_bytes(old_text_shape);
+        assert!(!old_text_response.ok);
+        assert_eq!(
+            old_text_response
+                .error
+                .expect("old Text shape diagnostic")
+                .code,
             CompositionDiagnosticCode::InvalidComposition
         );
     }

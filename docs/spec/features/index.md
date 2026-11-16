@@ -61,11 +61,11 @@ The shared Entry read contract is documented in
 [`entry-query.md`](entry-query.md). Its Rust domain types are the semantic
 source used by REST, CLI, WASM, frontend, and MCP adapters.
 
-The accepted but unimplemented Composition query-variable graph target is
-documented in
-[`composition-query-variables.md`](composition-query-variables.md). Its
-prerelease replacement remains distinct from the current Composition reader
-until implementation and verification gates pass.
+The Text-first Composition model and query variables are documented in
+[`composition-query-variables.md`](composition-query-variables.md). The
+strict graph is implemented in Rust; Studio and Reader implementation and
+focused verification are in progress. This does not authorize release
+preparation or publication.
 
 The stateless SQL read contract is documented in
 [`sql-query.md`](sql-query.md). SQL execution is separate from Saved SQL

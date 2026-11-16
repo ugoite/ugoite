@@ -9,7 +9,6 @@ use crate::id::FormId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use uuid::Uuid;
 
 /// A graph of shared Composition values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -84,31 +83,6 @@ pub struct VariableGraphQuery {
 pub enum VariableGraphQueryDefinition {
     /// SQL text stored with the Composition query variable.
     InlineSql { sql: String },
-    /// A Saved SQL Entry pinned to one exact revision.
-    SavedSql {
-        /// UUID of the Saved SQL Entry. Missing and invalid IDs are rejected
-        /// by graph compilation with a stable diagnostic.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_id: Option<String>,
-        /// UUID of the exact Saved SQL revision. This never follows latest.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_id: Option<String>,
-        /// Optional output column selected for scalar query results.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        column: Option<String>,
-        /// Whether a display uses the source column label or the variable name.
-        label_source: VariableGraphSavedSqlLabelSource,
-    },
-}
-
-/// Explicit UI label owner for an exact Saved SQL query variable.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VariableGraphSavedSqlLabelSource {
-    /// Show the selected Saved SQL output column when one is selected.
-    Source,
-    /// Show the user's variable name, regardless of source column or ID shape.
-    Variable,
 }
 
 /// A scalar's domain type and nullability.
@@ -222,8 +196,6 @@ pub enum VariableGraphDiagnosticCode {
     InvalidResultDescriptor,
     InvalidInlineSql,
     InvalidQueryDescriptor,
-    InvalidSavedSqlIdentity,
-    InvalidSavedSqlColumn,
     MissingArgumentBinding,
     UnusedArgumentBinding,
     MissingVariableReference,
@@ -244,8 +216,6 @@ impl VariableGraphDiagnosticCode {
             Self::InvalidResultDescriptor => "invalid_result_descriptor",
             Self::InvalidInlineSql => "invalid_inline_sql",
             Self::InvalidQueryDescriptor => "invalid_query_descriptor",
-            Self::InvalidSavedSqlIdentity => "invalid_saved_sql_identity",
-            Self::InvalidSavedSqlColumn => "invalid_saved_sql_column",
             Self::MissingArgumentBinding => "missing_argument_binding",
             Self::UnusedArgumentBinding => "unused_argument_binding",
             Self::MissingVariableReference => "missing_variable_reference",
@@ -516,31 +486,6 @@ pub fn compile_variable_graph(
                             }
                         }
                     }
-                    VariableGraphQueryDefinition::SavedSql {
-                        entry_id,
-                        revision_id,
-                        column,
-                        label_source: _,
-                    } => {
-                        if !entry_id.as_deref().is_some_and(valid_saved_sql_identity)
-                            || !revision_id.as_deref().is_some_and(valid_saved_sql_identity)
-                        {
-                            diagnostics.push(VariableGraphDiagnostic::for_variable(
-                                VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
-                                &node.id,
-                            ));
-                        }
-                        if column.as_deref().is_some_and(|name| name.trim().is_empty())
-                            || (column.is_some()
-                                && !matches!(returns, VariableGraphResultType::Scalar { .. }))
-                        {
-                            diagnostics.push(VariableGraphDiagnostic::for_variable(
-                                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
-                                &node.id,
-                            ));
-                        }
-                        None
-                    }
                 };
                 let mut argument_counts = BTreeMap::<&str, usize>::new();
                 for argument in &query.arguments {
@@ -672,10 +617,6 @@ fn valid_argument_name(name: &str) -> bool {
         && rest
             .iter()
             .all(|byte| matches!(*byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_'))
-}
-
-fn valid_saved_sql_identity(value: &str) -> bool {
-    Uuid::parse_str(value).is_ok()
 }
 
 fn is_sha256_fingerprint(value: &str) -> bool {
@@ -1321,19 +1262,22 @@ mod tests {
     }
 
     #[test]
-    fn accepts_inline_query_and_exact_saved_sql_query_definitions() {
+    fn accepts_inline_query_definitions_only() {
         let inline = query_definition(VariableGraphQueryDefinition::InlineSql {
             sql: "SELECT 1".to_owned(),
         });
         assert!(compile_variable_graph(&graph(vec![inline])).is_ok());
 
-        let saved_sql = query_definition(VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            column: Some("total".to_owned()),
-            label_source: VariableGraphSavedSqlLabelSource::Source,
-        });
-        assert!(compile_variable_graph(&graph(vec![saved_sql])).is_ok());
+        for saved_sql in [
+            serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002"
+            }),
+            serde_json::json!({ "kind": "saved_sql" }),
+        ] {
+            assert!(serde_json::from_value::<VariableGraphQueryDefinition>(saved_sql).is_err());
+        }
     }
 
     #[test]
@@ -1356,88 +1300,6 @@ mod tests {
         assert_eq!(
             VariableGraphDiagnosticCode::InvalidInlineSql.as_str(),
             "invalid_inline_sql"
-        );
-    }
-
-    #[test]
-    fn rejects_missing_or_invalid_saved_sql_identity_stably() {
-        let cases = [
-            (
-                None,
-                Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            ),
-            (
-                Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                None,
-            ),
-            (
-                Some("not-a-uuid".to_owned()),
-                Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            ),
-            (
-                Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                Some("bad".to_owned()),
-            ),
-        ];
-        for (entry_id, revision_id) in cases {
-            let invalid = query_definition(VariableGraphQueryDefinition::SavedSql {
-                entry_id,
-                revision_id,
-                column: None,
-                label_source: VariableGraphSavedSqlLabelSource::Variable,
-            });
-            assert_eq!(
-                compile_variable_graph(&graph(vec![invalid])).expect_err("bad identity"),
-                [VariableGraphDiagnostic::for_variable(
-                    VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
-                    "result"
-                )]
-            );
-        }
-        assert_eq!(
-            VariableGraphDiagnosticCode::InvalidSavedSqlIdentity.as_str(),
-            "invalid_saved_sql_identity"
-        );
-    }
-
-    #[test]
-    fn rejects_blank_saved_sql_output_column() {
-        let invalid = query_definition(VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            column: Some("  ".to_owned()),
-            label_source: VariableGraphSavedSqlLabelSource::Source,
-        });
-        assert_eq!(
-            compile_variable_graph(&graph(vec![invalid])).expect_err("blank output column"),
-            [VariableGraphDiagnostic::for_variable(
-                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
-                "result"
-            )]
-        );
-
-        let mut table = query_definition(VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            column: Some("total".to_owned()),
-            label_source: VariableGraphSavedSqlLabelSource::Source,
-        });
-        let VariableGraphNodeKind::Query { returns, .. } = &mut table.kind else {
-            unreachable!("helper constructs a query node")
-        };
-        *returns = VariableGraphResultType::Table {
-            columns: vec![VariableGraphColumn {
-                name: "total".to_owned(),
-                value_type: scalar(VariableGraphScalarType::Integer, false),
-            }],
-        };
-        assert_eq!(
-            compile_variable_graph(&graph(vec![table]))
-                .expect_err("table has no scalar column selector"),
-            [VariableGraphDiagnostic::for_variable(
-                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
-                "result"
-            )]
         );
     }
 
@@ -1554,7 +1416,7 @@ mod tests {
     }
 
     #[test]
-    fn query_definition_decoding_is_strict_and_missing_saved_ids_are_diagnosed() {
+    fn query_definition_decoding_rejects_saved_sql_and_unknown_fields() {
         let inline = serde_json::json!({
             "kind": "inline_sql",
             "sql": "SELECT 1"
@@ -1573,41 +1435,6 @@ mod tests {
             .is_err()
         );
 
-        let generated_label =
-            serde_json::from_value::<VariableGraphQueryDefinition>(serde_json::json!({
-                "kind": "saved_sql",
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002",
-                "column": "total",
-                "label_source": "source"
-            }))
-            .expect("Saved SQL label ownership is explicit in the graph contract");
-        assert!(matches!(
-            generated_label,
-            VariableGraphQueryDefinition::SavedSql {
-                label_source: VariableGraphSavedSqlLabelSource::Source,
-                ..
-            }
-        ));
-        for invalid_label_source in [
-            serde_json::json!({
-                "kind": "saved_sql",
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002"
-            }),
-            serde_json::json!({
-                "kind": "saved_sql",
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002",
-                "label_source": "identifier_pattern"
-            }),
-        ] {
-            assert!(
-                serde_json::from_value::<VariableGraphQueryDefinition>(invalid_label_source)
-                    .is_err()
-            );
-        }
-
         for unknown in [
             serde_json::json!({
                 "kind": "inline_sql",
@@ -1618,34 +1445,11 @@ mod tests {
                 "kind": "saved_sql",
                 "entry_id": "00000000-0000-0000-0000-000000000001",
                 "revision_id": "00000000-0000-0000-0000-000000000002",
-                "label_source": "variable",
-                "latest": true
+                "column": "total"
             }),
         ] {
             assert!(serde_json::from_value::<VariableGraphQueryDefinition>(unknown).is_err());
         }
-
-        let missing_ids = serde_json::from_value::<VariableGraphQueryDefinition>(
-            serde_json::json!({ "kind": "saved_sql", "label_source": "variable" }),
-        )
-        .expect("draft Saved SQL payload is decoded for stable domain diagnostics");
-        assert_eq!(
-            compile_variable_graph(&graph(vec![query_definition(missing_ids)]))
-                .expect_err("both exact identities are mandatory"),
-            [VariableGraphDiagnostic::for_variable(
-                VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
-                "result"
-            )]
-        );
-
-        assert!(
-            serde_json::from_value::<VariableGraphQueryDefinition>(serde_json::json!({
-                "kind": "saved_sql",
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002"
-            }))
-            .is_err()
-        );
 
         let missing_query = serde_json::json!({
             "id": "result",

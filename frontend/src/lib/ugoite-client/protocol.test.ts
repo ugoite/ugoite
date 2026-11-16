@@ -12,6 +12,7 @@ import {
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseSqlDocument,
+  parseCompositionTextTemplate,
   parseVariableGraphInput,
   parseVariableGraphInputSync,
   prepareApiRequest,
@@ -136,6 +137,18 @@ const prereleaseSourceShapedCompositionDocument = {
 
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("parses Text templates and escaped literal markers in Rust", async () => {
+    await expect(
+      parseCompositionTextTemplate("A {{total}} ! \\{{literal}}"),
+    ).resolves.toEqual({
+      segments: [
+        { kind: "literal", text: "A " },
+        { kind: "variable", variable: "total" },
+        { kind: "literal", text: " ! {{literal}}" },
+      ],
+    });
+  });
 
   it("requires preparation before synchronously parsing a graph Input", async () => {
     vi.resetModules();
@@ -1603,7 +1616,7 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
 
   it("preserves typed Composition i64 values across real HTTP and WASM boundaries", async () => {
     const responseBody =
-      '{"evaluation_id":"eval-1","ok":true,"computed_query_ids":[],"variable_values":{"max":{"kind":"integer","value":9223372036854775807},"min":{"kind":"integer","value":-9223372036854775808}},"queries":[],"component_bindings":[],"dependencies":{},"query_results":{"rows":{"value":{"kind":"table","columns":[{"name":"max","value_type":{"scalar_type":"integer","nullable":false}},{"name":"json","value_type":{"scalar_type":"json","nullable":false}}],"rows":[[{"kind":"integer","value":9223372036854775807},{"kind":"json","value":{"kind":"integer","value":7}}]]},"has_more":false}}}';
+      '{"evaluation_id":"eval-1","ok":true,"computed_query_ids":[],"variable_values":{"max":{"kind":"integer","value":9223372036854775807},"min":{"kind":"integer","value":-9223372036854775808}},"queries":[],"component_bindings":[],"dependencies":{},"query_results":{"scalar":{"value":{"kind":"scalar","value":{"kind":"integer","value":9223372036854775807}},"has_more":false},"rows":{"value":{"kind":"table","columns":[{"name":"max","value_type":{"scalar_type":"integer","nullable":false}},{"name":"json","value_type":{"scalar_type":"json","nullable":false}}],"rows":[[{"kind":"integer","value":9223372036854775807},{"kind":"json","value":{"kind":"integer","value":7}}]]},"has_more":false}}}';
     server.use(
       http.post(
         testApiUrl("/spaces/demo/compositions/evaluate"),
@@ -1639,6 +1652,10 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     expect(response.variable_values.min).toEqual({
       kind: "integer",
       value: "-9223372036854775808",
+    });
+    expect(response.query_results.scalar.value).toEqual({
+      kind: "scalar",
+      value: { kind: "integer", value: "9223372036854775807" },
     });
     expect(response.query_results.rows.value.kind).toBe("table");
     if (response.query_results.rows.value.kind === "table") {

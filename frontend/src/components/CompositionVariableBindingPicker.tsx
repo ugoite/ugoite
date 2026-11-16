@@ -1,164 +1,26 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { IconButton } from "~/components/IconButton";
-import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import {
   bindCompositionComponent,
-  type BindingComponentKind,
-  commitResolvedCompositionBinding,
-  CompositionBindingDiagnosticError,
-  type CompositionBindingProvider,
-  type CompositionBindingSession,
-  type CompositionFormAggregate,
-  type CompositionFormChoice,
-  type CompositionGraphDraft,
-  type CompositionPreparedSavedSql,
-  type CompositionQueryArgument,
-  type CompositionSavedSqlChoice,
-  compositionVariableFitsComponent,
-  type CompositionVariableNode,
-  isCompositionMetricType,
-  rebindResolvedCompositionComponent,
+  compositionNodeReturnsTable,
   setCompositionComponentVariable,
+  type CompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
-import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
-type PickerTab = "variables" | "forms" | "saved_sql";
-const aggregateKinds: CompositionFormAggregate[] = [
-  "count",
-  "sum",
-  "avg",
-  "min",
-  "max",
-];
-const numericFieldTypes = new Set(["integer", "float", "decimal"]);
-const aggregateFieldTypes = new Set([
-  "string",
-  "integer",
-  "float",
-  "decimal",
-  "date",
-  "timestamp",
-]);
+const focusableSelector =
+  'button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-const bindingErrorKeys = {
-  FORM_NOT_FOUND: "composition.bindingSourceUnavailable",
-  FORBIDDEN: "composition.bindingSourceUnavailable",
-  FORM_DEFINITION_READ_FAILED: "composition.bindingRetry",
-  CHECKPOINT_UNAVAILABLE: "composition.bindingRetry",
-  STORAGE_CONNECTION_FAILED: "composition.bindingRetry",
-} as const;
-
-/** Only expose allowlisted causes; server details can contain SQL or IDs. */
-const bindingFailureMessage = (cause: unknown) => {
-  if (cause instanceof CompositionBindingDiagnosticError) {
-    return t(
-      cause.code === "query_schema_changed"
-        ? "composition.bindingSourceChanged"
-        : "composition.bindingSourceUnavailable",
-    );
-  }
-  if (cause instanceof UgoiteApiError) {
-    if (cause.code === "form_no_projectable_fields") {
-      return t("composition.formNoProjectableFields");
-    }
-    const key = cause.code &&
-        Object.prototype.hasOwnProperty.call(bindingErrorKeys, cause.code)
-      ? bindingErrorKeys[cause.code as keyof typeof bindingErrorKeys]
-      : cause.kind === "dependency_unavailable"
-      ? "composition.bindingRetry"
-      : undefined;
-    if (key) return t(key);
-  }
-  return t("composition.bindingRetry");
-};
-
-const formAggregateFields = (
-  form: CompositionFormChoice,
-  kind: CompositionFormAggregate | "",
-) =>
-  form.fields.filter((field) =>
-    field.projectable &&
-    (kind === "sum" || kind === "avg"
-      ? numericFieldTypes.has(field.type)
-      : aggregateFieldTypes.has(field.type))
-  );
-
-export interface CompositionVariableBindingPickerProps {
-  kind: BindingComponentKind;
+/** Select one SQL table value for a Table component. */
+export function CompositionVariableBindingPicker(props: {
   draft: CompositionGraphDraft;
-  forms: readonly CompositionFormChoice[];
-  formsLoading?: boolean;
-  savedSql: readonly CompositionSavedSqlChoice[];
-  provider: CompositionBindingProvider;
-  session: CompositionBindingSession;
-  getPrincipalGeneration: () => Promise<string>;
-  isSessionCurrent: (
-    session: CompositionBindingSession,
-  ) => boolean | Promise<boolean>;
-  savedSqlLoading?: boolean;
-  savedSqlSeedUnavailable?: boolean;
-  initialTab?: "variables" | "forms" | "saved_sql";
-  /** Omit for insertion; supply the selected Table/Metric to rebind it. */
   componentId?: string;
   onCommit: (draft: CompositionGraphDraft) => void;
+  onCreateQuery?: () => void;
   onClose: () => void;
-}
-
-const nodeName = (node: CompositionVariableNode) => node.id;
-const focusableSelector =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-const isVisibleFocusable = (element: HTMLElement) => {
-  if (
-    element.matches(':disabled, [aria-disabled="true"]') ||
-    element.closest('[hidden], [inert], [aria-hidden="true"]')
-  ) return false;
-  let current: HTMLElement | null = element;
-  while (current) {
-    const style = window.getComputedStyle(current);
-    if (style.display === "none" || style.visibility === "hidden") {
-      return false;
-    }
-    current = current.parentElement;
-  }
-  return true;
-};
-
-/**
- * One modal owner for variable, Form, and exact Saved SQL selection. Query
- * resolution is delegated to the host; the picker commits the resolved node
- * and component reference together, then closes without opening an Inspector.
- */
-export function CompositionVariableBindingPicker(
-  props: CompositionVariableBindingPickerProps,
-) {
-  const titleId = "composition-variable-binding-title";
-  const [tab, setTab] = createSignal<PickerTab>(
-    props.initialTab ?? "variables",
-  );
-  const [working, setWorking] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [selectedForm, setSelectedForm] = createSignal<string | null>(null);
-  const [aggregate, setAggregate] = createSignal<CompositionFormAggregate | "">(
-    "",
-  );
-  const [aggregateColumn, setAggregateColumn] = createSignal("");
-  const [preparedSavedSql, setPreparedSavedSql] = createSignal<
-    {
-      entryId: string;
-      session: CompositionBindingSession;
-      choices: CompositionPreparedSavedSql;
-    } | null
-  >(null);
-  const [selectedSavedSql, setSelectedSavedSql] = createSignal<string | null>(
-    null,
-  );
-  const [savedArgumentBindings, setSavedArgumentBindings] = createSignal<
-    Record<string, string>
-  >({});
+}) {
   let dialog: HTMLDivElement | undefined;
   let opener: HTMLElement | null = null;
 
@@ -166,650 +28,117 @@ export function CompositionVariableBindingPicker(
     opener = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const appRoot = document.getElementById("app");
-    appRoot?.setAttribute("inert", "");
-    queueMicrotask(() => dialog?.querySelector("button")?.focus());
+    document.getElementById("app")?.setAttribute("inert", "");
+    queueMicrotask(() => dialog?.querySelector<HTMLButtonElement>("button")
+      ?.focus());
     onCleanup(() => {
-      appRoot?.removeAttribute("inert");
+      document.getElementById("app")?.removeAttribute("inert");
       const target = opener;
       opener = null;
       queueMicrotask(() => target?.isConnected && target.focus());
     });
   });
 
-  const close = () => {
-    if (!working()) props.onClose();
-  };
+  const tables = () =>
+    props.draft.variables.filter(compositionNodeReturnsTable);
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const controls = Array.from(
-      (event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(
-        focusableSelector,
-      ),
-    ).filter(isVisibleFocusable);
-    if (controls.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const index = controls.indexOf(document.activeElement as HTMLElement);
-    const next = event.shiftKey
-      ? index <= 0 ? controls.length - 1 : index - 1
-      : index < 0 || index === controls.length - 1
-      ? 0
-      : index + 1;
-    event.preventDefault();
-    controls[next].focus();
-  };
-
-  const commitVariable = (variableId: string) => {
+  const commit = (variableId: string) => {
     const next = props.componentId
       ? setCompositionComponentVariable(
         props.draft,
         props.componentId,
         variableId,
       )
-      : bindCompositionComponent(props.draft, props.kind, variableId);
-    if (!next) {
-      setError(t("composition.bindingTypeMismatch"));
-      return;
-    }
+      : bindCompositionComponent(props.draft, "table", variableId);
+    if (!next) return;
     props.onCommit(next);
     props.onClose();
   };
-
-  const commitResolved = async (
-    resolve: (
-      session: CompositionBindingSession,
-    ) => ReturnType<CompositionBindingProvider["resolveForm"]>,
-  ) => {
-    if (working()) return;
-    setWorking(true);
-    setError(null);
-    let session: CompositionBindingSession;
-    try {
-      session = {
-        ...props.session,
-        principal_generation: await props.getPrincipalGeneration(),
-      };
-      if (!await props.isSessionCurrent(session)) {
-        props.onClose();
-        return;
-      }
-      const resolved = await resolve(session);
-      // The host checks Space, revision, and principal on the server and again
-      // here before applying a response to the active authoring draft.
-      if (
-        session.session_id !== props.session.session_id ||
-        session.space_id !== props.session.space_id ||
-        session.document_revision !== props.session.document_revision ||
-        !await props.isSessionCurrent(session)
-      ) {
-        props.onClose();
-        return;
-      }
-      commitResolvedValue(resolved);
-    } catch (cause) {
-      setError(bindingFailureMessage(cause));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const commitResolvedValue = (
-    resolved: Parameters<typeof commitResolvedCompositionBinding>[2],
-  ) => {
-    const next = props.componentId
-      ? rebindResolvedCompositionComponent(
-        props.draft,
-        props.componentId,
-        resolved,
-      )
-      : commitResolvedCompositionBinding(props.draft, props.kind, resolved);
-    if (!next) {
-      setError(t("composition.bindingTypeMismatch"));
-      return false;
-    }
-    props.onCommit(next);
-    props.onClose();
-    return true;
-  };
-
-  const resolveForm = (form: CompositionFormChoice) =>
-    commitResolved((session) =>
-      props.provider.resolveForm({
-        session,
-        form_id: form.id,
-        component: props.kind,
-        ...(props.kind === "metric" && aggregate()
-          ? {
-            aggregate: {
-              kind: aggregate() as CompositionFormAggregate,
-              ...(aggregateColumn() ? { column: aggregateColumn() } : {}),
-            },
-          }
-          : {}),
-        draft: props.draft,
-      })
-    );
-
-  const prepareSelectedSavedSql = async (entry: CompositionSavedSqlChoice) => {
-    if (working()) return;
-    setWorking(true);
-    setError(null);
-    setPreparedSavedSql(null);
-    let session: CompositionBindingSession;
-    try {
-      session = {
-        ...props.session,
-        principal_generation: await props.getPrincipalGeneration(),
-      };
-      if (!await props.isSessionCurrent(session)) {
-        props.onClose();
-        return;
-      }
-      const choices = await props.provider.prepareSavedSql({
-        session,
-        entry_id: entry.entry_id,
-        revision_id: entry.revision_id,
-        component: props.kind,
-        arguments: entry.arguments.map((argument) => ({
-          name: argument.name,
-          variable: savedArgumentBindings()[argument.name] ?? "",
-        })),
-        draft: props.draft,
-      });
-      if (
-        session.session_id !== props.session.session_id ||
-        session.space_id !== props.session.space_id ||
-        session.document_revision !== props.session.document_revision ||
-        !await props.isSessionCurrent(session)
-      ) {
-        props.onClose();
-        return;
-      }
-      if (props.kind === "table") {
-        if (!choices.table || choices.table.variable.returns.kind !== "table") {
-          setError(t("composition.savedSqlNotTable"));
-          return;
-        }
-        commitResolvedValue(choices.table);
-        return;
-      }
-      const scalars = choices.scalars.filter((choice) => {
-        const returns = choice.binding.variable.returns;
-        return returns.kind === "scalar" &&
-          isCompositionMetricType(returns.value_type.scalar_type);
-      });
-      if (scalars.length === 1) {
-        commitResolvedValue(scalars[0].binding);
-      } else if (scalars.length > 1) {
-        setPreparedSavedSql({
-          entryId: entry.entry_id,
-          session,
-          choices: { scalars },
-        });
-      } else {
-        setError(t("composition.savedSqlNoMetricValue"));
-      }
-    } catch (cause) {
-      setError(bindingFailureMessage(cause));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const commitPreparedScalar = async (
-    choice: CompositionPreparedSavedSql["scalars"][number],
-  ) => {
-    const pending = preparedSavedSql();
-    if (
-      !pending || pending.session.session_id !== props.session.session_id ||
-      pending.entryId !== selectedSavedSql()
-    ) {
-      props.onClose();
-      return;
-    }
-    setWorking(true);
-    setError(null);
-    try {
-      if (!await props.isSessionCurrent(pending.session)) {
-        props.onClose();
-        return;
-      }
-      commitResolvedValue(choice.binding);
-    } catch (cause) {
-      setError(bindingFailureMessage(cause));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const eligibleVariables = () =>
-    props.draft.variables.filter((node) =>
-      compositionVariableFitsComponent(node, props.kind)
-    );
-
-  const eligibleArgumentVariables = (type: string) =>
-    props.draft.variables.filter((node) => {
-      const valueType = node.kind === "query"
-        ? node.returns.kind === "scalar" ? node.returns.value_type : undefined
-        : node.value_type;
-      return !!valueType && valueType.scalar_type === type &&
-        type !== "decimal" && type !== "json";
-    });
-
-  const savedArgumentsComplete = (entry: CompositionSavedSqlChoice) =>
-    entry.arguments.every((argument) => {
-      const selected = savedArgumentBindings()[argument.name];
-      return !!selected &&
-        eligibleArgumentVariables(argument.type).some((node) =>
-          node.id === selected
-        );
-    });
-
-  const chooseSavedSql = (entry: CompositionSavedSqlChoice) => {
-    setSelectedSavedSql(entry.entry_id);
-    setPreparedSavedSql(null);
-    setSavedArgumentBindings(
-      Object.fromEntries(entry.arguments.map(({ name }) => [name, ""])),
-    );
-    setError(null);
-    if (entry.arguments.length === 0) void prepareSelectedSavedSql(entry);
-  };
-
-  const tabLabel = (entry: PickerTab) =>
-    entry === "variables"
-      ? t("composition.studioVariables")
-      : entry === "forms"
-      ? t("composition.studioForms")
-      : t("sqlPage.savedSql");
 
   return (
     <Portal>
-      <div
-        class="ui-backdrop"
-        onClick={(event) => event.target === event.currentTarget && close()}
-      >
-        <section
-          ref={dialog}
+      <div class="ui-dialog-backdrop" onClick={props.onClose}>
+        <div
+          ref={(element) => dialog = element}
           class="ui-dialog compositionBindingPicker"
           role="dialog"
           aria-modal="true"
-          aria-labelledby={titleId}
-          aria-busy={working() || undefined}
-          onKeyDown={onKeyDown}
+          aria-labelledby="composition-table-picker-title"
+          tabIndex={-1}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.onClose();
+              return;
+            }
+            if (event.key !== "Tab") return;
+            const controls = Array.from(
+              (event.currentTarget as HTMLElement)
+                .querySelectorAll<HTMLElement>(focusableSelector),
+            ).filter((control) =>
+              !control.closest("[hidden], [inert], [aria-hidden='true']")
+            );
+            if (controls.length === 0) {
+              event.preventDefault();
+              return;
+            }
+            const current = controls.indexOf(
+              document.activeElement as HTMLElement,
+            );
+            const next = event.shiftKey
+              ? current <= 0 ? controls.length - 1 : current - 1
+              : current < 0 || current === controls.length - 1 ? 0 : current + 1;
+            event.preventDefault();
+            controls[next].focus();
+          }}
         >
-          <header class="compositionBindingPickerHeader">
-            <h2 id={titleId}>
-              {props.kind === "table"
-                ? t("composition.studioTable")
-                : t("composition.studioMetric")}
+          <div class="compositionBindingPickerHeader">
+            <h2 id="composition-table-picker-title">
+              {t("composition.studioTable")}
             </h2>
-            <IconButton
-              icon="close"
-              label={t("common.close")}
-              onClick={close}
-              disabled={working()}
-            />
-          </header>
-          <div
-            class="tabs compositionBindingPickerTabs"
-            role="tablist"
-            aria-label={t("composition.studioVariables")}
-          >
-            <For each={["variables", "forms", "saved_sql"] as const}>
-              {(entry) => (
-                <button
-                  type="button"
-                  role="tab"
-                  id={`binding-tab-${entry}`}
-                  aria-selected={tab() === entry}
-                  aria-controls={`binding-panel-${entry}`}
-                  classList={{ active: tab() === entry }}
-                  disabled={working()}
-                  onClick={() => {
-                    setTab(entry);
-                    setError(null);
-                    setPreparedSavedSql(null);
-                    setSelectedSavedSql(null);
-                  }}
-                >
-                  {tabLabel(entry)}
-                </button>
-              )}
-            </For>
-          </div>
-
-          <div
-            id="binding-panel-variables"
-            role="tabpanel"
-            aria-labelledby="binding-tab-variables"
-            hidden={tab() !== "variables"}
-          >
-            <Show
-              when={eligibleVariables().length > 0}
-              fallback={
-                <p class="compositionBindingPickerEmpty" role="status">
-                  {t("composition.noCompatibleVariables")}
-                </p>
-              }
+            <button
+              type="button"
+              class="pill iconpill icononly"
+              aria-label={t("common.close")}
+              onClick={props.onClose}
             >
-              <RowList label={tabLabel("variables")}>
-                <For each={eligibleVariables()}>
-                  {(node) => (
-                    <RowListItem
-                      main={
-                        <RowListButton
-                          onActivate={() => commitVariable(node.id)}
-                          disabled={working()}
-                          primary={
-                            <>
-                              <UiIcon
-                                name={node.kind === "input"
-                                  ? "canvas-input"
-                                  : node.kind === "query"
-                                  ? "sql"
-                                  : "appearance"}
-                              />
-                              <span class="rowListName">{nodeName(node)}</span>
-                            </>
-                          }
-                        />
-                      }
-                    />
-                  )}
-                </For>
-              </RowList>
-            </Show>
+              <UiIcon name="close" />
+              <span class="ui-sr-only">{t("common.close")}</span>
+            </button>
           </div>
-
-          <div
-            id="binding-panel-forms"
-            role="tabpanel"
-            aria-labelledby="binding-tab-forms"
-            hidden={tab() !== "forms"}
-          >
-            <Show when={props.formsLoading}>
-              <p class="compositionBindingPickerEmpty" role="status">
-                {t("common.loading")}
-              </p>
-            </Show>
-            <Show when={!props.formsLoading && props.forms.length === 0}>
-              <p class="compositionBindingPickerEmpty" role="status">
-                {t("formsPage.empty")}
-              </p>
-            </Show>
-            <RowList label={tabLabel("forms")}>
-              <For each={props.forms}>
-                {(form) => (
-                  <RowListItem
-                    main={props.kind === "table"
-                      ? (
-                        <RowListButton
-                          onActivate={() => {
-                            setSelectedForm(form.id);
-                            void resolveForm(form);
-                          }}
-                          disabled={working()}
-                          selected={selectedForm() === form.id}
-                          primary={
-                            <>
-                              <UiIcon name="forms" />
-                              <span class="rowListName">{form.name}</span>
-                            </>
-                          }
-                        />
-                      )
-                      : (
-                        <RowListButton
-                          onActivate={() => {
-                            setSelectedForm(form.id);
-                            setAggregate("");
-                            setAggregateColumn("");
-                            setError(null);
-                          }}
-                          disabled={working()}
-                          selected={selectedForm() === form.id}
-                          primary={
-                            <>
-                              <UiIcon name="forms" />
-                              <span class="rowListName">{form.name}</span>
-                            </>
-                          }
-                        />
+          <Show when={tables().length > 0}>
+            <div class="compositionBindingTableList" role="list">
+              <For each={tables()}>
+                {(node) => (
+                  <div role="listitem">
+                    <button
+                      type="button"
+                      aria-label={node.id}
+                      aria-pressed={props.draft.components.some((component) =>
+                        component.id === props.componentId &&
+                        component.kind === "table" &&
+                        component.variable === node.id
                       )}
-                    actions={props.kind === "metric" &&
-                        selectedForm() === form.id
-                      ? (
-                        <div class="compositionBindingFormControls">
-                          <label>
-                            <span class="ui-sr-only">
-                              {t("composition.aggregateKind")}
-                            </span>
-                            <select
-                              class="ui-input"
-                              aria-label={t("composition.aggregateKind")}
-                              value={aggregate()}
-                              onChange={(event) => {
-                                setAggregate(
-                                  event.currentTarget.value as
-                                    | CompositionFormAggregate
-                                    | "",
-                                );
-                                setAggregateColumn("");
-                              }}
-                            >
-                              <option value="">
-                                {t("composition.chooseAggregate")}
-                              </option>
-                              <For each={aggregateKinds}>
-                                {(kind) => (
-                                  <option value={kind}>
-                                    {kind.toUpperCase()}
-                                  </option>
-                                )}
-                              </For>
-                            </select>
-                          </label>
-                          <Show when={aggregate() && aggregate() !== "count"}>
-                            <label>
-                              <span class="ui-sr-only">
-                                {t("composition.studioColumn")}
-                              </span>
-                              <select
-                                class="ui-input"
-                                aria-label={t("composition.studioColumn")}
-                                value={aggregateColumn()}
-                                onChange={(event) =>
-                                  setAggregateColumn(event.currentTarget.value)}
-                              >
-                                <option value="">
-                                  {t("composition.studioChooseColumn")}
-                                </option>
-                                <For
-                                  each={formAggregateFields(
-                                    form,
-                                    aggregate(),
-                                  )}
-                                >
-                                  {(field) => (
-                                    <option value={field.column}>
-                                      {field.name}
-                                    </option>
-                                  )}
-                                </For>
-                              </select>
-                            </label>
-                          </Show>
-                          <Show
-                            when={aggregate() && aggregate() !== "count" &&
-                              formAggregateFields(form, aggregate()).length ===
-                                0}
-                          >
-                            <span class="compositionBindingUnavailableReason">
-                              {t("composition.formAggregateNoColumn")}
-                            </span>
-                          </Show>
-                          <button
-                            type="button"
-                            class="btn primary"
-                            disabled={working() || !aggregate() ||
-                              (aggregate() !== "count" && !aggregateColumn())}
-                            onClick={() => void resolveForm(form)}
-                          >
-                            {t("composition.studioUseSelection")}
-                          </button>
-                        </div>
-                      )
-                      : undefined}
-                  />
+                      onClick={() => commit(node.id)}
+                    >
+                      <UiIcon name="canvas-table" />
+                      <span>{node.id}</span>
+                      <UiIcon name="chevron-right" />
+                    </button>
+                  </div>
                 )}
               </For>
-            </RowList>
-          </div>
-
-          <div
-            id="binding-panel-saved_sql"
-            role="tabpanel"
-            aria-labelledby="binding-tab-saved_sql"
-            hidden={tab() !== "saved_sql"}
-          >
-            <Show when={props.savedSqlLoading}>
-              <p class="compositionBindingPickerEmpty" role="status">
-                {t("common.loading")}
-              </p>
-            </Show>
-            <Show
-              when={!props.savedSqlLoading && !props.savedSqlSeedUnavailable &&
-                props.savedSql.length === 0}
-            >
-              <p class="compositionBindingPickerEmpty" role="status">
-                {t("composition.noSavedSql")}
-              </p>
-            </Show>
-            <Show when={props.savedSqlSeedUnavailable}>
-              <p class="compositionBindingUnavailableReason" role="status">
-                {t("composition.bindingUnavailable")}
-              </p>
-            </Show>
-            <RowList label={tabLabel("saved_sql")}>
-              <For each={props.savedSql}>
-                {(entry) => (
-                  <RowListItem
-                    main={
-                      <RowListButton
-                        onActivate={() => chooseSavedSql(entry)}
-                        disabled={working()}
-                        selected={selectedSavedSql() === entry.entry_id}
-                        primary={
-                          <>
-                            <UiIcon name="sql" />
-                            <span class="rowListName">{entry.name}</span>
-                          </>
-                        }
-                      />
-                    }
-                    actions={selectedSavedSql() === entry.entry_id
-                      ? (
-                        <div class="compositionBindingSavedColumns">
-                          <For each={entry.arguments}>
-                            {(argument) => (
-                              <label>
-                                <span class="ui-sr-only">
-                                  {t("composition.sqlArgumentBinding", {
-                                    name: argument.name,
-                                  })}
-                                </span>
-                                <select
-                                  class="ui-input"
-                                  aria-label={t(
-                                    "composition.sqlArgumentBinding",
-                                    { name: argument.name },
-                                  )}
-                                  value={savedArgumentBindings()[
-                                    argument.name
-                                  ] ?? ""}
-                                  onChange={(event) =>
-                                    setSavedArgumentBindings((current) => ({
-                                      ...current,
-                                      [argument.name]:
-                                        event.currentTarget.value,
-                                    }))}
-                                >
-                                  <option value="">
-                                    {t(
-                                      "composition.chooseSqlArgumentVariable",
-                                      {
-                                        name: argument.name,
-                                      },
-                                    )}
-                                  </option>
-                                  <For
-                                    each={eligibleArgumentVariables(
-                                      argument.type,
-                                    )}
-                                  >
-                                    {(node) => (
-                                      <option value={node.id}>{node.id}</option>
-                                    )}
-                                  </For>
-                                </select>
-                              </label>
-                            )}
-                          </For>
-                          <Show when={entry.arguments.length > 0}>
-                            <button
-                              class="btn primary"
-                              type="button"
-                              disabled={working() ||
-                                !savedArgumentsComplete(entry)}
-                              onClick={() =>
-                                void prepareSelectedSavedSql(entry)}
-                            >
-                              {t("composition.studioUseSelection")}
-                            </button>
-                          </Show>
-                          <For
-                            each={preparedSavedSql()?.entryId === entry.entry_id
-                              ? preparedSavedSql()!.choices.scalars
-                              : []}
-                          >
-                            {(candidate) => (
-                              <button
-                                class="pill"
-                                type="button"
-                                disabled={working()}
-                                onClick={() => commitPreparedScalar(candidate)}
-                              >
-                                {candidate.column}
-                              </button>
-                            )}
-                          </For>
-                        </div>
-                      )
-                      : undefined}
-                  />
-                )}
-              </For>
-            </RowList>
-          </div>
-
-          <Show when={working()}>
-            <div class="compositionBindingPickerStatus" role="status">
-              <span class="ui-sr-only">{t("common.loading")}</span>
             </div>
           </Show>
-          <Show when={error()}>
-            <p class="ui-text-danger" role="alert">{error()}</p>
+          <Show when={props.onCreateQuery}>
+            <IconButton
+              icon="plus"
+              label={t("composition.studioCreateTableQuery")}
+              onClick={() => props.onCreateQuery?.()}
+            />
           </Show>
-        </section>
+        </div>
       </div>
     </Portal>
   );

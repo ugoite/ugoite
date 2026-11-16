@@ -19,16 +19,12 @@ export function compositionQueryCountRequest(
   ) {
     throw new Error("A current validated table query is required");
   }
-  const sql = node.query.kind === "saved_sql" ? "" : descriptor.portable_sql;
-  if (sql === undefined) {
+  if (node.query.kind !== "inline_sql") {
     throw new Error("A current validated table query is required");
   }
-  if (
-    node.query.kind === "saved_sql" &&
-    (!node.query.entry_id.trim() || !node.query.revision_id.trim())
-  ) {
-    throw new Error("A current validated table query is required");
-  }
+  const sql = descriptor.portable_sql;
+  if (!sql) throw new Error("A current validated table query is required");
+  // The evaluated page and Count use the resolver's same immutable Form IDs.
   const parameters: Record<string, unknown> = Object.create(null);
   const parameter_types: Record<string, string> = Object.create(null);
   for (const argument of node.query.arguments) {
@@ -67,17 +63,9 @@ export function compositionQueryCountRequest(
     parameter_types[argument.name] = valueType.scalar_type;
   }
   return {
-    // Exact Saved SQL is resolved again by the server. Inline queries use
-    // the resolver's stable Form IDs, never current-name rebinding.
+    // Inline queries use the resolver's stable Form IDs, never
+    // current-name rebinding.
     sql,
-    ...(node.query.kind === "saved_sql"
-      ? {
-        saved_sql: {
-          id: node.query.entry_id,
-          revision_id: node.query.revision_id,
-        },
-      }
-      : {}),
     composition_count_snapshot: evaluation.query_results[variableId]!
       .count_snapshot,
     parameters,

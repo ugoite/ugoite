@@ -2044,16 +2044,17 @@ spec:
         form_bindings: []
         schema_fingerprint: ''
   components:
-    - id: amount_metric
-      kind: metric
-      variable: amount_rows
+    - id: amount_text
+      kind: text
+      content: "{{amount_rows}}"
+      style: body
   layout:
     kind: flow
     rows:
       - id: main
         items:
           - kind: component
-            component: amount_metric
+            component: amount_text
 "#
     );
     let document =
@@ -2160,16 +2161,17 @@ spec:
         form_bindings: []
         schema_fingerprint: ''
   components:
-    - id: amount_metric
-      kind: metric
-      variable: amount
+    - id: amount_text
+      kind: text
+      content: "{{amount}}"
+      style: body
   layout:
     kind: flow
     rows:
       - id: main
         items:
           - kind: component
-            component: amount_metric
+            component: amount_text
 "#
     );
     let request = composition::CompositionSaveRequest {

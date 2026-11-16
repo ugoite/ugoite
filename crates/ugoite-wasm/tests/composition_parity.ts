@@ -209,6 +209,35 @@ async function main(): Promise<void> {
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
 
+  const textTemplate = await invokeWasm(instance.exports, {
+    action: "domain.parse_composition_text_template",
+    value: { template: "Total: {{total}} / \\{{literal}}" },
+  });
+  assertEqual(textTemplate.ok, true, "Text template parse result");
+  assertJsonEqual(
+    (textTemplate.value as Record<string, unknown>).segments,
+    [
+      { kind: "literal", text: "Total: " },
+      { kind: "variable", variable: "total" },
+      { kind: "literal", text: " / {{literal}}" },
+    ],
+    "Rust Text template segments",
+  );
+  const malformedTextTemplate = await invokeWasm(instance.exports, {
+    action: "domain.parse_composition_text_template",
+    value: { template: "Missing {{close" },
+  });
+  assertEqual(
+    malformedTextTemplate.ok,
+    false,
+    "malformed Text template result",
+  );
+  assertEqual(
+    (malformedTextTemplate.error as Record<string, unknown>).code,
+    "unclosed_variable",
+    "malformed Text template diagnostic",
+  );
+
   const saveArguments = {
     space_id: "demo",
     idempotency_key: "composition-save-attempt-1",
@@ -548,8 +577,8 @@ async function main(): Promise<void> {
   );
 
   const invalidVariableReferenceYaml = yaml.replace(
-    "      variable: month_total",
-    "      variable: missing",
+    'content: "Total: {{month_total}}"',
+    'content: "Total: {{missing}}"',
   );
   if (invalidVariableReferenceYaml === yaml) {
     throw new Error(

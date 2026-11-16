@@ -596,11 +596,21 @@ change.
 
 ## ADR-025 — Composition query variable graph and complete SQL Workspace
 
-**Status: Accepted target; implementation in progress.** ADR-025 replaces the
-unreleased split between Composition variables and SQL sources with one typed
-query-variable graph and requires GUI coverage for every SQL construct admitted
-by the Rust read-only executor. The current code remains on ADR-024 until the
-new schema and editor gates are complete. It preserves the published Space,
-Form, Entry, Saved SQL, SQL API, ACL, Publication, and append-only history
-contracts and does not authorize release preparation or publication. See
+**Status: Partially superseded by ADR-027.** The typed graph, stateless
+evaluation, current authorization, transient results, and append-only history
+decisions remain. ADR-027 replaces the unpublished Saved SQL query variant,
+Metric component, Table presentation, and full SQL GUI construction requirement.
+The prior source and verification statements remain in ADR-025 as historical
+design context; they are not a compatibility contract. See
 [ADR-025](adr-025-composition-query-variable-graph.md).
+
+## ADR-027 — Text-first Composition graph and Studio
+
+**Status: Accepted target; implementation in progress.** Composition queries
+are inline SQL with typed table or scalar results. Components are Text, Table,
+and Input; Rust parses Text templates and validates their scalar references.
+Studio has Design and Variables modes. The existing Space-owned save, history,
+authorization, and recovery boundaries remain. Published Saved SQL APIs/CLI,
+EntryBrowser/FormTable behavior, CI lanes, and merge queue policy are unchanged.
+This decision does not authorize release preparation or publication. See
+[ADR-027](adr-027-text-first-composition.md).

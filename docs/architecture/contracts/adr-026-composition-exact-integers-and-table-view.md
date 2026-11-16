@@ -2,7 +2,8 @@
 title: "ADR-026 — Exact Composition integers and Table column presentation"
 ---
 
-**Status: Accepted for the unreleased ADR-025 variable graph.**
+**Status: Exact-integer decision retained by ADR-027; Table presentation
+decision superseded for the unreleased Composition model.**
 
 ## Context
 

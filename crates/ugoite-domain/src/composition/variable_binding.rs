@@ -1,8 +1,9 @@
 //! Strict display-component bindings for the typed Composition variable graph.
 //!
 //! This module validates the reference boundary between a variable graph and
-//! the display components that consume it. Display components persist only a
-//! variable reference; Form and Saved SQL identity belongs to query nodes.
+//! the display components that consume it. Form identity belongs to query
+//! nodes, while Text stores a template whose scalar references are compiled
+//! into graph dependencies.
 
 use super::variable_graph::{
     compile_variable_graph, VariableGraph, VariableGraphDiagnostic, VariableGraphNodeKind,
@@ -17,34 +18,23 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum VariableGraphComponentBinding {
     /// Renders rows from a table-valued query.
     Table { id: String, variable: String },
-    /// Renders a displayable scalar value.
-    Metric { id: String, variable: String },
     /// Supplies an input variable value.
     Input { id: String, variable: String },
-    /// Renders a string variable or owns literal text when `variable` is absent.
-    Text {
-        id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        variable: Option<String>,
-    },
+    /// Renders literal text and zero or more displayable scalar variables.
+    Text { id: String, variables: Vec<String> },
 }
 
 impl VariableGraphComponentBinding {
     fn id(&self) -> &str {
         match self {
-            Self::Table { id, .. }
-            | Self::Metric { id, .. }
-            | Self::Input { id, .. }
-            | Self::Text { id, .. } => id,
+            Self::Table { id, .. } | Self::Input { id, .. } | Self::Text { id, .. } => id,
         }
     }
 
-    fn variable(&self) -> Option<&str> {
+    fn variables(&self) -> Vec<&str> {
         match self {
-            Self::Table { variable, .. }
-            | Self::Metric { variable, .. }
-            | Self::Input { variable, .. } => Some(variable),
-            Self::Text { variable, .. } => variable.as_deref(),
+            Self::Table { variable, .. } | Self::Input { variable, .. } => vec![variable],
+            Self::Text { variables, .. } => variables.iter().map(String::as_str).collect(),
         }
     }
 }
@@ -100,8 +90,8 @@ pub struct VariableGraphBindingValidationError {
 /// A validated set of component bindings for one immutable graph definition.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CompiledVariableGraphBindings {
-    /// Component ID to the single referenced variable ID.
-    pub component_variables: BTreeMap<String, String>,
+    /// Component ID to each unique referenced variable ID.
+    pub component_variables: BTreeMap<String, Vec<String>>,
     /// Input variable ID to the sorted components that supply it.
     pub input_components: BTreeMap<String, Vec<String>>,
 }
@@ -109,8 +99,8 @@ pub struct CompiledVariableGraphBindings {
 /// Validate display references against the graph's declared value types.
 ///
 /// Every input variable must be represented by at least one Input component.
-/// Table, Metric, and Input components always serialize a required `variable`
-/// field. Text components may omit it when they own literal content.
+/// Table and Input components reference one variable. Text components may
+/// reference any number of displayable scalar variables.
 pub fn compile_variable_graph_bindings(
     graph: &VariableGraph,
     components: &[VariableGraphComponentBinding],
@@ -147,33 +137,40 @@ pub fn compile_variable_graph_bindings(
             known_component_ids.insert(component_id);
         }
 
-        let Some(variable_id) = component.variable() else {
-            continue;
-        };
-        let Some(variable_kind) = nodes.get(variable_id).copied() else {
-            diagnostics.push(binding_diagnostic(
-                VariableGraphBindingDiagnosticCode::MissingVariable,
-                Some(component_id),
-                Some(variable_id),
-            ));
-            continue;
-        };
+        for variable_id in component.variables() {
+            let Some(variable_kind) = nodes.get(variable_id).copied() else {
+                diagnostics.push(binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::MissingVariable,
+                    Some(component_id),
+                    Some(variable_id),
+                ));
+                continue;
+            };
 
-        if !component_accepts_variable(component, variable_kind) {
-            diagnostics.push(binding_diagnostic(
-                VariableGraphBindingDiagnosticCode::VariableTypeMismatch,
-                Some(component_id),
-                Some(variable_id),
-            ));
-            continue;
-        }
+            if !component_accepts_variable(component, variable_kind) {
+                diagnostics.push(binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::VariableTypeMismatch,
+                    Some(component_id),
+                    Some(variable_id),
+                ));
+                continue;
+            }
 
-        component_variables.insert(component_id.to_owned(), variable_id.to_owned());
-        if matches!(component, VariableGraphComponentBinding::Input { .. }) {
-            input_components
-                .entry(variable_id.to_owned())
-                .or_default()
-                .push(component_id.to_owned());
+            let component_refs = component_variables
+                .entry(component_id.to_owned())
+                .or_insert_with(Vec::new);
+            if !component_refs
+                .iter()
+                .any(|existing| existing == variable_id)
+            {
+                component_refs.push(variable_id.to_owned());
+            }
+            if matches!(component, VariableGraphComponentBinding::Input { .. }) {
+                input_components
+                    .entry(variable_id.to_owned())
+                    .or_default()
+                    .push(component_id.to_owned());
+            }
         }
     }
 
@@ -292,33 +289,11 @@ fn component_accepts_variable(
                 ..
             }
         ),
-        VariableGraphComponentBinding::Metric { .. } => {
-            matches!(
-                variable,
-                VariableGraphNodeKind::Constant { .. }
-                    | VariableGraphNodeKind::Input { .. }
-                    | VariableGraphNodeKind::Query {
-                        returns: VariableGraphResultType::Scalar { .. },
-                        ..
-                    }
-            ) && scalar_type_of(variable).is_some_and(|scalar_type| {
-                matches!(
-                    scalar_type.scalar_type,
-                    VariableGraphScalarType::String
-                        | VariableGraphScalarType::Boolean
-                        | VariableGraphScalarType::Integer
-                        | VariableGraphScalarType::Float
-                        | VariableGraphScalarType::Decimal
-                        | VariableGraphScalarType::Date
-                        | VariableGraphScalarType::Timestamp
-                )
-            })
-        }
         VariableGraphComponentBinding::Input { .. } => {
             matches!(variable, VariableGraphNodeKind::Input { .. })
         }
         VariableGraphComponentBinding::Text { .. } => scalar_type_of(variable)
-            .is_some_and(|scalar_type| scalar_type.scalar_type == VariableGraphScalarType::String),
+            .is_some_and(|scalar_type| scalar_type.scalar_type != VariableGraphScalarType::Json),
     }
 }
 
@@ -424,15 +399,15 @@ mod tests {
             },
             VariableGraphComponentBinding::Text {
                 id: "title_text".to_owned(),
-                variable: Some("title".to_owned()),
+                variables: vec!["title".to_owned()],
             },
-            VariableGraphComponentBinding::Metric {
-                id: "count_metric".to_owned(),
-                variable: "count".to_owned(),
+            VariableGraphComponentBinding::Text {
+                id: "count_text".to_owned(),
+                variables: vec!["count".to_owned()],
             },
-            VariableGraphComponentBinding::Metric {
-                id: "enabled_metric".to_owned(),
-                variable: "enabled".to_owned(),
+            VariableGraphComponentBinding::Text {
+                id: "enabled_text".to_owned(),
+                variables: vec!["enabled".to_owned()],
             },
             VariableGraphComponentBinding::Table {
                 id: "rows_table".to_owned(),
@@ -440,7 +415,7 @@ mod tests {
             },
             VariableGraphComponentBinding::Text {
                 id: "literal_text".to_owned(),
-                variable: None,
+                variables: Vec::new(),
             },
         ];
 
@@ -450,16 +425,16 @@ mod tests {
             &[
                 "day_input".to_owned(),
                 "title_text".to_owned(),
-                "count_metric".to_owned(),
-                "enabled_metric".to_owned(),
+                "count_text".to_owned(),
+                "enabled_text".to_owned(),
                 "rows_table".to_owned(),
                 "literal_text".to_owned(),
             ],
         )
         .unwrap();
-        assert_eq!(compiled.component_variables["rows_table"], "rows");
-        assert_eq!(compiled.component_variables["count_metric"], "count");
-        assert_eq!(compiled.component_variables["enabled_metric"], "enabled");
+        assert_eq!(compiled.component_variables["rows_table"], ["rows"]);
+        assert_eq!(compiled.component_variables["count_text"], ["count"]);
+        assert_eq!(compiled.component_variables["enabled_text"], ["enabled"]);
         assert_eq!(compiled.input_components["day"], ["day_input"]);
         assert!(!compiled.component_variables.contains_key("literal_text"));
     }
@@ -471,19 +446,26 @@ mod tests {
             constant("text", VariableGraphScalarType::String),
             constant("number", VariableGraphScalarType::Integer),
             table_query("rows"),
+            VariableGraphNode {
+                id: "object".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Json),
+                    value: VariableGraphLiteral::Json(json!({"data": true})),
+                },
+            },
         ]);
         let bindings = vec![
             VariableGraphComponentBinding::Table {
                 id: "wrong_table".to_owned(),
                 variable: "number".to_owned(),
             },
-            VariableGraphComponentBinding::Metric {
-                id: "wrong_metric".to_owned(),
-                variable: "rows".to_owned(),
+            VariableGraphComponentBinding::Text {
+                id: "wrong_table_text".to_owned(),
+                variables: vec!["rows".to_owned()],
             },
             VariableGraphComponentBinding::Text {
-                id: "wrong_text".to_owned(),
-                variable: Some("number".to_owned()),
+                id: "wrong_json_text".to_owned(),
+                variables: vec!["object".to_owned()],
             },
             VariableGraphComponentBinding::Input {
                 id: "wrong_input".to_owned(),
@@ -515,11 +497,11 @@ mod tests {
         let bindings = vec![
             VariableGraphComponentBinding::Text {
                 id: "duplicate".to_owned(),
-                variable: Some("title".to_owned()),
+                variables: vec!["title".to_owned()],
             },
             VariableGraphComponentBinding::Text {
                 id: "duplicate".to_owned(),
-                variable: Some("missing".to_owned()),
+                variables: vec!["missing".to_owned()],
             },
         ];
         let error = compile_variable_graph_bindings(&graph, &bindings, &[]).unwrap_err();
@@ -599,7 +581,7 @@ mod tests {
         let graph = graph(vec![constant("title", VariableGraphScalarType::String)]);
         let components = vec![VariableGraphComponentBinding::Text {
             id: "title_text".to_owned(),
-            variable: Some("title".to_owned()),
+            variables: vec!["title".to_owned()],
         }];
 
         let error = compile_variable_graph_bindings(&graph, &components, &[])

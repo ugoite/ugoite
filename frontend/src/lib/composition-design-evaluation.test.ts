@@ -196,6 +196,25 @@ describe("Composition Design Work evaluation", () => {
     expect(state.inputStates().minimum).toBe("invalid");
     expect(state.blocked().has("rows")).toBe(true);
   });
+  it("refreshes the full Design graph while preserving typed Work inputs", async () => {
+    const { state } = setup();
+    await vi.advanceTimersByTimeAsync(250);
+    state.onInput("minimum", "7");
+    await vi.advanceTimersByTimeAsync(250);
+    const callsBeforeRefresh = evaluate.mock.calls.length;
+
+    await state.refresh();
+
+    expect(evaluate).toHaveBeenCalledTimes(callsBeforeRefresh + 1);
+    expect(evaluate.mock.calls.at(-1)?.[1]).toMatchObject({
+      variables: { minimum: "7" },
+    });
+    expect(evaluate.mock.calls.at(-1)?.[1].requested_queries).toBeUndefined();
+    expect(state.evaluation()?.query_results.rows.value).toEqual({
+      kind: "scalar",
+      value: { kind: "integer", value: "7" },
+    });
+  });
   it("discards all results and pages after an authorization failure", async () => {
     const { state } = setup();
     await vi.advanceTimersByTimeAsync(250);
@@ -206,6 +225,29 @@ describe("Composition Design Work evaluation", () => {
     expect(state.blocked()).toEqual(new Set(["rows", "stable"]));
     expect(state.previousIds().size).toBe(0);
     expect(state.error()).toBeDefined();
+  });
+
+  it("keeps source-unavailable diagnostics global instead of duplicating them per component", async () => {
+    const { state } = setup();
+    evaluate.mockImplementationOnce(async (_space, request) => ({
+      ...response(request),
+      ok: false,
+      computed_query_ids: [],
+      query_results: {},
+      diagnostics: [
+        { code: "query_unavailable", variable_id: "rows" },
+        { code: "query_unavailable", variable_id: "stable" },
+      ],
+    }));
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(state.evaluation()).toBeUndefined();
+    expect(state.error()).toBe(
+      "This source is unavailable or access may have changed. Choose a source again or check your access.",
+    );
+    expect(state.queryErrors()).toEqual({});
+    expect(state.blocked()).toEqual(new Set(["rows", "stable"]));
   });
 
   it("keeps existing Composition identity bindings and authorization on draft evaluation", async () => {

@@ -29,6 +29,7 @@ use ugoite_domain::composition::{
     VariableGraph, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
     VariableGraphResultType, VariableGraphValidatedResult,
 };
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, RevisionId};
 use ugoite_domain::identity::Action;
 use uuid::Uuid;
@@ -432,16 +433,12 @@ impl UgoiteService {
                 continue;
             };
             let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-                &query.definition
-            else {
-                return Err(AppError::invalid_input(
-                    ErrorCode::InvalidInput,
-                    format!("Query {} requires a published Space snapshot", node.id),
-                )
-                .into());
-            };
-            if !crate::index::quoted_form_name_references(sql)?.is_empty()
-                || !crate::index::quoted_form_relation_names(sql)?.is_empty()
+                &query.definition;
+            let normalized_sql = crate::index::normalize_sql_template(sql).map_err(|error| {
+                AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+            })?;
+            if !crate::index::quoted_form_name_references(&normalized_sql)?.is_empty()
+                || !crate::index::quoted_form_relation_names(&normalized_sql)?.is_empty()
             {
                 return Err(AppError::invalid_input(
                     ErrorCode::InvalidInput,
@@ -1449,7 +1446,23 @@ fn apply_resolved_query_descriptors(
             continue;
         };
         *returns = descriptor.returns.clone();
-        query.form_bindings = descriptor.form_bindings.clone();
+        let portable_sql = descriptor
+            .portable_sql
+            .as_ref()
+            .ok_or_else(|| anyhow!("resolved inline query is missing portable SQL"))?;
+        query.definition = ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql {
+            sql: portable_sql.clone(),
+        };
+        query.form_bindings = descriptor
+            .form_bindings
+            .iter()
+            .map(
+                |binding| ugoite_domain::composition::VariableGraphFormBinding {
+                    relation: sql_relation_name(binding.form_id),
+                    form_id: binding.form_id,
+                },
+            )
+            .collect();
         query.schema_fingerprint = descriptor.schema_fingerprint.clone();
     }
     Ok(())
@@ -1596,7 +1609,6 @@ mod tests {
         ResolvedQueryRequest {
             variable_id: "total".to_owned(),
             request: None,
-            sql_text: None,
             portable_sql: None,
             deferred_arguments: Vec::new(),
             returns: VariableGraphResultType::Scalar {

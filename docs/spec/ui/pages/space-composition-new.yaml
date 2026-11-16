@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-20"
+updated: "2026-11-13"
 page:
   id: space-composition-new
   title: New tool
@@ -24,31 +24,30 @@ components:
       single_control: true
       source: canonical Composition document through composition.save
       persistence: one Space-owned Entry revision with existing receipt and stale-write semantics
-      readiness: strict typed graph, valid SQL descriptors and bindings, and each component placed exactly once
+      readiness: strict inline-SQL graph, valid result descriptors and bindings, and each component placed exactly once
     - id: composition-studio
       type: composition-studio
       reference: ../components/composition-studio.yaml
       contract_status: in_progress
+      default_mode: design
       modes: [design, variables]
       variables:
         kinds: [constant, input, query]
         query_outputs: [table, scalar]
-        sql_representation: one durable SQL string; parser and descriptor metadata are server-owned
-        editor: shared SQL Workspace with local parameter and query diagnostics
+        query_source: inline_sql_only
+        sql_representation: one durable SQL string with explicit typed variable bindings; result descriptors are server-owned
+        editor: text-first SQL Workspace with separate lint, authorized check, explicit run, and local diagnostics
       design:
-        components: [input, text, table, value]
-        table_and_value_binding_picker:
-          tabs: [variables, forms, saved_sql]
-          default_tab: variables
-          form_table: create_or_exactly_reuse_query_variable_and_insert
-          form_value: require_explicit_aggregate_and_column_before_atomic_insert
-          saved_sql: pin_exact_entry_revision_and_validate_output_shape
-          persisted_component_reference: variable_only
-        insertion: close_picker_and_leave_canvas_visible_without_opening_inspector
-        inspector: one_variable_reference_action_for_table_and_value
+        components: [text, table, input]
+        table_binding: select_table_query_variable_or_create_one_in_variables_and_return
+        input_binding: select_input_variable_or_create_one_and_place_it
+        text_content: in_place_plain_template_using_rust_parsed_scalar_references
+        text_style: [title, heading, body, caption]
+        component_inspector: none
+        reader_edit_controls: hidden
       execution:
         preview: composition.preview for authoring metadata; composition.evaluate for runtime values
         results: transient_stateless_work
         paging: bounded_server_owned_continuation
-        authorization: recheck_current_acl_publication_and_pinned_revisions
+      authorization: recheck_current_acl_publication_form_identity_and_result_schema
       work: Draft, input values, previews, pages, results, and editor diagnostics are transient

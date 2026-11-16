@@ -29,13 +29,19 @@ format_version: 1
 kind: dashboard
 name: Basic Composition
 spec:
-  variables: []
+  variables:
+    - id: metadata
+      kind: constant
+      value_type:
+        scalar_type: string
+        nullable: false
+      value:
+        kind: string
+        value: metadata
   components:
     - id: note
       kind: text
-      content:
-        kind: literal
-        text: metadata
+      content: "{{metadata}}"
       style: body
   layout:
     kind: flow

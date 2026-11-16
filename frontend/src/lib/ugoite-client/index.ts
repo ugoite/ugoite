@@ -46,6 +46,8 @@ export {
   type KonaseProtocolAction,
   lintSql,
   normalizeSqlTemplate,
+  parseCompositionTextTemplate,
+  type CompositionTextTemplateSegment,
   parseSqlDocument,
   parseVariableGraphInput,
   parseVariableGraphInputSync,

@@ -75,18 +75,18 @@ async function seedReceiptComposition(
   );
   expect(formsResponse.ok()).toBe(true);
   const forms = await formsResponse.json() as Array<{
+    id?: string;
     name?: string;
     sql_relation?: string;
     fields?: Record<string, { sql_column?: string }>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
+  expect(form?.id).toBeTruthy();
   const relation = form?.sql_relation;
   const dateColumn = form?.fields?.Date?.sql_column;
-  const merchantColumn = form?.fields?.Merchant?.sql_column;
   const amountColumn = form?.fields?.Amount?.sql_column;
   expect(relation).toBeTruthy();
   expect(dateColumn).toBeTruthy();
-  expect(merchantColumn).toBeTruthy();
   expect(amountColumn).toBeTruthy();
 
   const entryResponse = await request.post(
@@ -104,29 +104,6 @@ async function seedReceiptComposition(
   );
   expect(entryResponse.status()).toBe(201);
 
-  const sqlResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/sql`),
-    {
-      data: {
-        name: `Receipt scalar query ${suffix}`,
-        kind: "user-query",
-        sql: `SELECT ${sqlIdentifier(amountColumn!)} AS total, ${
-          sqlIdentifier(merchantColumn!)
-        } AS merchant FROM ${sqlIdentifier(relation!)} ORDER BY ${
-          sqlIdentifier(merchantColumn!)
-        } ASC`,
-        variables: [],
-      },
-    },
-  );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
-    id?: string;
-    revision_id?: string;
-  };
-  expect(savedSql.id).toBeTruthy();
-  expect(savedSql.revision_id).toBeTruthy();
-
   const yaml = await completeCompositionGraphYaml(
     request,
     spaceId,
@@ -140,18 +117,24 @@ async function seedReceiptComposition(
           value_type: { scalar_type: "float", nullable: true },
         },
         query: {
-          kind: "saved_sql",
-          entry_id: savedSql.id!,
-          revision_id: savedSql.revision_id!,
-          label_source: "variable",
-          column: "total",
+          kind: "inline_sql",
+          sql: `SELECT SUM(${sqlIdentifier(amountColumn!)}) AS total FROM ${
+            sqlIdentifier(relation!)
+          }`,
           arguments: [],
+          form_bindings: [{ relation: relation!, form_id: form!.id! }],
+          schema_fingerprint: "",
         },
       }],
-      components: [{ id: "total", kind: "metric", variable: "receipt_total" }],
+      components: [{
+        id: "total_text",
+        kind: "text",
+        content: "{{receipt_total}}",
+        style: "body",
+      }],
       rows: [{
         id: "main",
-        items: [{ kind: "component", component: "total" }],
+        items: [{ kind: "component", component: "total_text" }],
       }],
     },
   );

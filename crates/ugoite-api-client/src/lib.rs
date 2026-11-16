@@ -21,14 +21,13 @@ pub use composition::{
     CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
     CompositionEvaluationTarget, CompositionFormBinding, CompositionGraphQueryResult,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionMetricPresentation,
-    CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
-    CompositionPublicationReceipt, CompositionQuery, CompositionQueryResultType,
-    CompositionRawRevision, CompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionResultFieldType, CompositionRevisionMetadata,
+    CompositionListItem, CompositionListPage, CompositionPreviewPlan, CompositionPreviewRequest,
+    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionQuery,
+    CompositionQueryResultType, CompositionRawRevision, CompositionRestoreRequest,
+    CompositionRestoreResponse, CompositionResultColumn, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
     CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
-    CompositionVariableConsumers, CompositionVariableDefinition,
+    CompositionTextTemplatePart, CompositionVariableConsumers, CompositionVariableDefinition,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -3128,25 +3127,15 @@ mod tests {
             serde_json::to_value(&query).expect("serialize resolved query DTO"),
             inline_sql
         );
-        assert_eq!(query.sql_text, None);
         assert_eq!(
             inline_sql["request"]["parameters"]["month_start"],
             "2026-10-01"
         );
         assert!(inline_sql["request"].get("saved_sql").is_none());
 
-        let mut pinned_saved_sql = inline_sql.clone();
-        pinned_saved_sql["sql_text"] = json!("SELECT {{minimum}} AS total");
-        let saved_query: CompositionQuery =
-            serde_json::from_value(pinned_saved_sql.clone()).expect("pinned Saved SQL DTO");
-        assert_eq!(
-            serde_json::to_value(&saved_query).expect("serialize pinned Saved SQL DTO"),
-            pinned_saved_sql
-        );
-        assert_eq!(
-            saved_query.sql_text.as_deref(),
-            Some("SELECT {{minimum}} AS total")
-        );
+        let mut old_pinned_saved_query = inline_sql.clone();
+        old_pinned_saved_query["sql_text"] = json!("SELECT {{minimum}} AS total");
+        assert!(serde_json::from_value::<CompositionQuery>(old_pinned_saved_query).is_err());
 
         let component_binding = json!({
             "component_id": "transactions",
@@ -3165,6 +3154,30 @@ mod tests {
                 "kind": "table",
                 "variable_id": "expense_rows",
                 "label": "Expense rows"
+            }))
+            .is_err()
+        );
+
+        let text_binding = json!({
+            "component_id": "summary",
+            "kind": "text",
+            "text_segments": [
+                {"kind": "literal", "text": "Total: "},
+                {"kind": "variable", "variable": "total"},
+                {"kind": "literal", "text": " USD"}
+            ]
+        });
+        let binding: CompositionComponentBinding =
+            serde_json::from_value(text_binding.clone()).expect("text binding DTO");
+        assert_eq!(
+            serde_json::to_value(binding).expect("serialize text binding DTO"),
+            text_binding
+        );
+        assert!(
+            serde_json::from_value::<CompositionComponentBinding>(json!({
+                "component_id": "old_metric",
+                "kind": "metric",
+                "variable_id": "total"
             }))
             .is_err()
         );

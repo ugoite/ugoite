@@ -20,6 +20,7 @@ import {
   type CompositionGraphDraft,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
+import { clearPendingCompositionSaveAttempt } from "~/lib/composition-save-attempt";
 import { buildSqlSchema } from "~/lib/sql";
 import type { Form, FormField } from "~/lib/types";
 import { setLocale } from "~/lib/i18n";
@@ -28,7 +29,6 @@ const {
   authSessionMock,
   navigateMock,
   formsMock,
-  savedSqlMock,
   previewGraphMock,
   evaluateMock,
   countMock,
@@ -43,7 +43,6 @@ const {
     authSessionMock: vi.fn(),
     navigateMock: vi.fn(),
     formsMock: vi.fn(),
-    savedSqlMock: vi.fn(),
     previewGraphMock: vi.fn(),
     evaluateMock: vi.fn(),
     countMock: vi.fn(),
@@ -84,7 +83,6 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
     authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
     formApi: { list: (...args: unknown[]) => formsMock(...args) },
     sqlApi: {
-      list: (...args: unknown[]) => savedSqlMock(...args),
       count: (...args: unknown[]) => countMock(...args),
     },
     parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
@@ -176,7 +174,7 @@ const draftWithTable = (): CompositionGraphDraft => ({
     returns: { kind: "table", columns: [] },
     query: {
       kind: "inline_sql",
-      sql: 'SELECT * FROM "form_1"',
+      sql: "SELECT 1 AS amount",
       arguments: [],
       form_bindings: [],
       schema_fingerprint: "",
@@ -223,7 +221,7 @@ const plannedQuery = (
         deferred_arguments: [],
         returns,
         result_columns: resultColumns,
-        form_bindings: [],
+        form_bindings: query.query?.form_bindings ?? [],
         schema_fingerprint: "schema-fingerprint",
         query_semantic_fingerprint: "semantic-fingerprint",
         ...(returns.kind === "scalar"
@@ -248,7 +246,50 @@ const renderStudio = (
     />
   ));
 
+const createTableQueryFromDesign = async (id: string) => {
+  fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+  const name = screen.getByRole("textbox", { name: "Variable name" });
+  fireEvent.input(name, { target: { value: id } });
+  fireEvent.submit(name.closest("form")!);
+  await waitFor(() =>
+    expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+  fireEvent.click(await screen.findByRole("button", { name: id, exact: true }));
+  return screen.getByRole("textbox", { name: "SQL" });
+};
+
+const selectFormForQuery = async (name: string) => {
+  fireEvent.click(screen.getByRole("button", { name: "Form", exact: true }));
+  const form = await screen.findByRole("button", { name, exact: true });
+  await waitFor(() => expect(form).toBeEnabled());
+  fireEvent.click(form);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+  );
+};
+
 let releasePendingFormReferences: ((references: string[]) => void) | undefined;
+
+const clearPendingSaveAttempts = () => {
+  clearPendingCompositionSaveAttempt({
+    spaceId: "space-1",
+    routePath: "/spaces/space-1/compositions/new",
+    saveTarget: { kind: "create" },
+  });
+  clearPendingCompositionSaveAttempt({
+    spaceId: "space-1",
+    routePath: "/spaces/space-1/compositions/composition-2/edit",
+    saveTarget: {
+      kind: "update",
+      compositionId: "composition-2",
+      baseRevisionId: "revision-2",
+    },
+  });
+};
 
 const projectableField = (
   field: FormField,
@@ -270,11 +311,23 @@ const projectableField = (
 describe("CompositionStudio graph surface", () => {
   beforeEach(() => {
     setLocale("en");
-    vi.clearAllMocks();
+    for (const mock of [
+      authSessionMock,
+      navigateMock,
+      formsMock,
+      previewGraphMock,
+      evaluateMock,
+      countMock,
+      canonicalizeMock,
+      parseInputMock,
+      saveMock,
+      formReferenceGateMock,
+    ]) mock.mockReset();
+    routePathMock.value = "/spaces/space-1/compositions/new";
+    clearPendingSaveAttempts();
     formReferenceGateMock.mockImplementation(async (references: string[]) =>
       references
     );
-    routePathMock.value = "/spaces/space-1/compositions/new";
     parseInputMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw === "bad"
         ? { status: "invalid" }
@@ -287,7 +340,6 @@ describe("CompositionStudio graph surface", () => {
       account: { account_id: "editor-1", display_name: "Editor" },
     });
     formsMock.mockResolvedValue([]);
-    savedSqlMock.mockResolvedValue([]);
     countMock.mockReset().mockResolvedValue(102);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
       plannedQuery(yaml, {
@@ -334,75 +386,8 @@ describe("CompositionStudio graph surface", () => {
     releasePendingFormReferences?.(["Receipts"]);
     releasePendingFormReferences = undefined;
     cleanup();
-  });
-
-  it("displays the authorized pinned Saved SQL source without reading the moving head", async () => {
-    const initial = renderedDraftWithTable();
-    initial.variables[0] = {
-      id: "rows",
-      kind: "query",
-      returns: { kind: "table", columns: [] },
-      query: {
-        kind: "saved_sql",
-        entry_id: "saved-1",
-        revision_id: "revision-pinned",
-        label_source: "source",
-        arguments: [],
-      },
-    };
-    previewGraphMock.mockResolvedValue({
-      ok: true,
-      plan: {
-        queries: [{
-          variable_id: "rows",
-          sql_text: "SELECT 11 AS pinned_value",
-          portable_sql: "SELECT 11 AS pinned_value",
-          deferred_arguments: [],
-          returns: { kind: "table", columns: [] },
-          result_columns: [],
-          form_bindings: [],
-          schema_fingerprint: "pinned-schema",
-          query_semantic_fingerprint: "pinned-meaning",
-        }],
-      },
-    });
-    savedSqlMock.mockResolvedValue([{
-      id: "saved-1",
-      name: "Latest",
-      revision_id: "revision-latest",
-      kind: "user-query",
-      sql: "SELECT 99 AS latest_value",
-      variables: [],
-    }]);
-    renderStudio(initial);
-    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
-    fireEvent.click(screen.getByRole("button", { name: "rows" }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
-        "SELECT 11 AS pinned_value",
-      )
-    );
-    const requested = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(requested.spec.variables[0].query).toMatchObject({
-      entry_id: "saved-1",
-      revision_id: "revision-pinned",
-    });
-    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
-      "readonly",
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Edit an inline copy" }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "SQL" })).not.toHaveAttribute(
-        "readonly",
-      )
-    );
-    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
-      "SELECT 11 AS pinned_value",
-    );
-    expect(saveMock).not.toHaveBeenCalled();
-    expect(evaluateMock).not.toHaveBeenCalled();
+    routePathMock.value = "/spaces/space-1/compositions/new";
+    clearPendingSaveAttempts();
   });
 
   it("counts only on request, pages in both directions, and rejects an obsolete count", async () => {
@@ -529,10 +514,6 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
     setSpaceId("space-2");
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
-    expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
     expect(evaluateMock.mock.calls[0][2].aborted).toBe(true);
     finish({
       ok: true,
@@ -550,7 +531,7 @@ describe("CompositionStudio graph surface", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("offers only Design and Variables and inserts a Table without opening an Inspector", async () => {
+  it("offers only Design and Variables and keeps Table controls in the canvas", async () => {
     renderStudio();
     const designTab = await screen.findByRole("tab", { name: "Design" });
     const variablesTab = screen.getByRole("tab", { name: "Variables" });
@@ -563,17 +544,27 @@ describe("CompositionStudio graph surface", () => {
     );
     expect(variablesTab).toHaveClass("studioModeOption");
     expect(screen.queryByRole("tab", { name: "Data" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Metric" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Saved SQL" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const dialog = screen.getByRole("dialog", { name: "Table" });
+    expect(within(dialog).queryByRole("tab", { name: "Saved SQL" }))
+      .toBeNull();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "rows" }),
     );
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("button", { name: "table, rows" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /Change variable/ }))
-      .toBeNull();
+    const designCanvas = screen.getByRole("region", { name: "Design" });
+    expect(
+      designCanvas.querySelector(
+        '[data-component-select="true"][aria-label="rows"]',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Change variable, rows" }),
+    ).toBeVisible();
   });
 
   it("creates and places an Input from Design when the graph has no inputs", async () => {
@@ -591,22 +582,13 @@ describe("CompositionStudio graph surface", () => {
         .closest("form")!,
     );
 
-    expect(await screen.findByRole("button", { name: "input, customer_id" }))
+    expect(await screen.findByRole("textbox", { name: "customer_id" }))
       .toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    fireEvent.click(screen.getByRole("button", { name: "input, customer_id" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "customer_id", exact: true }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Variable name" }))
-        .toHaveFocus()
-    );
-    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
     const saveCall = screen.getByRole("button", { name: "Save" });
     expect(saveCall).toBeEnabled();
     fireEvent.click(saveCall);
@@ -1270,7 +1252,7 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
-  it("creates a Form-backed table query and component in one picker selection", async () => {
+  it("saves authored SQL with the selected Form identity in a Table component", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "Receipts",
@@ -1288,221 +1270,63 @@ describe("CompositionStudio graph surface", () => {
             1,
           ),
         },
-        payload: projectableField(
-          {
-            type: "json",
-            required: false,
-            sql_column: "payload",
-            label: "Amount paid",
-          },
-          "payload",
-          2,
-        ),
-        custom: projectableField(
-          {
-            type: "custom_type",
-            required: false,
-            sql_column: "custom",
-          },
-          "custom",
-          3,
-        ),
       },
     }]);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
       plannedQuery(yaml, {
         kind: "table",
-        columns: [
-          {
-            name: "Amount paid",
-            value_type: { scalar_type: "float", nullable: false },
-          },
-          {
-            name: "Amount paid (2)",
-            value_type: { scalar_type: "json", nullable: true },
-          },
-          {
-            name: "custom",
-            value_type: { scalar_type: "string", nullable: true },
-          },
-        ],
+        columns: [{
+          name: "value",
+          value_type: { scalar_type: "integer", nullable: false },
+        }],
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
-    const picker = screen.getByRole("dialog", { name: "Table" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
-    fireEvent.click(
-      await within(picker).findByRole("button", { name: "Receipts" }),
-    );
-
-    const block = await screen.findByRole("button", {
-      name: "table, receipts_rows",
-    });
-    expect(block).toBeVisible();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("button", { name: /Change variable/ }))
-      .toBeNull();
-    const previewInput = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(previewInput.spec.variables[0].query).toMatchObject({
-      kind: "inline_sql",
-      form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
-      schema_fingerprint: "",
-    });
-    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
-      "Receipts",
-      [
-        { column: "amount", label: "Amount paid" },
-        { column: "payload", label: "Amount paid" },
-        { column: "custom", label: "custom" },
-      ],
-      undefined,
-    );
-    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
-    expect(generated.projection_aliases).toEqual([
-      "Amount paid",
-      "Amount paid (2)",
-      "custom",
-    ]);
-    expect(previewInput.spec.variables[0].query.sql).toBe(generated.sql);
-    fireEvent.click(block);
-    expect(
-      screen.getByRole("textbox", { name: "Display label for Amount paid" }),
-    ).toHaveValue("Amount paid");
-    expect(
-      screen.getByRole("textbox", {
-        name: "Display label for Amount paid (2)",
-      }),
-    ).toHaveValue("Amount paid (2)");
+    const editor = await createTableQueryFromDesign("receipts_rows");
+    await selectFormForQuery("Receipts");
+    const sql = 'SELECT 1 FROM "Receipts"';
+    await waitFor(() => expect(editor).toHaveValue(sql));
     const saveButton = screen.getByRole("button", {
       name: "Save",
       exact: true,
     });
-    expect(saveButton).toBeEnabled();
-    expect(
-      screen.getByRole("textbox", { name: "Display label for custom" }),
-    ).toHaveValue("custom");
-    expect(
-      screen.queryByRole("checkbox", { name: "Add result column _ugoite_id" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => expect(saveButton).toBeEnabled());
     fireEvent.click(saveButton);
-    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
     const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
       spec: {
-        components: Array<{ id: string; presentation?: unknown }>;
+        variables: Array<{
+          id: string;
+          query: {
+            kind: string;
+            sql: string;
+            form_bindings: Array<{ relation: string; form_id: string }>;
+          };
+        }>;
+        components: Array<{ id: string; kind: string; variable: string }>;
         layout: { rows: Array<{ items: unknown[] }> };
       };
     }).spec;
-    expect(savedSpec.components[0].presentation).toEqual({
-      columns: [
-        { column: "Amount paid", label: "Amount paid" },
-        { column: "Amount paid (2)", label: "Amount paid (2)" },
-        { column: "custom", label: "custom" },
-      ],
+    expect(savedSpec.variables[0]).toMatchObject({
+      id: "receipts_rows",
+      query: {
+        kind: "inline_sql",
+        sql,
+        form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
+      },
     });
+    expect(savedSpec.components).toEqual([{
+      id: "table_1",
+      kind: "table",
+      variable: "receipts_rows",
+    }]);
     expect(savedSpec.layout.rows[0].items).toEqual([{
       kind: "component",
-      component: savedSpec.components[0].id,
+      component: "table_1",
     }]);
   });
 
-  it("preserves Form field order in a generated Table projection", async () => {
-    formsMock.mockResolvedValue([{
-      id: "form-id",
-      name: "Ordered records",
-      sql_relation: "form_ordered_records",
-      fields: {
-        zulu: projectableField(
-          {
-            type: "string",
-            required: false,
-            sql_column: "field_zulu",
-            label: "Zulu",
-          },
-          "zulu",
-          1,
-        ),
-        alpha: projectableField(
-          {
-            type: "string",
-            required: false,
-            sql_column: "field_alpha",
-            label: "Alpha",
-          },
-          "alpha",
-          2,
-        ),
-      },
-    }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "table",
-        columns: [
-          {
-            name: "Zulu",
-            value_type: { scalar_type: "string", nullable: true },
-          },
-          {
-            name: "Alpha",
-            value_type: { scalar_type: "string", nullable: true },
-          },
-        ],
-      })
-    );
-    renderStudio(createCompositionGraphDraft("Ordered report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
-    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
-    fireEvent.click(
-      within(picker).getByRole("tab", { name: "Forms", exact: true }),
-    );
-    fireEvent.click(
-      await within(picker).findByRole("button", {
-        name: "Ordered records",
-        exact: true,
-      }),
-    );
-
-    await waitFor(() =>
-      expect(compositionFormQuerySqlMock).toHaveBeenCalledOnce()
-    );
-    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
-      "Ordered records",
-      [
-        { column: "field_zulu", label: "Zulu" },
-        { column: "field_alpha", label: "Alpha" },
-      ],
-      undefined,
-    );
-    const generated = await compositionFormQuerySqlMock.mock.results[0].value;
-    expect(generated.sql).toBe(
-      'SELECT "field_zulu" AS "Zulu", "field_alpha" AS "Alpha" FROM "Ordered records" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
-    );
-    expect(generated.projection_aliases).toEqual(["Zulu", "Alpha"]);
-    const block = await screen.findByRole("button", {
-      name: "table, ordered_records_rows",
-    });
-    fireEvent.click(block);
-    const saveButton = screen.getByRole("button", {
-      name: "Save",
-      exact: true,
-    });
-    expect(saveButton).toBeEnabled();
-    fireEvent.click(saveButton);
-    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
-    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
-      spec: {
-        components: Array<{ presentation?: unknown }>;
-      };
-    }).spec;
-    expect(savedSpec.components[0].presentation).toEqual({
-      columns: [
-        { column: "Zulu", label: "Zulu" },
-        { column: "Alpha", label: "Alpha" },
-      ],
-    });
-  });
-
-  it("does not seed a Form table when it has no projectable fields", async () => {
+  it("selects an empty Form as a source without rewriting the SQL projection", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "System records",
@@ -1510,32 +1334,15 @@ describe("CompositionStudio graph surface", () => {
       fields: {},
     }]);
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
-    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
-    fireEvent.click(
-      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    const editor = await createTableQueryFromDesign("system_records_rows");
+    await selectFormForQuery("System records");
+    await waitFor(() =>
+      expect(editor).toHaveValue('SELECT 1 FROM "System records"')
     );
-    fireEvent.click(
-      await within(picker).findByRole("button", {
-        name: "System records",
-        exact: true,
-      }),
-    );
-
-    expect(await within(picker).findByRole("alert")).toHaveTextContent(
-      "This Form has no displayable data fields.",
-    );
-    expect(compositionFormQuerySqlMock).toHaveBeenCalledExactlyOnceWith(
-      "System records",
-      [],
-      undefined,
-    );
-    expect(
-      screen.queryByRole("button", { name: "table, system_records_rows" }),
-    ).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
-  it("updates a changed query schema before letting the Table view be repaired and saved", async () => {
+  it("saves the current planned Table schema without a presentation projection", async () => {
     const initial = renderedDraftWithTable();
     initial.variables[0] = {
       ...initial.variables[0],
@@ -1550,15 +1357,8 @@ describe("CompositionStudio graph surface", () => {
         kind: "inline_sql",
         sql: 'SELECT amount FROM "Receipts"',
         arguments: [],
+        form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
         schema_fingerprint: "old-schema",
-      },
-    };
-    initial.components[0] = {
-      id: "table_1",
-      kind: "table",
-      variable: "rows",
-      presentation: {
-        columns: [{ column: "amount", label: "Amount paid" }],
       },
     };
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
@@ -1573,32 +1373,26 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(initial);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(previewGraphMock).toHaveBeenCalled();
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The query result columns changed.",
-    );
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(saveMock).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
-    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
-    fireEvent.click(screen.getByText("Add result columns"));
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Add result column total" }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Remove Amount paid from the Table",
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
+    expect(previewGraphMock).toHaveBeenCalledOnce();
+    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+      spec: {
+        variables: Array<{
+          id: string;
+          returns: { kind: string; columns?: Array<{ name: string }> };
+        }>;
+        components: Array<{ presentation?: unknown }>;
+      };
+    }).spec;
+    expect(savedSpec.variables[0]).toMatchObject({
+      id: "rows",
+      returns: { kind: "table", columns: [{ name: "total" }] },
+    });
+    expect(savedSpec.components[0]).not.toHaveProperty("presentation");
   });
 
-  it("keeps a failed Form preview actionable and retries the same selection", async () => {
+
+  it("edits a Form-backed query before the Composition is named without enabling Save", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "Receipts",
@@ -1615,107 +1409,10 @@ describe("CompositionStudio graph surface", () => {
         ),
       },
     }]);
-    let previews = 0;
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
-      previews += 1;
-      if (previews === 1) {
-        const query = JSON.parse(yaml).spec.variables[0];
-        return {
-          ok: false,
-          diagnostics: [{
-            code: "query_schema_changed",
-            variable_id: query.id,
-          }],
-        };
-      }
-      return plannedQuery(yaml, {
-        kind: "table",
-        columns: [{
-          name: "amount",
-          value_type: { scalar_type: "float", nullable: false },
-        }],
-      });
-    });
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
-    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
-    fireEvent.click(
-      within(picker).getByRole("tab", { name: "Forms", exact: true }),
-    );
-    const form = await within(picker).findByRole("button", {
-      name: "Receipts",
-      exact: true,
-    });
-    fireEvent.click(form);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The source changed while you were binding it.",
-    );
-    expect(form).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("dialog", { name: "Table", exact: true }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /table, receipts_rows/ }))
-      .toBeNull();
-
-    fireEvent.click(form);
-    expect(
-      await screen.findByRole("button", {
-        name: "table, receipts_rows",
-        exact: true,
-      }),
-    ).toBeVisible();
-    expect(previewGraphMock).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("inserts existing Form data before the Composition is named without enabling Save", async () => {
-    formsMock.mockResolvedValue([{
-      id: "form-id",
-      name: "Receipts",
-      sql_relation: "form_receipts",
-      fields: {
-        Amount: projectableField(
-          {
-            type: "float",
-            required: false,
-            sql_column: "amount",
-          },
-          "Amount",
-          1,
-        ),
-      },
-    }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
-      if (!JSON.parse(yaml).name.trim()) {
-        return { ok: false, diagnostics: [{ code: "invalid_composition" }] };
-      }
-      return plannedQuery(yaml, {
-        kind: "table",
-        columns: [{
-          name: "amount",
-          value_type: { scalar_type: "float", nullable: false },
-        }],
-      });
-    });
     renderStudio(createCompositionGraphDraft(""));
-    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
-    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
-    fireEvent.click(
-      within(picker).getByRole("tab", { name: "Forms", exact: true }),
-    );
-    fireEvent.click(
-      await within(picker).findByRole("button", {
-        name: "Receipts",
-        exact: true,
-      }),
-    );
-    expect(
-      await screen.findByRole("button", {
-        name: "table, receipts_rows",
-        exact: true,
-      }),
-    ).toBeVisible();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    const editor = await createTableQueryFromDesign("receipts_rows");
+    await selectFormForQuery("Receipts");
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Receipts"'));
     expect(screen.getByRole("textbox", { name: "Name", exact: true }))
       .toHaveValue("");
     expect(screen.getByRole("button", { name: "Save", exact: true }))
@@ -1723,336 +1420,5 @@ describe("CompositionStudio graph surface", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("uses readable Form labels and SQL columns for explicit aggregates", async () => {
-    formsMock.mockResolvedValue([{
-      id: "form-id",
-      name: "Receipts",
-      sql_relation: "form_receipts",
-      fields: {
-        Amount: projectableField(
-          {
-            type: "double",
-            required: false,
-            sql_column: "field_103",
-          },
-          "Amount",
-          103,
-        ),
-        Units: projectableField(
-          {
-            type: "long",
-            required: false,
-            sql_column: "field_104",
-          },
-          "Units",
-          104,
-        ),
-        Notes: projectableField(
-          {
-            type: "markdown",
-            required: false,
-            sql_column: "field_105",
-          },
-          "Notes",
-          105,
-        ),
-        Query: projectableField(
-          {
-            type: "sql",
-            required: false,
-            sql_column: "field_106",
-          },
-          "Query",
-          106,
-        ),
-        Created: projectableField(
-          {
-            type: "timestamp_tz_ns",
-            required: false,
-            sql_column: "field_107",
-          },
-          "Created",
-          107,
-        ),
-      },
-    }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "scalar",
-        value_type: { scalar_type: "float", nullable: true },
-      })
-    );
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
-    const picker = screen.getByRole("dialog", { name: "Metric" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
-    fireEvent.click(
-      await within(picker).findByRole("button", { name: "Receipts" }),
-    );
-    fireEvent.change(
-      within(picker).getByRole("combobox", { name: "Aggregation" }),
-      { target: { value: "sum" } },
-    );
-    const column = within(picker).getByRole("combobox", { name: "Column" });
-    expect(within(column).getByRole("option", { name: "Amount" }))
-      .toHaveValue("field_103");
-    expect(within(column).getByRole("option", { name: "Units" }))
-      .toHaveValue("field_104");
-    fireEvent.change(
-      within(picker).getByRole("combobox", { name: "Aggregation" }),
-      { target: { value: "max" } },
-    );
-    expect(within(column).getByRole("option", { name: "Notes" }))
-      .toHaveValue("field_105");
-    expect(within(column).getByRole("option", { name: "Query" }))
-      .toHaveValue("field_106");
-    expect(within(column).getByRole("option", { name: "Created" }))
-      .toHaveValue("field_107");
-    fireEvent.change(
-      within(picker).getByRole("combobox", { name: "Aggregation" }),
-      { target: { value: "sum" } },
-    );
-    fireEvent.change(column, { target: { value: "field_103" } });
-    fireEvent.click(within(picker).getByRole("button", { name: "Add" }));
 
-    expect(
-      await screen.findByRole("button", {
-        name: "metric, receipts_sum_amount",
-      }),
-    ).toBeVisible();
-    expect(previewGraphMock).toHaveBeenCalledOnce();
-    const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(authored.spec.variables[0].query.sql).toBe(
-      'SELECT SUM("field_103") AS value FROM "Receipts"',
-    );
-    expect(authored.spec.variables[0].query.form_bindings).toEqual([{
-      relation: "Receipts",
-      form_id: "form-id",
-    }]);
-  });
-
-  it("drops a Form preview resolved after the authenticated account changes", async () => {
-    formsMock.mockResolvedValue([{
-      id: "form-id",
-      name: "Receipts",
-      sql_relation: "form_receipts",
-      fields: {
-        amount: projectableField(
-          {
-            type: "float",
-            required: false,
-            sql_column: "amount",
-          },
-          "amount",
-          1,
-        ),
-      },
-    }]);
-    let finishPreview!: (value: ReturnType<typeof plannedQuery>) => void;
-    previewGraphMock.mockReturnValue(
-      new Promise((resolve) => finishPreview = resolve),
-    );
-    authSessionMock.mockResolvedValue({
-      authenticated: true,
-      account: { account_id: "editor-1", display_name: "Editor" },
-    });
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
-    const picker = screen.getByRole("dialog", { name: "Table" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
-    fireEvent.click(
-      await within(picker).findByRole("button", { name: "Receipts" }),
-    );
-    await waitFor(() => expect(previewGraphMock).toHaveBeenCalledOnce());
-
-    authSessionMock.mockResolvedValue({
-      authenticated: true,
-      account: { account_id: "viewer-2", display_name: "Viewer" },
-    });
-    finishPreview(plannedQuery(previewGraphMock.mock.calls[0][1], {
-      kind: "table",
-      columns: [{
-        name: "amount",
-        value_type: { scalar_type: "float", nullable: false },
-      }],
-    }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.queryByRole("button", {
-      name: "table, receipts_rows",
-    })).toBeNull();
-  });
-
-  it("binds an exact scalar Saved SQL revision through the same picker", async () => {
-    savedSqlMock.mockResolvedValue([{
-      id: "sql-1",
-      name: "Revenue total",
-      kind: "user-query",
-      revision_id: "sql-rev-2",
-      variables: [],
-    }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "scalar",
-        value_type: { scalar_type: "float", nullable: true },
-      })
-    );
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
-    const picker = screen.getByRole("dialog", { name: "Metric" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
-    const savedSql = await within(picker).findByRole("button", {
-      name: "Revenue total",
-    });
-    await waitFor(() => expect(savedSql).toBeEnabled());
-    fireEvent.click(savedSql);
-
-    expect(
-      await screen.findByRole("button", {
-        name: "metric, revenue_total_value",
-      }),
-    ).toBeVisible();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(authored.spec.variables[0].query).toMatchObject({
-      kind: "saved_sql",
-      entry_id: "sql-1",
-      revision_id: "sql-rev-2",
-      label_source: "source",
-    });
-    expect(authored.spec.components).toHaveLength(1);
-    expect(authored.spec.components[0]).toMatchObject({
-      kind: "metric",
-      variable: authored.spec.variables[0].id,
-    });
-    expect(authored.spec.layout.rows[0].items).toEqual([{
-      kind: "component",
-      component: authored.spec.components[0].id,
-    }]);
-  });
-
-  it("previews Saved SQL with a temporary component in an empty draft", async () => {
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "table",
-        columns: [{
-          name: "amount",
-          value_type: { scalar_type: "float", nullable: true },
-        }],
-      })
-    );
-    savedSqlMock.mockResolvedValue([{
-      id: "sql-table",
-      name: "One column",
-      kind: "user-query",
-      revision_id: "sql-rev-1",
-      variables: [],
-    }]);
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
-    const picker = screen.getByRole("dialog", { name: "Table" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
-    const savedSql = await within(picker).findByRole("button", {
-      name: "One column",
-    });
-    await waitFor(() => expect(savedSql).toBeEnabled());
-
-    expect(previewGraphMock).not.toHaveBeenCalled();
-    fireEvent.click(savedSql);
-    await waitFor(() => expect(previewGraphMock).toHaveBeenCalled());
-    const preview = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(preview.spec.components).toHaveLength(1);
-    expect(preview.spec.components[0]).toMatchObject({
-      kind: "table",
-      variable: preview.spec.variables[0].id,
-    });
-    expect(preview.spec.layout.rows[0].items).toEqual([{
-      kind: "component",
-      component: preview.spec.components[0].id,
-    }]);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "table, one_column_table" }))
-      .toBeVisible();
-  });
-
-  it("keeps the preview probe transient when rebinding in an existing draft", async () => {
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "table",
-        columns: [{
-          name: "amount",
-          value_type: { scalar_type: "float", nullable: true },
-        }],
-      })
-    );
-    savedSqlMock.mockResolvedValue([{
-      id: "sql-table",
-      name: "One column",
-      kind: "user-query",
-      revision_id: "sql-rev-1",
-      variables: [],
-    }]);
-    const draft = renderedDraftWithTable();
-    renderStudio(draft);
-    fireEvent.click(screen.getByRole("button", { name: "table, rows" }));
-    fireEvent.click(screen.getByRole("button", { name: /Change variable/ }));
-    const picker = screen.getByRole("dialog", { name: "Table" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
-    const savedSql = await within(picker).findByRole("button", {
-      name: "One column",
-    });
-    await waitFor(() => expect(savedSql).toBeEnabled());
-
-    expect(previewGraphMock).not.toHaveBeenCalled();
-    fireEvent.click(savedSql);
-    await waitFor(() => expect(previewGraphMock).toHaveBeenCalled());
-    const preview = JSON.parse(previewGraphMock.mock.calls[0][1]);
-    expect(preview.spec.components).toHaveLength(2);
-    expect(preview.spec.components).toEqual(expect.arrayContaining([
-      { id: "table_1", kind: "table", variable: "rows" },
-      expect.objectContaining({
-        kind: "table",
-        variable: "one_column_table",
-      }),
-    ]));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("button", {
-      name: "table, one_column_table",
-    })).toBeVisible();
-    expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
-  });
-
-  it("reports the selected incompatible Saved SQL without inserting a Table", async () => {
-    savedSqlMock.mockResolvedValue([{
-      id: "sql-scalar",
-      name: "One value",
-      kind: "user-query",
-      revision_id: "sql-rev-1",
-      variables: [],
-    }]);
-    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
-      plannedQuery(yaml, {
-        kind: "scalar",
-        value_type: { scalar_type: "float", nullable: false },
-      })
-    );
-    renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
-    const picker = screen.getByRole("dialog", { name: "Table" });
-    fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
-
-    const selected = await within(picker).findByRole("button", {
-      name: "One value",
-    });
-    expect(selected).toBeEnabled();
-    expect(previewGraphMock).not.toHaveBeenCalled();
-    fireEvent.click(selected);
-    const reason = await within(picker).findByText(
-      "This saved SQL revision does not return a table.",
-    );
-    expect(reason).toBeVisible();
-    expect(screen.queryByRole("button", { name: /^table,/ })).not
-      .toBeInTheDocument();
-  });
 });

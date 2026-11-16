@@ -7,6 +7,7 @@ import type {
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
+  type CompositionTextTemplateSegment,
   protocolFetch,
 } from "./ugoite-client";
 import { markExactIntegerVariableValues } from "./exact-integer";
@@ -185,7 +186,7 @@ export interface CompositionEvaluationResponse {
     kind: string;
     variable_id?: string;
     expected_result_type?: CompositionScalarDescriptor["scalar_type"];
-    presentation?: Record<string, unknown>;
+    text_segments?: CompositionTextTemplateSegment[];
   }>;
   dependencies: CompositionDependencyIndex;
   query_results: Record<string, {
@@ -211,7 +212,6 @@ export interface CompositionDependencyIndex {
     input_component_ids?: string[];
     text_component_ids?: string[];
     query_variable_ids?: string[];
-    metric_component_ids?: string[];
     table_component_ids?: string[];
   }>;
 }

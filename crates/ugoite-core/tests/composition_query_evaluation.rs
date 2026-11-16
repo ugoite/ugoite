@@ -4,9 +4,7 @@ use serde_json::{json, Map, Value};
 use ugoite_core::composition_query::{
     VariableGraphQueryEvaluation, VariableGraphQueryEvaluationDiagnosticCode,
 };
-use ugoite_core::sql_query::{
-    SavedSqlRevisionRef, SqlQueryPage, SqlQueryRequest, SqlResultColumn, SqlResultColumnType,
-};
+use ugoite_core::sql_query::{SqlQueryPage, SqlQueryRequest, SqlResultColumn, SqlResultColumnType};
 use ugoite_domain::composition::{
     VariableGraph, VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
     VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
@@ -216,11 +214,8 @@ fn only_descriptor_validated_query_values_reach_the_complete_preview() {
 fn omitted_nullable_sql_cells_are_restored_as_null_for_graph_results() {
     let mut query = scalar_query(
         "nullable_total",
-        VariableGraphQueryDefinition::SavedSql {
-            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-            column: Some("value".to_owned()),
-            label_source: ugoite_domain::composition::VariableGraphSavedSqlLabelSource::Source,
+        VariableGraphQueryDefinition::InlineSql {
+            sql: "SELECT CAST(NULL AS DOUBLE) AS value".to_owned(),
         },
         Vec::new(),
     );
@@ -237,7 +232,7 @@ fn omitted_nullable_sql_cells_are_restored_as_null_for_graph_results() {
         .expect("nullable scalar graph is valid");
     let request = evaluation
         .compile_request("nullable_total")
-        .expect("saved query compiles");
+        .expect("inline query compiles");
     let mut result = page(&request, vec![json!({})]);
     result.result_schema = Some(vec![SqlResultColumn {
         name: "value".to_owned(),
@@ -346,12 +341,8 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
             input("threshold", VariableGraphScalarType::Integer),
             scalar_query(
                 "total",
-                VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                    revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                    column: Some("total".to_owned()),
-                    label_source:
-                        ugoite_domain::composition::VariableGraphSavedSqlLabelSource::Source,
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT $floor AS total".to_owned(),
                 },
                 vec![argument("floor", "threshold")],
             ),
@@ -363,14 +354,9 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
             .expect("input matches saved query argument");
     let request = evaluation
         .compile_request("total")
-        .expect("exact Saved SQL request compiles");
-    assert_eq!(
-        request.saved_sql,
-        Some(SavedSqlRevisionRef {
-            id: "00000000-0000-0000-0000-000000000001".to_owned(),
-            revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
-        })
-    );
+        .expect("inline SQL request compiles");
+    assert_eq!(request.sql, "SELECT $floor AS total");
+    assert!(request.saved_sql.is_none());
     assert_eq!(request.parameters.get("floor"), Some(&json!(10)));
 
     let mut altered_request = request.clone();
@@ -412,11 +398,11 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
     };
     evaluation
         .accept_page("total", &request, &pinned_result)
-        .expect("pinned revision, selected column, and bound parameter validate");
+        .expect("result schema and bound parameter validate");
     assert_eq!(
         evaluation
             .preview()
-            .expect("saved query validates")
+            .expect("inline query validates")
             .query_results
             .get("total"),
         Some(

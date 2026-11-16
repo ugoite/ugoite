@@ -524,13 +524,13 @@ describe("UI spec YAML registry", () => {
     );
 
     expect(studioContract).toContain(
-      "**Status: incremental SQL authoring changes are implemented; the full v0.2.2 Composition model and Studio migration remain planned.**",
+      "**Status: Text-first Composition authoring is the current target.**",
     );
     expect(studioContract).toContain(
-      "The normative Composition graph model is [ADR-025]",
+      "[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md)",
     );
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
-      "Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs.",
+      "The canvas offers Text, Table, and Input only.",
     );
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");

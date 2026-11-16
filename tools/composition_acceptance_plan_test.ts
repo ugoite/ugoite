@@ -88,7 +88,9 @@ Deno.test(
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
-      undefined,
+      [
+        "Historical A02 is retained verbatim. Its SELECT * Composition seed was replaced by explicit projectable-column projections in the text-first contract; the current Form-backed Table journey verifies source binding and reopen behavior, not the old SELECT * output.",
+      ],
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A03")?.manual_evidence_gaps,
@@ -98,21 +100,23 @@ Deno.test(
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A04")?.manual_evidence_gaps,
-      undefined,
+      [
+        "Historical A04 describes the unpublished Composition saved_sql variant, which the text-first contract removes. Composition no longer pins or copies Saved SQL revisions. The exact-revision selectors above cover the published Saved SQL query contract; raw Composition history and export remain available for old revisions, which are not migrated or executable.",
+      ],
     );
     assert(
       plan.criteria.find(({ id }) => id === "A09")?.selectors.some((selector) =>
         selector.path === "e2e/composition-metric-journey.test.ts" &&
         selector.kind === "test" &&
         selector.name ===
-          "API evaluates an exact Saved SQL revision and reports scalar cardinality failures"
+          "API evaluates an exact Composition revision and reports scalar cardinality failures"
       ),
-      "A09 must retain request-level exact revision and cardinality evidence",
+      "A09 must retain exact Composition revision and scalar-cardinality evidence",
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A09")?.manual_evidence_gaps,
       [
-        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Missing referenced Form fields fail planner validation, and changed result descriptors fail closed; source-field changes that leave a valid query and the same result descriptor are outside the fingerprint guarantee. Reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. A09 and SQL S-02 remain partial.",
+        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Missing referenced Form fields fail planner validation, and changed result descriptors fail closed; source-field changes that leave a valid query and the same result descriptor are outside the fingerprint guarantee. Reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. The Metric renderer and its label-specific assertions are removed; scalar display now uses Text. A09 and SQL S-02 remain partial.",
       ],
     );
     for (const id of ["A02", "A04", "A08", "A10", "A11", "A12", "A13"]) {

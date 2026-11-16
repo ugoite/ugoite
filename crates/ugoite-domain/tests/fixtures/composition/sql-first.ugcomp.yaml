@@ -57,11 +57,11 @@ spec:
           scalar_type: decimal
           nullable: true
       query:
-        kind: saved_sql
-        entry_id: "00000000-0000-7000-8000-000000000020"
-        revision_id: "00000000-0000-7000-8000-000000000021"
-        column: total
-        label_source: variable
+        kind: inline_sql
+        sql: |-
+          SELECT SUM(amount) AS total
+          FROM "Expense"
+          WHERE "Date" >= $month_start AND "Date" < $month_end
         arguments:
           - name: month_start
             variable: month_start
@@ -77,8 +77,9 @@ spec:
       kind: input
       variable: month_end
     - id: total
-      kind: metric
-      variable: month_total
+      kind: text
+      content: "Total: {{month_total}}"
+      style: body
     - id: transactions
       kind: table
       variable: expense_rows

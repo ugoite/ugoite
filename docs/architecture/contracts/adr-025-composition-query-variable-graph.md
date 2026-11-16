@@ -2,13 +2,14 @@
 title: "ADR-025 — Composition query variable graph and complete SQL Workspace"
 ---
 
-**Status: Accepted; strict graph evaluation is implemented, SQL GUI and Studio
-completion remain in progress.** This decision replaces the unreleased
-Composition grammar and authoring model recorded in
-[ADR-024](adr-024-composition-sql-first.md). The strict graph and stateless
-evaluation are implemented in `main`; the browser Composition routes use the
-shared typed SQL Workspace and graph evaluator. Full executor-to-GUI construct
-coverage remains a separate open gate. This decision does not authorize release
+**Status: Partially superseded by ADR-027.** The strict graph, stateless
+evaluation, authorization, and append-only history decisions remain in force.
+The Saved SQL query variant, Metric component, Table presentation, and
+complete-SQL-GUI authoring decisions are superseded for the unpublished model.
+This decision replaced the unreleased Composition grammar and authoring model
+recorded in [ADR-024](adr-024-composition-sql-first.md). Its earlier complete
+executor-to-GUI coverage target is historical and is superseded by ADR-027; it
+is not a current release gate. This decision does not authorize release
 preparation or publication.
 
 For exact signed 64-bit integer values and Table column presentation in this

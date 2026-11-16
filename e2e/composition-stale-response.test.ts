@@ -128,7 +128,7 @@ async function seedStaleComposition(
     ],
     components: [
       { id: "amount_input", kind: "input", variable: "minimum_amount" },
-      { id: "total_metric", kind: "metric", variable: "total" },
+      { id: "total_text", kind: "text", content: "{{total}}", style: "body" },
       { id: "result_rows", kind: "table", variable: "rows" },
     ],
     rows: [
@@ -139,7 +139,7 @@ async function seedStaleComposition(
       {
         id: "results",
         items: [
-          { kind: "component", component: "total_metric" },
+          { kind: "component", component: "total_text" },
           { kind: "component", component: "result_rows" },
         ],
       },
@@ -164,7 +164,7 @@ async function seedStaleComposition(
 }
 
 async function expectCurrentValues(page: Page): Promise<void> {
-  await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+  await expect(page.locator('[data-component-id="total_text"] .compositionGraphText')).toHaveText(
     String(CURRENT_AMOUNT),
     { timeout: 30_000 },
   );

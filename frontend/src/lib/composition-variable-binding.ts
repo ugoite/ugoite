@@ -45,15 +45,7 @@ export interface CompositionQueryBase {
 }
 
 export type CompositionQueryDefinition =
-  | (CompositionQueryBase & { kind: "inline_sql"; sql: string })
-  | (CompositionQueryBase & {
-    kind: "saved_sql";
-    entry_id: string;
-    revision_id: string;
-    column?: string;
-    /** Explicitly selects the source column or user variable label. */
-    label_source: "source" | "variable";
-  });
+  CompositionQueryBase & { kind: "inline_sql"; sql: string };
 
 export type CompositionQueryReturn =
   | { kind: "scalar"; value_type: CompositionScalarDescriptor }
@@ -88,26 +80,12 @@ export type CompositionComponent =
     id: string;
     kind: "table";
     variable: string;
-    presentation?: CompositionTablePresentation;
-  }
-  | {
-    id: string;
-    kind: "metric";
-    variable: string;
-    presentation?: {
-      kind: "number";
-      unit?: string;
-      fraction_digits?: number;
-    };
   }
   | { id: string; kind: "input"; variable: string }
   | {
     id: string;
     kind: "text";
-    content: { kind: "literal"; text: string } | {
-      kind: "variable";
-      variable: string;
-    };
+    content: string;
     style: "title" | "heading" | "body" | "caption";
   };
 
@@ -136,15 +114,6 @@ export interface CompositionGraphDocumentDraft {
   kind: "dashboard";
   name: string;
   spec: CompositionGraphSpecDraft;
-}
-
-export interface CompositionTablePresentation {
-  columns: CompositionTablePresentationColumn[];
-}
-
-export interface CompositionTablePresentationColumn {
-  column: string;
-  label: string;
 }
 
 export const compositionGraphSpecDraft = (
@@ -189,7 +158,8 @@ export const compositionGraphDraftFromDocument = (
     document.format_version !== 1 || document.kind !== "dashboard" ||
     typeof document.name !== "string" || !spec ||
     Object.hasOwn(spec, "sources") ||
-    !Array.isArray(spec.variables) || !Array.isArray(spec.components) ||
+    (spec.variables !== undefined && !Array.isArray(spec.variables)) ||
+    !Array.isArray(spec.components) ||
     !spec.layout || spec.layout.kind !== "flow" ||
     !Array.isArray(spec.layout.rows)
   ) throw new Error("Invalid graph-only Composition document");
@@ -201,7 +171,7 @@ export const compositionGraphDraftFromDocument = (
       Object.hasOwn(component, "source_id")
     ) throw new Error("Invalid graph component binding");
   }
-  const variables = spec.variables.map((node) => {
+  const variables = (spec.variables ?? []).map((node) => {
     if (
       !node || typeof node !== "object" ||
       !["constant", "input", "query"].includes(node.kind)
@@ -209,6 +179,7 @@ export const compositionGraphDraftFromDocument = (
     if (node.kind !== "query") return node;
     if (
       !node.query || typeof node.query !== "object" ||
+      node.query.kind !== "inline_sql" ||
       (node.query.arguments !== undefined &&
         !Array.isArray(node.query.arguments))
     ) throw new Error("Invalid graph query arguments");
@@ -219,6 +190,20 @@ export const compositionGraphDraftFromDocument = (
       query: { ...node.query, arguments: node.query.arguments ?? [] },
     };
   });
+  for (const component of spec.components) {
+    if (
+      !component || typeof component !== "object" ||
+      !["table", "text", "input"].includes(component.kind)
+    ) throw new Error("Invalid graph component kind");
+    if (
+      component.kind === "text" &&
+      (typeof component.content !== "string" ||
+        Object.hasOwn(component, "presentation"))
+    ) throw new Error("Invalid graph text template");
+    if (
+      component.kind === "table" && Object.hasOwn(component, "presentation")
+    ) throw new Error("Invalid graph table component");
+  }
   return {
     name: document.name,
     variables,
@@ -227,96 +212,7 @@ export const compositionGraphDraftFromDocument = (
   } as CompositionGraphDraft;
 };
 
-export type BindingComponentKind = "table" | "metric";
-
-export type CompositionBindingDiagnosticCode =
-  | "query_unavailable"
-  | "query_schema_changed";
-
-/** Safe structured failure propagated from an unsuccessful graph preview. */
-export class CompositionBindingDiagnosticError extends Error {
-  constructor(readonly code: CompositionBindingDiagnosticCode) {
-    super(code);
-    this.name = "CompositionBindingDiagnosticError";
-  }
-}
-
-export interface CompositionFormChoice {
-  id: string;
-  name: string;
-  /** Current Form name accepted by the planner for authorized resolution. */
-  relation: string;
-  fields: Array<{
-    /** Human-readable Form field name shown in the picker. */
-    name: string;
-    /** Server-owned SQL column used only in the generated query. */
-    column: string;
-    /** Field type as declared by the Form; unsupported types stay visible in Tables. */
-    type: string;
-    /** True only when the current Form authorization exposes this field to SQL. */
-    projectable: boolean;
-  }>;
-}
-
-export interface CompositionSavedSqlChoice {
-  entry_id: string;
-  revision_id: string;
-  name: string;
-  arguments: Array<{ name: string; type: CompositionSqlArgumentType }>;
-}
-
-/** Exact Saved SQL revision selected by a navigation entry point. */
-export interface CompositionSavedSqlRevisionRef {
-  entry_id: string;
-  revision_id: string;
-}
-
-export type CompositionFormAggregate = "count" | "sum" | "avg" | "min" | "max";
-
-/** Immutable authoring context used to reject stale asynchronous picker work. */
-export interface CompositionBindingSession {
-  session_id: string;
-  space_id: string;
-  document_revision: string | null;
-  principal_generation: string;
-}
-
-/** A resolved query plus an optional exact reusable graph node. */
-export interface CompositionResolvedBinding {
-  variable: CompositionVariableNode & { kind: "query" };
-  /** Existing node selected by the authoritative resolver for exact reuse. */
-  reuse_variable_id?: string;
-  /** Optional Form-owned visible-column preset for a newly selected Table. */
-  tablePresentation?: CompositionTablePresentation;
-}
-
-export interface CompositionPreparedSavedSql {
-  table?: CompositionResolvedBinding;
-  /** Only planner-confirmed scalar outputs with exactly one result row. */
-  scalars: Array<{ column: string; binding: CompositionResolvedBinding }>;
-}
-
-/**
- * Host-owned lookups/resolution. Implementations use existing Core/API
- * contracts; the picker does not invent transport routes or infer SQL schema.
- */
-export interface CompositionBindingProvider {
-  resolveForm(input: {
-    session: CompositionBindingSession;
-    form_id: string;
-    component: BindingComponentKind;
-    aggregate?: { kind: CompositionFormAggregate; column?: string };
-    draft: CompositionGraphDraft;
-  }): Promise<CompositionResolvedBinding>;
-  prepareSavedSql(input: {
-    session: CompositionBindingSession;
-    entry_id: string;
-    revision_id: string;
-    component: BindingComponentKind;
-    arguments: CompositionQueryArgument[];
-    draft: CompositionGraphDraft;
-  }): Promise<CompositionPreparedSavedSql>;
-}
+export type BindingComponentKind = "table";
 
 export const createCompositionGraphDraft = (
   name = "",
@@ -348,23 +244,20 @@ export const compositionNodeReturnsScalar = (
       ? node.returns.value_type.scalar_type
       : undefined
     : node.value_type.scalar_type;
-  return type !== undefined && isCompositionMetricType(type);
+  return type !== undefined && type !== "json";
 };
 
-/** Types rendered as a Metric; booleans and JSON remain queryable values. */
-export const isCompositionMetricType = (
+/** Types supported by plain text interpolation. */
+export const isCompositionDisplayableType = (
   type: CompositionScalarType,
 ): boolean =>
-  type === "string" || type === "integer" || type === "float" ||
-  type === "decimal" || type === "date" || type === "timestamp";
+  type !== "json";
 
 export const compositionVariableFitsComponent = (
   node: CompositionVariableNode,
   kind: BindingComponentKind,
 ): boolean =>
-  kind === "table"
-    ? compositionNodeReturnsTable(node)
-    : compositionNodeReturnsScalar(node);
+  kind === "table" && compositionNodeReturnsTable(node);
 
 const nextComponentId = (
   components: readonly CompositionComponent[],
@@ -434,19 +327,15 @@ export const bindCompositionComponent = (
   draft: CompositionGraphDraft,
   kind: BindingComponentKind,
   variableId: string,
-  tablePresentation?: CompositionTablePresentation,
 ): CompositionGraphDraft | undefined => {
   const node = draft.variables.find((item) => item.id === variableId);
   if (!node || !compositionVariableFitsComponent(node, kind)) return undefined;
   const componentId = nextComponentId(draft.components);
-  const component: CompositionComponent = kind === "table"
-    ? {
-      id: componentId,
-      kind,
-      variable: variableId,
-      ...(tablePresentation ? { presentation: tablePresentation } : {}),
-    }
-    : { id: componentId, kind, variable: variableId };
+  const component: CompositionComponent = {
+    id: componentId,
+    kind,
+    variable: variableId,
+  };
   return appendCompositionGraphComponent(draft, component);
 };
 
@@ -455,76 +344,22 @@ export const setCompositionComponentVariable = (
   draft: CompositionGraphDraft,
   componentId: string,
   variableId: string,
-  tablePresentation?: CompositionTablePresentation,
 ): CompositionGraphDraft | undefined => {
   const component = draft.components.find((entry) => entry.id === componentId);
   const node = draft.variables.find((entry) => entry.id === variableId);
   if (
-    !component || !node ||
-    (component.kind !== "table" && component.kind !== "metric")
+    !component || !node || component.kind !== "table"
   ) return undefined;
   if (!compositionVariableFitsComponent(node, component.kind)) return undefined;
   return {
     ...draft,
     components: draft.components.map((entry) => {
-      if (entry.id !== componentId || entry.kind === "text") return entry;
-      if (entry.kind !== "table") return { ...entry, variable: variableId };
-      if (tablePresentation) {
-        return {
-          ...entry,
-          variable: variableId,
-          presentation: tablePresentation,
-        };
-      }
-      if (variableId === entry.variable) return entry;
-      const { presentation: _oldPresentation, ...withoutPresentation } = entry;
-      return { ...withoutPresentation, variable: variableId };
+      if (entry.id !== componentId || entry.kind !== "table") return entry;
+      return { ...entry, variable: variableId };
     }),
   };
 };
 
-/**
- * Commit resolver output and component placement together. A reused node is
- * never copied or rewritten; a new query and display are emitted as one draft.
- */
-export const commitResolvedCompositionBinding = (
-  draft: CompositionGraphDraft,
-  kind: BindingComponentKind,
-  resolved: CompositionResolvedBinding,
-): CompositionGraphDraft | undefined => {
-  const existing = resolved.reuse_variable_id
-    ? draft.variables.find((node) => node.id === resolved.reuse_variable_id)
-    : undefined;
-  if (resolved.reuse_variable_id && !existing) return undefined;
-  if (existing && !sameResolvedQueryMeaning(existing, resolved.variable)) {
-    return undefined;
-  }
-  if (
-    !existing &&
-    draft.variables.some((node) => node.id === resolved.variable.id)
-  ) {
-    return undefined;
-  }
-  const node = existing ?? resolved.variable;
-  if (node.kind !== "query" || !compositionVariableFitsComponent(node, kind)) {
-    return undefined;
-  }
-  const withNode = existing ? draft : {
-    ...draft,
-    variables: [...draft.variables, resolved.variable],
-  };
-  return bindCompositionComponent(
-    withNode,
-    kind,
-    node.id,
-    resolved.tablePresentation,
-  );
-};
-
-/**
- * Structural identity helper used only for in-memory suggestions. Final
- * reuse eligibility comes from the host resolver after ACL and schema checks.
- */
 export const sameResolvedQueryMeaning = (
   left: CompositionVariableNode,
   right: CompositionVariableNode,
@@ -533,39 +368,7 @@ export const sameResolvedQueryMeaning = (
   JSON.stringify(left.returns) === JSON.stringify(right.returns) &&
   JSON.stringify(left.query) === JSON.stringify(right.query);
 
-/** Resolve and rebind an existing display without mutating shared variables. */
-export const rebindResolvedCompositionComponent = (
-  draft: CompositionGraphDraft,
-  componentId: string,
-  resolved: CompositionResolvedBinding,
-): CompositionGraphDraft | undefined => {
-  const existing = resolved.reuse_variable_id
-    ? draft.variables.find((node) => node.id === resolved.reuse_variable_id)
-    : undefined;
-  if (resolved.reuse_variable_id && !existing) return undefined;
-  if (existing && !sameResolvedQueryMeaning(existing, resolved.variable)) {
-    return undefined;
-  }
-  if (
-    !existing &&
-    draft.variables.some((node) => node.id === resolved.variable.id)
-  ) {
-    return undefined;
-  }
-  const variable = existing ?? resolved.variable;
-  if (variable.kind !== "query") return undefined;
-  const withVariable = existing
-    ? draft
-    : { ...draft, variables: [...draft.variables, resolved.variable] };
-  return setCompositionComponentVariable(
-    withVariable,
-    componentId,
-    variable.id,
-    resolved.tablePresentation,
-  );
-};
-
-/** Rename graph identity and every explicit query argument/component ref. */
+/** Rename graph identity and every explicit query/input/table reference. */
 export const renameCompositionVariable = (
   draft: CompositionGraphDraft,
   from: string,
@@ -585,9 +388,6 @@ export const renameCompositionVariable = (
         ...renamed,
         query: {
           ...renamed.query,
-          ...(renamed.query.kind === "saved_sql"
-            ? { label_source: "variable" as const }
-            : {}),
           arguments: renamed.query.arguments.map((argument) =>
             argument.variable === from
               ? { ...argument, variable: next }
@@ -596,22 +396,11 @@ export const renameCompositionVariable = (
         },
       };
     }),
-    components: draft.components.map((component) => {
-      if (component.kind === "text" && component.content.kind === "variable") {
-        return {
-          ...component,
-          content: {
-            ...component.content,
-            variable: component.content.variable === from
-              ? next
-              : component.content.variable,
-          },
-        };
-      }
-      return "variable" in component && component.variable === from
+    components: draft.components.map((component) =>
+      "variable" in component && component.variable === from
         ? { ...component, variable: next }
-        : component;
-    }),
+        : component
+    ),
   };
 };
 
@@ -635,13 +424,8 @@ export const compositionBindingDiagnostics = (
   }
   for (const component of draft.components) {
     if (!ids.includes(component.id)) diagnostics.push("unplaced_component");
-    const variable = component.kind === "text"
-      ? component.content.kind === "variable"
-        ? component.content.variable
-        : undefined
-      : component.variable;
-    if (!variable) continue;
-    const node = nodes.get(variable);
+    if (component.kind === "text") continue;
+    const node = nodes.get(component.variable);
     if (!node) {
       diagnostics.push("missing_variable");
       continue;
@@ -649,59 +433,9 @@ export const compositionBindingDiagnostics = (
     if (component.kind === "table" && !compositionNodeReturnsTable(node)) {
       diagnostics.push("variable_type_mismatch");
     }
-    if (component.kind === "metric" && !compositionNodeReturnsScalar(node)) {
-      diagnostics.push("variable_type_mismatch");
-    }
     if (component.kind === "input" && node.kind !== "input") {
       diagnostics.push("variable_type_mismatch");
     }
-    if (
-      component.kind === "text" &&
-      !(node.kind === "query"
-        ? node.returns.kind === "scalar" &&
-          node.returns.value_type.scalar_type === "string"
-        : node.value_type.scalar_type === "string")
-    ) {
-      diagnostics.push("variable_type_mismatch");
-    }
-  }
-  diagnostics.push(...compositionTablePresentationDiagnostics(draft));
-  return [...new Set(diagnostics)];
-};
-
-/** Validate display-only column views when the query schema is resolved. */
-export const compositionTablePresentationDiagnostics = (
-  draft: CompositionGraphDraft,
-): string[] => {
-  const diagnostics: string[] = [];
-  for (const component of draft.components) {
-    if (component.kind !== "table" || !component.presentation) continue;
-    const node = draft.variables.find((candidate) =>
-      candidate.id === component.variable
-    );
-    const selected = component.presentation.columns;
-    if (
-      selected.length === 0 ||
-      new Set(selected.map((column) => column.column)).size !==
-        selected.length ||
-      selected.some((column) => !column.label.trim())
-    ) {
-      diagnostics.push("table_presentation_invalid");
-      continue;
-    }
-    if (
-      node?.kind !== "query" || node.returns.kind !== "table" ||
-      !node.query.schema_fingerprint
-    ) continue;
-    if (
-      selected.some((column) =>
-        node.returns.kind === "table" &&
-        node.returns.columns.filter((candidate) =>
-            candidate.name === column.column
-          )
-            .length !== 1
-      )
-    ) diagnostics.push("table_presentation_invalid");
   }
   return [...new Set(diagnostics)];
 };
