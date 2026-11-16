@@ -196,6 +196,25 @@ describe("Composition Design Work evaluation", () => {
     expect(state.inputStates().minimum).toBe("invalid");
     expect(state.blocked().has("rows")).toBe(true);
   });
+  it("refreshes the full Design graph while preserving typed Work inputs", async () => {
+    const { state } = setup();
+    await vi.advanceTimersByTimeAsync(250);
+    state.onInput("minimum", "7");
+    await vi.advanceTimersByTimeAsync(250);
+    const callsBeforeRefresh = evaluate.mock.calls.length;
+
+    await state.refresh();
+
+    expect(evaluate).toHaveBeenCalledTimes(callsBeforeRefresh + 1);
+    expect(evaluate.mock.calls.at(-1)?.[1]).toMatchObject({
+      variables: { minimum: "7" },
+    });
+    expect(evaluate.mock.calls.at(-1)?.[1].requested_queries).toBeUndefined();
+    expect(state.evaluation()?.query_results.rows.value).toEqual({
+      kind: "scalar",
+      value: { kind: "integer", value: "7" },
+    });
+  });
   it("discards all results and pages after an authorization failure", async () => {
     const { state } = setup();
     await vi.advanceTimersByTimeAsync(250);

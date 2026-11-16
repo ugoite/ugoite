@@ -411,6 +411,7 @@ export function createCompositionDesignEvaluation(options: {
     error,
     queryErrors,
     saveSnapshot,
+    refresh: () => run(undefined, true),
     onInput,
     previousIds: () =>
       new Set(

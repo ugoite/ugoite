@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer";
 import { createCompositionDesignEvaluation } from "~/lib/composition-design-evaluation";
@@ -20,6 +20,7 @@ export interface CompositionGraphDesignCanvasProps {
   getPrincipalGeneration: () => Promise<string>;
   draft: CompositionGraphDraft;
   previewBase?: { entryId: string; revisionId: string };
+  previewGeneration?: number;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   pendingInputCreation?: boolean;
   onRequestCreateInput?: () => void;
@@ -59,6 +60,13 @@ export function CompositionGraphDesignCanvas(
     spaceId: () => props.spaceId,
     principal: props.getPrincipalGeneration,
     base: () => props.previewBase,
+  });
+  let previousPreviewGeneration = props.previewGeneration ?? 0;
+  createEffect(() => {
+    const generation = props.previewGeneration ?? 0;
+    if (generation === previousPreviewGeneration) return;
+    previousPreviewGeneration = generation;
+    void preview.refresh();
   });
   props.onSaveSnapshotReady?.(preview.saveSnapshot);
   const [pickerComponentId, setPickerComponentId] = createSignal<

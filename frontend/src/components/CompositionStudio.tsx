@@ -132,6 +132,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
   >({});
+  const [designPreviewGeneration, setDesignPreviewGeneration] = createSignal(0);
   const [queryEvaluations, setQueryEvaluations] = createSignal<
     Record<string, {
       evaluationId: string;
@@ -325,6 +326,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
         },
       }));
       setQueryPreviews((current) => ({ ...current, [variableId]: preview }));
+      if (!cursor) {
+        setDesignPreviewGeneration((generation) => generation + 1);
+      }
     } catch {
       if (
         !controller.signal.aborted &&
@@ -694,6 +698,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <CompositionGraphStudio
           spaceId={props.spaceId}
           draft={draft()}
+          previewGeneration={designPreviewGeneration()}
           previewBase={props.saveMode.kind === "update"
             ? {
               entryId: props.saveMode.compositionId,

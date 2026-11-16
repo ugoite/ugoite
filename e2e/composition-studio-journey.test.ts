@@ -455,10 +455,28 @@ function isDraftQueryEvaluation(
     target?: { kind?: string; yaml?: string };
     requested_queries?: string[];
   };
-  return body.target?.kind === "draft" &&
-    body.target.yaml?.includes(`id: ${variableId}`) === true &&
-    body.target.yaml?.includes(sql) === true &&
-    body.requested_queries?.includes(variableId) === true;
+  if (
+    body.target?.kind !== "draft" || !body.target.yaml ||
+    !body.requested_queries?.includes(variableId)
+  ) return false;
+  try {
+    const document = parseYaml(body.target.yaml) as {
+      spec?: {
+        variables?: Array<{
+          id?: string;
+          query?: { kind?: string; sql?: string };
+        }>;
+      };
+    };
+    const variable = document.spec?.variables?.find((entry) =>
+      entry.id === variableId
+    );
+    return variable?.query?.kind === "inline_sql" &&
+      normalizeCompositionFormSeedSql(variable.query.sql ?? "") ===
+        normalizeCompositionFormSeedSql(sql);
+  } catch {
+    return false;
+  }
 }
 
 type CompositionSemanticValues = {

@@ -24,6 +24,7 @@ export interface CompositionGraphStudioProps {
   spaceId: string;
   draft: CompositionGraphDraft;
   previewBase?: { entryId: string; revisionId: string };
+  previewGeneration?: number;
   getPrincipalGeneration: () => Promise<string>;
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
@@ -468,6 +469,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           spaceId={props.spaceId}
           draft={props.draft}
           previewBase={props.previewBase}
+          previewGeneration={props.previewGeneration}
           getPrincipalGeneration={props.getPrincipalGeneration}
           onSaveSnapshotReady={props.onSaveSnapshotReady}
           onDraftChange={props.onDraftChange}
