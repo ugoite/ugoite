@@ -1439,6 +1439,47 @@ test.describe("Composition Studio Journey", () => {
       });
   });
 
+  test("Composition Studio prevents duplicate variable IDs in query creation", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByLabel("Name", { exact: true }).fill("Unique variables");
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+
+    const addQuery = async (name: string) => {
+      await page.getByRole("button", { name: "Add variable", exact: true })
+        .click();
+      await page.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "SQL", exact: true }).click();
+      const nameField = page.getByLabel("Variable name", { exact: true });
+      await expect(nameField).toBeVisible();
+      await nameField.fill(name);
+      return nameField;
+    };
+
+    const firstName = await addQuery("unique_query");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "unique_query", exact: true }),
+    )
+      .toBeVisible();
+
+    const duplicateName = await addQuery("unique_query");
+    await expect(page.getByRole("alert")).toHaveText(
+      "A variable with this name already exists.",
+    );
+    await expect(page.getByRole("button", { name: "Add", exact: true }))
+      .toBeDisabled();
+    await expect(duplicateName).toHaveValue("unique_query");
+    await expect(firstName).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "unique_query", exact: true }),
+    )
+      .toHaveCount(1);
+  });
+
   test("Studio modes and the Table picker remain keyboard accessible at narrow widths", async ({ page, request }) => {
     test.setTimeout(120_000);
     const spaceId = await createSpace(request);

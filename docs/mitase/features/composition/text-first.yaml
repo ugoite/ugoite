@@ -31,7 +31,9 @@ features:
               - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns }
               - { kind: documents, anchor: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: documents, anchor: REQ-FE-083#criterion.text-is-edited-in-place }
+              - { kind: documents, anchor: REQ-FE-083#criterion.reader-table-scroll-stays-local }
               - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: documents, anchor: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
               - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
       - id: core
         role: implementation
@@ -164,6 +166,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
           - id: reader-renderer
             adapter: typescript
@@ -171,6 +174,7 @@ features:
             selector: { kind: symbol, name: CompositionGraphRenderer }
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.reader-is-read-only }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.reader-table-scroll-stays-local }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
           - id: composition-variable-binding-picker
             adapter: typescript
@@ -344,6 +348,24 @@ features:
                   - FEAT-COMP-010#binding.service/target.authorized-query-evaluation
                   - FEAT-COMP-010#binding.frontend/target.composition-studio-count
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts inline Table SQL separately from paged reads" } }
+          - id: narrow-reader-table-scroll
+            adapter: typescript
+            path: e2e/composition-table-mobile.test.ts
+            selector: { kind: test, name: "Composition Table scrolls inside a narrow read-only reader" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.reader-table-scroll-stays-local
+                covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-mobile.test.ts, test: "Composition Table scrolls inside a narrow read-only reader" } }
+          - id: unique-variable-name-browser
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio prevents duplicate variable IDs in query creation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio prevents duplicate variable IDs in query creation" } }
           - id: current-form-acl-recheck
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs

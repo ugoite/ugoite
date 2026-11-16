@@ -23,24 +23,24 @@ const EXPECTED_IDS = Array.from(
   (_, index) => `A${String(index + 1).padStart(2, "0")}`,
 );
 const EXPECTED_REQUIREMENTS = [
-  "Composition schema: entry_query, tags, and every label field make YAML invalid; there is no compatibility parser.",
-  'Form to SQL: selecting Form G generates SELECT * FROM "G"; SQL query limit=50 is separate from SQL text LIMIT.',
-  "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
-  "Saved SQL: pin an exact revision with no latest fallback, silent rebind, or mutation; duplication creates inline SQL.",
-  "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
-  "SQL functions: read-only SQL supports COUNT, SUM, AVG, MIN, MAX and existing join/group/distinct parsing; the UI does not unconditionally generate disallowed scalar or window functions.",
-  "SQL editing: GUI actions never overwrite hand-edited SQL without consent; unsupported complex SQL remains editable, saveable, and validatable in the code editor.",
-  "Query paging: only explicit sql.query.count counts; continuations recheck authorization; stale query/result is suppressed; the client does not aggregate all pages.",
-  "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
-  "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible at every tested width; touch selection, light/dark mode, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
-  "UI: no persistent explanatory paragraphs, decorative cards, or tag/label editors; exactly one Back and one Save action; selecting a row selects the whole row.",
-  "Accessibility: every icon-only control has aria-label/title and visible focus, targets are at least 44px, drawers trap and restore focus, and dialogs support keyboard and Escape. Verify VoiceOver/NVDA separately.",
-  "Recovery: one Composition Entry revision per save; return receipts; stale base revisions conflict; distinguish unknown outcomes. Undo appends a publication and never rewinds the head destructively.",
-  "CLI and WASM: share the Composition schema, resolution, diagnostics, and SQL preview semantics; raw export/history remain usable with no legacy executable decoder.",
+  "Current Composition documents save a strict typed graph with inline SQL and only Text, Table, and Input components.",
+  "Form-backed Table results use explicit projected SQL columns in query order, and query count remains separate from paged result reads.",
+  "Inline SQL retains its stable Form identity, while evaluation rechecks current Form authorization.",
+  "Published Saved SQL remains a separate usable path; Composition query variables store inline SQL and do not bind Saved SQL revisions.",
+  "Typed variable defaults and required, unset, and invalid input states remain distinct; SQL parameters bind explicitly without SQL interpolation.",
+  "Scalar SQL results render through plain Text; the current Composition graph has no Metric component or persisted label.",
+  "A query keeps one authored SQL document; lint, authorized schema check, and explicit execution remain separate controls.",
+  "Table paging uses explicit count and bounded pages; continuation authorization is rechecked and stale query results are suppressed.",
+  "Scalar queries require one output column and one row; zero rows, NULL, zero, multiple rows, and type drift remain distinct outcomes.",
+  "At 320, 375, and 390px, a read-only Table keeps horizontal scrolling inside its own region, exposes its final projected column, preserves scalar Text visibility, and does not widen the page.",
+  "Design offers Text, Table, and Input through concise controls; duplicate variable names are rejected before a query is added.",
+  "Keyboard users can reach Studio controls with visible focus; the Table picker restores focus on Escape and icon controls have accessible names.",
+  "Save receipts, stale-revision conflicts, exact revision reads, and raw Composition history preserve the append-only recovery contract.",
+  "CLI and WASM use shared Rust Composition semantics; raw exact reads, export, and history do not require executing replaced prerelease shapes.",
 ];
 
 Deno.test(
-  "Composition acceptance plan preserves all A01–A14 requirements and points to evidence",
+  "Composition acceptance plan maps current Text-first criteria to repository evidence",
   async () => {
     const raw = JSON.parse(await Deno.readTextFile(PLAN_PATH)) as Record<
       string,
@@ -50,7 +50,7 @@ Deno.test(
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(
       plan.source,
-      "SQL-first acceptance on the strict typed variable graph (ADR-025)",
+      "Current Text-first Composition acceptance evidence (ADR-027)",
     );
     assertEquals(plan.criteria.map(({ id }) => id), EXPECTED_IDS);
     assertEquals(
@@ -79,60 +79,31 @@ Deno.test(
     }
 
     assertEquals(
-      plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
-      [
-        "One saved Composition Design journey and one runtime journey at actual 200% zoom in Linux Chromium are evidenced; other Composition states and available modes remain unverified.",
-        "The runtime Metric's DOM and synchronous Xvfb root-window capture agree on 6 after input change; Playwright's result-element screenshot shows 4 and its viewport captures omit the Metric. The native-zoom CDP discrepancy's internal cause is unknown.",
-        "iPhone Safari device verification is excluded from the current task scope.",
-      ],
-    );
-    assertEquals(
-      plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
-      [
-        "Historical A02 is retained verbatim. Its SELECT * Composition seed was replaced by explicit projectable-column projections in the text-first contract; the current Form-backed Table journey verifies source binding and reopen behavior, not the old SELECT * output.",
-      ],
-    );
-    assertEquals(
       plan.criteria.find(({ id }) => id === "A03")?.manual_evidence_gaps,
       [
-        "Browser evidence for rename plus same-name Form recreation remains unverified: native test portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement covers the immutable-ID behavior, but OpenAPI/server/UI expose no Form rename or delete operation and no E2E fixture provides RenameForm. Do not bypass app semantics or infer G-04 completion.",
+        "Browser evidence for renaming a Form and recreating a same-name Form remains unavailable because the current API has no rename or delete path; native Rust coverage verifies stable identity.",
       ],
     );
     assertEquals(
-      plan.criteria.find(({ id }) => id === "A04")?.manual_evidence_gaps,
+      plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
       [
-        "Historical A04 describes the unpublished Composition saved_sql variant, which the text-first contract removes. Composition no longer pins or copies Saved SQL revisions. The exact-revision selectors above cover the published Saved SQL query contract; raw Composition history and export remain available for old revisions, which are not migrated or executable.",
+        "Physical iPhone Safari and current-head actual 200% browser zoom remain unverified; both are tracked in #4590.",
       ],
-    );
-    assert(
-      plan.criteria.find(({ id }) => id === "A09")?.selectors.some((selector) =>
-        selector.path === "e2e/composition-metric-journey.test.ts" &&
-        selector.kind === "test" &&
-        selector.name ===
-          "API evaluates an exact Composition revision and reports scalar cardinality failures"
-      ),
-      "A09 must retain exact Composition revision and scalar-cardinality evidence",
     );
     assertEquals(
-      plan.criteria.find(({ id }) => id === "A09")?.manual_evidence_gaps,
+      plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
       [
-        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Missing referenced Form fields fail planner validation, and changed result descriptors fail closed; source-field changes that leave a valid query and the same result descriptor are outside the fingerprint guarantee. Reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. The Metric renderer and its label-specific assertions are removed; scalar display now uses Text. A09 and SQL S-02 remain partial.",
+        "VoiceOver and NVDA verification on physical or assistive-technology environments remains open in #4590.",
       ],
     );
-    for (const id of ["A02", "A04", "A08", "A10", "A11", "A12", "A13"]) {
+    for (const id of ["A02", "A03", "A04", "A08", "A10", "A11", "A12", "A13"]) {
       assert(
         plan.criteria.find((criterion) => criterion.id === id)?.selectors.some((
           selector,
         ) => selector.path.startsWith("e2e/composition-")),
-        `${id} needs a current browser journey`,
+        `${id} needs current browser evidence`,
       );
     }
-    assertEquals(
-      plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
-      [
-        "VoiceOver and NVDA device verification",
-      ],
-    );
     assert(
       plan.criteria.every((criterion) =>
         criterion.manual_evidence_gaps === undefined ||

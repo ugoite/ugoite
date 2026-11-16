@@ -1,97 +1,57 @@
 {
   "schema": "ugoite/composition-acceptance-plan/v1",
-  "source": "SQL-first acceptance on the strict typed variable graph (ADR-025)",
+  "source": "Current Text-first Composition acceptance evidence (ADR-027)",
   "criteria": [
     {
       "id": "A01",
-      "requirement": "Composition schema: entry_query, tags, and every label field make YAML invalid; there is no compatibility parser.",
+      "requirement": "Current Composition documents save a strict typed graph with inline SQL and only Text, Table, and Input components.",
       "selectors": [
         {
           "path": "crates/ugoite-domain/src/composition/yaml.rs",
           "kind": "test",
           "name": "rejects_source_shaped_documents_and_unknown_graph_fields"
+        },
+        {
+          "path": "crates/ugoite-domain/src/composition/variable_graph.rs",
+          "kind": "test",
+          "name": "query_definition_decoding_rejects_saved_sql_and_unknown_fields"
+        },
+        {
+          "path": "crates/ugoite-domain/src/composition/canonical.rs",
+          "kind": "test",
+          "name": "old_component_kinds_and_table_presentation_are_rejected"
         }
       ]
     },
     {
       "id": "A02",
-      "requirement": "Form to SQL: selecting Form G generates SELECT * FROM \"G\"; SQL query limit=50 is separate from SQL text LIMIT.",
+      "requirement": "Form-backed Table results use explicit projected SQL columns in query order, and query count remains separate from paged result reads.",
       "selectors": [
-        {
-          "path": "crates/ugoite-domain/src/sql_structure.rs",
-          "kind": "test",
-          "name": "relation_selection_builds_a_form_query_and_preserves_source_trivia"
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
-          "kind": "test",
-          "name": "draft_preview_resolves_without_publication"
-        },
-        {
-          "path": "crates/ugoite-core/src/sql_query.rs",
-          "kind": "file"
-        },
-        {
-          "path": "frontend/src/components/CompositionVariableBindingPicker.test.tsx",
-          "kind": "file"
-        },
         {
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
           "name": "Studio creates a Form-backed Table query from Design and reopens its result"
+        },
+        {
+          "path": "e2e/composition-table-metric-pagination.test.ts",
+          "kind": "test",
+          "name": "Studio counts inline Table SQL separately from paged reads"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Historical A02 is retained verbatim. Its SELECT * Composition seed was replaced by explicit projectable-column projections in the text-first contract; the current Form-backed Table journey verifies source binding and reopen behavior, not the old SELECT * output."
       ]
     },
     {
       "id": "A03",
-      "requirement": "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
+      "requirement": "Inline SQL retains its stable Form identity, while evaluation rechecks current Form authorization.",
       "selectors": [
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
-          "kind": "test",
-          "name": "preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exact_base"
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs",
-          "kind": "test",
-          "name": "source_resolution_and_continuation_recheck_current_authorization"
-        },
-        {
-          "path": "e2e/composition-source-acl-isolation.test.ts",
-          "kind": "test",
-          "name": "evaluate rechecks Form access after revocation"
-        },
         {
           "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
           "kind": "test",
           "name": "portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement"
         },
         {
-          "path": "e2e/composition-form-schema-drift.test.ts",
+          "path": "e2e/composition-source-acl-isolation.test.ts",
           "kind": "test",
-          "name": "Composition keeps a saved query executable after an unused Form field is added"
-        }
-      ],
-      "manual_evidence_gaps": [
-        "Browser evidence for rename plus same-name Form recreation remains unverified: native test portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement covers the immutable-ID behavior, but OpenAPI/server/UI expose no Form rename or delete operation and no E2E fixture provides RenameForm. Do not bypass app semantics or infer G-04 completion."
-      ]
-    },
-    {
-      "id": "A04",
-      "requirement": "Saved SQL: pin an exact revision with no latest fallback, silent rebind, or mutation; duplication creates inline SQL.",
-      "selectors": [
-        {
-          "path": "crates/ugoite-core/src/sql_query.rs",
-          "kind": "test",
-          "name": "sql_query_plan_requires_a_query_or_exact_saved_revision"
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_sql_stateless.rs",
-          "kind": "test",
-          "name": "saved_sql_revision_uses_fixed_form_binding_and_continuation_identity"
+          "name": "evaluate rechecks Form access after revocation"
         },
         {
           "path": "e2e/composition-binding-rebind.test.ts",
@@ -100,47 +60,38 @@
         }
       ],
       "manual_evidence_gaps": [
-        "Historical A04 describes the unpublished Composition saved_sql variant, which the text-first contract removes. Composition no longer pins or copies Saved SQL revisions. The exact-revision selectors above cover the published Saved SQL query contract; raw Composition history and export remain available for old revisions, which are not migrated or executable."
+        "Browser evidence for renaming a Form and recreating a same-name Form remains unavailable because the current API has no rename or delete path; native Rust coverage verifies stable identity."
+      ]
+    },
+    {
+      "id": "A04",
+      "requirement": "Published Saved SQL remains a separate usable path; Composition query variables store inline SQL and do not bind Saved SQL revisions.",
+      "selectors": [
+        { "path": "e2e/saved-sql-route.test.ts", "kind": "file" },
+        {
+          "path": "e2e/composition-binding-rebind.test.ts",
+          "kind": "test",
+          "name": "Composition keeps Table SQL inline with its Form identity and leaves Saved SQL and user Entries intact"
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_sql_stateless.rs",
+          "kind": "file"
+        }
       ]
     },
     {
       "id": "A05",
-      "requirement": "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
+      "requirement": "Typed variable defaults and required, unset, and invalid input states remain distinct; SQL parameters bind explicitly without SQL interpolation.",
       "selectors": [
-        {
-          "path": "e2e/sql-filter-arguments.test.ts",
-          "kind": "test",
-          "name": "A05 @smoke: named LIMIT argument applies its integer default and saved override"
-        },
-        {
-          "path": "e2e/sql-filter-arguments.test.ts",
-          "kind": "test",
-          "name": "A05 @smoke: text-edited SQL keeps its typed integer argument default after saving"
-        },
-        {
-          "path": "crates/ugoite-core/src/composition_query.rs",
-          "kind": "test",
-          "name": "missing_values_and_type_mismatches_are_stable"
-        },
-        {
-          "path": "crates/ugoite-core/src/composition_query.rs",
-          "kind": "test",
-          "name": "compiles_inline_sql_with_explicit_names_and_typed_values"
-        },
-        {
-          "path": "crates/ugoite-domain/src/composition/variable_graph.rs",
-          "kind": "test",
-          "name": "inline_parameter_binding_ignores_comments_literals_and_repeated_uses"
-        },
         {
           "path": "crates/ugoite-domain/src/composition/variable_graph_input.rs",
           "kind": "test",
           "name": "resolves_constants_defaults_and_supplied_values_without_coercion"
         },
         {
-          "path": "e2e/saved-sql-route.test.ts",
+          "path": "crates/ugoite-domain/src/composition/variable_graph.rs",
           "kind": "test",
-          "name": "REQ-FE-080: Saved SQL Run applies a declared default and preserves an unset parameter"
+          "name": "inline_parameter_binding_ignores_comments_literals_and_repeated_uses"
         },
         {
           "path": "e2e/composition-invalid-variable-input.test.ts",
@@ -151,33 +102,27 @@
     },
     {
       "id": "A06",
-      "requirement": "SQL functions: read-only SQL supports COUNT, SUM, AVG, MIN, MAX and existing join/group/distinct parsing; the UI does not unconditionally generate disallowed scalar or window functions.",
+      "requirement": "Scalar SQL results render through plain Text; the current Composition graph has no Metric component or persisted label.",
       "selectors": [
-        {
-          "path": "crates/ugoite-domain/src/sql_structure.rs",
-          "kind": "file"
-        },
-        {
-          "path": "frontend/src/components/SqlQueryEditor.test.tsx",
-          "kind": "file"
-        },
-        {
-          "path": "crates/ugoite-iceberg/src/service/composition_scalar_query.rs",
-          "kind": "file"
-        },
         {
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
           "name": "A06: a Form-backed scalar query renders in a plain Text component"
+        },
+        {
+          "path": "crates/ugoite-domain/src/composition/canonical.rs",
+          "kind": "test",
+          "name": "old_component_kinds_and_table_presentation_are_rejected"
+        },
+        {
+          "path": "frontend/src/components/CompositionGraphRenderer.test.tsx",
+          "kind": "file"
         }
-      ],
-      "manual_evidence_gaps": [
-        "The prior structured Metric function picker is removed. The text-first SQL planner retains its admitted SQL contract, but this historical row does not certify complete SQL editor construct authoring; that evidence remains tracked by #4565."
       ]
     },
     {
       "id": "A07",
-      "requirement": "SQL editing: GUI actions never overwrite hand-edited SQL without consent; unsupported complex SQL remains editable, saveable, and validatable in the code editor.",
+      "requirement": "A query keeps one authored SQL document; lint, authorized schema check, and explicit execution remain separate controls.",
       "selectors": [
         {
           "path": "frontend/src/components/SqlFormSourceControl.test.tsx",
@@ -187,40 +132,29 @@
           "path": "frontend/src/components/SQLWorkspace.test.tsx",
           "kind": "file"
         },
-        {
-          "path": "e2e/saved-sql-route.test.ts",
-          "kind": "test",
-          "name": "A07 @smoke: SQL text editor runs an aliased ARRAY query"
-        }
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "file" }
       ]
     },
     {
       "id": "A08",
-      "requirement": "Query paging: only explicit sql.query.count counts; continuations recheck authorization; stale query/result is suppressed; the client does not aggregate all pages.",
+      "requirement": "Table paging uses explicit count and bounded pages; continuation authorization is rechecked and stale query results are suppressed.",
       "selectors": [
-        {
-          "path": "frontend/src/lib/composition-api.test.ts",
-          "kind": "file"
-        },
-        {
-          "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs",
-          "kind": "file"
-        },
+        { "path": "frontend/src/lib/composition-api.test.ts", "kind": "file" },
         {
           "path": "e2e/composition-table-metric-pagination.test.ts",
           "kind": "test",
           "name": "Table pagination leaves the SQL Text and typed Input unchanged"
         },
+        { "path": "e2e/composition-stale-response.test.ts", "kind": "file" },
         {
-          "path": "e2e/composition-table-metric-pagination.test.ts",
-          "kind": "test",
-          "name": "Studio counts inline Table SQL separately from paged reads"
+          "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs",
+          "kind": "file"
         }
       ]
     },
     {
       "id": "A09",
-      "requirement": "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
+      "requirement": "Scalar queries require one output column and one row; zero rows, NULL, zero, multiple rows, and type drift remain distinct outcomes.",
       "selectors": [
         {
           "path": "crates/ugoite-domain/src/composition/variable_graph.rs",
@@ -233,41 +167,23 @@
           "name": "validates_inline_planner_schema_before_exposing_scalar_values"
         },
         {
-          "path": "crates/ugoite-core/tests/composition_query_evaluation.rs",
-          "kind": "test",
-          "name": "only_descriptor_validated_query_values_reach_the_complete_preview"
-        },
-        {
-          "path": "e2e/composition-metric-journey.test.ts",
-          "kind": "test",
-          "name": "API evaluates an exact Composition revision and reports scalar cardinality failures"
-        },
-        {
           "path": "e2e/composition-scalar-state-journey.test.ts",
           "kind": "test",
           "name": "scalar_result_distinguishes_zero_rows_null_and_zero"
-        },
-        {
-          "path": "e2e/composition-scalar-state-journey.test.ts",
-          "kind": "test",
-          "name": "changing one Text reference preserves its shared query and sibling"
         }
       ],
       "manual_evidence_gaps": [
-        "Browser journeys cover scalar cardinality and NULL cases; `column_type_mismatch` has Domain/Core evidence only. Missing referenced Form fields fail planner validation, and changed result descriptors fail closed; source-field changes that leave a valid query and the same result descriptor are outside the fingerprint guarantee. Reproducing a planner/result descriptor type mismatch requires injection unavailable through supported UI/API. The Metric renderer and its label-specific assertions are removed; scalar display now uses Text. A09 and SQL S-02 remain partial."
+        "A planner/result type mismatch cannot be injected through supported UI or API paths; current evidence is in Domain and Core tests."
       ]
     },
     {
       "id": "A10",
-      "requirement": "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible at every tested width; touch selection, light/dark mode, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
+      "requirement": "At 320, 375, and 390px, a read-only Table keeps horizontal scrolling inside its own region, exposes its final projected column, preserves scalar Text visibility, and does not widen the page.",
       "selectors": [
         {
-          "path": "frontend/src/components/CompositionStudioMobile.test.tsx",
-          "kind": "file"
-        },
-        {
-          "path": "frontend/src/app.css",
-          "kind": "file"
+          "path": "e2e/composition-table-mobile.test.ts",
+          "kind": "test",
+          "name": "Composition Table scrolls inside a narrow read-only reader"
         },
         {
           "path": "e2e/composition-studio-journey.test.ts",
@@ -275,59 +191,43 @@
           "name": "Studio modes and the Table picker remain keyboard accessible at narrow widths"
         },
         {
-          "path": "e2e/native-zoom-200.test.ts",
-          "kind": "test",
-          "name": "U-04 partial evidence: Composition Design remains usable at native 200% zoom"
-        },
-        {
-          "path": "e2e/native-zoom-200.test.ts",
-          "kind": "test",
-          "name": "U-04 partial evidence: Composition runtime remains usable at native 200% zoom"
+          "path": "docs/spec/ui/components/composition-studio.yaml",
+          "kind": "file"
         }
       ],
       "manual_evidence_gaps": [
-        "One saved Composition Design journey and one runtime journey at actual 200% zoom in Linux Chromium are evidenced; other Composition states and available modes remain unverified.",
-        "The runtime Metric's DOM and synchronous Xvfb root-window capture agree on 6 after input change; Playwright's result-element screenshot shows 4 and its viewport captures omit the Metric. The native-zoom CDP discrepancy's internal cause is unknown.",
-        "iPhone Safari device verification is excluded from the current task scope."
+        "Physical iPhone Safari and current-head actual 200% browser zoom remain unverified; both are tracked in #4590."
       ]
     },
     {
       "id": "A11",
-      "requirement": "UI: no persistent explanatory paragraphs, decorative cards, or tag/label editors; exactly one Back and one Save action; selecting a row selects the whole row.",
+      "requirement": "Design offers Text, Table, and Input through concise controls; duplicate variable names are rejected before a query is added.",
       "selectors": [
         {
           "path": "docs/spec/ui/components/composition-studio.yaml",
           "kind": "file"
         },
         {
-          "path": "docs/spec/ui/components/sql-workspace.yaml",
-          "kind": "file"
-        },
-        {
-          "path": "frontend/src/components/CompositionStudioSync.test.tsx",
-          "kind": "file"
-        },
-        {
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
-          "name": "Studio modes and the Table picker remain keyboard accessible at narrow widths"
+          "name": "Composition Studio prevents duplicate variable IDs in query creation"
+        },
+        {
+          "path": "frontend/src/components/CompositionGraphArguments.test.tsx",
+          "kind": "file"
         }
       ]
     },
     {
       "id": "A12",
-      "requirement": "Accessibility: every icon-only control has aria-label/title and visible focus, targets are at least 44px, drawers trap and restore focus, and dialogs support keyboard and Escape. Verify VoiceOver/NVDA separately.",
+      "requirement": "Keyboard users can reach Studio controls with visible focus; the Table picker restores focus on Escape and icon controls have accessible names.",
       "selectors": [
-        {
-          "path": "frontend/src/components/SqlFormSourceControl.test.tsx",
-          "kind": "file"
-        },
         {
           "path": "frontend/src/components/CompositionStudioMobile.test.tsx",
           "kind": "file"
         },
         {
-          "path": "frontend/src/app.css",
+          "path": "frontend/src/components/CompositionVariableBindingPicker.test.tsx",
           "kind": "file"
         },
         {
@@ -337,21 +237,17 @@
         }
       ],
       "manual_evidence_gaps": [
-        "VoiceOver and NVDA device verification"
+        "VoiceOver and NVDA verification on physical or assistive-technology environments remains open in #4590."
       ]
     },
     {
       "id": "A13",
-      "requirement": "Recovery: one Composition Entry revision per save; return receipts; stale base revisions conflict; distinguish unknown outcomes. Undo appends a publication and never rewinds the head destructively.",
+      "requirement": "Save receipts, stale-revision conflicts, exact revision reads, and raw Composition history preserve the append-only recovery contract.",
       "selectors": [
         {
           "path": "e2e/composition-save-receipt.test.ts",
           "kind": "test",
           "name": "Composition save reconciles a lost response without duplicate publication"
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "kind": "file"
         },
         {
           "path": "e2e/composition-recovery-authorization.test.ts",
@@ -364,20 +260,16 @@
           "name": "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader"
         },
         {
-          "path": "e2e/composition-studio-journey.test.ts",
-          "kind": "test",
-          "name": "Composition Studio saves, reopens, and restores an inline SQL Text tool"
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "kind": "file"
         }
       ]
     },
     {
       "id": "A14",
-      "requirement": "CLI and WASM: share the Composition schema, resolution, diagnostics, and SQL preview semantics; raw export/history remain usable with no legacy executable decoder.",
+      "requirement": "CLI and WASM use shared Rust Composition semantics; raw exact reads, export, and history do not require executing replaced prerelease shapes.",
       "selectors": [
-        {
-          "path": "crates/ugoite-wasm/src/lib.rs",
-          "kind": "file"
-        },
+        { "path": "crates/ugoite-wasm/src/lib.rs", "kind": "file" },
         {
           "path": "crates/ugoite-cli/src/commands/composition.rs",
           "kind": "file"
