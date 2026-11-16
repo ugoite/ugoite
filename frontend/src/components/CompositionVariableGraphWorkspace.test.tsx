@@ -17,6 +17,7 @@ import {
 import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
 import { buildSqlSchema } from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 
 const { parseInputMock, parseTemplateMock } = vi.hoisted(() => ({
   parseInputMock: vi.fn(),
@@ -530,6 +531,71 @@ describe("CompositionVariableGraphWorkspace", () => {
     ).toMatchObject({
       query: {
         arguments: [{ name: "limit", variable: "threshold" }],
+      },
+    });
+  });
+
+  it("keeps query shape selection enabled until planning starts and waits for its result", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT 1 AS value",
+          arguments: [],
+        },
+      }],
+    });
+    let finishPlan!: (plan: PlannedSqlColumns) => void;
+    const onPlanColumnsForQuery = vi.fn(
+      () =>
+        new Promise<PlannedSqlColumns>((resolve) => {
+          finishPlan = resolve;
+        }),
+    );
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="rows"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+        onPlanColumnsForQuery={onPlanColumnsForQuery}
+      />
+    ));
+
+    const resultShape = screen.getByRole("combobox", {
+      name: "Query result",
+    });
+    expect(resultShape).toBeEnabled();
+    fireEvent.change(resultShape, { target: { value: "scalar" } });
+    await waitFor(() => expect(resultShape).toBeDisabled());
+    expect(onPlanColumnsForQuery).toHaveBeenCalledOnce();
+    expect(onPlanColumnsForQuery).toHaveBeenCalledWith("rows");
+
+    finishPlan({
+      columns: ["value"],
+      result_columns: [{
+        name: "value",
+        value_type: { scalar_type: "integer", nullable: false },
+      }],
+      isCurrent: () => true,
+    });
+    await waitFor(() => {
+      expect(resultShape).toBeEnabled();
+      expect(resultShape).toHaveValue("scalar");
+    });
+    expect(draft().variables[0]).toMatchObject({
+      id: "rows",
+      kind: "query",
+      returns: {
+        kind: "scalar",
+        value_type: { scalar_type: "integer", nullable: false },
       },
     });
   });

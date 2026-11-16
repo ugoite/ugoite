@@ -966,7 +966,7 @@ export function CompositionVariableGraphWorkspace(
                         class="ui-input compositionVariableQueryShape"
                         aria-label={t("composition.queryResultShape")}
                         value={query().returns.kind}
-                        disabled={shapePending}
+                        disabled={shapePending()}
                         onChange={(event) =>
                           void setQueryShape(
                             event.currentTarget.value as "scalar" | "table",
