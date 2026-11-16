@@ -829,7 +829,14 @@ test.describe("Composition Studio Journey", () => {
         name: "Query result",
         exact: true,
       });
+      const scalarShapePlan = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname.endsWith("/compositions/preview")
+      );
       await queryResultShape.selectOption("scalar");
+      const scalarShapePlanResponse = await scalarShapePlan;
+      expect(scalarShapePlanResponse.ok()).toBe(true);
+      await expect(queryResultShape).toBeEnabled();
       await expect(queryResultShape).toHaveValue("scalar");
       const scalarPreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, scalarVariable, scalarSql)
