@@ -1078,10 +1078,28 @@ test.describe("Composition Studio Journey", () => {
       { data: { form: formName, fields: { Name: `Reopened row ${suffix}` } } },
     );
     expect(entryResponse.status()).toBe(201);
+    const reopenedRow = `Reopened row ${suffix}`;
+    const refreshedDraftResponse = page.waitForResponse((response) =>
+      isDraftQueryEvaluation(response, "studio_rows", sql)
+    );
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
+    const refreshedDraftEvaluation = await (await refreshedDraftResponse)
+      .json() as {
+        ok?: boolean;
+        computed_query_ids?: string[];
+        query_results?: Record<string, {
+          value?: { kind?: string; rows?: unknown[][] };
+        }>;
+      };
+    expect(refreshedDraftEvaluation.ok).toBe(true);
+    expect(refreshedDraftEvaluation.computed_query_ids)
+      .toContain("studio_rows");
+    expect(JSON.stringify(
+      refreshedDraftEvaluation.query_results?.studio_rows?.value?.rows,
+    )).toContain(reopenedRow);
     await page.getByRole("tab", { name: "Design", exact: true }).click();
-    await expect(resultTable).toContainText(`Reopened row ${suffix}`, {
+    await expect(resultTable).toContainText(reopenedRow, {
       timeout: 30_000,
     });
 
@@ -1118,13 +1136,64 @@ test.describe("Composition Studio Journey", () => {
       sql,
       form_bindings: [{ relation: form!.sql_relation, form_id: form!.id }],
     });
+    const savedRuntimeResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
+      response.request().method() === "POST"
+    );
     await page.reload({ waitUntil: "domcontentloaded" });
+    const savedRuntimeEvaluationResponse = await savedRuntimeResponse;
+    const savedRuntimeRequest = savedRuntimeEvaluationResponse.request()
+      .postDataJSON() as {
+        target?: {
+          kind?: string;
+          composition_id?: string;
+          revision_id?: string;
+        };
+        requested_queries?: string[];
+      };
+    const savedRuntimeEvaluation = await savedRuntimeEvaluationResponse
+      .json() as {
+        ok?: boolean;
+        computed_query_ids?: string[];
+        publication_fingerprint?: string;
+        diagnostics?: Array<{ code?: string; variable_id?: string }>;
+        query_diagnostics?: Array<{ code?: string; variable_id?: string }>;
+        queries?: Array<{
+          variable_id?: string;
+          portable_sql?: string;
+          form_bindings?: Array<{ relation: string; form_id: string }>;
+        }>;
+        query_results?: Record<string, {
+          value?: { kind?: string; rows?: unknown[][] };
+        }>;
+      };
+    console.log(
+      "COMPOSITION_SAVED_TABLE_REOPEN_EVIDENCE " + JSON.stringify({
+        target: savedRuntimeRequest.target?.kind,
+        requested_queries: savedRuntimeRequest.requested_queries,
+        ok: savedRuntimeEvaluation.ok,
+        computed_query_ids: savedRuntimeEvaluation.computed_query_ids,
+        publication_fingerprint: savedRuntimeEvaluation.publication_fingerprint,
+        diagnostics: savedRuntimeEvaluation.diagnostics,
+        query_diagnostics: savedRuntimeEvaluation.query_diagnostics,
+        query: savedRuntimeEvaluation.queries?.find((query) =>
+          query.variable_id === "studio_rows"
+        ),
+        rows: savedRuntimeEvaluation.query_results?.studio_rows?.value?.rows,
+      }),
+    );
+    expect(savedRuntimeRequest.target).toMatchObject({
+      kind: "saved_revision",
+      composition_id: saved.compositionId,
+      revision_id: saved.revisionId,
+    });
+    expect(savedRuntimeEvaluation.ok).toBe(true);
     await expect(page.getByRole("tablist", { name: "Studio mode" }))
       .toHaveCount(0);
     await expect(page.getByRole("group", { name: "Add to design" }))
       .toHaveCount(0);
     await expect(page.getByRole("table", { name: "studio_rows" }))
-      .toContainText(`Reopened row ${suffix}`);
+      .toContainText(reopenedRow);
   });
 
   test("Inline SQL preview refreshes the dependent Text value when an Input changes", async ({ page, request }) => {
