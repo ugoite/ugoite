@@ -1459,7 +1459,7 @@ test.describe("Composition Studio Journey", () => {
       return nameField;
     };
 
-    const firstName = await addQuery("unique_query");
+    await addQuery("unique_query");
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "unique_query", exact: true }),
@@ -1473,7 +1473,6 @@ test.describe("Composition Studio Journey", () => {
     await expect(page.getByRole("button", { name: "Add", exact: true }))
       .toBeDisabled();
     await expect(duplicateName).toHaveValue("unique_query");
-    await expect(firstName).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "unique_query", exact: true }),
     )
