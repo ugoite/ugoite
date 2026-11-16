@@ -334,11 +334,10 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await expect(newRuntimeTable.locator("tbody")).not.toContainText(
       "current Form descriptor",
     );
-    expect(
-      (await newRuntimeTable.locator("thead th").allTextContents()).map(
-        (header) => header.trim(),
-      ),
-    ).toEqual(["Title", "Summary"]);
+    const renderedTableHeaders = (
+      await newRuntimeTable.locator("thead th").allTextContents()
+    ).map((header) => header.trim());
+    expect(renderedTableHeaders).toEqual(["Title", "Summary"]);
     const originalRevisionAfterResponse = await request.get(
       originalRevisionPath,
     );
