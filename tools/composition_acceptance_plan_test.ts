@@ -19,7 +19,7 @@ type AcceptancePlan = {
 
 const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
 const EXPECTED_IDS = Array.from(
-  { length: 14 },
+  { length: 15 },
   (_, index) => `A${String(index + 1).padStart(2, "0")}`,
 );
 const EXPECTED_REQUIREMENTS = [
@@ -37,6 +37,7 @@ const EXPECTED_REQUIREMENTS = [
   "Keyboard users can reach Studio controls with visible focus; the Table picker restores focus on Escape and icon controls have accessible names.",
   "Save receipts, stale-revision conflicts, exact revision reads, and raw Composition history preserve the append-only recovery contract.",
   "CLI and WASM use shared Rust Composition semantics; raw exact reads, export, and history do not require executing replaced prerelease shapes.",
+  "Authors edit Text in place with multiline and IME-safe keyboard behavior; readers preserve newlines and render displayable scalar values as escaped plain text.",
 ];
 
 Deno.test(

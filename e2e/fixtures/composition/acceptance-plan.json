@@ -279,6 +279,32 @@
           "kind": "file"
         }
       ]
+    },
+    {
+      "id": "A15",
+      "requirement": "Authors edit Text in place with multiline and IME-safe keyboard behavior; readers preserve newlines and render displayable scalar values as escaped plain text.",
+      "selectors": [
+        {
+          "path": "frontend/src/components/CompositionGraphDesignCanvas.test.tsx",
+          "kind": "test",
+          "name": "preserves multiline Text through IME, Escape, and focus leaving the editor"
+        },
+        {
+          "path": "frontend/src/components/CompositionGraphRenderer.test.tsx",
+          "kind": "test",
+          "name": "renders scalar Text references as escaped plain text"
+        },
+        {
+          "path": "frontend/src/components/CompositionGraphRenderer.test.tsx",
+          "kind": "test",
+          "name": "renders displayable scalar types together as one plain Text value"
+        },
+        {
+          "path": "e2e/composition-golden-journey.test.ts",
+          "kind": "test",
+          "name": "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader"
+        }
+      ]
     }
   ]
 }
