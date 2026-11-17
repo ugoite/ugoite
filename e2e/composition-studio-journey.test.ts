@@ -1356,6 +1356,8 @@ test.describe("Composition Studio Journey", () => {
       ),
     ).toBeFocused();
 
+    await page.getByRole("textbox", { name: "variables_input", exact: true })
+      .fill("work-only value");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {
       timeout: 30_000,
@@ -1375,6 +1377,7 @@ test.describe("Composition Studio Journey", () => {
           value_type?: { scalar_type?: string };
           default?: { kind?: string; value?: string | number | boolean };
           required?: boolean;
+          value?: unknown;
           query?: { arguments?: Array<{ name: string; variable: string }> };
         }>;
         components?: Array<{ kind?: string; variable?: string }>;
@@ -1394,6 +1397,14 @@ test.describe("Composition Studio Journey", () => {
       default: { kind: "integer", value: "7" },
       required: false,
     });
+    const variablesInput = document.spec?.variables?.find((variable) =>
+      variable.id === "variables_input"
+    );
+    expect(variablesInput).toMatchObject({
+      value_type: { scalar_type: "string" },
+      required: true,
+    });
+    expect(variablesInput).not.toHaveProperty("value");
     expect(document.spec?.variables?.find((variable) =>
       variable.id === "design_input"
     )).toMatchObject({

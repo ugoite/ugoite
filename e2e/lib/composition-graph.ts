@@ -30,7 +30,7 @@ export async function chooseCompositionFormSource(
   await forms.getByRole("button", { name: formName, exact: true }).click();
   await expect(forms).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
-    .toHaveValue(expectedSeedSql);
+    .toHaveText(expectedSeedSql);
 }
 
 export async function checkCompositionQuery(page: Page): Promise<void> {
