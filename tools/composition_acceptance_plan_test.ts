@@ -86,17 +86,14 @@ Deno.test(
         "Browser evidence for renaming a Form and recreating a same-name Form remains unavailable because the current API has no rename or delete path; native Rust coverage verifies stable identity.",
       ],
     );
-    assertEquals(
-      plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
-      [
-        "Physical iPhone Safari and current-head actual 200% browser zoom remain unverified; both are tracked in #4590.",
-      ],
+    const manualGaps = plan.criteria.flatMap((criterion) =>
+      criterion.manual_evidence_gaps ?? []
     );
-    assertEquals(
-      plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
-      [
-        "VoiceOver and NVDA verification on physical or assistive-technology environments remains open in #4590.",
-      ],
+    assert(
+      !manualGaps.some((gap) =>
+        /physical.?device|iPhone Safari|actual 200%|VoiceOver|NVDA/i.test(gap)
+      ),
+      "physical-device, native-zoom, and manual screen-reader checks are not acceptance gaps",
     );
     for (const id of ["A02", "A03", "A04", "A08", "A10", "A11", "A12", "A13"]) {
       assert(

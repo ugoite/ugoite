@@ -194,9 +194,6 @@
           "path": "docs/spec/ui/components/composition-studio.yaml",
           "kind": "file"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Physical iPhone Safari and current-head actual 200% browser zoom remain unverified; both are tracked in #4590."
       ]
     },
     {
@@ -235,9 +232,6 @@
           "kind": "test",
           "name": "Studio modes and the Table picker remain keyboard accessible at narrow widths"
         }
-      ],
-      "manual_evidence_gaps": [
-        "VoiceOver and NVDA verification on physical or assistive-technology environments remains open in #4590."
       ]
     },
     {
