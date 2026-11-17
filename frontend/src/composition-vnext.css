@@ -549,6 +549,9 @@
   font-size: 2rem;
   font-weight: 700;
 }
+.compositionGraphText {
+  white-space: pre-wrap;
+}
 .compositionGraphText--heading {
   font-size: 1.5rem;
   font-weight: 600;

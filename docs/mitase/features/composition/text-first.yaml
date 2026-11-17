@@ -187,6 +187,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.reader-is-read-only }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.reader-table-scroll-stays-local }
+              - { kind: satisfies, criterion: REQ-COMP-010#criterion.rust-parsed-text-templates }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.exact-scalar-query-contract }
           - id: composition-variable-binding-picker
             adapter: typescript
@@ -550,6 +551,15 @@ features:
                 criterion: REQ-COMP-010#criterion.table-text-input-components
                 covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphDesignCanvas.test.tsx, test: "edits Text directly, selects a local style, and inserts a scalar variable" } }
+          - id: text-editor-ime-multiline-and-exit
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphDesignCanvas.test.tsx
+            selector: { kind: test, name: "preserves multiline Text through IME, Escape, and focus leaving the editor" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.text-is-edited-in-place
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphDesignCanvas.test.tsx, test: "preserves multiline Text through IME, Escape, and focus leaving the editor" } }
           - id: graph-studio-modes-and-placement
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx
@@ -596,6 +606,15 @@ features:
                 criterion: REQ-COMP-010#criterion.exact-scalar-query-contract
                 covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphRenderer.test.tsx, test: "renders exact i64 and decimal scalar tokens without Number coercion" } }
+          - id: reader-displayable-scalar-text
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphRenderer.test.tsx
+            selector: { kind: test, name: "renders displayable scalar types together as one plain Text value" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-010#criterion.rust-parsed-text-templates
+                covers: [FEAT-COMP-010#binding.frontend/target.reader-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphRenderer.test.tsx, test: "renders displayable scalar types together as one plain Text value" } }
           - id: browser-protocol-exact-i64
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
@@ -680,4 +699,6 @@ features:
             role: rust-domain
           - target: FEAT-COMP-010#binding.wasm/target.text-template-action
             role: wasm
+          - target: FEAT-COMP-010#binding.frontend/target.reader-renderer
+            role: browser-reader
         guarantees: [REQ-COMP-010#criterion.rust-parsed-text-templates]

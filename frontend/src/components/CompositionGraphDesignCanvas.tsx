@@ -173,6 +173,14 @@ export function CompositionGraphDesignCanvas(
       );
     }, 0);
   };
+  const exitTextEditing = (id: string, restoreFocus: boolean) => {
+    setSelectedId((current) => current === id ? null : current);
+    if (restoreFocus) {
+      queueMicrotask(() => {
+        document.getElementById(`composition-text-edit-${id}`)?.focus();
+      });
+    }
+  };
 
   const orderedIds = () => props.draft.layout.rows.flatMap((row) =>
     row.items.map((item) => item.component)
@@ -401,6 +409,7 @@ export function CompositionGraphDesignCanvas(
                         {value}
                         <button
                           type="button"
+                          id={`composition-text-edit-${component().id}`}
                           class="compositionGraphSelect compositionGraphTextSelect"
                           data-component-select="true"
                           aria-label={t("composition.studioEditText")}
@@ -416,7 +425,17 @@ export function CompositionGraphDesignCanvas(
                     const text = component() as TextComponent;
                     let editor: HTMLTextAreaElement | undefined;
                     return (
-                      <div class="compositionGraphTextEditing">
+                      <div
+                        class="compositionGraphTextEditing"
+                        onFocusOut={(event) => {
+                          const target = event.relatedTarget;
+                          if (
+                            target instanceof Node &&
+                            event.currentTarget.contains(target)
+                          ) return;
+                          exitTextEditing(text.id, false);
+                        }}
+                      >
                         <textarea
                           ref={(element) => editor = element}
                           id={`composition-text-editor-${text.id}`}
@@ -424,6 +443,11 @@ export function CompositionGraphDesignCanvas(
                           aria-label={t("composition.studioText")}
                           value={text.content}
                           onFocus={select}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape" || event.isComposing) return;
+                            event.preventDefault();
+                            exitTextEditing(text.id, true);
+                          }}
                           onInput={(event) => updateText(text.id, event.currentTarget.value)}
                         />
                         <div class="compositionGraphTextTools">

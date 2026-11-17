@@ -114,6 +114,7 @@ test.describe("Composition Golden Journey", () => {
 
   test("Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
+    const textContent = "Monthly expense\nsummary";
     const storageState = await context.storageState();
     const editorContext = await openOwnerContext(browser, storageState);
     let compositionId = "";
@@ -142,8 +143,8 @@ test.describe("Composition Golden Journey", () => {
         exact: true,
       });
       await expect(textEditor).toBeFocused();
-      await textEditor.fill("Monthly expense summary");
-      await expect(textEditor).toHaveValue("Monthly expense summary");
+      await textEditor.fill(textContent);
+      await expect(textEditor).toHaveValue(textContent);
 
       const saveUrl = savePath(spaceId);
       await editorPage.route("**/api/spaces/*/compositions", async (route) => {
@@ -210,7 +211,10 @@ test.describe("Composition Golden Journey", () => {
       expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
       expect(requestBodies[1]).toEqual(requestBodies[0]);
       expect((requestBodies[0] as { yaml?: string }).yaml).toContain(
-        "Monthly expense summary",
+        "Monthly expense",
+      );
+      expect((requestBodies[0] as { yaml?: string }).yaml).toContain(
+        "summary",
       );
       expect((requestBodies[0] as { yaml?: string }).yaml).not.toMatch(
         /saved_sql|metric|presentation/,
@@ -255,7 +259,8 @@ test.describe("Composition Golden Journey", () => {
       expect(rawRevision.revision.revision_id).toBe(revisionId);
       const rawSpec = rawRevision.fields["spec"];
       expect(typeof rawSpec).toBe("string");
-      expect(rawSpec).toContain("Monthly expense summary");
+      expect(rawSpec).toContain("Monthly expense");
+      expect(rawSpec).toContain("summary");
     } finally {
       await editorContext.close();
     }
@@ -275,9 +280,10 @@ test.describe("Composition Golden Journey", () => {
       await expect(readerPage).toHaveURL(
         new RegExp(`${exactPath.replaceAll("/", "\\/")}$`),
       );
-      await expect(
-        readerPage.locator(".compositionGraphText"),
-      ).toHaveText("Monthly expense summary");
+      const readerText = readerPage.locator(".compositionGraphText");
+      await expect(readerText).toHaveCount(1);
+      expect(await readerText.textContent()).toBe(textContent);
+      await expect(readerText).toHaveCSS("white-space", "pre-wrap");
       await expect(
         readerPage.getByRole("tablist", { name: "Studio mode" }),
       ).toHaveCount(0);
