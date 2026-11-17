@@ -224,4 +224,58 @@ describe("CompositionGraphDesignCanvas", () => {
       variable: "minimum",
     }]);
   });
+
+  it("keeps a source-unavailable error global without showing an input-waiting query status", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables.push({
+      id: "minimum",
+      kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      required: true,
+      default: { kind: "integer", value: "1" },
+    });
+    initial.variables.push({
+      id: "rows",
+      kind: "query",
+      returns: {
+        kind: "table",
+        columns: [{
+          name: "name",
+          value_type: { scalar_type: "string", nullable: false },
+        }],
+      },
+      query: {
+        kind: "inline_sql",
+        sql: "SELECT name WHERE amount >= {{minimum}}",
+        arguments: [{ name: "minimum", variable: "minimum" }],
+      },
+    });
+    initial.components.push({ id: "table", kind: "table", variable: "rows" });
+    initial.layout.rows[0].items.push({ kind: "component", component: "table" });
+    const [draft, setDraft] = createSignal(initial);
+    evaluateMock.mockImplementationOnce(async (
+      _space: string,
+      request: { evaluation_id: string },
+    ) => ({
+      evaluation_id: request.evaluation_id,
+      ok: false,
+      computed_query_ids: [],
+      variable_values: {},
+      queries: [],
+      component_bindings: [],
+      dependencies: {},
+      authorization_fingerprint: "auth",
+      publication_fingerprint: "publication",
+      diagnostics: [{ code: "query_unavailable", variable_id: "rows" }],
+      query_results: {},
+    }));
+
+    render(() => <CompositionGraphDesignCanvas {...baseProps(draft(), setDraft)} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This source is unavailable or access may have changed. Choose a source again or check your access.",
+    );
+    expect(screen.queryByText("Waiting for input…")).toBeNull();
+    expect(screen.queryByText("Loading results…")).toBeNull();
+  });
 });

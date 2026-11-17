@@ -22,6 +22,7 @@ export interface CompositionGraphRendererProps {
   ) => JSX.Element;
   evaluation?: CompositionEvaluationResponse;
   queryErrors?: Readonly<Record<string, string>>;
+  suppressBlockedQueryStatus?: boolean;
   rawInputs: Readonly<Record<string, string>>;
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
   blockedQueryIds: ReadonlySet<string>;
@@ -120,6 +121,7 @@ function CompositionTextValue(props: {
   draft: CompositionGraphDraft;
   evaluation?: CompositionEvaluationResponse;
   queryErrors?: Readonly<Record<string, string>>;
+  suppressBlockedQueryStatus: boolean;
   rawInputs: Readonly<Record<string, string>>;
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
   blockedQueryIds: ReadonlySet<string>;
@@ -212,6 +214,8 @@ function CompositionTextValue(props: {
       when={!error() && !loading() && !waiting()}
       fallback={error()
         ? <span class="ui-text-danger" role="alert">{error()}</span>
+        : props.suppressBlockedQueryStatus
+        ? null
         : <span role="status">
           {waitingForInputs()
             ? t("composition.waitingForInputs")
@@ -283,6 +287,9 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                             rawInputs={props.rawInputs}
                             inputStates={props.inputStates}
                             queryErrors={props.queryErrors}
+                            suppressBlockedQueryStatus={Boolean(
+                              props.suppressBlockedQueryStatus,
+                            )}
                             blockedQueryIds={props.blockedQueryIds}
                           />
                         );
@@ -332,7 +339,10 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         const result = () => queryResult()?.value;
                         rendered = (
                           <>
-                            <Show when={!error() && (blocked() || !result())}>
+                            <Show
+                              when={!props.suppressBlockedQueryStatus &&
+                                !error() && (blocked() || !result())}
+                            >
                               <p role="status">
                                 {blocked()
                                   ? t("composition.waitingForInputs")
