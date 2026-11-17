@@ -61,11 +61,14 @@ Form may seed the SQL; after Lint and an authorized Check, Use returns to the
 same Design position and places the Table. Use does not run the query. The
 pending query cannot be saved and Cancel restores the previous draft. Existing
 table variables can be placed immediately; changing a Table reference keeps
-its component position. A new Input created from Design or Variables is placed
-with its variable. Creating one from an SQL marker also commits its explicit
-binding. These pending changes cannot be saved until complete; Cancel leaves no
-variable, component, binding, or layout change. Existing variables can be
-selected without changing their shared query definition.
+its component position. An Input requested from Design opens the Variables
+name, type, required, and default editor, then returns to its original Design
+position on Use. Creating one from an SQL marker uses the same editor and
+commits its explicit binding before returning to that SQL query. Creation from
+Variables places its first component and stays in Variables. These pending
+changes cannot be saved until complete; Cancel leaves no variable, component,
+binding, or layout change. Existing variables can be selected without changing
+their shared query definition.
 
 ## Reader
 

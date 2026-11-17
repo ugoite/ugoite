@@ -649,14 +649,32 @@ describe("CompositionStudio graph surface", () => {
         .closest("form")!,
     );
 
-    expect(await screen.findByRole("textbox", { name: "customer_id" }))
+    expect(await screen.findByRole("combobox", { name: "Type" }))
       .toBeVisible();
+    expect(screen.getByRole("tab", { name: "Variables" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByRole("textbox", { name: "customer_id" }))
+      .not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
+    const saveCall = screen.getByRole("button", { name: "Save" });
+    expect(saveCall).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
+      target: { value: "integer" },
+    });
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: "42" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Use" }))
+      .toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
     expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    const saveCall = screen.getByRole("button", { name: "Save" });
+    expect(await screen.findByRole("textbox", { name: "customer_id" }))
+      .toBeVisible();
     expect(saveCall).toBeEnabled();
     fireEvent.click(saveCall);
     await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
@@ -667,6 +685,8 @@ describe("CompositionStudio graph surface", () => {
     expect(spec.variables).toContainEqual(expect.objectContaining({
       id: "customer_id",
       kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      default: { kind: "integer", value: 42 },
     }));
     expect(spec.components).toContainEqual({
       id: "input_1",

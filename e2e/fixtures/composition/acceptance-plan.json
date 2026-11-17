@@ -385,10 +385,11 @@
         "id": "A07",
         "plan_items": ["F07"],
         "maps_to_current": ["A05", "A11"],
-        "requirement": "Creating an Input from Design, Variables, or a SQL marker places one Input component atomically; SQL marker creation also stores an explicit binding and input values remain Work.",
+        "requirement": "Design and SQL marker Input creation transition to the Variables name, type, required, and default editor. Use places the first component; SQL marker Use also stores its explicit binding and returns to SQL. Variables creation places immediately and stays in Variables. Cancel rolls back, and input values remain Work.",
         "selectors": [
           { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Input creation from Variables and SQL markers places one bound Input" },
-          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "adds and cancels a Design input in place with matching graph references" }
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "edits a Design Input in Variables and commits placement only on Use" },
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "cancels SQL marker Input creation without leaving its variable or binding" }
         ]
       },
       {

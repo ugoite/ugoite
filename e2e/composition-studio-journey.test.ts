@@ -1284,6 +1284,10 @@ test.describe("Composition Studio Journey", () => {
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByRole("combobox", { name: "Type", exact: true }))
       .toBeVisible();
+    await expect(page.getByRole("tab", { name: "Variables", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="input_1"]'))
+      .toBeAttached();
     await page.getByRole("tab", { name: "Design", exact: true }).click();
     await expect(page.locator('[data-component-id="input_1"]'))
       .toHaveAttribute("aria-label", "variables_input");
@@ -1308,6 +1312,17 @@ test.describe("Composition Studio Journey", () => {
     await expect(page.getByLabel("Variable name", { exact: true }))
       .toHaveValue("threshold");
     await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("combobox", { name: "Type", exact: true })
+      .selectOption("integer");
+    await page.getByRole("textbox", { name: "Default", exact: true })
+      .fill("7");
+    await expect(page.getByRole("button", { name: "Use", exact: true }))
+      .toBeEnabled();
+    await expect(page.locator('[data-component-id="input_2"]'))
+      .toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save", exact: true }))
+      .toBeDisabled();
+    await page.getByRole("button", { name: "Use", exact: true }).click();
     await expect(page.getByRole("combobox", {
       name: "Choose a variable for threshold",
       exact: true,
@@ -1317,15 +1332,20 @@ test.describe("Composition Studio Journey", () => {
     await page.getByRole("tab", { name: "Design", exact: true }).click();
     await expect(page.locator('[data-component-id="input_2"]'))
       .toHaveAttribute("aria-label", "threshold");
-    await page.locator('[data-component-id="input_1"]').click();
-    await page.getByRole("button", {
-      name: "Remove variables_input",
-      exact: true,
-    }).click();
-    await expect(page.locator(".compositionGraphInputRemovalNotice")).toHaveText(
-      "Place another Input before removing this one.",
-    );
-    await expect(page.locator('[data-component-id="input_1"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "Create Input", exact: true })
+      .click();
+    await page.getByLabel("Variable name", { exact: true })
+      .fill("design_input");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Type", exact: true }))
+      .toBeVisible();
+    await expect(page.getByRole("tab", { name: "Variables", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await page.getByRole("combobox", { name: "Type", exact: true })
+      .selectOption("boolean");
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    await expect(page.locator('[data-component-id="input_3"]'))
+      .toHaveAttribute("aria-label", "design_input");
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {
@@ -1343,6 +1363,8 @@ test.describe("Composition Studio Journey", () => {
       spec?: {
         variables?: Array<{
           id?: string;
+          value_type?: { scalar_type?: string };
+          default?: { kind?: string; value?: string | number | boolean };
           query?: { arguments?: Array<{ name: string; variable: string }> };
         }>;
         components?: Array<{ kind?: string; variable?: string }>;
@@ -1353,8 +1375,17 @@ test.describe("Composition Studio Journey", () => {
     )?.query?.arguments).toEqual([{ name: "threshold", variable: "threshold" }]);
     expect(document.spec?.components?.filter((component) =>
       component.kind === "input" &&
-      ["variables_input", "threshold"].includes(component.variable ?? "")
-    )).toHaveLength(2);
+      ["variables_input", "threshold", "design_input"].includes(component.variable ?? "")
+    )).toHaveLength(3);
+    expect(document.spec?.variables?.find((variable) =>
+      variable.id === "threshold"
+    )).toMatchObject({
+      value_type: { scalar_type: "integer" },
+      default: { kind: "integer", value: "7" },
+    });
+    expect(document.spec?.variables?.find((variable) =>
+      variable.id === "design_input"
+    )).toMatchObject({ value_type: { scalar_type: "boolean" } });
   });
 
   test("Inline SQL preview refreshes the dependent Text value when an Input changes", async ({ page, request }) => {

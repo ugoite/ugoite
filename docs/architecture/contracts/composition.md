@@ -108,9 +108,11 @@ distinct actions.
 If Design needs a Table query, its name and SQL are edited in Variables. An
 authorized Check confirms the result schema; Use returns to the original
 Design position and places the Table without requiring a query run. Cancelling
-or failing leaves the prior component and draft intact. A new Input created
-from Design, Variables, or a SQL marker is placed together with its variable
-and explicit binding. Reader uses the shared renderer without authoring modes,
+or failing leaves the prior component and draft intact. An Input requested
+from Design or a SQL marker uses the Variables name, type, required, and
+default editor before Use places its first component. SQL marker creation also
+commits its explicit binding. Creation from Variables places the component and
+stays in Variables. Reader uses the shared renderer without authoring modes,
 selection controls, or editing actions. UI layout, accessibility, focus, and
 responsive behavior follow the UI specifications and policies.
 

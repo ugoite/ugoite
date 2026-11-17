@@ -450,6 +450,15 @@ features:
                   - FEAT-COMP-010#binding.frontend/target.graph-studio
                   - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Input creation from Variables and SQL markers places one bound Input" } }
+          - id: input-marker-cancel-rolls-back
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "cancels SQL marker Input creation without leaving its variable or binding" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.input-creation-places-once
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "cancels SQL marker Input creation without leaving its variable or binding" } }
           - id: current-form-acl-recheck
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
@@ -586,16 +595,20 @@ features:
           - id: graph-studio-modes-and-placement
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: adds and cancels a Design input in place with matching graph references }
+            selector: { kind: test, name: "edits a Design Input in Variables and commits placement only on Use" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "adds and cancels a Design input in place with matching graph references" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "edits a Design Input in Variables and commits placement only on Use" } }
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.table-text-input-components
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "adds and cancels a Design input in place with matching graph references" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "edits a Design Input in Variables and commits placement only on Use" } }
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.input-creation-places-once
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "edits a Design Input in Variables and commits placement only on Use" } }
           - id: graph-studio-modes-and-table-placement
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

@@ -64,6 +64,8 @@ type PendingVariableCreation = {
   previousSelection: string | null;
   suggestedName: string;
   returnToDesign?: boolean;
+  returnFocusInput?: boolean;
+  deferInputPlacement?: boolean;
   tableComponentId?: string;
   stagedVariableId?: string;
   baselineDraft?: CompositionGraphDraft;
@@ -117,6 +119,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     PendingVariableCreation | null
   >(null);
   const [focusTableButton, setFocusTableButton] = createSignal(0);
+  const [focusInputButton, setFocusInputButton] = createSignal(0);
   const [focusComponentGeneration, setFocusComponentGeneration] =
     createSignal(0);
   let variablePanel: HTMLElement | undefined;
@@ -131,28 +134,43 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       : kind === "input"
       ? "input"
       : "query";
+    const designInput = kind === "input" && origin === "design";
     setPendingCreation({
       kind,
-      origin,
+      origin: designInput ? "variables" : origin,
       previousSelection: selectedVariableId(),
       suggestedName: uniqueName(
         baseName,
         props.draft.variables.map((node) => node.id),
       ),
+      ...(designInput
+        ? {
+          returnToDesign: true,
+          returnFocusInput: true,
+          deferInputPlacement: true,
+        }
+        : {}),
       ...(tableComponentId !== undefined
         ? { returnToDesign: true, tableComponentId }
         : {}),
     });
-    if (origin === "variables") setSelectedVariableId(null);
+    if (designInput) {
+      setMode("variables");
+      setSelectedVariableId(null);
+    } else if (origin === "variables") setSelectedVariableId(null);
   };
 
-  const cancelCreation = () => {
+  const cancelCreation = (): boolean => {
     const pending = pendingCreation();
-    if (!pending) return;
+    if (!pending) return false;
     if (pending.parentPending) {
+      if (pending.stagedVariableId && pending.baselineDraft) {
+        props.onDraftChange(pending.baselineDraft);
+      }
       setPendingCreation(pending.parentPending);
       setSelectedVariableId(pending.parentPending.stagedVariableId ?? null);
-      return;
+      queueMicrotask(focusCreatedVariable);
+      return true;
     }
     if (pending.stagedVariableId && pending.baselineDraft) {
       props.onDraftChange(pending.baselineDraft);
@@ -163,6 +181,8 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       if (pending.tableComponentId) {
         setFocusComponentId(pending.tableComponentId);
         setFocusComponentGeneration((value) => value + 1);
+      } else if (pending.returnFocusInput) {
+        setFocusInputButton((value) => value + 1);
       } else {
         setFocusTableButton((value) => value + 1);
       }
@@ -177,6 +197,11 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           : null,
       );
     }
+    if (pending.returnToVariableId) {
+      queueMicrotask(focusCreatedVariable);
+      return true;
+    }
+    return !!pending.returnToDesign;
   };
 
   const commitCreation = (rawName: string): boolean => {
@@ -191,6 +216,30 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       ...props.draft,
       variables: [...props.draft.variables, variable],
     };
+    if (pending.kind === "input" && pending.deferInputPlacement) {
+      if (pending.returnToVariableId && pending.argumentName) {
+        const target = props.draft.variables.find((node) =>
+          node.id === pending.returnToVariableId && node.kind === "query"
+        );
+        if (
+          !target || target.kind !== "query" ||
+          target.query.kind !== "inline_sql" ||
+          target.query.sql !== pending.sourceSql ||
+          target.query.arguments.some((argument) =>
+            argument.name === pending.argumentName && !!argument.variable
+          )
+        ) return false;
+      }
+      const baselineDraft = props.draft;
+      props.onDraftChange(nextDraft);
+      setSelectedVariableId(id);
+      setPendingCreation({
+        ...pending,
+        stagedVariableId: id,
+        baselineDraft,
+      });
+      return true;
+    }
     if (pending.returnToVariableId && pending.argumentName) {
       const target = props.draft.variables.find((node) =>
         node.id === pending.returnToVariableId && node.kind === "query"
@@ -246,12 +295,13 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     }
     if (pending.returnToDesign) {
       if (pending.kind === "query") {
+        const baselineDraft = props.draft;
         props.onDraftChange(nextDraft);
         setSelectedVariableId(id);
         setPendingCreation({
           ...pending,
           stagedVariableId: id,
-          baselineDraft: props.draft,
+          baselineDraft,
         });
         return true;
       }
@@ -364,6 +414,75 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     setFocusComponentGeneration((value) => value + 1);
   };
 
+  const usePendingInput = () => {
+    const pending = pendingCreation();
+    const variableId = pending?.stagedVariableId;
+    if (!pending || pending.kind !== "input" || !variableId) return;
+    const input = props.draft.variables.find((node) =>
+      node.id === variableId && node.kind === "input"
+    );
+    if (!input || input.kind !== "input") return;
+    let nextDraft = props.draft;
+    if (pending.returnToVariableId && pending.argumentName) {
+      const target = nextDraft.variables.find((node) =>
+        node.id === pending.returnToVariableId && node.kind === "query"
+      );
+      if (
+        !target || target.kind !== "query" ||
+        target.query.kind !== "inline_sql" ||
+        target.query.sql !== pending.sourceSql ||
+        target.query.arguments.some((argument) =>
+          argument.name === pending.argumentName && !!argument.variable
+        )
+      ) return;
+      nextDraft = {
+        ...nextDraft,
+        variables: nextDraft.variables.map((node) =>
+          node.id === target.id && node.kind === "query"
+            ? {
+              ...node,
+              query: {
+                ...node.query,
+                arguments: [
+                  ...node.query.arguments.filter((argument) =>
+                    argument.name !== pending.argumentName
+                  ),
+                  { name: pending.argumentName!, variable: variableId },
+                ],
+              },
+            }
+            : node
+        ),
+      };
+    }
+    let index = 1;
+    while (nextDraft.components.some((component) => component.id === `input_${index}`)) index++;
+    const withInput = appendCompositionGraphComponent(nextDraft, {
+      id: `input_${index}`,
+      kind: "input",
+      variable: variableId,
+    });
+    if (!withInput) return;
+    nextDraft = withInput;
+    const placedComponentId = nextDraft.components.at(-1)?.id;
+    props.onDraftChange(nextDraft);
+    if (pending.parentPending) {
+      setPendingCreation(pending.parentPending);
+      setSelectedVariableId(pending.parentPending.stagedVariableId ?? null);
+      return;
+    }
+    setPendingCreation(null);
+    if (pending.returnToDesign) {
+      setMode("design");
+      setSelectedVariableId(variableId);
+      setFocusComponentId(placedComponentId ?? null);
+      setFocusComponentGeneration((value) => value + 1);
+    } else {
+      setSelectedVariableId(pending.returnToVariableId ?? variableId);
+      queueMicrotask(focusCreatedVariable);
+    }
+  };
+
   const [focusComponentId, setFocusComponentId] = createSignal<string | null>(
     null,
   );
@@ -414,6 +533,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       returnToVariableId: queryId,
       argumentName,
       sourceSql,
+      ...(kind === "input" ? { deferInputPlacement: true } : {}),
       ...(parentPending ? { parentPending } : {}),
     });
     setSelectedVariableId(null);
@@ -433,6 +553,12 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       if (selected?.kind === "query") {
         variablePanel?.querySelector<HTMLElement>(
           ".compositionVariableEditor .cm-content[contenteditable='true']",
+        )?.focus();
+        return;
+      }
+      if (selected?.kind === "input") {
+        variablePanel?.querySelector<HTMLElement>(
+          ".compositionVariableScalarEditor select[aria-label]",
         )?.focus();
         return;
       }
@@ -527,17 +653,11 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           getPrincipalGeneration={props.getPrincipalGeneration}
           onSaveSnapshotReady={props.onSaveSnapshotReady}
           onDraftChange={props.onDraftChange}
-          pendingInputCreation={pendingCreation()?.origin === "design"}
-          pendingInputSuggestedName={pendingCreation()?.origin === "design"
-            ? pendingCreation()?.suggestedName
-            : undefined}
           onRequestCreateInput={() => requestCreation("input", "design")}
-          onCommitCreateInput={commitCreation}
-          onCancelCreateInput={cancelCreation}
-          onFocusCreatedInput={focusCreatedVariable}
           focusComponentId={focusComponentId() ?? undefined}
           focusComponentGeneration={focusComponentGeneration()}
           focusTableButton={focusTableButton()}
+          focusInputButton={focusInputButton()}
           onRequestCreateTableQuery={requestTableQuery}
           onEditVariable={(id) => {
             setSelectedVariableId(id);
@@ -568,10 +688,16 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           onRequestArgumentVariableCreation={requestArgumentVariableCreation}
           onCommitCreation={commitCreation}
           onCancelCreation={cancelCreation}
-          pendingQueryVariableId={pendingCreation()?.stagedVariableId ??
-            pendingCreation()?.parentPending?.stagedVariableId}
+          pendingQueryVariableId={pendingCreation()?.kind === "query"
+              ? pendingCreation()?.stagedVariableId
+              : pendingCreation()?.parentPending?.stagedVariableId}
           onUsePendingQuery={usePendingTableQuery}
           onCancelPendingQuery={cancelCreation}
+          pendingInputVariableId={pendingCreation()?.kind === "input"
+              ? pendingCreation()?.stagedVariableId
+              : undefined}
+          onUsePendingInput={usePendingInput}
+          onCancelPendingInput={cancelCreation}
           onFocusCreatedVariable={focusCreatedVariable}
           onRemove={(id) => {
             const next = {
