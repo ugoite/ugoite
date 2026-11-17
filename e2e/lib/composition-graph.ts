@@ -17,6 +17,22 @@ export type CompositionGraphSeed = {
   }>;
 };
 
+export async function chooseCompositionFormSource(
+  page: Page,
+  formName: string,
+  expectedSeedSql: string,
+): Promise<void> {
+  await page.getByRole("button", { name: "Form", exact: true }).click();
+  const forms = page.getByRole("group", {
+    name: "Available Forms",
+    exact: true,
+  });
+  await forms.getByRole("button", { name: formName, exact: true }).click();
+  await expect(forms).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+    .toHaveValue(expectedSeedSql);
+}
+
 export async function checkCompositionQuery(page: Page): Promise<void> {
   const check = page.getByRole("button", { name: "Check", exact: true });
   await expect(check).toBeEnabled();

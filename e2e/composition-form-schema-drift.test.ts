@@ -6,7 +6,10 @@ import {
   expectedCompositionFormSeedSql,
   normalizeCompositionFormSeedSql,
 } from "./lib/composition-form.ts";
-import { checkCompositionQuery } from "./lib/composition-graph.ts";
+import {
+  checkCompositionQuery,
+  chooseCompositionFormSource,
+} from "./lib/composition-graph.ts";
 
 type FormSummary = {
   id?: string;
@@ -99,31 +102,15 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await palette.getByRole("button", { name: "Table", exact: true }).click();
     await page.getByLabel("Variable name", { exact: true }).fill(variableId);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    const variablesTab = page.getByRole("tab", {
-      name: "Variables",
-      exact: true,
-    });
-    await variablesTab.click();
-    await page.getByRole("button", { name: variableId, exact: true }).click();
     const originalSql = expectedCompositionFormSeedSql(
       formBefore?.sql_relation ?? formName,
       formBefore?.fields,
     );
-    await page.getByRole("button", { name: "Form", exact: true }).click();
-    await page.getByRole("group", { name: "Available Forms", exact: true })
-      .getByRole("button", { name: formName, exact: true }).click();
-    await page.getByRole("textbox", { name: "SQL", exact: true })
-      .fill(originalSql);
+    await chooseCompositionFormSource(page, formName, originalSql);
     await checkCompositionQuery(page);
-    const initialQueryPreviewResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-      response.request().method() === "POST"
-    );
-    await page.getByRole("button", { name: "Run Query", exact: true }).click();
-    const initialQueryPreview = await (await initialQueryPreviewResponse)
-      .json() as { ok?: boolean };
-    expect(initialQueryPreview.ok).toBe(true);
-    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
 
     const tableName = variableId;
     const initialTable = page.getByRole("table", { name: tableName });

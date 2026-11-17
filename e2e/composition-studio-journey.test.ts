@@ -15,6 +15,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 import {
+  chooseCompositionFormSource,
   checkCompositionQuery,
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
@@ -795,10 +796,7 @@ test.describe("Composition Studio Journey", () => {
         name: "SQL",
         exact: true,
       });
-      await page.getByRole("button", { name: "Form", exact: true }).click();
-      await page.getByRole("group", { name: "Available Forms", exact: true })
-        .getByRole("button", { name: seed.formName, exact: true }).click();
-      await tableEditor.fill(tableSql);
+      await chooseCompositionFormSource(page, seed.formName, tableSql);
       await checkCompositionQuery(page);
       await expect(page.getByRole("button", { name: "Run Query", exact: true }))
         .toHaveCount(0);
@@ -824,9 +822,11 @@ test.describe("Composition Studio Journey", () => {
       await page.getByRole("tab", { name: "Variables", exact: true }).click();
       await page.getByRole("button", { name: scalarVariable, exact: true })
         .click();
-      await page.getByRole("button", { name: "Form", exact: true }).click();
-      await page.getByRole("group", { name: "Available Forms", exact: true })
-        .getByRole("button", { name: seed.formName, exact: true }).click();
+      await chooseCompositionFormSource(
+        page,
+        seed.formName,
+        expectedCompositionFormSeedSql(form!.sql_relation!, form!.fields),
+      );
       await page.getByRole("textbox", { name: "SQL", exact: true })
         .fill(scalarSql);
       const queryResultShape = page.getByRole("combobox", {
@@ -1110,13 +1110,11 @@ test.describe("Composition Studio Journey", () => {
       .toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
       .toBeVisible();
-    await page.getByRole("button", { name: "Form", exact: true }).click();
-    const availableForms = page.getByRole("group", {
-      name: "Available Forms",
-      exact: true,
-    });
-    await availableForms.getByRole("button", { name: formName, exact: true })
-      .click();
+    await chooseCompositionFormSource(
+      page,
+      formName,
+      expectedCompositionFormSeedSql(form!.sql_relation!, form!.fields),
+    );
     const sql = `SELECT ${sqlIdentifier(nameColumn!)} AS name FROM ${
       sqlIdentifier(form!.sql_relation!)
     }`;
@@ -1128,6 +1126,9 @@ test.describe("Composition Studio Journey", () => {
       .toHaveAttribute("aria-selected", "true");
     await expect(page.locator('[data-component-id="table_1"]'))
       .toHaveAttribute("aria-label", "studio_rows");
+    await expect(page.locator(
+      '[data-component-id="table_1"][data-component-select="true"]',
+    )).toBeFocused();
     const resultTable = page.getByRole("table", { name: "studio_rows" });
     await expect(resultTable).toBeVisible();
     await expect(resultTable.locator("tbody tr")).toHaveCount(0);

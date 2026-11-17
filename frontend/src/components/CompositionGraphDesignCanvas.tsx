@@ -101,8 +101,14 @@ export function CompositionGraphDesignCanvas(
       const component = Array.from(
         document.querySelectorAll<HTMLElement>("[data-component-id]"),
       ).find((element) => element.dataset.componentId === id);
-      component?.querySelector<HTMLElement>("[data-component-select='true']")
-        ?.focus();
+      const focusTarget = component?.matches(
+        "[data-component-select='true']",
+      )
+        ? component
+        : component?.querySelector<HTMLElement>(
+          "[data-component-select='true']",
+        );
+      focusTarget?.focus();
     });
   });
   createEffect(() => {

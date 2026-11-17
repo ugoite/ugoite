@@ -225,6 +225,42 @@ describe("CompositionGraphDesignCanvas", () => {
     }]);
   });
 
+  it("focuses the placed component itself when returning to Design", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables.push({
+      id: "minimum",
+      kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      required: true,
+    });
+    initial.components.push({ id: "input_1", kind: "input", variable: "minimum" });
+    initial.layout.rows[0].items.push({
+      kind: "component",
+      component: "input_1",
+    });
+    const [draft, setDraft] = createSignal(initial);
+    const [focusComponentId, setFocusComponentId] = createSignal<
+      string | undefined
+    >();
+    const [focusGeneration, setFocusGeneration] = createSignal(0);
+    const { container } = render(() => (
+      <CompositionGraphDesignCanvas
+        {...baseProps(draft(), setDraft)}
+        focusComponentId={focusComponentId()}
+        focusComponentGeneration={focusGeneration()}
+      />
+    ));
+
+    const input = container.querySelector<HTMLElement>(
+      '[data-component-id="input_1"][data-component-select="true"]',
+    )!;
+    expect(input).not.toHaveFocus();
+    setFocusComponentId("input_1");
+    setFocusGeneration(1);
+
+    await waitFor(() => expect(input).toHaveFocus());
+  });
+
   it("keeps a source-unavailable error global without showing an input-waiting query status", async () => {
     const initial = createCompositionGraphDraft("Report");
     initial.variables.push({
