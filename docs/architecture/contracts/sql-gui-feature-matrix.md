@@ -2,8 +2,6 @@
 title: SQL structure GUI retirement record
 ---
 
-# SQL structure GUI retirement record
-
 The former SQL structure GUI was retired under the text-first Composition
 architecture. Issue [#4565](https://github.com/ugoite/ugoite/issues/4565) was
 closed as not planned; restoring a structure editor requires a new product
