@@ -102,6 +102,7 @@ use ugoite_iceberg::{
     form, saved_sql,
     service::{
         ApplyOperation, CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
+        CompositionPreviewSelection,
         CompositionQueryEvaluationPage as CoreCompositionQueryEvaluationPage,
         CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
         CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget,
@@ -11533,8 +11534,10 @@ async fn preview_composition_handler(
             &request.variables,
             &request.unset_variables,
             &principals,
-            base,
-            request.requested_queries.as_deref(),
+            CompositionPreviewSelection {
+                base,
+                requested_queries: request.requested_queries.as_deref(),
+            },
         )
         .await
         .map_err(ApiError::from_core)?;

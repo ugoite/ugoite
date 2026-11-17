@@ -69,6 +69,14 @@ pub struct CompositionPreview {
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
 
+/// Base revision and selected query closure for an authoring preview.
+pub struct CompositionPreviewSelection<'a> {
+    /// Existing revision used as the authoring base, when editing.
+    pub base: Option<CompositionRevisionRef>,
+    /// Query variables to plan, including their transitive query dependencies.
+    pub requested_queries: Option<&'a [String]>,
+}
+
 /// Variable and query selection inputs for resolving an authorized graph.
 pub(super) struct CompositionQuerySelection<'a> {
     pub variables: &'a BTreeMap<String, Value>,
@@ -837,8 +845,10 @@ impl UgoiteService {
             variables,
             unset_variables,
             principal_ids,
-            base,
-            None,
+            CompositionPreviewSelection {
+                base,
+                requested_queries: None,
+            },
         )
         .await
     }
@@ -852,8 +862,7 @@ impl UgoiteService {
         variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: &[Uuid],
-        base: Option<CompositionRevisionRef>,
-        requested_queries: Option<&[String]>,
+        selection: CompositionPreviewSelection<'_>,
     ) -> Result<CompositionPreview> {
         self.preview_composition_from_yaml(
             space_id,
@@ -862,8 +871,8 @@ impl UgoiteService {
                 variables,
                 unset_variables,
                 principal_ids: Some(principal_ids),
-                base,
-                requested_queries,
+                base: selection.base,
+                requested_queries: selection.requested_queries,
                 allow_unset_inputs: true,
                 authorization_state: None,
                 publication_override: None,
