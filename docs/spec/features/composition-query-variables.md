@@ -1,11 +1,12 @@
 ---
-title: 'Text-first Composition'
+title: "Text-first Composition"
 ---
 
 **Status: accepted contract.** The current Composition model is defined by
 [ADR-027](../../architecture/contracts/adr-027-text-first-composition.md),
 [REQ-COMP-010](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/composition/text-first-graph.yaml),
-and [REQ-FE-083](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/frontend/composition-text-first.yaml).
+and
+[REQ-FE-083](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/frontend/composition-text-first.yaml).
 This specification does not authorize release preparation, version changes, or
 publication.
 
@@ -19,11 +20,11 @@ the executable Composition shape.
 
 Display components are exactly Table, Text, and Input:
 
-| Component | Definition |
-| --- | --- |
-| `table` | One query variable returning an ordered `table<Row>` result |
-| `text` | One plain template string with scalar graph references |
-| `input` | One input variable with transient user-entered value |
+| Component | Definition                                                  |
+| --------- | ----------------------------------------------------------- |
+| `table`   | One query variable returning an ordered `table<Row>` result |
+| `text`    | One plain template string with scalar graph references      |
+| `input`   | One input variable with transient user-entered value        |
 
 Table output columns, names, aliases, and order come from its SQL result
 descriptor. There is no persisted second projection or heading list. Input
@@ -35,15 +36,18 @@ The Rust SQL document contract remains the semantic authority for Composition
 SQL. Authored `{{name}}` parameters normalize to DataFusion parameters without
 altering quoted strings, identifiers, or comments. SQL arguments remain
 explicitly bound to compatible scalar variables. Lint, authorized schema
-planning, and explicit execution remain separate operations. Composition-only
-output wildcard rules do not change ordinary SQL or published Saved SQL.
+planning, and explicit execution remain separate operations. A Check can select
+one query root; the authorized planner includes its transitive query
+dependencies and omits unrelated query metadata. Save still validates the
+complete graph. Composition-only output wildcard rules do not change ordinary
+SQL or published Saved SQL.
 
 Text `content` uses `{{variable_id}}` references; `\{{` emits a literal `{{`.
-Rust parses ordered literal and reference parts and validates references
-against the graph. Missing variables, table values, and JSON values are
-rejected. Supported scalar values render as text, without HTML, Markdown, or
-expression evaluation. Integer and decimal values stay exact, booleans render
-as `true` or `false`, and NULL uses the shared neutral no-value rendering.
+Rust parses ordered literal and reference parts and validates references against
+the graph. Missing variables, table values, and JSON values are rejected.
+Supported scalar values render as text, without HTML, Markdown, or expression
+evaluation. Integer and decimal values stay exact, booleans render as `true` or
+`false`, and NULL uses the shared neutral no-value rendering.
 
 ## Evaluation and authority
 
@@ -61,8 +65,8 @@ Knowledge or materialized in a hidden table.
 ## Studio and recovery
 
 Studio opens in Design and has only Design and Variables modes. The Design
-palette offers Text, Table, and Input. Text is edited at its placed location;
-a compact adjacent control selects Title, Heading, Body, or Caption. Variables
+palette offers Text, Table, and Input. Text is edited at its placed location; a
+compact adjacent control selects Title, Heading, Body, or Caption. Variables
 provides the SQL document, graph bindings, and local diagnostics. Creating a
 missing variable returns to the pending Design placement only on success.
 

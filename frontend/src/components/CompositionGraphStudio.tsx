@@ -8,7 +8,10 @@ import {
   type CompositionQueryArgument,
   type CompositionVariableNode,
 } from "~/lib/composition-variable-binding";
-import type { SQLWorkspacePreview } from "~/components/SQLWorkspace";
+import type {
+  SQLWorkspacePlanState,
+  SQLWorkspacePreview,
+} from "~/components/SQLWorkspace";
 import type { SqlSchema } from "~/lib/sql";
 import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import type { Form } from "~/lib/types";
@@ -23,6 +26,7 @@ export interface CompositionGraphStudioProps {
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
+  checkForQuery?: (variableId: string) => SQLWorkspacePlanState;
   onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   onQueryChange?: (
@@ -32,6 +36,7 @@ export interface CompositionGraphStudioProps {
     queryArguments?: CompositionQueryArgument[],
   ) => void;
   onRunQuery?: (variableId: string) => void;
+  onCheckQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
   onPreviousQuery?: (variableId: string) => void;
   onCountQuery?: (variableId: string) => void;
@@ -459,8 +464,10 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           sqlForms={props.sqlForms}
           onPlanColumnsForQuery={props.onPlanColumnsForQuery}
           previewForQuery={props.previewForQuery}
+          checkForQuery={props.checkForQuery}
           onQueryChange={props.onQueryChange}
           onRunQuery={props.onRunQuery}
+          onCheckQuery={props.onCheckQuery}
           onNextQuery={props.onNextQuery}
           onPreviousQuery={props.onPreviousQuery}
           onCountQuery={props.onCountQuery}

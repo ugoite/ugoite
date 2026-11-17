@@ -178,8 +178,8 @@ pub use composition_query_evaluation::{
     CompositionQueryEvaluationPage, CompositionQueryEvaluationResponse,
     CompositionQueryEvaluationTarget,
 };
-pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;
+pub use composition_resolver::{CompositionPreview, CompositionPreviewSelection};
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",

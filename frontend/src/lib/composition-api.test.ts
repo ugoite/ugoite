@@ -241,6 +241,31 @@ describe("compositionApi", () => {
     );
   });
 
+  it("selects a query dependency closure for a graph preview", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({ ok: true, diagnostics: [] });
+
+    await compositionApi.previewGraph(
+      "space-1",
+      "strict graph yaml",
+      {},
+      undefined,
+      signal,
+      [],
+      ["selected_query"],
+    );
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.preview",
+      { space_id: "space-1" },
+      {
+        yaml: "strict graph yaml",
+        variables: {},
+        requested_queries: ["selected_query"],
+      },
+      { signal },
+    );
+  });
+
   it("reads bounded history and restores an exact revision with a retry key", async () => {
     vi.mocked(protocolFetch)
       .mockResolvedValueOnce({

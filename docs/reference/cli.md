@@ -139,8 +139,8 @@ ugoite composition inspect <ID> [--revision <REVISION_ID>] [--raw]
 ugoite composition lint <FILE>
 ugoite composition export <ID> --output <FILE> [--revision <REVISION_ID>]
 ugoite composition query <ID> [--revision <REVISION_ID>] [--var ID=VALUE]...
-ugoite sql lint <SQL> [--profile standard|composition]
-ugoite sql lint --file <PATH> [--profile standard|composition]
+ugoite sql lint <SQL> [--diagnostics] [--profile standard|composition]
+ugoite sql lint --file <PATH> [--diagnostics] [--profile standard|composition]
 ugoite sql check <SQL_OR_FILE> [--param NAME=VALUE]... [--param-type NAME=TYPE]...
 ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
@@ -156,6 +156,11 @@ ugoite pin read <NAME>
 ugoite pin diff --from <NAME> --to <NAME>
 ugoite pin delete <NAME>
 ```
+
+`sql lint` without `--diagnostics` or `--profile` keeps the v0.2.1-compatible
+syntax-only JSON result and exit status. Add `--diagnostics`, or select an
+explicit `--profile`, to return structured portable lint diagnostics; the
+default structured profile is `standard`.
 
 The `entry update` example sends a complete replacement field map. A
 single `--field` removes every other existing Form field; use it only when

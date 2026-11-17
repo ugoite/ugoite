@@ -162,10 +162,8 @@ requirements:
     description: >-
       The saved SQL creation route opens with a relation-free draft and uses the
       shared SQL Workspace for editing, preview, and explicit save through the
-      supported API. Its original shared-structure-actions criterion is
-      preserved verbatim as an evidence gap after Saved SQL text-first
-      authoring retired those syntax-construction controls; current authoring
-      is specified by REQ-FE-081.
+      supported API. Authoring uses direct SQL text; SQL structure-construction
+      controls were retired under the text-first contract in REQ-FE-081.
     priority: medium
     status: implemented
     criteria:
@@ -176,10 +174,6 @@ requirements:
       - id: explicit-save-and-run
         kind: behavior
         statement: An explicit save submits the normalized saved-query payload and makes the created query available through the supported detail and Entry-result run flow.
-        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
-      - id: shared-structure-actions
-        kind: behavior
-        statement: The route uses the shared SQL Workspace and SQL Structure Toolbar as its only structured editing surface, including aggregate and filter operations the backend contract permits. It does not add a route-specific Form selector, aggregate/filter generator, or parallel SQL state; proposed changes remain reviewable before application.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: typed-variable-defaults
         kind: behavior

@@ -11,12 +11,14 @@ import { Portal } from "solid-js/web";
 import { IconButton } from "~/components/IconButton";
 import {
   SQLWorkspace,
+  type SQLWorkspacePlanState,
   type SQLWorkspacePreview,
 } from "~/components/SQLWorkspace";
 import { UiIcon } from "~/components/UiIcon";
 import {
   type CompositionGraphDraft,
   type CompositionLiteral,
+  type CompositionQueryArgument,
   type CompositionScalarType,
   type CompositionSqlArgumentType,
   compositionVariableKindIcon,
@@ -95,6 +97,7 @@ export interface CompositionVariableGraphWorkspaceProps {
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
   onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
+  checkForQuery?: (variableId: string) => SQLWorkspacePlanState;
   parameterValues?: Readonly<
     Record<
       string,
@@ -106,8 +109,10 @@ export interface CompositionVariableGraphWorkspaceProps {
     variableId: string,
     sql: string,
     formBindings?: Array<{ relation: string; form_id: string }>,
+    queryArguments?: CompositionQueryArgument[],
   ) => void;
   onRunQuery?: (variableId: string) => void;
+  onCheckQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
   onPreviousQuery?: (variableId: string) => void;
   onCountQuery?: (variableId: string) => void;
@@ -801,6 +806,7 @@ export function CompositionVariableGraphWorkspace(
                   const updateSqlAndFormGuards = (
                     nextSql: string,
                     selected?: { name: string; form_id: string },
+                    queryArguments?: CompositionQueryArgument[],
                   ) => {
                     const variableId = query().id;
                     const generation =
@@ -850,6 +856,7 @@ export function CompositionVariableGraphWorkspace(
                       variableId,
                       nextSql,
                       immediateGuards,
+                      queryArguments,
                     );
                     const pruning = selected
                       ? replaceSqlFormBindingGuard(nextSql, candidates, {
@@ -872,6 +879,7 @@ export function CompositionVariableGraphWorkspace(
                             relation: guard.name,
                             form_id: guard.formId,
                           })),
+                          queryArguments,
                         );
                       }
                       // Pending belongs to the edited query, not whichever
@@ -889,6 +897,28 @@ export function CompositionVariableGraphWorkspace(
                   );
                   const referencedArguments = () =>
                     sqlArguments()?.variables ?? [];
+                  const wouldCreateArgumentCycle = (
+                    candidateId: string,
+                    targetId: string,
+                  ) => {
+                    const pending = [candidateId];
+                    const visited = new Set<string>();
+                    while (pending.length > 0) {
+                      const id = pending.pop()!;
+                      if (id === targetId) return true;
+                      if (visited.has(id)) continue;
+                      visited.add(id);
+                      const candidate = props.draft.variables.find((entry) =>
+                        entry.id === id
+                      );
+                      if (candidate?.kind === "query") {
+                        pending.push(...candidate.query.arguments.map((arg) =>
+                          arg.variable
+                        ));
+                      }
+                    }
+                    return false;
+                  };
                   const bindableVariables = () =>
                     props.draft.variables.filter((entry) => {
                       if (entry.id === query().id) return false;
@@ -900,8 +930,9 @@ export function CompositionVariableGraphWorkspace(
                       return type !== undefined &&
                         sqlArgumentTypes.has(
                           type as CompositionSqlArgumentType,
-                        );
+                        ) && !wouldCreateArgumentCycle(entry.id, query().id);
                     });
+                  const manuallyUnboundArguments = new Set<string>();
                   const setArgumentBinding = (
                     name: string,
                     variable: string,
@@ -915,7 +946,12 @@ export function CompositionVariableGraphWorkspace(
                     const argumentsNext = current.query.arguments.filter((
                       entry,
                     ) => entry.name !== name);
-                    if (variable) argumentsNext.push({ name, variable });
+                    if (variable) {
+                      manuallyUnboundArguments.delete(name);
+                      argumentsNext.push({ name, variable });
+                    } else {
+                      manuallyUnboundArguments.add(name);
+                    }
                     updateNode({
                       ...current,
                       query: { ...current.query, arguments: argumentsNext },
@@ -927,12 +963,28 @@ export function CompositionVariableGraphWorkspace(
                     const names = new Set(
                       referencedArguments().map((entry) => entry.name),
                     );
+                    for (const name of manuallyUnboundArguments) {
+                      if (!names.has(name)) manuallyUnboundArguments.delete(name);
+                    }
                     const current = query();
-                    const argumentsNext = current.query.arguments.filter((
-                      entry,
-                    ) => names.has(entry.name));
+                    const argumentsNext = current.query.arguments.filter((entry) =>
+                      names.has(entry.name)
+                    );
+                    for (const name of names) {
+                      if (
+                        manuallyUnboundArguments.has(name) ||
+                        argumentsNext.some((entry) => entry.name === name)
+                      ) continue;
+                      const matching = bindableVariables().filter((entry) =>
+                        entry.id === name
+                      );
+                      if (matching.length === 1) {
+                        argumentsNext.push({ name, variable: matching[0].id });
+                      }
+                    }
                     if (
-                      argumentsNext.length !== current.query.arguments.length
+                      JSON.stringify(argumentsNext) !==
+                        JSON.stringify(current.query.arguments)
                     ) {
                       updateNode({
                         ...current,
@@ -1014,6 +1066,33 @@ export function CompositionVariableGraphWorkspace(
                         schema={props.sqlSchema}
                         lintProfile="composition"
                         variables={[]}
+                        sqlArgumentVariables={bindableVariables().map((entry) =>
+                          entry.id
+                        )}
+                        onSqlArgumentCompletion={(name, nextSql) => {
+                          manuallyUnboundArguments.delete(name);
+                          const argumentsNext = query().query.arguments.filter(
+                            (entry) => entry.name !== name,
+                          );
+                          const matches = bindableVariables().filter((entry) =>
+                            entry.id === name
+                          );
+                          if (matches.length === 1) {
+                            argumentsNext.push({
+                              name,
+                              variable: matches[0].id,
+                            });
+                          }
+                          updateSqlAndFormGuards(
+                            nextSql,
+                            undefined,
+                            argumentsNext,
+                          );
+                        }}
+                        planner={props.checkForQuery?.(query().id)}
+                        onCheck={props.onCheckQuery
+                          ? () => props.onCheckQuery?.(query().id)
+                          : undefined}
                         onPreview={() => props.onRunQuery?.(query().id)}
                         previewDisabled={!props.onRunQuery ||
                           sqlArguments.loading ||

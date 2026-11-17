@@ -14,6 +14,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 import {
+  checkCompositionQuery,
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
   saveCompositionGraph,
@@ -446,10 +447,12 @@ function isDraftQueryEvaluation(
   response: Response,
   variableId: string,
   sql: string,
+  successfulResponseOnly = false,
 ): boolean {
   if (
     !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
-    response.request().method() !== "POST"
+    response.request().method() !== "POST" ||
+    (successfulResponseOnly && !response.ok())
   ) return false;
   const body = response.request().postDataJSON() as {
     target?: { kind?: string; yaml?: string };
@@ -793,6 +796,7 @@ test.describe("Composition Studio Journey", () => {
         exact: true,
       });
       await tableEditor.fill(tableSql);
+      await checkCompositionQuery(page);
       const tablePreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, rowsVariable, tableSql)
       );
@@ -838,6 +842,7 @@ test.describe("Composition Studio Journey", () => {
       expect(scalarShapePlanResponse.ok()).toBe(true);
       await expect(queryResultShape).toBeEnabled();
       await expect(queryResultShape).toHaveValue("scalar");
+      await checkCompositionQuery(page);
       const scalarPreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, scalarVariable, scalarSql)
       );
@@ -1105,8 +1110,9 @@ test.describe("Composition Studio Journey", () => {
     }`;
     const editor = page.getByRole("textbox", { name: "SQL", exact: true });
     await editor.fill(sql);
+    await checkCompositionQuery(page);
     const emptyPreview = page.waitForResponse((response) =>
-      isDraftQueryEvaluation(response, "studio_rows", sql)
+      isDraftQueryEvaluation(response, "studio_rows", sql, true)
     );
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     expect((await (await emptyPreview).json() as { ok?: boolean }).ok).toBe(
@@ -1124,7 +1130,7 @@ test.describe("Composition Studio Journey", () => {
     expect(entryResponse.status()).toBe(201);
     const reopenedRow = `Reopened row ${suffix}`;
     const refreshedDraftResponse = page.waitForResponse((response) =>
-      isDraftQueryEvaluation(response, "studio_rows", sql)
+      isDraftQueryEvaluation(response, "studio_rows", sql, true)
     );
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "Run Query", exact: true }).click();

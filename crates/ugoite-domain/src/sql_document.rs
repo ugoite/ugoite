@@ -46,7 +46,7 @@ pub(crate) fn parse_generic_sql_statements(source: &str) -> Result<Vec<Statement
 ///
 /// Ranges always point into [`SqlDocument::source`]. The parser view uses byte
 /// offsets so callers can slice without re-encoding or normalizing the source.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlSourceRange {
     /// Inclusive UTF-8 byte offset.

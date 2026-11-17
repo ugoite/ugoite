@@ -3,7 +3,8 @@
 //! This is the canonical value model for Composition documents. Core compiles
 //! its query nodes through the authorized SQL planner and persistence accepts
 //! only documents whose query descriptors have been derived by that boundary.
-//! Inline SQL syntax is checked with the shared domain SQL-document parser.
+//! Inline SQL policy is checked with the shared Composition-profile SQL
+//! linter, then parsed into the editable SQL Document view.
 
 use crate::id::FormId;
 use serde::{Deserialize, Serialize};
@@ -195,6 +196,7 @@ pub enum VariableGraphDiagnosticCode {
     InvalidInputDefault,
     InvalidResultDescriptor,
     InvalidInlineSql,
+    WildcardProjection,
     InvalidQueryDescriptor,
     MissingArgumentBinding,
     UnusedArgumentBinding,
@@ -215,6 +217,7 @@ impl VariableGraphDiagnosticCode {
             Self::InvalidInputDefault => "invalid_input_default",
             Self::InvalidResultDescriptor => "invalid_result_descriptor",
             Self::InvalidInlineSql => "invalid_inline_sql",
+            Self::WildcardProjection => "wildcard_projection",
             Self::InvalidQueryDescriptor => "invalid_query_descriptor",
             Self::MissingArgumentBinding => "missing_argument_binding",
             Self::UnusedArgumentBinding => "unused_argument_binding",
@@ -236,6 +239,8 @@ pub struct VariableGraphDiagnostic {
     pub argument_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_range: Option<crate::sql_document::SqlSourceRange>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle: Vec<String>,
 }
@@ -247,6 +252,7 @@ impl VariableGraphDiagnostic {
             variable_id: None,
             argument_name: None,
             reference_id: None,
+            source_range: None,
             cycle: Vec::new(),
         }
     }
@@ -352,6 +358,7 @@ pub fn variable_graph_dependency_order(
             variable_id: cycle.first().cloned(),
             argument_name: None,
             reference_id: None,
+            source_range: None,
             cycle,
         }]
     })
@@ -463,25 +470,45 @@ pub fn compile_variable_graph(
                 }
                 let inline_parameters = match &query.definition {
                     VariableGraphQueryDefinition::InlineSql { sql } => {
-                        let normalized = crate::sql_document::normalize_sql_template(sql);
-                        let document = crate::sql_document::parse_sql_document(&normalized.sql);
-                        if normalized.error.is_some()
-                            || document.status != crate::sql_document::SqlDocumentStatus::Parsed
-                        {
-                            diagnostics.push(VariableGraphDiagnostic::for_variable(
-                                VariableGraphDiagnosticCode::InvalidInlineSql,
-                                &node.id,
-                            ));
+                        let lint = crate::sql_lint::lint_sql(
+                            sql,
+                            crate::sql_lint::SqlLintProfile::Composition,
+                        );
+                        if !lint.is_valid() {
+                            for lint_diagnostic in lint.diagnostics {
+                                let code = match lint_diagnostic.code {
+                                    crate::sql_lint::SqlLintDiagnosticCode::WildcardProjection => {
+                                        VariableGraphDiagnosticCode::WildcardProjection
+                                    }
+                                    _ => VariableGraphDiagnosticCode::InvalidInlineSql,
+                                };
+                                let mut diagnostic =
+                                    VariableGraphDiagnostic::for_variable(code, &node.id);
+                                diagnostic.source_range = lint_diagnostic.range;
+                                diagnostics.push(diagnostic);
+                            }
                             None
                         } else {
-                            match inline_sql_parameter_names(&document) {
-                                Some(parameters) => Some(parameters),
-                                None => {
-                                    diagnostics.push(VariableGraphDiagnostic::for_variable(
-                                        VariableGraphDiagnosticCode::InvalidInlineSql,
-                                        &node.id,
-                                    ));
-                                    None
+                            let normalized = crate::sql_document::normalize_sql_template(sql);
+                            let document = crate::sql_document::parse_sql_document(&normalized.sql);
+                            if normalized.error.is_some()
+                                || document.status != crate::sql_document::SqlDocumentStatus::Parsed
+                            {
+                                diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                    VariableGraphDiagnosticCode::InvalidInlineSql,
+                                    &node.id,
+                                ));
+                                None
+                            } else {
+                                match inline_sql_parameter_names(&document) {
+                                    Some(parameters) => Some(parameters),
+                                    None => {
+                                        diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                            VariableGraphDiagnosticCode::InvalidInlineSql,
+                                            &node.id,
+                                        ));
+                                        None
+                                    }
                                 }
                             }
                         }
@@ -584,6 +611,7 @@ pub fn compile_variable_graph(
             variable_id: cycle.first().cloned(),
             argument_name: None,
             reference_id: None,
+            source_range: None,
             cycle,
         }]
     })?;
@@ -1288,19 +1316,60 @@ mod tests {
             });
             let diagnostics = compile_variable_graph(&graph(vec![invalid]))
                 .expect_err("inline SQL must be one syntactically valid query");
-            assert_eq!(
-                diagnostics,
-                [VariableGraphDiagnostic::for_variable(
-                    VariableGraphDiagnosticCode::InvalidInlineSql,
-                    "result"
-                )],
-                "SQL: {sql:?}"
+            let mut expected = VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidInlineSql,
+                "result",
             );
+            if sql.is_empty() {
+                expected.source_range =
+                    Some(crate::sql_document::SqlSourceRange { start: 0, end: 0 });
+            }
+            assert_eq!(diagnostics, [expected], "SQL: {sql:?}");
         }
         assert_eq!(
             VariableGraphDiagnosticCode::InvalidInlineSql.as_str(),
             "invalid_inline_sql"
         );
+    }
+
+    #[test]
+    fn rejects_projection_wildcards_with_variable_identity_and_source_range() {
+        for (sql, expected_source) in [
+            ("SELECT * FROM entries", "*"),
+            ("SELECT e.* FROM entries e", "e.*"),
+            (
+                "WITH source AS (SELECT * FROM entries) SELECT id FROM source",
+                "*",
+            ),
+            ("SELECT (SELECT * FROM entries) AS nested_value", "*"),
+        ] {
+            let node = query_definition(VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            });
+            let diagnostics = compile_variable_graph(&graph(vec![node]))
+                .expect_err("Composition query projections must be explicit");
+            assert_eq!(diagnostics.len(), 1, "SQL: {sql:?}");
+            let diagnostic = &diagnostics[0];
+            assert_eq!(
+                diagnostic.code,
+                VariableGraphDiagnosticCode::WildcardProjection
+            );
+            assert_eq!(diagnostic.variable_id.as_deref(), Some("result"));
+            let range = diagnostic.source_range.expect("source range");
+            assert!(sql.is_char_boundary(range.start));
+            assert!(sql.is_char_boundary(range.end));
+            assert_eq!(&sql[range.start..range.end], expected_source);
+        }
+
+        for sql in [
+            "SELECT COUNT(*) FROM entries",
+            "SELECT price * quantity FROM entries",
+        ] {
+            let node = query_definition(VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            });
+            assert!(compile_variable_graph(&graph(vec![node])).is_ok(), "{sql}");
+        }
     }
 
     #[test]
@@ -1372,16 +1441,21 @@ mod tests {
                     sql: sql.to_owned(),
                 };
             }
+            let mut expected = VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidInlineSql,
+                "result",
+            );
+            expected.source_range = Some(crate::sql_document::SqlSourceRange {
+                start: sql.find("{{").expect("template marker offset"),
+                end: sql.len(),
+            });
             assert_eq!(
                 compile_variable_graph(&graph(vec![
                     input("input", VariableGraphScalarType::Integer, false),
                     invalid,
                 ]))
                 .expect_err("malformed markers must fail graph validation"),
-                [VariableGraphDiagnostic::for_variable(
-                    VariableGraphDiagnosticCode::InvalidInlineSql,
-                    "result"
-                )],
+                [expected],
                 "SQL: {sql:?}"
             );
         }

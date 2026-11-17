@@ -6,6 +6,7 @@ import {
   expectedCompositionFormSeedSql,
   normalizeCompositionFormSeedSql,
 } from "./lib/composition-form.ts";
+import { checkCompositionQuery } from "./lib/composition-graph.ts";
 
 type FormSummary = {
   id?: string;
@@ -113,6 +114,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
       .getByRole("button", { name: formName, exact: true }).click();
     await page.getByRole("textbox", { name: "SQL", exact: true })
       .fill(originalSql);
+    await checkCompositionQuery(page);
     const initialQueryPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
       response.request().method() === "POST"
@@ -264,6 +266,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await page.getByRole("button", { name: variableId, exact: true }).click();
     await page.getByRole("textbox", { name: "SQL", exact: true })
       .fill(originalSql);
+    await checkCompositionQuery(page);
     const currentSchemaPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
       response.request().method() === "POST"

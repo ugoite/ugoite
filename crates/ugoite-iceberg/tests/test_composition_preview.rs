@@ -153,7 +153,7 @@ async fn concurrent_empty_form_preview_and_draft_evaluation_keep_form_snapshot_c
                     },
                     query: VariableGraphQuery {
                         definition: VariableGraphQueryDefinition::InlineSql {
-                            sql: format!("SELECT * FROM \"{form_name}\""),
+                            sql: format!("SELECT \"field_100\" FROM \"{form_name}\""),
                         },
                         arguments: Vec::new(),
                         form_bindings: vec![VariableGraphFormBinding {

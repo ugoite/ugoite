@@ -1,10 +1,69 @@
 import { CompletionContext } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
 import { EditorState } from "@codemirror/state";
+import { vi } from "vitest";
 import { buildSqlSchema } from "./sql";
 import { sqlCompletionSource } from "./sql-completion";
 
 describe("SQL Form completion", () => {
+  it("completes a Composition SQL variable marker to one explicit draft value", async () => {
+    const schema = buildSqlSchema([]);
+    const query = "SELECT {{mo";
+    const state = EditorState.create({
+      doc: query,
+      extensions: [sql({ schema })],
+    });
+    const onComplete = vi.fn();
+    const context = new CompletionContext(state, query.length, true);
+    const result = await sqlCompletionSource(schema, {
+      names: ["month", "money"],
+      onComplete,
+    })(context);
+    const option = result?.options.find((item) => item.label === "month");
+    let dispatched: { changes: { from: number; to: number; insert: string }; selection: { anchor: number } } | undefined;
+    const view = {
+      state: {
+        doc: {
+          sliceString: (from: number, to: number) => query.slice(from, to),
+        },
+      },
+      dispatch: (transaction: typeof dispatched) => dispatched = transaction,
+    };
+
+    option?.apply?.(view as never, option, 7, query.length);
+
+    expect(result?.options.map(({ label }) => label)).toEqual([
+      "month",
+      "money",
+    ]);
+    expect(onComplete).toHaveBeenCalledWith("month", "SELECT {{month}}");
+    expect(dispatched?.changes).toEqual({
+      from: 7,
+      to: query.length,
+      insert: "{{month}}",
+    });
+  });
+
+  it.each([
+    ["single-quoted string", "SELECT '{{mo"],
+    ["line comment", "SELECT 1 -- {{mo"],
+    ["block comment", "SELECT 1 /* {{mo"],
+    ["quoted identifier", 'SELECT "{{mo'],
+  ])("does not offer marker completion in a %s", async (_label, query) => {
+    const schema = buildSqlSchema([]);
+    const state = EditorState.create({
+      doc: query,
+      extensions: [sql({ schema })],
+    });
+    const context = new CompletionContext(state, query.length, true);
+    const result = await sqlCompletionSource(schema, {
+      names: ["month"],
+    })(context);
+
+    expect(result?.options.some(({ label }) => label === "month") ?? false)
+      .toBe(false);
+  });
+
   it("completes common aggregate functions while editing SQL", async () => {
     const schema = buildSqlSchema([]);
     const functions = [

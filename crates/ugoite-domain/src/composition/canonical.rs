@@ -1,7 +1,8 @@
 //! Canonical normalization and semantic fingerprints for Composition v1.
 
 use super::{
-    CompositionDiagnosticCode, CompositionDocument, VariableGraphNodeKind, VariableGraphResultType,
+    compile_variable_graph, CompositionDiagnosticCode, CompositionDocument, VariableGraph,
+    VariableGraphDiagnosticCode, VariableGraphNodeKind, VariableGraphResultType,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -88,6 +89,16 @@ pub(super) fn normalize_composition_document(
     document.validate_format_version()?;
     if document.name.trim().is_empty() || !composition_collection_limits_hold(document) {
         return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+    if compile_variable_graph(&VariableGraph {
+        variables: document.spec.variables.clone(),
+    })
+    .is_err_and(|diagnostics| {
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == VariableGraphDiagnosticCode::WildcardProjection)
+    }) {
+        return Err(CompositionDiagnosticCode::WildcardProjection);
     }
     document.spec.components_in_render_order()?;
     let mut normalized = document.clone();
@@ -203,6 +214,16 @@ mod tests {
         assert_eq!(
             super::canonicalize_composition_document_value(old_table),
             Err(CompositionDiagnosticCode::InvalidComposition),
+        );
+    }
+
+    #[test]
+    fn canonicalization_rejects_composition_projection_wildcards() {
+        let invalid = GRAPH.replace("SELECT \"Date\", category, amount", "SELECT *");
+        assert!(invalid.contains("SELECT *"));
+        assert_eq!(
+            canonicalize_composition_yaml(&invalid),
+            Err(CompositionDiagnosticCode::WildcardProjection),
         );
     }
 

@@ -15684,6 +15684,13 @@
               "type": "string"
             },
             "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
+          },
+          "requested_queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional nonempty query variable IDs to check. Planning includes each selected query's transitive query dependencies and omits unrelated query metadata; invalid or empty selections return diagnostics."
           }
         },
         "additionalProperties": false

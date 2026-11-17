@@ -1,4 +1,4 @@
-import { type APIRequestContext, expect } from "@playwright/test";
+import { type APIRequestContext, expect, type Page } from "@playwright/test";
 import { getBackendUrl } from "./client.ts";
 
 type GraphVariable = Record<string, unknown> & {
@@ -16,6 +16,15 @@ export type CompositionGraphSeed = {
     items: Array<{ kind: "component"; component: string }>;
   }>;
 };
+
+export async function checkCompositionQuery(page: Page): Promise<void> {
+  const check = page.getByRole("button", { name: "Check", exact: true });
+  await expect(check).toBeEnabled();
+  await check.click();
+  await expect(
+    page.getByRole("button", { name: "Run Query", exact: true }),
+  ).toBeEnabled();
+}
 
 type PreviewQuery = {
   variable_id: string;

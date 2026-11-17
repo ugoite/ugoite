@@ -121,6 +121,12 @@ vi.mock("~/components/SQLWorkspace", () => ({
     onNext?: () => void;
     onSqlChange?: (value: string) => void;
     onPreview?: () => void;
+    onCheck?: () => void;
+    planner?: {
+      status: "pending" | "success" | "error";
+      isCurrent: boolean;
+      error?: string;
+    };
     previewDisabled?: boolean;
     preview?: {
       status: string;
@@ -138,11 +144,28 @@ vi.mock("~/components/SQLWorkspace", () => ({
       />
       <button
         type="button"
-        disabled={props.previewDisabled}
+        disabled={props.previewDisabled || Boolean(
+          props.onCheck &&
+            (props.planner?.status !== "success" ||
+              !props.planner.isCurrent),
+        )}
         onClick={() => props.onPreview?.()}
       >
         Run query
       </button>
+      <span data-testid="query-preview-disabled">
+        {props.previewDisabled ? "true" : "false"}
+      </span>
+      {props.onCheck && (
+        <button
+          type="button"
+          disabled={props.planner?.status === "pending" &&
+            props.planner.isCurrent}
+          onClick={() => props.onCheck?.()}
+        >
+          Check
+        </button>
+      )}
       {props.actions?.map((action) => (
         <button
           type="button"
@@ -157,6 +180,8 @@ vi.mock("~/components/SQLWorkspace", () => ({
         Previous query page
       </button>
       <button type="button" onClick={props.onNext}>Next query page</button>
+      <span data-testid="query-plan-status">{props.planner?.status}</span>
+      <span data-testid="query-plan-error">{props.planner?.error}</span>
       <span data-testid="query-preview-status">{props.preview?.status}</span>
       <span data-testid="query-page">{props.preview?.page?.pageNumber}</span>
       <span data-testid="query-count">
@@ -268,8 +293,37 @@ const selectFormForQuery = async (name: string) => {
   await waitFor(() => expect(form).toBeEnabled());
   fireEvent.click(form);
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Form", exact: true }))
+      .toBeEnabled()
   );
+  await waitFor(() =>
+    expect(screen.getByTestId("query-preview-disabled"))
+      .toHaveTextContent("true")
+  );
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("query-preview-disabled"))
+        .toHaveTextContent("false"),
+    { timeout: 10_000 },
+  );
+  await checkQuery();
+};
+
+const checkQuery = async () => {
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("query-preview-disabled"))
+        .toHaveTextContent("false"),
+    { timeout: 10_000 },
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Check" }));
+  await waitFor(() =>
+    expect(["success", "error"]).toContain(
+      screen.getByTestId("query-plan-status").textContent,
+    )
+  );
+  expect(screen.getByTestId("query-plan-status")).toHaveTextContent("success");
+  expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled();
 };
 
 let releasePendingFormReferences: ((references: string[]) => void) | undefined;
@@ -424,9 +478,7 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(renderedDraftWithTable());
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "rows" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() =>
       expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
@@ -509,9 +561,7 @@ describe("CompositionStudio graph surface", () => {
     ));
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "rows" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
     setSpaceId("space-2");
@@ -921,9 +971,7 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
 
@@ -996,9 +1044,7 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
 
@@ -1042,9 +1088,7 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() =>
       expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
@@ -1077,9 +1121,7 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
 
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
@@ -1088,6 +1130,98 @@ describe("CompositionStudio graph surface", () => {
       requested_queries: ["query_1"],
     });
     expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty("query_results");
+  });
+
+  it("passes the current typed Input Work snapshot to Run without saving it", async () => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables = [
+      {
+        id: "limit",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+      },
+      {
+        id: "rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT {{limit}} AS value",
+          arguments: [{ name: "limit", variable: "limit" }],
+        },
+      },
+    ];
+    draft.components = [{ id: "input_1", kind: "input", variable: "limit" }];
+    draft.layout = {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "input_1" }],
+      }],
+    };
+    renderStudio(draft);
+    const input = await screen.findByRole("textbox", { name: "limit" });
+    fireEvent.input(input, { target: { value: "7" } });
+    await waitFor(() => expect(parseInputMock).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await checkQuery();
+
+    const callsBeforeRun = evaluateMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() =>
+      expect(evaluateMock.mock.calls.length).toBeGreaterThan(callsBeforeRun)
+    );
+    const [request, _signal, integerVariableIds] = evaluateMock.mock.calls
+      .filter(([, value]) => value.requested_queries?.includes("rows"))
+      .at(-1)!.slice(1);
+    expect(request.variables).toEqual({ limit: 7 });
+    expect(integerVariableIds).toContain("limit");
+    expect(request).not.toHaveProperty("component_values");
+  });
+
+  it("requires a current Check and discards a delayed result after SQL changes", async () => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables = [{
+      id: "query_1",
+      kind: "query",
+      returns: {
+        kind: "scalar",
+        value_type: { scalar_type: "integer", nullable: false },
+      },
+      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+    }];
+    let resolveCheck!: (value: unknown) => void;
+    previewGraphMock.mockImplementationOnce((_space: string, _yaml: string) =>
+      new Promise((resolve) => {
+        resolveCheck = (value) => resolve(value);
+      })
+    );
+    renderStudio(draft);
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    await waitFor(() => expect(previewGraphMock).toHaveBeenCalledOnce());
+    expect(previewGraphMock.mock.calls[0][6]).toEqual(["query_1"]);
+    const staleYaml = previewGraphMock.mock.calls[0][1];
+
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT 2" },
+    });
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
+    resolveCheck(plannedQuery(staleYaml, {
+      kind: "scalar",
+      value_type: { scalar_type: "integer", nullable: false },
+    }));
+    await Promise.resolve();
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
+    expect(evaluateMock).not.toHaveBeenCalled();
+
+    await checkQuery();
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
   });
 
   it("writes the real SQL toolbar Form selection into the host before first preview and clears pending per query", async () => {
@@ -1282,7 +1416,7 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(saveButton).toBeEnabled());
     fireEvent.click(saveButton);
     await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
-    const savedSpec = (canonicalizeMock.mock.calls[0][0] as {
+    const savedSpec = (canonicalizeMock.mock.calls.at(-1)![0] as {
       spec: {
         variables: Array<{
           id: string;

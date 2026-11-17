@@ -2041,10 +2041,11 @@ spec:
     assert_eq!(remote_history_after, history_before);
 }
 
-/// A stale inline SQL result descriptor keeps raw recovery identical through
-/// Core and Remote CLI transports while query reports the same stable diagnostic.
+/// Adding an unrelated Form field preserves an explicit inline SQL projection
+/// through Core and Remote CLI transports while raw recovery stays identical.
 #[tokio::test]
-async fn test_cli_composition_schema_drift_recovery_matches_core_remote() {
+async fn test_cli_composition_additive_form_change_preserves_explicit_projection_matches_core_remote(
+) {
     use ugoite_domain::composition::parse_composition_yaml;
     use ugoite_iceberg::composition::CompositionSaveRequest;
     use ugoite_iceberg::service::UgoiteService;
@@ -2052,7 +2053,7 @@ async fn test_cli_composition_schema_drift_recovery_matches_core_remote() {
     let fixture = setup_remote_with_filesystem_storage().await;
     let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
         .expect("open shared Space service");
-    let form_name = format!("CliDrift{}", uuid::Uuid::now_v7().simple());
+    let form_name = format!("CliProjection{}", uuid::Uuid::now_v7().simple());
     service
         .upsert_form(
             &fixture.space_id,
@@ -2070,7 +2071,7 @@ async fn test_cli_composition_schema_drift_recovery_matches_core_remote() {
     let yaml = format!(
         r#"format: ugoite.composition
 format_version: 1
-name: CLI schema drift
+name: CLI explicit projection
 kind: dashboard
 spec:
   variables:
@@ -2079,7 +2080,7 @@ spec:
       returns: {{ kind: table, columns: [] }}
       query:
         kind: inline_sql
-        sql: SELECT * FROM "{form_name}"
+        sql: SELECT "field_100" FROM "{form_name}"
   components:
     - id: salary_table
       kind: table
@@ -2093,7 +2094,7 @@ spec:
             component: salary_table
 "#
     );
-    let document = parse_composition_yaml(&yaml).expect("parse schema-drift Composition");
+    let document = parse_composition_yaml(&yaml).expect("parse explicit-projection Composition");
     let saved = service
         .save_composition_local_with_operation_id(
             &fixture.space_id,
@@ -2103,10 +2104,10 @@ spec:
                 document,
             },
             &fixture.owner_principal_id.to_string(),
-            &format!("cli-broken-ref-seed-{}", uuid::Uuid::now_v7()),
+            &format!("cli-explicit-projection-seed-{}", uuid::Uuid::now_v7()),
         )
         .await
-        .expect("seed inline SQL Composition");
+        .expect("seed explicit-projection inline SQL Composition");
     let composition_id = saved.entry_id.to_string();
     let revision_id = saved.revision_id.to_string();
 
@@ -2124,13 +2125,13 @@ spec:
             }),
         )
         .await
-        .expect("change the source result type after Composition save");
+        .expect("add an unrelated Form field after Composition save");
 
     let core_config_path = fixture
         .config_path
         .parent()
         .expect("fixture config parent")
-        .join("core-schema-drift-config.toml");
+        .join("core-explicit-projection-config.toml");
     let mut core_config = ConfigFile::empty();
     core_config.connections.insert(
         "local".to_string(),
@@ -2156,12 +2157,12 @@ spec:
     let history_args = ["composition", "history", composition_id.as_str()];
     let history_before = stdout_json(
         &run_cli(&core_config_path, &history_args).await,
-        "Core schema-drift Composition history before read journey",
+        "Core explicit-projection Composition history before read journey",
     );
     assert_eq!(history_before["total"], 1);
     let remote_history_before = stdout_json(
         &run_cli(&fixture.config_path, &history_args).await,
-        "Remote schema-drift Composition history before read journey",
+        "Remote explicit-projection Composition history before read journey",
     );
     assert_eq!(remote_history_before, history_before);
 
@@ -2174,11 +2175,11 @@ spec:
     ];
     let core_inspect = stdout_json(
         &run_cli(&core_config_path, &inspect_args).await,
-        "Core schema-drift Composition inspect",
+        "Core explicit-projection Composition inspect",
     );
     let remote_inspect = stdout_json(
         &run_cli(&fixture.config_path, &inspect_args).await,
-        "Remote schema-drift Composition inspect",
+        "Remote explicit-projection Composition inspect",
     );
     assert_eq!(core_inspect, remote_inspect);
     assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
@@ -2206,8 +2207,10 @@ spec:
     assert_eq!(core_raw.stdout, saved.canonical_yaml.as_bytes());
 
     let output_dir = fixture.config_path.parent().expect("fixture config parent");
-    let core_export_path = output_dir.join("core-schema-drift-composition-export.ugcomp.yaml");
-    let remote_export_path = output_dir.join("remote-schema-drift-composition-export.ugcomp.yaml");
+    let core_export_path =
+        output_dir.join("core-explicit-projection-composition-export.ugcomp.yaml");
+    let remote_export_path =
+        output_dir.join("remote-explicit-projection-composition-export.ugcomp.yaml");
     let core_export_args = [
         "composition",
         "export",
@@ -2228,11 +2231,11 @@ spec:
     ];
     let mut core_export = stdout_json(
         &run_cli(&core_config_path, &core_export_args).await,
-        "Core schema-drift Composition export",
+        "Core explicit-projection Composition export",
     );
     let mut remote_export = stdout_json(
         &run_cli(&fixture.config_path, &remote_export_args).await,
-        "Remote schema-drift Composition export",
+        "Remote explicit-projection Composition export",
     );
     core_export
         .as_object_mut()
@@ -2261,27 +2264,33 @@ spec:
     ];
     let core_query = stdout_json(
         &run_cli(&core_config_path, &query_args).await,
-        "Core schema-drift Composition query",
+        "Core explicit-projection Composition query",
     );
     let remote_query = stdout_json(
         &run_cli(&fixture.config_path, &query_args).await,
-        "Remote schema-drift Composition query",
+        "Remote explicit-projection Composition query",
     );
     assert_composition_query_semantics_match(&core_query, &remote_query);
-    assert_eq!(core_query["ok"], false);
+    assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
     assert_eq!(
-        core_query["diagnostics"],
-        json!([{"code": "query_schema_changed", "variable_id": "rows"}]),
-        "changed query schemas must retain the stable variable-scoped drift diagnostic"
+        core_query["query_results"]["rows"]["value"]["columns"][0]["name"], "field_100",
+        "the explicit projection must retain its original output after an unrelated field is added"
+    );
+    assert_eq!(
+        core_query["query_results"]["rows"]["value"]["rows"]
+            .as_array()
+            .map(Vec::len),
+        Some(0),
+        "the empty Form still has a valid query schema"
     );
 
     let history_after = stdout_json(
         &run_cli(&core_config_path, &history_args).await,
-        "Core schema-drift Composition history after read journey",
+        "Core explicit-projection Composition history after read journey",
     );
     let remote_history_after = stdout_json(
         &run_cli(&fixture.config_path, &history_args).await,
-        "Remote schema-drift Composition history after read journey",
+        "Remote explicit-projection Composition history after read journey",
     );
     assert_eq!(history_after, history_before);
     assert_eq!(remote_history_after, history_before);

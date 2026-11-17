@@ -102,6 +102,7 @@ use ugoite_iceberg::{
     form, saved_sql,
     service::{
         ApplyOperation, CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
+        CompositionPreviewSelection,
         CompositionQueryEvaluationPage as CoreCompositionQueryEvaluationPage,
         CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
         CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget,
@@ -11527,13 +11528,16 @@ async fn preview_composition_handler(
     let principals = authorization_principal_ids(&identity, principal_id);
     let preview = state
         .service
-        .preview_composition_authoring_authorized_for_principals_with_base(
+        .preview_composition_authoring_authorized_for_principals_with_base_and_query_selection(
             &space_id,
             &request.yaml,
             &request.variables,
             &request.unset_variables,
             &principals,
-            base,
+            CompositionPreviewSelection {
+                base,
+                requested_queries: request.requested_queries.as_deref(),
+            },
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -15448,6 +15452,256 @@ spec:
             ["total", "quantity"]
         );
         assert_eq!(query.schema_fingerprint.len(), 64);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_save_rejects_projection_wildcard_from_non_browser_client(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-save-wildcard-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351206);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-save-wildcard", owner_id, "Save test")
+            .await?
+            .to_string();
+        let form_name = "StudioWildcardCompositionSave";
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": Uuid::from_u128(351207),
+                    "name": form_name,
+                    "version": 1,
+                    "fields": {
+                        "Value": {"id": 100, "type": "string", "required": true}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let forms_before = serde_json::to_value(state.service.list_forms(&space_id).await?)?;
+        let entries_before = serde_json::to_value(state.service.list_entries(&space_id).await?)?;
+        let yaml = format!(
+            r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Wildcard save regression
+spec:
+  variables:
+    - id: rows
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: 'SELECT * FROM "{form_name}"'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+  components:
+    - id: table
+      kind: table
+      variable: rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: table
+"#
+        );
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let request = Request::post(format!("/spaces/{space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("idempotency-key", Uuid::now_v7().to_string())
+            .body(Body::from(serde_json::to_vec(&json!({"yaml": yaml}))?))?;
+
+        let (status, body) = route_json(route.clone(), request).await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "wildcard_projection");
+        let (list_status, list) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/compositions?limit=10")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(list_status, StatusCode::OK, "{list}");
+        assert_eq!(list["items"], json!([]));
+        assert_eq!(
+            serde_json::to_value(state.service.list_forms(&space_id).await?)?,
+            forms_before,
+            "rejected SQL must not create Composition registry state"
+        );
+        assert_eq!(
+            serde_json::to_value(state.service.list_entries(&space_id).await?)?,
+            entries_before,
+            "rejected SQL must not append a revision or publication"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sql_lint_route_matches_composition_profile_without_space() -> anyhow::Result<()> {
+        let state =
+            AppState::new_for_tests(format!("memory://server-sql-lint-route-{}", Uuid::now_v7()))?;
+        let route = Router::new()
+            .route("/sql/lint", post(super::lint_sql))
+            .with_state(state);
+        let sql = "SELECT t.* FROM \"Events\" t";
+        let request = Request::post("/sql/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&json!({
+                "sql": sql,
+                "profile": "composition"
+            }))?))?;
+
+        let (status, body) = route_json(route, request).await?;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body,
+            serde_json::to_value(ugoite_domain::sql_lint::lint_sql(
+                sql,
+                ugoite_domain::sql_lint::SqlLintProfile::Composition
+            ))?
+        );
+        assert_eq!(body["diagnostics"][0]["code"], "wildcard_projection");
+        assert_eq!(
+            body["diagnostics"][0]["range"],
+            json!({"start": 7, "end": 10})
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_preview_can_check_one_query_without_unrelated_sources(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-selected-preview-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(351208);
+        let space_id = state
+            .service
+            .create_space_for_principal(
+                "composition-selected-preview",
+                principal_id,
+                "Selected preview test",
+            )
+            .await?
+            .to_string();
+        let yaml = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Selected preview
+spec:
+  variables:
+    - id: selected_rows
+      kind: query
+      returns: {kind: table, columns: []}
+      query:
+        kind: inline_sql
+        sql: 'SELECT CAST(1 AS BIGINT) AS value'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+    - id: unrelated_rows
+      kind: query
+      returns: {kind: table, columns: []}
+      query:
+        kind: inline_sql
+        sql: 'SELECT "value" FROM "UnavailableForm"'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+  components:
+    - id: selected_table
+      kind: table
+      variable: selected_rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: selected_table
+"#;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+        let request = |payload: Value| {
+            Request::post(format!("/spaces/{space_id}/compositions/preview"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&payload).expect("preview serializes"),
+                ))
+        };
+
+        let (full_status, full_body) = route_json(
+            route.clone(),
+            request(json!({"yaml": yaml, "variables": {}}))?,
+        )
+        .await?;
+        assert_eq!(full_status, StatusCode::OK, "{full_body}");
+        assert_eq!(full_body["ok"], false, "{full_body}");
+
+        let (stale_status, stale_body) = route_json(
+            route.clone(),
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": ["missing_rows"]
+            }))?,
+        )
+        .await?;
+        assert_eq!(stale_status, StatusCode::OK, "{stale_body}");
+        assert_eq!(stale_body["ok"], false, "{stale_body}");
+        assert_eq!(
+            stale_body["diagnostics"][0]["variable_id"], "missing_rows",
+            "invalid query selections must fail with the requested variable ID"
+        );
+
+        let (empty_status, empty_body) = route_json(
+            route.clone(),
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": []
+            }))?,
+        )
+        .await?;
+        assert_eq!(empty_status, StatusCode::OK, "{empty_body}");
+        assert_eq!(empty_body["ok"], false, "{empty_body}");
+
+        let (selected_status, selected_body) = route_json(
+            route,
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": ["selected_rows"]
+            }))?,
+        )
+        .await?;
+        assert_eq!(selected_status, StatusCode::OK, "{selected_body}");
+        assert_eq!(selected_body["ok"], true, "{selected_body}");
+        assert_eq!(
+            selected_body["plan"]["queries"]
+                .as_array()
+                .expect("selected preview queries")
+                .iter()
+                .map(|query| query["variable_id"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            ["selected_rows"]
+        );
         Ok(())
     }
 

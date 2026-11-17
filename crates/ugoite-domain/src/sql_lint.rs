@@ -35,7 +35,7 @@ pub enum SqlLintSeverity {
 }
 
 /// Stable code for a portable SQL lint diagnostic.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SqlLintDiagnosticCode {
     SqlTooLarge,

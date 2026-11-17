@@ -104,7 +104,12 @@ async function seedInvalidInputComposition(
     components: [
       { id: "first_input", kind: "input", variable: "minimum_amount" },
       { id: "second_input", kind: "input", variable: "minimum_amount" },
-      { id: "matching_rows_text", kind: "text", content: "{{matching_rows}}", style: "body" },
+      {
+        id: "matching_rows_text",
+        kind: "text",
+        content: "{{matching_rows}}",
+        style: "body",
+      },
     ],
     rows: [
       {
@@ -233,8 +238,15 @@ test.describe("Composition invalid variable Input", () => {
     await expect(secondInput).toHaveAttribute("aria-invalid", "true");
     await expect(result).not.toHaveText("2");
     await expect(page.getByRole("alert").first()).toBeVisible();
-    const invalidResult = await (await invalidEvaluation).json();
-    expect(invalidResult.ok).toBe(true);
+    const invalidResult = await (await invalidEvaluation).json() as {
+      ok?: boolean;
+      diagnostics?: Array<{ code?: string }>;
+      computed_query_ids?: string[];
+    };
+    expect(invalidResult.ok).toBe(false);
+    expect(invalidResult.diagnostics).toContainEqual({
+      code: "invalid_composition",
+    });
     expect(invalidResult.computed_query_ids).toEqual([]);
     await settleWithoutReferencedQuery(
       page,
@@ -269,8 +281,12 @@ test.describe("Composition invalid variable Input", () => {
     const unsetResult = await unsetResponse.json() as {
       ok?: boolean;
       computed_query_ids?: string[];
+      diagnostics?: Array<{ code?: string }>;
     };
-    expect(unsetResult.ok).toBe(true);
+    expect(unsetResult.ok).toBe(false);
+    expect(unsetResult.diagnostics).toContainEqual({
+      code: "invalid_composition",
+    });
     expect(unsetResult.computed_query_ids).toEqual([]);
     await settleWithoutReferencedQuery(
       page,
@@ -322,7 +338,12 @@ test("independent Composition results update while another Input is invalid in D
     components: [
       { id: "bad_input", kind: "input", variable: "bad" },
       { id: "other_input", kind: "input", variable: "other" },
-      { id: "dependent_text", kind: "text", content: "{{dependent}}", style: "body" },
+      {
+        id: "dependent_text",
+        kind: "text",
+        content: "{{dependent}}",
+        style: "body",
+      },
       { id: "stable_text", kind: "text", content: "{{stable}}", style: "body" },
     ],
     rows: [{
@@ -421,7 +442,12 @@ test("a failed selected evaluation clears successful siblings and repairs togeth
     components: [
       { id: "amount_input", kind: "input", variable: "amount" },
       { id: "echo_text", kind: "text", content: "{{echo}}", style: "body" },
-      { id: "nonnegative_text", kind: "text", content: "{{nonnegative}}", style: "body" },
+      {
+        id: "nonnegative_text",
+        kind: "text",
+        content: "{{nonnegative}}",
+        style: "body",
+      },
     ],
     rows: [{
       id: "content",

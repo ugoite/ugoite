@@ -13,13 +13,6 @@ import {
 } from "@codemirror/lang-sql";
 import { type SqlSchema, sqlSchemaFormLabelsFor } from "./sql";
 
-const NON_CODE_NODES = new Set([
-  "String",
-  "QuotedIdentifier",
-  "LineComment",
-  "BlockComment",
-]);
-
 const SQL_AGGREGATE_FUNCTIONS = ["AVG", "COUNT", "MAX", "MIN", "SUM"];
 
 const aggregateCompletions: Completion[] = SQL_AGGREGATE_FUNCTIONS.map(
@@ -40,7 +33,15 @@ const aggregateCompletions: Completion[] = SQL_AGGREGATE_FUNCTIONS.map(
   }),
 );
 
-export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
+export interface SqlArgumentCompletion {
+  names: readonly string[];
+  onComplete?: (name: string, sql: string) => void;
+}
+
+export function sqlCompletionSource(
+  schema: SqlSchema,
+  argumentsCompletion?: SqlArgumentCompletion,
+): CompletionSource {
   const schemaSource = schemaCompletionSource({ schema });
   const keywords = keywordCompletionSource(StandardSQL);
   const names = Object.keys(schema.tables);
@@ -67,7 +68,33 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
     if (node.name === "QuotedIdentifier") {
       return withTableLabels(await schemaSource(context));
     }
-    if (NON_CODE_NODES.has(node.name)) return null;
+    if (node.name === "String" || node.name === "LineComment" ||
+      node.name === "BlockComment") return null;
+    const argumentToken = context.matchBefore(/\{\{[A-Za-z_][A-Za-z0-9_]*$/);
+    if (argumentToken) {
+      const prefix = argumentToken.text.slice(2).toLowerCase();
+      const names = (argumentsCompletion?.names ?? []).filter((name) =>
+        name.toLowerCase().startsWith(prefix)
+      );
+      return {
+        from: argumentToken.from,
+        options: names.map((name) => ({
+          label: name,
+          type: "variable",
+          apply(view, _completion, from, to) {
+            const insert = `{{${name}}}`;
+            const nextSql = view.state.doc.sliceString(0, from) + insert +
+              view.state.doc.sliceString(to);
+            argumentsCompletion?.onComplete?.(name, nextSql);
+            view.dispatch({
+              changes: { from, to, insert },
+              selection: { anchor: from + insert.length },
+            });
+          },
+        })),
+        validFor: /^\{\{[A-Za-z_][A-Za-z0-9_]*$/,
+      };
+    }
 
     const beforeCursor = context.state.sliceDoc(0, context.pos);
     if (
@@ -117,6 +144,11 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
   };
 }
 
-export function sqlEditorAutocompletion(schema: SqlSchema) {
-  return autocompletion({ override: [sqlCompletionSource(schema)] });
+export function sqlEditorAutocompletion(
+  schema: SqlSchema,
+  argumentsCompletion?: SqlArgumentCompletion,
+) {
+  return autocompletion({
+    override: [sqlCompletionSource(schema, argumentsCompletion)],
+  });
 }
