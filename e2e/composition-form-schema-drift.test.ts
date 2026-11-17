@@ -108,7 +108,14 @@ test("Composition keeps a saved query executable after an unused Form field is a
     );
     await chooseCompositionFormSource(page, formName, originalSql);
     await checkCompositionQuery(page);
+    const initialEvaluationResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
+      response.request().method() === "POST"
+    );
     await page.getByRole("button", { name: "Use", exact: true }).click();
+    const initialEvaluation = await (await initialEvaluationResponse)
+      .json() as { ok?: boolean };
+    expect(initialEvaluation.ok).toBe(true);
     await expect(page.getByRole("tab", { name: "Design", exact: true }))
       .toHaveAttribute("aria-selected", "true");
 

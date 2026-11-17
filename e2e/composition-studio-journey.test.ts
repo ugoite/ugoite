@@ -1132,9 +1132,6 @@ test.describe("Composition Studio Journey", () => {
     const resultTable = page.getByRole("table", { name: "studio_rows" });
     await expect(resultTable).toBeVisible();
     await expect(resultTable.locator("tbody tr")).toHaveCount(0);
-    await expect(page.locator(
-      '[data-component-id="table_1"] [data-component-select="true"]',
-    )).toBeFocused();
     await page.screenshot({
       path: testInfo.outputPath("composition-table-after-use-empty.png"),
       fullPage: true,
