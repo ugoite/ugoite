@@ -5,18 +5,15 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionGraphStudio } from "./CompositionGraphStudio";
 import {
-  compositionGraphDocumentDraft,
   type CompositionGraphDraft,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import { buildSqlSchema } from "~/lib/sql";
-import { parseSqlDocument } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 
 vi.mock("~/lib/composition-api", () => ({
@@ -39,12 +36,32 @@ vi.mock("~/lib/composition-api", () => ({
   },
 }));
 
-describe("Composition shared SQL argument editing", () => {
+vi.mock("./SqlQueryEditor", () => ({
+  SqlQueryEditor: (props: {
+    ariaLabel?: string;
+    value: string;
+    onChange: (value: string) => void;
+  }) => (
+    <div
+      class="cm-content"
+      role="textbox"
+      aria-label={props.ariaLabel}
+      contentEditable={true}
+      tabIndex={0}
+      onInput={(event) => props.onChange(event.currentTarget.textContent ?? "")}
+    >
+      {props.value}
+    </div>
+  ),
+}));
+
+describe("Composition inline SQL argument bindings", () => {
   beforeEach(() => setLocale("en"));
   afterEach(cleanup);
-  const setup = () => {
-    const initial = createCompositionGraphDraft("Report");
-    initial.variables = [
+
+  const makeDraft = (sql: string, bound = true) => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables = [
       {
         id: "threshold",
         kind: "constant",
@@ -66,1015 +83,186 @@ describe("Composition shared SQL argument editing", () => {
         },
         query: {
           kind: "inline_sql",
-          sql: "SELECT $limit AS value -- $limit remains a comment",
-          arguments: [{ name: "limit", variable: "threshold" }],
+          sql,
+          arguments: bound ? [{ name: "limit", variable: "threshold" }] : [],
         },
       },
     ];
+    return draft;
+  };
+
+  const renderStudio = (initial: CompositionGraphDraft) => {
     const [draft, setDraft] = createSignal(initial);
-    const validity = vi.fn();
     render(() => (
       <CompositionGraphStudio
+        spaceId="space"
         draft={draft()}
-        forms={[]}
-        savedSql={[]}
-        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
-        session={{
-          session_id: "editor",
-          space_id: "space",
-          document_revision: null,
-          principal_generation: "principal",
-        }}
         getPrincipalGeneration={async () => "principal"}
-        isSessionCurrent={() => true}
         sqlSchema={buildSqlSchema([])}
         onDraftChange={setDraft}
-        onEditorValidityChange={validity}
-        onQueryChange={(id, sql) =>
+        onQueryChange={(id, sql, formBindings) =>
           setDraft((current) => ({
             ...current,
             variables: current.variables.map((node) =>
-              node.id === id && node.kind === "query"
-                ? { ...node, query: { ...node.query, kind: "inline_sql", sql } }
+              node.id === id && node.kind === "query" &&
+                node.query.kind === "inline_sql"
+                ? {
+                  ...node,
+                  query: {
+                    ...node.query,
+                    sql,
+                    ...(formBindings
+                      ? {
+                        form_bindings: formBindings.map((binding) => ({
+                          relation: binding.relation,
+                          form_id: binding.form_id,
+                        })),
+                      }
+                      : {}),
+                  },
+                }
                 : node
             ),
           }))}
       />
     ));
-    const query = () =>
-      draft().variables.find((node) => node.id === "rows") as Extract<
-        CompositionGraphDraft["variables"][number],
-        { kind: "query" }
-      >;
-    const open = async () => {
-      fireEvent.click(
-        screen.getByRole("tab", { name: "Variables", exact: true }),
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "rows", exact: true }),
-      );
-      const action = await screen.findByRole("button", {
-        name: "Arguments",
-        exact: true,
-      });
-      await waitFor(() => expect(action).toBeEnabled());
-      fireEvent.click(action);
-      return screen.getByRole("dialog", { name: "Arguments", exact: true });
-    };
-    return { draft, setDraft, query, open, validity };
+    return draft;
   };
 
-  it("creates a bound filter argument in Composition", async () => {
-    const initial = createCompositionGraphDraft("Report");
-    initial.variables = [
-      {
-        id: "threshold",
-        kind: "constant",
-        value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: "3" },
-      },
-      {
-        id: "rows",
-        kind: "query",
-        returns: { kind: "table", columns: [] },
-        query: {
-          kind: "inline_sql",
-          sql: 'SELECT * FROM "Expenses"',
-          arguments: [],
-        },
-      },
-    ];
-    const [draft, setDraft] = createSignal(initial);
-    const run = vi.fn();
-    const save = vi.fn();
-    const validity = vi.fn();
-    const expenses = {
-      id: "expenses-id",
-      name: "Expenses",
-      version: 1,
-      template: "# Expenses",
-      sql_relation: "form_expenses",
-      fields: {
-        Amount: {
-          type: "integer",
-          required: false,
-          sql_column: "amount",
-          query_capability: {
-            field: { kind: "property", field_id: 1 },
-            name: "amount",
-            field_type: "integer",
-            filterable: true,
-            sortable: true,
-            projectable: true,
-            supported_operators: ["equals", "lt", "lte", "gt", "gte"],
-          },
-        },
-      },
-    };
-    render(() => (
-      <CompositionGraphStudio
-        draft={draft()}
-        forms={[expenses]}
-        sqlForms={[expenses]}
-        savedSql={[]}
-        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
-        session={{
-          session_id: "editor",
-          space_id: "space",
-          document_revision: null,
-          principal_generation: "principal",
-        }}
-        getPrincipalGeneration={async () => "principal"}
-        isSessionCurrent={() => true}
-        sqlSchema={buildSqlSchema([expenses])}
-        onDraftChange={setDraft}
-        onRunQuery={run}
-        onSave={save}
-        onEditorValidityChange={validity}
-      />
-    ));
+  const openQuery = async (id = "rows") => {
     fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
+      screen.getByRole("tab", { name: "Variables" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
     fireEvent.click(
-      await screen.findByRole("button", { name: "Filter", exact: true }),
+      await screen.findByRole("button", { name: id }),
     );
-    const dialog = screen.getByRole("dialog", { name: "Filter", exact: true });
-    await waitFor(() =>
-      expect(
-        within(dialog).getByRole("combobox", { name: "Column for new filter" })
-          .querySelector(
-            'option[value="amount"]',
-          ),
-      ).not.toBeNull()
+    await screen.findByRole("textbox", { name: "SQL" });
+  };
+
+  it("binds each Rust-parsed marker beside the text editor without structure dialogs", async () => {
+    const draft = renderStudio(
+      makeDraft("SELECT {{limit}} AS value -- {{ignored}}", true),
     );
+    await openQuery();
+
+    expect(
+      await screen.findByRole(
+        "combobox",
+        { name: "Choose a variable for limit" },
+        { timeout: 10000 },
+      ),
+    ).toHaveValue("threshold");
+    expect(screen.queryByRole("button", { name: "Structure" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Arguments" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Columns" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sort" })).toBeNull();
+    expect(
+      screen.queryByRole("combobox", { name: "Choose a variable for ignored" }),
+    )
+      .toBeNull();
+
     fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Column for new filter" }),
-      {
-        target: { value: "amount" },
-      },
+      screen.getByRole("combobox", { name: "Choose a variable for limit" }),
+      { target: { value: "caption" } },
     );
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Value source" }),
-      {
-        target: { value: "argument" },
-      },
-    );
-    fireEvent.input(
-      within(dialog).getByRole("textbox", { name: "New argument name" }),
-      {
-        target: { value: "minimum" },
-      },
-    );
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Bind to scalar variable" }),
-      {
-        target: { value: "threshold" },
-      },
-    );
-    const addFilter = within(dialog).getByRole("button", {
-      name: "Add filter",
-    });
-    expect(addFilter).toBeEnabled();
-    fireEvent.click(addFilter);
-    await waitFor(() => expect(within(dialog).queryByRole("alert")).toBeNull());
     await waitFor(() =>
       expect(draft().variables.find((node) => node.id === "rows"))
         .toMatchObject({
           query: {
-            sql: 'SELECT * FROM "Expenses" WHERE amount = $minimum',
-            arguments: [{ name: "minimum", variable: "threshold" }],
+            arguments: [{ name: "limit", variable: "caption" }],
           },
         })
     );
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-    fireEvent.click(
-      within(dialog).getAllByRole("button", { name: "Close" })[1],
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Arguments", exact: true }),
-    );
-    expect(await screen.findByRole("button", { name: "Remove minimum" }))
-      .toBeDisabled();
-    expect(screen.getByLabelText(/type for minimum/i)).toHaveValue("integer");
-    const runButton = screen.getByRole("button", {
-      name: "Run Query",
-      exact: true,
-    });
-    expect(runButton).toBeEnabled();
-    expect(runButton).not.toHaveAttribute("aria-describedby");
-    fireEvent.click(runButton);
-    expect(run).toHaveBeenCalledWith("rows");
-    fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
-    expect(save).toHaveBeenCalledOnce();
   });
 
-  it("keeps SQL declarations and a Design Input in one explicitly bound graph draft", async () => {
-    const { draft, setDraft, query, open, validity } = setup();
-    const dialog = await open();
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: "SELECT $minimum AS value",
-            },
-          }
-          : node
-      ),
-    }));
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText("Argument name")).toBeEnabled()
-    );
-    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
-      target: { value: "minimum" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Type", { exact: true }), {
-      target: { value: "integer" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add argument" }),
-    );
-    await waitFor(() =>
-      expect(query().query.arguments).toContainEqual({
-        name: "minimum",
-        variable: "",
-      })
-    );
-    expect(within(dialog).getByLabelText("Type for minimum")).toHaveValue(
-      "integer",
-    );
-    await waitFor(() =>
-      expect(within(dialog).getByRole("button", { name: "Remove limit" }))
-        .toBeEnabled()
-    );
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Remove limit" }),
-    );
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "",
-      }])
-    );
-    fireEvent.click(
-      within(dialog).getAllByRole("button", { name: "Close" })[0],
-    );
-
-    fireEvent.click(screen.getByRole("tab", { name: "Design", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Input", exact: true }));
-    const inputName = screen.getByRole("textbox", { name: "Variable name" });
-    fireEvent.input(inputName, { target: { value: "minimum_value" } });
-    fireEvent.submit(inputName.closest("form")!);
-    await waitFor(() =>
-      expect(draft().components).toContainEqual({
-        id: "input_1",
-        kind: "input",
-        variable: "minimum_value",
-      })
-    );
-
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "minimum_value", exact: true }),
-    );
-    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
-      target: { value: "integer" },
-    });
-    await waitFor(() =>
-      expect(draft().variables.find((node) => node.id === "minimum_value"))
-        .toMatchObject({
-          kind: "input",
-          value_type: { scalar_type: "integer", nullable: false },
-        })
-    );
-    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
-    const inputBinding = screen.getByRole("combobox", {
-      name: "minimum",
-      exact: true,
-    });
-    fireEvent.change(inputBinding, { target: { value: "minimum_value" } });
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "minimum_value",
-      }])
-    );
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-
-    expect(draft().components).toContainEqual({
-      id: "input_1",
-      kind: "input",
-      variable: "minimum_value",
-    });
-    expect(draft().layout.rows.flatMap((row) => row.items)).toContainEqual({
-      kind: "component",
-      component: "input_1",
-    });
-    const savedSpec = compositionGraphDocumentDraft(draft()).spec;
-    expect(savedSpec.variables.find((node) => node.id === "minimum_value"))
-      .toMatchObject({
-        kind: "input",
-        value_type: { scalar_type: "integer", nullable: false },
-      });
-    expect(savedSpec.variables.find((node) => node.id === "rows"))
-      .toMatchObject({
-        query: {
-          sql: "SELECT $minimum AS value",
-          arguments: [{ name: "minimum", variable: "minimum_value" }],
-        },
-      });
-    expect(savedSpec.components).toEqual([{
-      id: "input_1",
-      kind: "input",
-      variable: "minimum_value",
-    }]);
-    expect(savedSpec.layout).toEqual(draft().layout);
-  });
-
-  it("creates a typed unbound SQL argument from an expression and binds it explicitly", async () => {
-    const { draft, setDraft, query, open, validity } = setup();
-    const expressionSql = 'SELECT amount >= 1 AS matches FROM "Expenses"';
-    const argumentsDialog = await open();
-    fireEvent.click(
-      within(argumentsDialog).getAllByRole("button", { name: "Close" })[0],
-    );
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            returns: {
-              kind: "scalar",
-              value_type: { scalar_type: "boolean", nullable: false },
-            },
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: expressionSql,
-              arguments: [],
-            },
-          }
-          : node
-      ),
-    }));
-
-    fireEvent.click(screen.getByRole("tab", { name: "Design", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Input", exact: true }));
-    const inputName = screen.getByRole("textbox", { name: "Variable name" });
-    fireEvent.input(inputName, { target: { value: "minimum" } });
-    fireEvent.submit(inputName.closest("form")!);
-    await waitFor(() =>
-      expect(draft().components).toContainEqual({
-        id: "input_1",
-        kind: "input",
-        variable: "minimum",
-      })
-    );
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "minimum", exact: true }),
-    );
-    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
-      target: { value: "integer" },
-    });
-    await waitFor(() =>
-      expect(draft().variables.find((node) => node.id === "minimum"))
-        .toMatchObject({
-          kind: "input",
-          value_type: { scalar_type: "integer", nullable: false },
-        })
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
-    const structure = await screen.findByRole("button", {
-      name: "Structure",
-      exact: true,
-    });
-    fireEvent.click(structure);
-    const structureOptions = await screen.findByRole("group", {
-      name: "Structure options",
-    });
-    const sqlTreeButton = within(structureOptions).getByRole("button", {
-      name: /SQL tree/,
-    });
-    await waitFor(() => expect(sqlTreeButton).toBeEnabled());
-    fireEvent.click(
-      sqlTreeButton,
-    );
-    const structureDialog = await screen.findByRole("dialog");
-    const document = await parseSqlDocument(expressionSql);
-    const value = document.nodes.find((node) =>
-      node.semantic?.kind === "literal" &&
-      node.semantic.literal_kind === "number"
-    );
-    expect(value).toBeDefined();
-    const valueItem = (await within(structureDialog).findAllByRole("treeitem"))
-      .find((item) => item.dataset.sqlDocumentNode === String(value!.id));
-    expect(valueItem).toBeDefined();
-    fireEvent.click(valueItem!);
-    fireEvent.change(screen.getByLabelText("Value type"), {
-      target: { value: "named_parameter" },
-    });
-    fireEvent.input(within(structureDialog).getByLabelText("Argument name"), {
-      target: { value: "minimum" },
-    });
-    fireEvent.change(within(structureDialog).getByLabelText("Type"), {
-      target: { value: "integer" },
-    });
-    fireEvent.click(
-      within(structureDialog).getByRole("button", { name: "Apply" }),
-    );
-
-    await waitFor(() =>
-      expect(query().query.sql)
-        .toBe('SELECT amount >= $minimum AS matches FROM "Expenses"')
-    );
-    expect(query().query.arguments).toEqual([{
-      name: "minimum",
-      variable: "",
-    }]);
-    expect(validity).toHaveBeenLastCalledWith("rows", false);
-    expect(screen.getByRole("button", { name: "Run Query", exact: true }))
-      .toBeDisabled();
-
-    fireEvent.click(
-      within(structureDialog).getAllByRole("button", {
-        name: "Close",
-        exact: true,
-      })[0],
-    );
-    const inputBinding = await screen.findByRole("combobox", {
-      name: "minimum",
-      exact: true,
-    });
-    expect(inputBinding).toHaveValue("");
-    fireEvent.change(inputBinding, { target: { value: "minimum" } });
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "minimum",
-      }])
-    );
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-
-    const savedSpec = compositionGraphDocumentDraft(draft()).spec;
-    expect(savedSpec.variables.find((node) => node.id === "rows"))
-      .toMatchObject({
-        query: {
-          sql: 'SELECT amount >= $minimum AS matches FROM "Expenses"',
-          arguments: [{ name: "minimum", variable: "minimum" }],
-        },
-      });
-    expect(savedSpec.variables.find((node) => node.id === "minimum"))
-      .toMatchObject({
-        kind: "input",
-        value_type: { scalar_type: "integer", nullable: false },
-      });
-    expect(savedSpec.components).toEqual([{
-      id: "input_1",
-      kind: "input",
-      variable: "minimum",
-    }]);
-    expect(savedSpec.layout).toEqual(draft().layout);
-  });
-
-  it("does not bind a same-named Design Input to a SQL argument implicitly", async () => {
-    const { draft, setDraft, query, open, validity } = setup();
-    const dialog = await open();
-    await waitFor(() => expect(query().query.arguments).toHaveLength(1));
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: "SELECT $minimum AS value",
-              arguments: [],
-            },
-          }
-          : node
-      ),
-    }));
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText("Argument name"))
-        .toBeEnabled()
-    );
-    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
-      target: { value: "minimum" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Type", { exact: true }), {
-      target: { value: "integer" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add argument" }),
-    );
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "",
-      }])
-    );
-    fireEvent.click(
-      within(dialog).getAllByRole("button", { name: "Close" })[0],
-    );
-
-    // Add a Design Input whose graph ID collides with the SQL parameter name.
-    fireEvent.click(screen.getByRole("tab", { name: "Design", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Input", exact: true }));
-    const inputName = screen.getByRole("textbox", { name: "Variable name" });
-    fireEvent.input(inputName, { target: { value: "minimum" } });
-    fireEvent.submit(inputName.closest("form")!);
-    await waitFor(() =>
-      expect(draft().components).toContainEqual({
-        id: "input_1",
-        kind: "input",
-        variable: "minimum",
-      })
-    );
-
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "minimum", exact: true }),
-    );
-    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
-      target: { value: "integer" },
-    });
-    await waitFor(() =>
-      expect(draft().variables.find((node) => node.id === "minimum"))
-        .toMatchObject({
-          kind: "input",
-          value_type: { scalar_type: "integer", nullable: false },
-        })
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
-    const binding = screen.getByRole("combobox", {
-      name: "minimum",
-      exact: true,
-    });
-    await waitFor(() => expect(binding).toHaveValue(""));
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", false)
-    );
-    expect(query().query.arguments).toEqual([{
-      name: "minimum",
-      variable: "",
-    }]);
-
-    fireEvent.change(binding, { target: { value: "minimum" } });
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "minimum",
-      }])
-    );
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-
-    const savedSpec = compositionGraphDocumentDraft(draft()).spec;
-    expect(savedSpec.variables.find((node) => node.id === "minimum"))
-      .toMatchObject({
-        kind: "input",
-        value_type: { scalar_type: "integer", nullable: false },
-      });
-    expect(savedSpec.variables.find((node) => node.id === "rows"))
-      .toMatchObject({
-        query: {
-          arguments: [{ name: "minimum", variable: "minimum" }],
-        },
-      });
-  });
-
-  it("renames through Rust while preserving bindings and comment lookalikes", async () => {
-    const { query, open } = setup();
-    const dialog = await open();
-    expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    fireEvent.input(within(dialog).getByLabelText("Argument name for limit"), {
-      target: { value: "minimum" },
-    });
-    const rename = within(dialog).getByRole("button", {
-      name: "Rename argument",
-    });
-    rename.focus();
-    fireEvent.click(rename);
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{
-        name: "minimum",
-        variable: "threshold",
-      }])
-    );
-    expect(query().query).toMatchObject({
-      sql: "SELECT $minimum AS value -- $limit remains a comment",
-    });
-    await waitFor(() =>
-      expect(dialog).toContainElement(document.activeElement as HTMLElement)
-    );
-  });
-
-  it("disconnects an incompatible type and requires an explicit matching binding", async () => {
-    const { draft, query, open, validity } = setup();
-    const dialog = await open();
-    within(dialog).getByLabelText("Type for limit").focus();
-    fireEvent.change(within(dialog).getByLabelText("Type for limit"), {
-      target: { value: "string" },
-    });
-    await waitFor(() => expect(query().query.arguments[0].variable).toBe(""));
-    await waitFor(() =>
-      expect(dialog).toContainElement(document.activeElement as HTMLElement)
-    );
-    expect(draft().variables[0]).toMatchObject({
-      value_type: { scalar_type: "integer" },
-    });
-    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-    expect(dialog).not.toBeInTheDocument();
-    const binding = screen.getByRole("combobox", {
-      name: "limit",
-      exact: true,
-    });
-    expect(within(binding).queryByRole("option", { name: "threshold" }))
-      .toBeNull();
-    expect(within(binding).getByRole("option", { name: "caption" }))
-      .toBeInTheDocument();
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", false)
-    );
-    fireEvent.change(binding, { target: { value: "caption" } });
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-    expect(query().query.arguments[0].variable).toBe("caption");
-  });
-
-  it("removes a declaration only after its SQL use is removed and does not restore old Work", async () => {
-    const { query, setDraft, open } = setup();
-    const dialog = await open();
-    expect(within(dialog).getByRole("button", { name: "Remove limit" }))
-      .toBeDisabled();
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: "SELECT 1 -- $limit is only a comment",
-            },
-          }
-          : node
-      ),
-    }));
-    await waitFor(() =>
-      expect(within(dialog).getByRole("button", { name: "Remove limit" }))
-        .toBeEnabled()
-    );
-    const remove = within(dialog).getByRole("button", { name: "Remove limit" });
-    remove.focus();
-    fireEvent.click(remove);
-    await waitFor(() => expect(query().query.arguments).toEqual([]));
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText("Argument name")).toBeEnabled()
-    );
-    await waitFor(() =>
-      expect(dialog).toContainElement(document.activeElement as HTMLElement)
-    );
-    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
-      target: { value: "limit" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Type", { exact: true }), {
-      target: { value: "date" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add argument" }),
-    );
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{ name: "limit", variable: "" }])
-    );
-    expect(within(dialog).getByLabelText("Type for limit")).toHaveValue("date");
-  });
-  it("discards a rename if the SQL changes before Rust completes", async () => {
-    const { query, setDraft, open } = setup();
-    const dialog = await open();
-    fireEvent.input(within(dialog).getByLabelText("Argument name for limit"), {
-      target: { value: "obsolete" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Rename argument" }),
-    );
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: "SELECT $limit + 2 AS value",
-            },
-          }
-          : node
-      ),
-    }));
-    await waitFor(() =>
-      expect(within(dialog).getByRole("alert")).toBeVisible()
-    );
-    expect(query().query).toMatchObject({
-      sql: "SELECT $limit + 2 AS value",
-      arguments: [{ name: "limit", variable: "threshold" }],
-    });
-  });
-  it("declares a directly typed parameter without deleting it from SQL first", async () => {
-    const { query, setDraft, open, validity } = setup();
-    const dialog = await open();
-    setDraft((current) => ({
-      ...current,
-      variables: current.variables.map((node) =>
-        node.id === "rows" && node.kind === "query"
-          ? {
-            ...node,
-            query: {
-              ...node.query,
-              kind: "inline_sql",
-              sql: "SELECT $fresh AS value",
-            },
-          }
-          : node
-      ),
-    }));
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText("Argument name")).toBeEnabled()
-    );
-    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
-      target: { value: "fresh" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Type", { exact: true }), {
-      target: { value: "integer" },
-    });
-    const add = within(dialog).getByRole("button", { name: "Add argument" });
-    expect(add).toBeEnabled();
-    fireEvent.click(add);
-    await waitFor(() =>
-      expect(query().query.arguments.some((entry) => entry.name === "fresh"))
-        .toBe(true)
-    );
-    await waitFor(() =>
-      expect(within(dialog).getByRole("button", { name: "Remove limit" }))
-        .toBeEnabled()
-    );
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Remove limit" }),
-    );
-    await waitFor(() =>
-      expect(query().query.arguments).toEqual([{ name: "fresh", variable: "" }])
-    );
-    fireEvent.click(
-      within(dialog).getAllByRole("button", { name: "Close" })[0],
-    );
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "fresh", exact: true }),
-      { target: { value: "threshold" } },
-    );
-    await waitFor(() =>
-      expect(validity).toHaveBeenLastCalledWith("rows", true)
-    );
-    expect(query().query).toMatchObject({
-      sql: "SELECT $fresh AS value",
-      arguments: [{ name: "fresh", variable: "threshold" }],
-    });
-  });
-  it("returns focus after Composition Form selection while SQL validity reparses", async () => {
-    const initial = createCompositionGraphDraft("Report");
-    initial.variables = [{
-      id: "rows",
-      kind: "query",
-      returns: {
-        kind: "scalar",
-        value_type: { scalar_type: "integer", nullable: false },
-      },
-      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
-    }];
-    const [draft, setDraft] = createSignal(initial);
-    const form = {
-      id: "f",
-      name: "Expenses",
-      version: 1,
-      template: "# Expenses",
-      sql_relation: "form_123",
-      fields: { Amount: { type: "float", sql_column: "amount" } },
-    };
-    render(() => (
-      <CompositionGraphStudio
-        draft={draft()}
-        forms={[]}
-        savedSql={[]}
-        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
-        session={{
-          session_id: "s",
-          space_id: "space",
-          document_revision: null,
-          principal_generation: "p",
-        }}
-        getPrincipalGeneration={async () => "p"}
-        isSessionCurrent={() => true}
-        sqlSchema={buildSqlSchema([form])}
-        sqlForms={[form]}
-        onDraftChange={setDraft}
-        onQueryChange={(id, sql) =>
-          setDraft((current) => ({
-            ...current,
-            variables: current.variables.map((node) =>
-              node.id === id && node.kind === "query"
-                ? { ...node, query: { ...node.query, kind: "inline_sql", sql } }
-                : node
-            ),
-          }))}
-      />
-    ));
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
-    const opener = await screen.findByRole("button", {
-      name: "Form",
-      exact: true,
-    });
-    await waitFor(() => expect(opener).toBeEnabled());
-    opener.focus();
-    fireEvent.click(opener);
-    const choice = await screen.findByRole("button", {
-      name: "Expenses",
-      exact: true,
-    });
-    await waitFor(() => expect(choice).toBeEnabled());
-    choice.focus();
-    fireEvent.click(choice);
-    await waitFor(() =>
-      expect(draft().variables[0]).toMatchObject({
-        query: { sql: 'SELECT 1 FROM "Expenses"' },
-      })
-    );
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    );
-    await waitFor(() => expect(opener).toHaveFocus());
-  });
-
-  it("creates a variable only after a unique name is submitted", async () => {
-    const initial = createCompositionGraphDraft("Report");
-    initial.variables = [{
-      id: "existing",
+  it("creates a unique suggested variable and binds it atomically from the SQL marker", async () => {
+    const initial = makeDraft("SELECT {{limit}} AS value", false);
+    initial.variables.push({
+      id: "limit",
       kind: "constant",
       value_type: { scalar_type: "string", nullable: false },
-      value: { kind: "string", value: "" },
-    }];
-    const [draft, setDraft] = createSignal(initial);
-    const onSave = vi.fn();
-    render(() => (
-      <CompositionGraphStudio
-        draft={draft()}
-        forms={[]}
-        savedSql={[]}
-        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
-        session={{
-          session_id: "editor",
-          space_id: "space",
-          document_revision: null,
-          principal_generation: "principal",
-        }}
-        getPrincipalGeneration={async () => "principal"}
-        isSessionCurrent={() => true}
-        sqlSchema={buildSqlSchema([])}
-        onDraftChange={setDraft}
-        onSave={onSave}
-      />
-    ));
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Variables", exact: true }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    fireEvent.click(screen.getByRole("button", { name: "SQL", exact: true }));
+      value: { kind: "string", value: "existing" },
+    });
+    const draft = renderStudio(initial);
+    await openQuery();
 
-    const save = screen.getByRole("button", { name: "Save" });
-    expect(draft().variables).toHaveLength(1);
-    expect(save).toBeDisabled();
-    expect(save).toHaveAttribute(
-      "title",
-      "Add or cancel the variable before saving.",
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Create a variable for limit",
+      }),
     );
     const name = screen.getByRole("textbox", { name: "Variable name" });
-    await waitFor(() => expect(name).toHaveFocus());
-    fireEvent.input(name, { target: { value: "existing" } });
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "A variable with this name already exists.",
-    );
-    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
-    expect(draft().variables).toHaveLength(1);
-
-    fireEvent.input(name, { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
-    expect(draft().variables).toHaveLength(1);
-
-    fireEvent.input(name, { target: { value: "query_1" } });
+    await waitFor(() => expect(name).toHaveValue("limit_2"));
     fireEvent.submit(name.closest("form")!);
-    expect(draft().variables.at(-1)).toMatchObject({
-      id: "query_1",
-      kind: "query",
-      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
-    });
-    expect(screen.getByRole("button", { name: "query_1", exact: true }))
-      .toBeVisible();
+
     await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Variable name" }))
+      expect(draft().variables).toContainEqual(
+        expect.objectContaining({ id: "limit_2", kind: "constant" }),
+      )
+    );
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({
+        query: { arguments: [{ name: "limit", variable: "limit_2" }] },
+      });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" }))
         .toHaveFocus()
     );
-    expect(save).toBeEnabled();
-    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("suggests a unique name for variables created from Design", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables = [{
+      id: "input",
+      kind: "input",
+      value_type: { scalar_type: "string", nullable: false },
+      required: true,
+    }];
+    renderStudio(initial);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Input" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Variable name" }))
+        .toHaveValue("input_2")
+    );
   });
 
   it("adds and cancels a Design input in place with matching graph references", async () => {
-    const [draft, setDraft] = createSignal(
-      createCompositionGraphDraft("Report"),
+    const draft = renderStudio(createCompositionGraphDraft("Report"));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Input" }),
     );
-    render(() => (
-      <CompositionGraphStudio
-        draft={draft()}
-        forms={[]}
-        savedSql={[]}
-        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
-        session={{
-          session_id: "editor",
-          space_id: "space",
-          document_revision: null,
-          principal_generation: "principal",
-        }}
-        getPrincipalGeneration={async () => "principal"}
-        isSessionCurrent={() => true}
-        sqlSchema={buildSqlSchema([])}
-        onDraftChange={setDraft}
-        onSave={() => {}}
-      />
-    ));
-    fireEvent.click(screen.getByRole("button", { name: "Input" }));
-    const save = screen.getByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAttribute(
-      "title",
-      "Add or cancel the variable before saving.",
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveValue("input"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
     );
-    fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
-      target: { value: "discarded" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(save).toBeEnabled();
     expect(draft().variables).toHaveLength(0);
     expect(draft().components).toHaveLength(0);
 
-    await waitFor(() => expect(save).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Input" }));
-    const name = screen.getByRole("textbox", { name: "Variable name" });
-    await waitFor(() => expect(name).toHaveFocus());
-    fireEvent.input(name, { target: { value: "customer_id" } });
-    fireEvent.submit(name.closest("form")!);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Input" }),
+    );
+    const nextName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(nextName, { target: { value: "customer_id" } });
+    fireEvent.submit(nextName.closest("form")!);
 
-    expect(screen.getByRole("tab", { name: "Design", exact: true }))
-      .toHaveAttribute("aria-selected", "true");
+    await waitFor(() =>
+      expect(draft().components).toContainEqual(
+        expect.objectContaining({ kind: "input", variable: "customer_id" }),
+      )
+    );
     expect(draft().variables).toContainEqual({
       id: "customer_id",
       kind: "input",
       value_type: { scalar_type: "string", nullable: false },
       required: true,
     });
-    expect(draft().components).toContainEqual(
-      expect.objectContaining({ kind: "input", variable: "customer_id" }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "customer_id" }))
-        .toHaveFocus()
-    );
+    expect(screen.getByRole("tab", { name: "Design" }))
+      .toHaveAttribute("aria-selected", "true");
   });
 });

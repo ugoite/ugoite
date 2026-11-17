@@ -1,5 +1,4 @@
-import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
-import { batch, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { CompositionGraphDesignCanvas } from "~/components/CompositionGraphDesignCanvas";
 import { CompositionVariableGraphWorkspace } from "~/components/CompositionVariableGraphWorkspace";
 import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
@@ -7,17 +6,12 @@ import {
   appendCompositionGraphComponent,
   type CompositionGraphDraft,
   type CompositionQueryArgument,
-  type CompositionSqlArgumentType,
   type CompositionVariableNode,
 } from "~/lib/composition-variable-binding";
-import type {
-  SQLWorkspaceAction,
-  SQLWorkspacePreview,
-} from "~/components/SQLWorkspace";
+import type { SQLWorkspacePreview } from "~/components/SQLWorkspace";
 import type { SqlSchema } from "~/lib/sql";
-import type { Form, SqlVariable } from "~/lib/types";
-import { normalizeSqlVariables } from "~/lib/sql";
-import { renameSqlDocumentParameter } from "~/lib/ugoite-client";
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
+import type { Form } from "~/lib/types";
 import { t } from "~/lib/i18n";
 
 export interface CompositionGraphStudioProps {
@@ -28,7 +22,6 @@ export interface CompositionGraphStudioProps {
   getPrincipalGeneration: () => Promise<string>;
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
-  actionsForQuery?: (variableId: string) => readonly SQLWorkspaceAction[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
   onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
@@ -63,8 +56,12 @@ type PendingVariableCreation = {
   kind: CompositionVariableCreationKind;
   origin: VariableCreationOrigin;
   previousSelection: string | null;
+  suggestedName: string;
   returnToDesign?: boolean;
   tableComponentId?: string;
+  returnToVariableId?: string;
+  argumentName?: string;
+  sourceSql?: string;
 };
 
 const newVariable = (
@@ -92,26 +89,11 @@ const newVariable = (
       query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
     };
 
-const argumentTypes = new Set<CompositionSqlArgumentType>([
-  "string",
-  "boolean",
-  "integer",
-  "float",
-  "date",
-  "timestamp",
-]);
-
-const typeOfVariable = (
-  node: CompositionGraphDraft["variables"][number],
-): CompositionSqlArgumentType | undefined => {
-  const valueType = node.kind === "query"
-    ? node.returns.kind === "scalar" ? node.returns.value_type : undefined
-    : node.value_type;
-  return valueType && argumentTypes.has(
-      valueType.scalar_type as CompositionSqlArgumentType,
-    )
-    ? valueType.scalar_type as CompositionSqlArgumentType
-    : undefined;
+const uniqueName = (base: string, existingNames: readonly string[]) => {
+  if (!existingNames.includes(base)) return base;
+  let suffix = 2;
+  while (existingNames.includes(`${base}_${suffix}`)) suffix++;
+  return `${base}_${suffix}`;
 };
 
 /** Single strict graph-based Studio surface shared by create and edit routes. */
@@ -125,150 +107,26 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   const [pendingCreation, setPendingCreation] = createSignal<
     PendingVariableCreation | null
   >(null);
-  const [unboundArgumentTypes, setUnboundArgumentTypes] = createSignal<
-    Record<string, Record<string, CompositionSqlArgumentType>>
-  >({});
   let variablePanel: HTMLElement | undefined;
-
-  const parameterDeclarations = () =>
-    Object.fromEntries(
-      props.draft.variables.filter((node) => node.kind === "query").map((
-        node,
-      ) => [
-        node.id,
-        node.query.arguments.flatMap((argument) => {
-          const variable = props.draft.variables.find((entry) =>
-            entry.id === argument.variable
-          );
-          const type = (variable && typeOfVariable(variable)) ||
-            unboundArgumentTypes()[node.id]?.[argument.name];
-          return type ? [{ name: argument.name, type }] : [];
-        }),
-      ]),
-    );
-
-  const updateArgumentDefinition = async (
-    id: string,
-    oldName: string,
-    argument: SqlVariable,
-  ) => {
-    if (
-      !argumentTypes.has(argument.type as CompositionSqlArgumentType) ||
-      argument.default !== undefined
-    ) return false;
-    const draft = props.draft;
-    const node = draft.variables.find((entry) =>
-      entry.id === id && entry.kind === "query"
-    );
-    if (
-      !node || node.kind !== "query" || node.query.kind !== "inline_sql" ||
-      !node.query.arguments.some((entry) => entry.name === oldName) ||
-      node.query.arguments.some((entry) =>
-        entry.name === argument.name && entry.name !== oldName
-      )
-    ) return false;
-    let sql = node.query.sql;
-    if (oldName !== argument.name) {
-      try {
-        sql = (await renameSqlDocumentParameter(
-          (await normalizeSqlVariables(sql)).sql,
-          oldName,
-          argument.name,
-        )).source;
-      } catch {
-        return false;
-      }
-    }
-    if (props.draft !== draft || selectedVariableId() !== id) return false;
-    const args = node.query.arguments.map((entry) => {
-      if (entry.name !== oldName) return entry;
-      const bound = draft.variables.find((variable) =>
-        variable.id === entry.variable
-      );
-      return {
-        name: argument.name,
-        variable: bound && typeOfVariable(bound) === argument.type
-          ? entry.variable
-          : "",
-      };
-    });
-    batch(() => {
-      setUnboundArgumentTypes((current) => {
-        const next = { ...current[id] };
-        delete next[oldName];
-        return {
-          ...current,
-          [id]: {
-            ...next,
-            [argument.name]: argument.type as CompositionSqlArgumentType,
-          },
-        };
-      });
-      props.onDraftChange({
-        ...draft,
-        variables: draft.variables.map((entry) =>
-          entry.id === id
-            ? { ...node, query: { ...node.query, sql, arguments: args } }
-            : entry
-        ),
-      });
-    });
-    return true;
-  };
-
-  const removeArgumentDefinition = async (id: string, name: string) => {
-    const draft = props.draft;
-    const node = draft.variables.find((entry) =>
-      entry.id === id && entry.kind === "query"
-    );
-    if (!node || node.kind !== "query" || node.query.kind !== "inline_sql") {
-      return false;
-    }
-    try {
-      if (
-        (await normalizeSqlVariables(node.query.sql)).variables.some((entry) =>
-          entry.name === name
-        )
-      ) return false;
-    } catch {
-      return false;
-    }
-    if (props.draft !== draft || selectedVariableId() !== id) return false;
-    batch(() => {
-      setUnboundArgumentTypes((current) => {
-        const next = { ...current[id] };
-        delete next[name];
-        return { ...current, [id]: next };
-      });
-      props.onDraftChange({
-        ...draft,
-        variables: draft.variables.map((entry) =>
-          entry.id === id
-            ? {
-              ...node,
-              query: {
-                ...node.query,
-                arguments: node.query.arguments.filter((entry) =>
-                  entry.name !== name
-                ),
-              },
-            }
-            : entry
-        ),
-      });
-    });
-    return true;
-  };
   const requestCreation = (
     kind: CompositionVariableCreationKind,
     origin: VariableCreationOrigin,
     tableComponentId?: string,
   ) => {
     if (pendingCreation()) return;
+    const baseName = kind === "constant"
+      ? "value"
+      : kind === "input"
+      ? "input"
+      : "query";
     setPendingCreation({
       kind,
       origin,
       previousSelection: selectedVariableId(),
+      suggestedName: uniqueName(
+        baseName,
+        props.draft.variables.map((node) => node.id),
+      ),
       ...(tableComponentId !== undefined
         ? { returnToDesign: true, tableComponentId }
         : {}),
@@ -305,13 +163,47 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       ...props.draft,
       variables: [...props.draft.variables, variable],
     };
+    if (pending.returnToVariableId && pending.argumentName) {
+      const target = props.draft.variables.find((node) =>
+        node.id === pending.returnToVariableId && node.kind === "query"
+      );
+      if (
+        !target || target.kind !== "query" ||
+        target.query.kind !== "inline_sql" ||
+        target.query.sql !== pending.sourceSql ||
+        target.query.arguments.some((argument) =>
+          argument.name === pending.argumentName && !!argument.variable
+        )
+      ) return false;
+      nextDraft = {
+        ...nextDraft,
+        variables: nextDraft.variables.map((node) =>
+          node.id === target.id && node.kind === "query"
+            ? {
+              ...node,
+              query: {
+                ...node.query,
+                arguments: [
+                  ...node.query.arguments.filter((argument) =>
+                    argument.name !== pending.argumentName
+                  ),
+                  { name: pending.argumentName!, variable: id },
+                ],
+              },
+            }
+            : node
+        ),
+      };
+    }
     if (pending.origin === "design") {
       if (pending.kind === "input") {
         const componentId = (() => {
           let index = 1;
-          while (nextDraft.components.some((component) =>
-            component.id === `input_${index}`
-          )) index++;
+          while (
+            nextDraft.components.some((component) =>
+              component.id === `input_${index}`
+            )
+          ) index++;
           return `input_${index}`;
         })();
         const withComponent = appendCompositionGraphComponent(nextDraft, {
@@ -340,9 +232,11 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
         };
       } else {
         let index = 1;
-        while (nextDraft.components.some((component) =>
-          component.id === `table_${index}`
-        )) index++;
+        while (
+          nextDraft.components.some((component) =>
+            component.id === `table_${index}`
+          )
+        ) index++;
         const withComponent = appendCompositionGraphComponent(nextDraft, {
           id: `table_${index}`,
           kind: "table",
@@ -353,7 +247,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       }
     }
     props.onDraftChange(nextDraft);
-    setSelectedVariableId(id);
+    setSelectedVariableId(pending.returnToVariableId ?? id);
     if (pending.returnToDesign) setMode("design");
     setPendingCreation(null);
     return true;
@@ -365,10 +259,45 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       kind: "query",
       origin: "variables",
       previousSelection: selectedVariableId(),
+      suggestedName: uniqueName(
+        "rows",
+        props.draft.variables.map((node) => node.id),
+      ),
       returnToDesign: true,
       ...(componentId !== undefined ? { tableComponentId: componentId } : {}),
     });
     setMode("variables");
+    setSelectedVariableId(null);
+  };
+
+  const requestArgumentVariableCreation = (
+    queryId: string,
+    argumentName: string,
+    sourceSql: string,
+  ) => {
+    if (pendingCreation()) return;
+    const query = props.draft.variables.find((node) =>
+      node.id === queryId && node.kind === "query"
+    );
+    if (
+      !query || query.kind !== "query" || query.query.kind !== "inline_sql" ||
+      query.query.sql !== sourceSql ||
+      query.query.arguments.some((argument) =>
+        argument.name === argumentName && !!argument.variable
+      )
+    ) return;
+    setPendingCreation({
+      kind: "constant",
+      origin: "variables",
+      previousSelection: selectedVariableId(),
+      suggestedName: uniqueName(
+        argumentName,
+        props.draft.variables.map((node) => node.id),
+      ),
+      returnToVariableId: queryId,
+      argumentName,
+      sourceSql,
+    });
     setSelectedVariableId(null);
   };
 
@@ -382,6 +311,13 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
     const id = selectedVariableId();
     if (!id) return;
     if (mode() === "variables") {
+      const selected = props.draft.variables.find((node) => node.id === id);
+      if (selected?.kind === "query") {
+        variablePanel?.querySelector<HTMLElement>(
+          ".compositionVariableEditor .cm-content[contenteditable='true']",
+        )?.focus();
+        return;
+      }
       variablePanel?.querySelector<HTMLInputElement>(
         ".compositionVariableName",
       )?.focus();
@@ -474,6 +410,9 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           onSaveSnapshotReady={props.onSaveSnapshotReady}
           onDraftChange={props.onDraftChange}
           pendingInputCreation={pendingCreation()?.origin === "design"}
+          pendingInputSuggestedName={pendingCreation()?.origin === "design"
+            ? pendingCreation()?.suggestedName
+            : undefined}
           onRequestCreateInput={() => requestCreation("input", "design")}
           onCommitCreateInput={commitCreation}
           onCancelCreateInput={cancelCreation}
@@ -499,16 +438,16 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           pendingCreationKind={pendingCreation()?.origin === "variables"
             ? pendingCreation()?.kind
             : undefined}
+          pendingCreationSuggestedName={pendingCreation()?.origin ===
+              "variables"
+            ? pendingCreation()?.suggestedName
+            : undefined}
           onRequestCreation={(kind) => requestCreation(kind, "variables")}
+          onRequestArgumentVariableCreation={requestArgumentVariableCreation}
           onCommitCreation={commitCreation}
           onCancelCreation={cancelCreation}
           onFocusCreatedVariable={focusCreatedVariable}
           onRemove={(id) => {
-            setUnboundArgumentTypes((current) =>
-              Object.fromEntries(
-                Object.entries(current).filter(([key]) => key !== id),
-              )
-            );
             const next = {
               ...props.draft,
               variables: props.draft.variables.filter((node) => node.id !== id),
@@ -518,57 +457,8 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           }}
           sqlSchema={props.sqlSchema}
           sqlForms={props.sqlForms}
-          parameterDeclarations={parameterDeclarations()}
-          onVariableRenamed={(oldId, newId) => {
-            setUnboundArgumentTypes((current) => {
-              const next = { ...current };
-              delete next[oldId];
-              if (current[oldId]) next[newId] = current[oldId];
-              return next;
-            });
-          }}
-          onArgumentUpdated={updateArgumentDefinition}
-          onArgumentRemoved={removeArgumentDefinition}
-          onVariablesAdded={(variableId, added) => {
-            const query = props.draft.variables.find((node) =>
-              node.id === variableId && node.kind === "query"
-            );
-            if (!query || query.query.kind !== "inline_sql") return false;
-            const known = new Set(
-              query.query.arguments.map((entry) => entry.name),
-            );
-            const args = [
-              ...query.query.arguments,
-              ...added.filter((entry) => !known.has(entry.name)).map((
-                entry,
-              ) => ({
-                name: entry.name,
-                variable: "",
-              })),
-            ];
-            setUnboundArgumentTypes((current) => ({
-              ...current,
-              [variableId]: {
-                ...current[variableId],
-                ...Object.fromEntries(added.map(({ name, type }) => [
-                  name,
-                  type,
-                ])),
-              },
-            }));
-            props.onDraftChange({
-              ...props.draft,
-              variables: props.draft.variables.map((node) =>
-                node.id === variableId && node.kind === "query"
-                  ? { ...node, query: { ...node.query, arguments: args } }
-                  : node
-              ),
-            });
-            return true;
-          }}
-          actionsForQuery={props.actionsForQuery}
-          previewForQuery={props.previewForQuery}
           onPlanColumnsForQuery={props.onPlanColumnsForQuery}
+          previewForQuery={props.previewForQuery}
           onQueryChange={props.onQueryChange}
           onRunQuery={props.onRunQuery}
           onNextQuery={props.onNextQuery}

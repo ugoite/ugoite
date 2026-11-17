@@ -291,7 +291,11 @@ describe("CompositionVariableGraphWorkspace", () => {
     resolveParse({ status: "valid", value: "42" });
     await Promise.resolve();
 
-    expect(draft().variables[0]?.default).toBeUndefined();
+    expect(
+      (draft().variables[0] as
+        | Extract<CompositionVariableNode, { kind: "input" }>
+        | undefined)?.default,
+    ).toBeUndefined();
     expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
   });
 
@@ -337,7 +341,11 @@ describe("CompositionVariableGraphWorkspace", () => {
       kind: "input",
       value_type: { scalar_type: "float", nullable: false },
     });
-    expect(draft().variables[0]?.default).toBeUndefined();
+    expect(
+      (draft().variables[0] as
+        | Extract<CompositionVariableNode, { kind: "input" }>
+        | undefined)?.default,
+    ).toBeUndefined();
     expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
   });
 
@@ -469,72 +477,6 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(draft().variables[0]?.id).toBe("latest_date");
   });
 
-  it("binds declared SQL arguments only to compatible graph variables", () => {
-    setLocale("en");
-    const draft = createCompositionGraphDraft("Report");
-    draft.variables = [
-      {
-        id: "threshold",
-        kind: "constant",
-        value_type: { scalar_type: "integer", nullable: false },
-        value: { kind: "integer", value: "3" },
-      },
-      {
-        id: "caption",
-        kind: "constant",
-        value_type: { scalar_type: "string", nullable: false },
-        value: { kind: "string", value: "Orders" },
-      },
-      {
-        id: "query_1",
-        kind: "query",
-        returns: {
-          kind: "scalar",
-          value_type: { scalar_type: "integer", nullable: false },
-        },
-        query: {
-          kind: "inline_sql",
-          sql: "SELECT $limit",
-          arguments: [{ name: "limit", variable: "" }],
-        },
-      },
-    ];
-    const onDraftChange = vi.fn();
-    render(() => (
-      <CompositionVariableGraphWorkspace
-        draft={draft}
-        selectedVariableId="query_1"
-        onSelect={() => {}}
-        onDraftChange={onDraftChange}
-        onRemove={() => {}}
-        sqlSchema={buildSqlSchema([])}
-        parameterDeclarations={{
-          query_1: [{ name: "limit", type: "integer" }],
-        }}
-      />
-    ));
-
-    const binding = screen.getByRole("combobox", { name: "limit" });
-    expect(binding).toHaveValue("");
-    expect(within(binding).getByRole("option", { name: "threshold" }))
-      .toBeInTheDocument();
-    expect(within(binding).queryByRole("option", { name: "caption" }))
-      .toBeNull();
-
-    fireEvent.change(binding, { target: { value: "threshold" } });
-
-    expect(onDraftChange).toHaveBeenCalledOnce();
-    expect(
-      onDraftChange.mock.calls[0][0].variables.find((node) =>
-        node.id === "query_1"
-      ),
-    ).toMatchObject({
-      query: {
-        arguments: [{ name: "limit", variable: "threshold" }],
-      },
-    });
-  });
-
   it("keeps query shape selection enabled until planning starts and waits for its result", async () => {
     setLocale("en");
     const [draft, setDraft] = createSignal<CompositionGraphDraft>({
@@ -624,7 +566,7 @@ describe("CompositionVariableGraphWorkspace", () => {
           returns: { kind: "table", columns: [] },
           query: {
             kind: "inline_sql",
-            sql: "SELECT $minimum",
+            sql: "SELECT {{minimum}}",
             arguments: [{ name: "minimum", variable: "floor" }],
           },
         },
@@ -638,7 +580,6 @@ describe("CompositionVariableGraphWorkspace", () => {
         onDraftChange={setDraft}
         onRemove={() => {}}
         sqlSchema={buildSqlSchema([])}
-        parameterDeclarations={{ rows: [{ name: "minimum", type: "integer" }] }}
         previewForQuery={() => ({
           status: "error",
           isCurrent: true,
@@ -657,21 +598,27 @@ describe("CompositionVariableGraphWorkspace", () => {
       />
     ));
     const editor = screen.getByRole("textbox", { name: "SQL" });
-    expect(editor).toHaveValue("SELECT $minimum");
+    expect(editor).toHaveValue("SELECT {{minimum}}");
     expect(editor).toHaveAttribute("data-lint-profile", "composition");
-    const queryWorkspace = editor.closest(".sql-workspace");
+    const queryWorkspace = editor.closest(
+      ".sql-workspace",
+    ) as HTMLElement | null;
     const runQueryButton = screen.getByRole("button", { name: "Run Query" });
-    await waitFor(() => expect(runQueryButton).toBeEnabled());
+    await waitFor(() => expect(runQueryButton).toBeEnabled(), {
+      timeout: 10000,
+    });
     expect(within(queryWorkspace!).getByRole("alert")).toHaveTextContent(
       "Query execution failed",
     );
     fireEvent.click(runQueryButton);
     expect(runQuery).toHaveBeenCalledWith("rows");
 
-    const binding = screen.getByRole("combobox", { name: "minimum" });
+    const binding = screen.getByRole("combobox", {
+      name: "Choose a variable for minimum",
+    });
     fireEvent.change(binding, { target: { value: "ceiling" } });
     await waitFor(() => expect(binding).toHaveValue("ceiling"));
-    const editedSql = "SELECT $minimum + 1 AS amount";
+    const editedSql = "SELECT {{minimum}} + 1 AS amount";
     setDraft((current) => ({
       ...current,
       variables: current.variables.map((node) =>

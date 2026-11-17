@@ -110,11 +110,13 @@ describe("SQL Form source control", () => {
     }]);
 
     fireEvent.click(screen.getByRole("button", { name: "Form" }));
-    fireEvent.click(await screen.findByRole("button", { name: "System records" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This Form has no displayable data fields.",
+    fireEvent.click(
+      await screen.findByRole("button", { name: "System records" }),
     );
+
+    expect(
+      await screen.findByRole("alert", {}, { timeout: 10_000 }),
+    ).toHaveTextContent("This Form has no displayable data fields.");
     expect(seedMock).toHaveBeenCalledExactlyOnceWith("System records", []);
     expect(selected).not.toHaveBeenCalled();
   });

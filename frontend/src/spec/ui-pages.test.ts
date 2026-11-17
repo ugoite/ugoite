@@ -535,10 +535,10 @@ describe("UI spec YAML registry", () => {
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition query variables also use direct text editing",
+      "Composition query variables use direct text editing with one local typed variable binding",
     );
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "retain their host-owned Structure Toolbar until the planned migration",
+      "Composition does not show the Structure, Columns, Filter, Sort, or Arguments SQL construction controls",
     );
   });
 

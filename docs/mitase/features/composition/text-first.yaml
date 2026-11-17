@@ -34,7 +34,9 @@ features:
               - { kind: documents, anchor: REQ-FE-083#criterion.reader-table-scroll-stays-local }
               - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
               - { kind: documents, anchor: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
+              - { kind: documents, anchor: REQ-FE-083#criterion.variable-name-is-suggested }
               - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
+              - { kind: documents, anchor: REQ-FE-083#criterion.sql-arguments-bind-locally }
       - id: core
         role: implementation
         facet: core
@@ -167,7 +169,17 @@ features:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
+          - id: inline-sql-variable-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
+            selector: { kind: symbol, name: CompositionVariableGraphWorkspace }
+            claims:
+              - { kind: satisfies, criterion: REQ-FE-082#criterion.inline-template-parameters }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.sql-arguments-bind-locally }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
           - id: reader-renderer
             adapter: typescript
             path: frontend/src/components/CompositionGraphRenderer.tsx
@@ -366,6 +378,54 @@ features:
                 criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio prevents duplicate variable IDs in query creation" } }
+          - id: text-first-sql-argument-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "binds each Rust-parsed marker beside the text editor without structure dialogs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "binds each Rust-parsed marker beside the text editor without structure dialogs" } }
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.sql-arguments-bind-locally
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "binds each Rust-parsed marker beside the text editor without structure dialogs" } }
+          - id: create-variable-from-sql-marker
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "creates a unique suggested variable and binds it atomically from the SQL marker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.sql-arguments-bind-locally
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a unique suggested variable and binds it atomically from the SQL marker" } }
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.variable-name-is-suggested
+                covers:
+                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a unique suggested variable and binds it atomically from the SQL marker" } }
+          - id: variable-name-suggestion
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "suggests a unique name for variables created from Design" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.variable-name-is-suggested
+                covers:
+                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "suggests a unique name for variables created from Design" } }
+          - id: form-backed-table-creation-return
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Studio creates a Form-backed Table query from Design and reopens its result" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Studio creates a Form-backed Table query from Design and reopens its result" } }
           - id: current-form-acl-recheck
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs

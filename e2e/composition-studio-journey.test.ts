@@ -1075,8 +1075,20 @@ test.describe("Composition Studio Journey", () => {
     await palette.getByRole("button", { name: "Table", exact: true }).click();
     const variableName = page.getByLabel("Variable name", { exact: true });
     await expect(variableName).toBeVisible();
+    await expect(variableName).toHaveValue("rows");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]')).toHaveCount(0);
+
+    await palette.getByRole("button", { name: "Table", exact: true }).click();
+    await expect(variableName).toBeVisible();
     await variableName.fill("studio_rows");
     await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]'))
+      .toHaveAttribute("aria-label", "studio_rows");
 
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "studio_rows", exact: true })
@@ -1332,7 +1344,7 @@ test.describe("Composition Studio Journey", () => {
           },
           query: {
             kind: "inline_sql",
-            sql: "SELECT $limit AS value -- $limit stays in a comment",
+            sql: "SELECT {{limit}} AS value -- $limit stays in a comment",
             arguments: [{ name: "limit", variable: "threshold" }],
             form_bindings: [],
             schema_fingerprint: "",
@@ -1363,40 +1375,12 @@ test.describe("Composition Studio Journey", () => {
     await expect(text).toHaveText("Value: 3", { timeout: 30_000 });
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "rows", exact: true }).click();
-    await page.getByRole("button", { name: "Arguments", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Arguments", exact: true });
-    await dialog.getByLabel("Argument name for limit", { exact: true })
-      .fill("minimum");
-    await dialog.getByRole("button", { name: "Rename argument", exact: true })
-      .click();
-    await expect(
-      dialog.getByLabel("Argument name for minimum", { exact: true }),
-    )
-      .toHaveValue("minimum");
-    await expect(
-      dialog.getByRole("button", { name: "Remove minimum", exact: true }),
-    )
-      .toBeDisabled();
-    const type = dialog.getByRole("combobox", {
-      name: "Type for minimum",
-      exact: true,
-    });
-    await type.selectOption("string");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
+    const sql = page.getByRole("textbox", { name: "SQL", exact: true });
+    await sql.fill("SELECT {{minimum}} AS value -- $limit stays in a comment");
     const binding = page.getByRole("combobox", {
-      name: "minimum",
+      name: "Choose a variable for minimum",
       exact: true,
     });
-    await expect(binding).toHaveValue("");
-    await expect(page.getByRole("button", { name: "Save", exact: true }))
-      .toBeDisabled();
-    await binding.selectOption("caption");
-    await page.getByRole("button", { name: "Arguments", exact: true }).click();
-    await page.getByRole("dialog", { name: "Arguments", exact: true })
-      .getByRole("combobox", { name: "Type for minimum", exact: true })
-      .selectOption("integer");
-    await page.keyboard.press("Escape");
     await expect(binding).toHaveValue("");
     await binding.selectOption("threshold");
     await expect(page.getByRole("button", { name: "Save", exact: true }))
@@ -1434,7 +1418,7 @@ test.describe("Composition Studio Journey", () => {
     )
       .toMatchObject({
         kind: "inline_sql",
-        sql: "SELECT $minimum AS value -- $limit stays in a comment",
+        sql: "SELECT {{minimum}} AS value -- $limit stays in a comment",
         arguments: [{ name: "minimum", variable: "threshold" }],
       });
   });

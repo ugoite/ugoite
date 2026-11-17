@@ -1,4 +1,3 @@
-import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import {
   batch,
   createEffect,
@@ -12,7 +11,6 @@ import { Portal } from "solid-js/web";
 import { IconButton } from "~/components/IconButton";
 import {
   SQLWorkspace,
-  type SQLWorkspaceAction,
   type SQLWorkspacePreview,
 } from "~/components/SQLWorkspace";
 import { UiIcon } from "~/components/UiIcon";
@@ -25,10 +23,11 @@ import {
   type CompositionVariableNode,
   renameCompositionVariable,
 } from "~/lib/composition-variable-binding";
-import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
-import { buildSqlStructureContexts, type SqlSchema } from "~/lib/sql";
-import type { Form, SqlVariable } from "~/lib/types";
+import { type SqlSchema } from "~/lib/sql";
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
+import type { Form } from "~/lib/types";
 import { normalizeSqlDocument } from "~/lib/sql";
+import { SqlFormSourceControl } from "~/components/SqlFormSourceControl";
 import { t } from "~/lib/i18n";
 import {
   parseCompositionTextTemplate,
@@ -53,34 +52,56 @@ const scalarTypes: CompositionScalarType[] = [
   "timestamp",
   "json",
 ];
+const sqlArgumentTypes = new Set<CompositionSqlArgumentType>([
+  "string",
+  "boolean",
+  "integer",
+  "float",
+  "date",
+  "timestamp",
+]);
+
+const suggestedVariableName = (
+  kind: CompositionVariableCreationKind,
+  existingNames: readonly string[],
+): string => {
+  const base = kind === "constant"
+    ? "value"
+    : kind === "input"
+    ? "input"
+    : "query";
+  if (!existingNames.includes(base)) return base;
+  let suffix = 2;
+  while (existingNames.includes(`${base}_${suffix}`)) suffix++;
+  return `${base}_${suffix}`;
+};
 export interface CompositionVariableGraphWorkspaceProps {
   draft: CompositionGraphDraft;
   selectedVariableId: string | null;
   onSelect: (id: string) => void;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   pendingCreationKind?: CompositionVariableCreationKind;
+  pendingCreationSuggestedName?: string;
   onRequestCreation?: (kind: CompositionVariableCreationKind) => void;
+  onRequestArgumentVariableCreation?: (
+    queryId: string,
+    argumentName: string,
+    sourceSql: string,
+  ) => void;
   onCommitCreation?: (name: string) => boolean;
   onCancelCreation?: () => void;
   onFocusCreatedVariable?: () => void;
   onRemove: (id: string) => void;
   sqlSchema: SqlSchema;
   sqlForms?: readonly Form[];
-  parameterDeclarations?: Readonly<
-    Record<
-      string,
-      readonly { name: string; type: CompositionSqlArgumentType }[]
-    >
-  >;
+  onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   parameterValues?: Readonly<
     Record<
       string,
       Readonly<Record<string, string | number | boolean | undefined>>
     >
   >;
-  actionsForQuery?: (variableId: string) => readonly SQLWorkspaceAction[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
-  onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onQueryChange?: (
     variableId: string,
     sql: string,
@@ -90,20 +111,7 @@ export interface CompositionVariableGraphWorkspaceProps {
   onNextQuery?: (variableId: string) => void;
   onPreviousQuery?: (variableId: string) => void;
   onCountQuery?: (variableId: string) => void;
-  onVariablesAdded?: (
-    variableId: string,
-    variables: readonly { name: string; type: CompositionSqlArgumentType }[],
-  ) => boolean | void;
   onVariableRenamed?: (oldId: string, newId: string) => void;
-  onArgumentUpdated?: (
-    id: string,
-    oldName: string,
-    argument: SqlVariable,
-  ) => boolean | void | Promise<boolean | void>;
-  onArgumentRemoved?: (
-    id: string,
-    name: string,
-  ) => boolean | void | Promise<boolean | void>;
   onEditValidityChange?: (
     variableId: string,
     valid: boolean | undefined,
@@ -370,9 +378,10 @@ export function CompositionVariableGraphWorkspace(
           )
         );
       }
-      props.onEditValidityChange?.(newId, wasPendingOrInvalid && hasRaw
-        ? false
-        : true);
+      props.onEditValidityChange?.(
+        newId,
+        wasPendingOrInvalid && hasRaw ? false : true,
+      );
     }).catch(() => {
       if (renameGenerations.get(node.id) !== generation) return;
       setInvalidRenames((current) => new Set(current).add(node.id));
@@ -523,6 +532,11 @@ export function CompositionVariableGraphWorkspace(
         <Show when={props.pendingCreationKind}>
           <CompositionVariableCreationForm
             existingNames={props.draft.variables.map((node) => node.id)}
+            suggestedName={props.pendingCreationSuggestedName ??
+              suggestedVariableName(
+                props.pendingCreationKind!,
+                props.draft.variables.map((node) => node.id),
+              )}
             onCreate={(name) => props.onCommitCreation?.(name) ?? false}
             onCancel={cancelCreation}
             focusAfterCreate={() => props.onFocusCreatedVariable?.()}
@@ -773,7 +787,7 @@ export function CompositionVariableGraphWorkspace(
                       } else {
                         updateNode({
                           ...current,
-                          returns: { kind: "table", columns },
+                          returns: { kind: "table", columns: [...columns] },
                         });
                       }
                     } catch {
@@ -869,50 +883,72 @@ export function CompositionVariableGraphWorkspace(
                       finishPruning();
                     });
                   };
-                  const declarations = () =>
-                    props.parameterDeclarations?.[query().id] ?? [];
                   const [sqlArguments] = createResource(
-                    () => ({
-                      sql: sql(),
-                      declarations: declarations().map((entry) => ({
-                        ...entry,
-                        description: "",
-                      })),
-                    }),
-                    async (source) =>
-                      await normalizeSqlDocument(
-                        source.sql,
-                        source.declarations,
-                      ),
+                    () => sql(),
+                    async (source) => await normalizeSqlDocument(source),
                   );
-                  const argumentError = () => {
-                    if (sqlArguments.loading || sqlArguments.error) {return t(
-                        "composition.queryFailed",
-                      );}
-                    if (sqlArguments()?.document.status !== "parsed") {
-                      return t(
-                        "composition.queryFailed",
-                      );
-                    }
-                    const referenced = sqlArguments()?.variables ?? [];
-                    const undeclared = referenced.find((argument) =>
-                      !declarations().some((entry) =>
-                        entry.name === argument.name
+                  const referencedArguments = () =>
+                    sqlArguments()?.variables ?? [];
+                  const bindableVariables = () =>
+                    props.draft.variables.filter((entry) => {
+                      if (entry.id === query().id) return false;
+                      const type = entry.kind === "query"
+                        ? entry.returns.kind === "scalar"
+                          ? entry.returns.value_type.scalar_type
+                          : undefined
+                        : entry.value_type.scalar_type;
+                      return type !== undefined &&
+                        sqlArgumentTypes.has(
+                          type as CompositionSqlArgumentType,
+                        );
+                    });
+                  const setArgumentBinding = (
+                    name: string,
+                    variable: string,
+                  ) => {
+                    if (
+                      !referencedArguments().some((entry) =>
+                        entry.name === name
                       )
+                    ) return;
+                    const current = query();
+                    const argumentsNext = current.query.arguments.filter((
+                      entry,
+                    ) => entry.name !== name);
+                    if (variable) argumentsNext.push({ name, variable });
+                    updateNode({
+                      ...current,
+                      query: { ...current.query, arguments: argumentsNext },
+                    });
+                  };
+                  createEffect(() => {
+                    if (sqlArguments.loading || sqlArguments.error) return;
+                    if (sqlArguments()?.document.status !== "parsed") return;
+                    const names = new Set(
+                      referencedArguments().map((entry) => entry.name),
                     );
-                    if (undeclared) {
-                      return t("sqlPage.undeclaredArgument", {
-                        name: undeclared.name,
+                    const current = query();
+                    const argumentsNext = current.query.arguments.filter((
+                      entry,
+                    ) => names.has(entry.name));
+                    if (
+                      argumentsNext.length !== current.query.arguments.length
+                    ) {
+                      updateNode({
+                        ...current,
+                        query: { ...current.query, arguments: argumentsNext },
                       });
                     }
-                    if (
-                      declarations().some((argument) =>
-                        !referenced.some((entry) =>
-                          entry.name === argument.name
-                        )
-                      )
-                    ) return t("sqlPage.structure.argumentUnused");
-                    for (const argument of declarations()) {
+                  });
+                  const argumentError = () => {
+                    if (sqlArguments.loading) return undefined;
+                    if (sqlArguments.error) {
+                      return t("composition.queryFailed");
+                    }
+                    if (sqlArguments()?.document.status !== "parsed") {
+                      return t("composition.queryFailed");
+                    }
+                    for (const argument of referencedArguments()) {
                       const binding = query().query.arguments.find((entry) =>
                         entry.name === argument.name
                       );
@@ -924,7 +960,12 @@ export function CompositionVariableGraphWorkspace(
                           ? bound.returns.value_type.scalar_type
                           : undefined
                         : bound?.value_type.scalar_type;
-                      if (type !== argument.type) {
+                      if (
+                        !type ||
+                        !sqlArgumentTypes.has(
+                          type as CompositionSqlArgumentType,
+                        )
+                      ) {
                         return t(
                           "composition.chooseSqlArgumentVariable",
                           { name: argument.name },
@@ -937,29 +978,10 @@ export function CompositionVariableGraphWorkspace(
                     if (query().query.kind === "inline_sql") {
                       props.onEditValidityChange?.(
                         query().id,
-                        !argumentError(),
+                        !sqlArguments.loading && !argumentError(),
                       );
                     }
                   });
-                  const [actions, setActions] = createSignal<
-                    SQLWorkspaceAction[]
-                  >([]);
-                  const structureContexts = () =>
-                    buildSqlStructureContexts(
-                      props.sqlForms ?? [],
-                      (sqlArguments()?.variables ?? []).map((argument) => ({
-                        name: argument.name,
-                        type: argument.type,
-                      })),
-                      `composition-query:${query().id}`,
-                    );
-                  const candidates = () =>
-                    props.draft.variables.filter((entry) =>
-                      entry.id !== query().id &&
-                      (entry.kind === "constant" || entry.kind === "input" ||
-                        entry.kind === "query" &&
-                          entry.returns.kind === "scalar")
-                    );
                   return (
                     <>
                       <select
@@ -972,11 +994,17 @@ export function CompositionVariableGraphWorkspace(
                             event.currentTarget.value as "scalar" | "table",
                           )}
                       >
-                        <option value="table">{t("composition.queryResultTable")}</option>
-                        <option value="scalar">{t("composition.queryResultSingleValue")}</option>
+                        <option value="table">
+                          {t("composition.queryResultTable")}
+                        </option>
+                        <option value="scalar">
+                          {t("composition.queryResultSingleValue")}
+                        </option>
                       </select>
                       <Show when={shapeError()}>
-                        {(message) => <p class="ui-text-danger" role="alert">{message()}</p>}
+                        {(message) => (
+                          <p class="ui-text-danger" role="alert">{message()}</p>
+                        )}
                       </Show>
                       <SQLWorkspace
                         id={`composition-variable-${query().id}`}
@@ -985,13 +1013,10 @@ export function CompositionVariableGraphWorkspace(
                           updateSqlAndFormGuards(sql)}
                         schema={props.sqlSchema}
                         lintProfile="composition"
-                        actions={[
-                          ...actions(),
-                          ...(props.actionsForQuery?.(query().id) ?? []),
-                        ]}
                         variables={[]}
                         onPreview={() => props.onRunQuery?.(query().id)}
                         previewDisabled={!props.onRunQuery ||
+                          sqlArguments.loading ||
                           !!argumentError() ||
                           isFormGuardPruningPending()}
                         preview={props.previewForQuery?.(query().id) ??
@@ -1004,179 +1029,56 @@ export function CompositionVariableGraphWorkspace(
                           ? () => props.onCountQuery?.(query().id)
                           : undefined}
                       />
-                      <SqlStructureToolbar
-                          onPlanColumns={props.onPlanColumnsForQuery
-                            ? () => props.onPlanColumnsForQuery!(query().id)
-                            : undefined}
-                          formBindingGuards={() =>
-                            (query().query.kind === "inline_sql"
-                              ? query().query.form_bindings ?? []
-                              : []).map((binding) => ({
-                                name: binding.relation,
-                                formId: binding.form_id,
-                              }))}
-                          scope={() => `composition-query:${query().id}`}
-                          sql={sql}
-                          contexts={structureContexts}
-                          onSqlChange={(nextSql) =>
-                            updateSqlAndFormGuards(nextSql)}
-                          onFormBindingSelected={(selection) =>
-                            updateSqlAndFormGuards(selection.sql, {
-                              name: selection.name,
-                              form_id: selection.form_id,
-                            })}
-                          disabled={() => isFormGuardPruningPending()}
-                          onVariablesAdded={(variables) =>
-                            props.onVariablesAdded?.(query().id, variables)}
-                          reservedVariableNames={() =>
-                            query().query.arguments.map((argument) =>
-                              argument.name
-                            )}
-                          argumentDefinitions={() =>
-                            declarations().map((entry) => ({
-                              ...entry,
-                              description: "",
-                            }))}
-                          scalarVariables={props.draft.variables.flatMap(
-                            (node) => {
-                              const type = node.kind === "query"
-                                ? node.returns.kind === "scalar"
-                                  ? node.returns.value_type.scalar_type
-                                  : undefined
-                                : node.value_type.scalar_type;
-                              return type && type !== "json" &&
-                                  type !== "decimal"
-                                ? [{ id: node.id, name: node.id, type }]
-                                : [];
-                            },
-                          )}
-                          argumentBindings={() =>
-                            query().query.arguments.map((argument) => ({
-                              name: argument.name,
-                              variableId: argument.variable,
-                            }))}
-                          onFilterEdit={(change) => {
-                            const current = props.draft.variables.find((node) =>
-                              node.id === query().id
-                            );
-                            if (
-                              change.expectedScope !==
-                                `composition-query:${query().id}` ||
-                              sql() !== change.expectedSql ||
-                              current?.kind !== "query" ||
-                              current.query.kind !== "inline_sql"
-                            ) return false;
-                            const currentBindings = current.query.arguments.map(
-                              (argument) => ({
-                                name: argument.name,
-                                variableId: argument.variable,
-                              }),
-                            );
-                            if (
-                              JSON.stringify(currentBindings) !==
-                                JSON.stringify(
-                                  change.expectedBindings ?? currentBindings,
-                                )
-                            ) return false;
-                            const currentArguments = declarations().map((
-                              entry,
-                            ) => ({
-                              ...entry,
-                              description: "",
-                            }));
-                            if (
-                              JSON.stringify(currentArguments) !==
-                                JSON.stringify(
-                                  change.expectedArguments ?? currentArguments,
-                                )
-                            ) return false;
-                            const argumentsNext =
-                              (change.resultBindings ?? currentBindings).map((
-                                binding,
-                              ) => ({
-                                name: binding.name,
-                                variable: binding.variableId,
-                              }));
-                            if (
-                              change.resultArguments &&
-                              change.resultArguments.length !==
-                                argumentsNext.length
-                            ) return false;
-                            const next: CompositionVariableNode = {
-                              ...current,
-                              query: {
-                                ...current.query,
-                                sql: change.resultSql,
-                                arguments: argumentsNext,
-                              },
-                            };
-                            props.onDraftChange({
-                              ...props.draft,
-                              variables: props.draft.variables.map((node) =>
-                                node.id === current.id ? next : node
-                              ),
-                            });
-                            return true;
-                          }}
-                          argumentDefaultsEnabled={false}
-                          onArgumentAdded={(argument) =>
-                            props.onVariablesAdded?.(query().id, [{
-                              name: argument.name,
-                              type: argument.type as CompositionSqlArgumentType,
-                            }])}
-                          onArgumentUpdated={(oldName, argument) =>
-                            props.onArgumentUpdated?.(
-                              query().id,
-                              oldName,
-                              argument,
-                            )}
-                          onArgumentRemoved={(name) =>
-                            props.onArgumentRemoved?.(query().id, name)}
-                          argumentsDisabled={() =>
-                            sqlArguments.loading || !!sqlArguments.error}
-                          onActionsChange={setActions}
-                        />
+                      <SqlFormSourceControl
+                        sql={sql}
+                        scope={() => `composition-query:${query().id}`}
+                        forms={() => props.sqlForms ?? []}
+                        formBindingGuards={() =>
+                          query().query.form_bindings?.map((binding) => ({
+                            name: binding.relation,
+                            formId: binding.form_id,
+                          })) ?? []}
+                        onFormBindingSelected={(selection) =>
+                          updateSqlAndFormGuards(selection.sql, {
+                            name: selection.name,
+                            form_id: selection.form_id,
+                          })}
+                        disabled={isFormGuardPruningPending}
+                      />
                       <Show when={argumentError()}>
                         {(error) => (
                           <p class="ui-text-danger" role="alert">{error()}</p>
                         )}
                       </Show>
-                      <Show when={declarations().length}>
+                      <Show when={referencedArguments().length}>
                         <section
                           class="compositionVariableArguments"
-                          aria-label={t("sqlPage.variables")}
+                          aria-label={t("composition.sqlArgumentBindings")}
                         >
-                          <For each={declarations()}>
+                          <For each={referencedArguments()}>
                             {(argument) => {
                               const bound = () =>
                                 query().query.arguments.find((entry) =>
                                   entry.name === argument.name
                                 )?.variable ?? "";
-                              const typed = () =>
-                                candidates().filter((entry) =>
-                                  (entry.kind === "query"
-                                    ? entry.returns.kind === "scalar"
-                                      ? entry.returns.value_type.scalar_type
-                                      : undefined
-                                    : entry.value_type.scalar_type) ===
-                                    argument.type
-                                );
                               return (
-                                <label class="compositionVariableArgumentRow">
+                                <div class="compositionVariableArgumentRow">
                                   <span>{argument.name}</span>
                                   <select
                                     class="ui-input"
-                                    aria-label={argument.name}
+                                    aria-label={t(
+                                      "composition.chooseSqlArgumentVariable",
+                                      { name: argument.name },
+                                    )}
                                     value={bound()}
                                     onChange={(event) =>
-                                      updateArgument(
-                                        query(),
+                                      setArgumentBinding(
                                         argument.name,
                                         event.currentTarget.value,
                                       )}
                                   >
                                     <option value="">—</option>
-                                    <For each={typed()}>
+                                    <For each={bindableVariables()}>
                                       {(entry) => (
                                         <option value={entry.id}>
                                           {entry.id}
@@ -1184,7 +1086,27 @@ export function CompositionVariableGraphWorkspace(
                                       )}
                                     </For>
                                   </select>
-                                </label>
+                                  <Show
+                                    when={!bound() && props
+                                      .onRequestArgumentVariableCreation}
+                                  >
+                                    <IconButton
+                                      icon="plus"
+                                      label={t(
+                                        "composition.createSqlArgumentVariable",
+                                        { name: argument.name },
+                                      )}
+                                      disabled={!!bound()}
+                                      onClick={() =>
+                                        props
+                                          .onRequestArgumentVariableCreation?.(
+                                            query().id,
+                                            argument.name,
+                                            sql(),
+                                          )}
+                                    />
+                                  </Show>
+                                </div>
                               );
                             }}
                           </For>

@@ -454,8 +454,8 @@ requirements:
       authoring has moved to direct text editing under REQ-FE-081, so criteria
       that depended on its retired syntax-construction controls remain explicit
       evidence gaps rather than narrowed claims. Composition query-variable
-      controls remain under REQ-FE-079 and retain their Structure Toolbar until
-      its planned migration is implemented.
+      authoring has moved from this historical contract to the current
+      text-first controls in REQ-FE-083; this requirement remains deprecated.
     priority: high
     status: deprecated
     criteria:
@@ -593,7 +593,7 @@ requirements:
       diagnostics. A selected Form can seed a blank Saved SQL draft with
       explicit projectable fields and an identity guard; no Saved SQL control
       edits SQL syntax piecemeal or overwrites an edited draft. Composition
-      query-variable controls remain specified separately by REQ-FE-079.
+      query-variable controls are specified by REQ-FE-083.
     priority: high
     status: implemented
     criteria:
@@ -604,8 +604,8 @@ requirements:
           editor and its static SQL diagnostics. The Workspace exposes only
           owner-supplied actions and preview controls; persistence and query
           execution remain with the owning route. Composition query variables
-          retain their host-owned Structure Toolbar under REQ-FE-079 until its
-          planned migration is implemented.
+          use local typed graph-variable selectors for Rust-parsed markers
+          under REQ-FE-083 and expose no SQL construction toolbar.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: blank-form-source-starter
         kind: behavior
