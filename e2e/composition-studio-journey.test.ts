@@ -447,10 +447,12 @@ function isDraftQueryEvaluation(
   response: Response,
   variableId: string,
   sql: string,
+  successfulResponseOnly = false,
 ): boolean {
   if (
     !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
-    response.request().method() !== "POST"
+    response.request().method() !== "POST" ||
+    (successfulResponseOnly && !response.ok())
   ) return false;
   const body = response.request().postDataJSON() as {
     target?: { kind?: string; yaml?: string };
@@ -1110,7 +1112,7 @@ test.describe("Composition Studio Journey", () => {
     await editor.fill(sql);
     await checkCompositionQuery(page);
     const emptyPreview = page.waitForResponse((response) =>
-      isDraftQueryEvaluation(response, "studio_rows", sql)
+      isDraftQueryEvaluation(response, "studio_rows", sql, true)
     );
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     expect((await (await emptyPreview).json() as { ok?: boolean }).ok).toBe(
@@ -1128,7 +1130,7 @@ test.describe("Composition Studio Journey", () => {
     expect(entryResponse.status()).toBe(201);
     const reopenedRow = `Reopened row ${suffix}`;
     const refreshedDraftResponse = page.waitForResponse((response) =>
-      isDraftQueryEvaluation(response, "studio_rows", sql)
+      isDraftQueryEvaluation(response, "studio_rows", sql, true)
     );
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "Run Query", exact: true }).click();

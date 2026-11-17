@@ -36,6 +36,7 @@ import {
   compositionCanonicalizeErrorMessage,
   compositionSaveErrorMessage,
 } from "~/lib/composition-save-error";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import {
   clearPendingCompositionSaveAttempt,
   type CompositionSaveTarget,
@@ -291,7 +292,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     };
   };
 
-  const runQuery = async (variableId: string, cursor?: string) => {
+  const runQuery = async (
+    variableId: string,
+    cursor?: string,
+    publicationConflictRetry = false,
+  ) => {
     const currentDraft = draft();
     const scope = JSON.stringify(routeIdentity());
     const checked = queryChecks()[variableId];
@@ -453,11 +458,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
       if (!activeCursor) {
         setDesignPreviewGeneration((generation) => generation + 1);
       }
-    } catch {
+    } catch (error) {
       if (
         !controller.signal.aborted &&
         runGenerations.get(variableId) === generation
       ) {
+        if (
+          !publicationConflictRetry && !cursor &&
+          error instanceof UgoiteApiError && error.status === 409 &&
+          error.code === "REVISION_CONFLICT" &&
+          error.message.includes(
+            "Publication changed during descriptor resolution",
+          )
+        ) {
+          void runQuery(variableId, undefined, true);
+          return;
+        }
         setQueryPreviews((current) => ({
           ...current,
           [variableId]: {
