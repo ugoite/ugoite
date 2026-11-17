@@ -395,6 +395,8 @@ export function CompositionGraphDesignCanvas(
           draft={props.draft}
           evaluation={preview.evaluation()}
           queryErrors={preview.queryErrors()}
+          suppressBlockedQueryStatus={Boolean(preview.error()) &&
+            Object.keys(preview.inputStates()).length === 0}
           rawInputs={preview.rawInputs()}
           inputStates={preview.inputStates()}
           blockedQueryIds={preview.blocked()}
