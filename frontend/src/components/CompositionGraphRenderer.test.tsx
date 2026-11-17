@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { CompositionGraphRenderer } from "./CompositionGraphRenderer";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
 import {
@@ -153,6 +154,38 @@ describe("CompositionGraphRenderer", () => {
       .toBeVisible();
     expect(screen.getByText(text.replace("{{total}}", "2"))).toBeVisible();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows the current literal Text while a previous template parse is stale", async () => {
+    const [currentDraft, setCurrentDraft] = createSignal(draft);
+    render(() => (
+      <CompositionGraphRenderer
+        draft={currentDraft()}
+        evaluation={evaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: /Total: 2/ }))
+      .toBeVisible();
+    setCurrentDraft({
+      ...draft,
+      components: draft.components.map((component) =>
+        component.id === "text_1" && component.kind === "text"
+          ? { ...component, content: "Current text" }
+          : component
+      ),
+    });
+
+    expect(screen.getByRole("heading", { name: "Current text" }))
+      .toBeVisible();
   });
 
   it("uses the common no-value display for a null scalar", async () => {
