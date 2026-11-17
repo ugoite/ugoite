@@ -124,13 +124,20 @@ function CompositionTextValue(props: {
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
   blockedQueryIds: ReadonlySet<string>;
 }) {
+  type ParsedTemplate = {
+    content: string;
+    segments: CompositionTextTemplateSegment[];
+  };
   const [parsedSegments] = createResource(
     () => props.content,
-    async (content): Promise<CompositionTextTemplateSegment[] | undefined> => {
+    async (content): Promise<ParsedTemplate> => {
       try {
-        return (await parseCompositionTextTemplate(content)).segments;
+        return {
+          content,
+          segments: (await parseCompositionTextTemplate(content)).segments,
+        };
       } catch {
-        return undefined;
+        return { content, segments: [{ kind: "literal", text: content }] };
       }
     },
   );
@@ -143,9 +150,14 @@ function CompositionTextValue(props: {
       binding.component_id === props.componentId && binding.kind === "text"
     )?.text_segments;
   const segments = () => {
-    const local = parsedSegments();
+    const parsed = parsedSegments();
+    if (parsed?.content !== props.content) {
+      return props.content.includes("{{")
+        ? undefined
+        : [{ kind: "literal" as const, text: props.content }];
+    }
+    const local = parsed.segments;
     const server = serverSegments();
-    if (!local) return undefined;
     // A response from a previous draft cannot replace the Rust parser's
     // interpretation of the currently edited template.
     return server && JSON.stringify(server) === JSON.stringify(local)
@@ -162,7 +174,8 @@ function CompositionTextValue(props: {
     referencedQueries().map((id) =>
       props.queryErrors?.[id] ?? queryError(props.evaluation, id)
     ).find((message) => message);
-  const loading = () => !segments();
+  const loading = () =>
+    props.content.includes("{{") && parsedSegments()?.content !== props.content;
   const waitingForInputs = () => (segments() ?? []).some((part) => {
     if (part.kind !== "variable") return false;
     if (props.inputStates[part.variable]) return true;

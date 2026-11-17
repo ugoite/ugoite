@@ -24,7 +24,9 @@ requirements:
         statement: >-
           Authors edit a Text template in its canvas position and choose its
           Title, Heading, Body, or Caption style with a compact adjacent
-          control.
+          control. Editing supports line breaks and IME composition. Escape
+          exits editing without discarding the draft, and moving focus outside
+          the inline editor closes it without losing edits.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: reader-is-read-only
         kind: behavior

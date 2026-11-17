@@ -92,7 +92,11 @@ describe("CompositionGraphDesignCanvas", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     const editor = await screen.findByRole("textbox", { name: "Text" });
+    editor.focus();
     fireEvent.input(editor, { target: { value: "Total: " } });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Text" })).toHaveFocus()
+    );
     fireEvent.change(screen.getByRole("combobox", { name: "Text style" }), {
       target: { value: "heading" },
     });
@@ -109,6 +113,62 @@ describe("CompositionGraphDesignCanvas", () => {
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Text" })).toHaveFocus()
     );
+  });
+
+  it("preserves multiline Text through IME, Escape, and focus leaving the editor", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.components.push({
+      id: "headline",
+      kind: "text",
+      content: "Initial",
+      style: "body",
+    });
+    initial.layout.rows[0].items.push({
+      kind: "component",
+      component: "headline",
+    });
+    const [draft, setDraft] = createSignal(initial);
+    render(() => <CompositionGraphDesignCanvas {...baseProps(draft(), setDraft)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit text" }));
+    const editor = await screen.findByRole("textbox", { name: "Text" });
+    editor.focus();
+    fireEvent.compositionStart(editor);
+    fireEvent.keyDown(editor, { key: "Escape", isComposing: true });
+    expect(editor).toBeInTheDocument();
+
+    const multiline = "Line one\n二行目";
+    fireEvent.input(editor, { target: { value: multiline } });
+    fireEvent.compositionEnd(editor, { data: "二行目" });
+    await waitFor(() =>
+      expect(draft().components[0]).toMatchObject({ content: multiline })
+    );
+
+    const currentEditor = screen.getByRole("textbox", { name: "Text" });
+    fireEvent.focusOut(currentEditor, { relatedTarget: document.body });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Text" })).toHaveFocus()
+    );
+    currentEditor.focus();
+    fireEvent.keyDown(currentEditor, { key: "Escape", isComposing: false });
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull()
+    );
+    const editButton = screen.getByRole("button", { name: "Edit text" });
+    await waitFor(() => expect(editButton).toHaveFocus());
+
+    fireEvent.click(editButton);
+    const reopened = await screen.findByRole("textbox", { name: "Text" });
+    expect(reopened).toHaveValue(multiline);
+    reopened.focus();
+    const addText = screen.getByRole("button", { name: "Text" });
+    addText.focus();
+
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull()
+    );
+    expect(addText).toHaveFocus();
+    expect(draft().components[0]).toMatchObject({ content: multiline });
   });
 
   it("selects an existing table variable and creates only its component binding", async () => {

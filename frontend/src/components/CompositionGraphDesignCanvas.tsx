@@ -77,6 +77,7 @@ export function CompositionGraphDesignCanvas(
   let addButton: HTMLButtonElement | undefined;
   let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
+  const textUpdatesInProgress = new Set<string>();
 
   const focusComponent = (id: string) => {
     queueMicrotask(() => {
@@ -124,14 +125,31 @@ export function CompositionGraphDesignCanvas(
     setSelectedId(id);
   };
   const updateText = (id: string, content: string) => {
-    props.onDraftChange({
-      ...props.draft,
-      components: props.draft.components.map((component) =>
-        component.id === id && component.kind === "text"
-          ? { ...component, content }
-          : component
-      ),
-    });
+    const editor = document.getElementById(`composition-text-editor-${id}`);
+    const restoreFocus = editor instanceof HTMLTextAreaElement &&
+      document.activeElement === editor;
+    textUpdatesInProgress.add(id);
+    try {
+      props.onDraftChange({
+        ...props.draft,
+        components: props.draft.components.map((component) =>
+          component.id === id && component.kind === "text"
+            ? { ...component, content }
+            : component
+        ),
+      });
+    } finally {
+      queueMicrotask(() => {
+        textUpdatesInProgress.delete(id);
+        const currentEditor = document.getElementById(
+          `composition-text-editor-${id}`,
+        );
+        if (
+          restoreFocus && document.activeElement === document.body &&
+          currentEditor instanceof HTMLTextAreaElement
+        ) currentEditor.focus();
+      });
+    }
   };
   const updateTextStyle = (
     id: string,
@@ -172,6 +190,14 @@ export function CompositionGraphDesignCanvas(
         start + marker.length,
       );
     }, 0);
+  };
+  const exitTextEditing = (id: string, restoreFocus: boolean) => {
+    setSelectedId((current) => current === id ? null : current);
+    if (restoreFocus) {
+      queueMicrotask(() => {
+        document.getElementById(`composition-text-edit-${id}`)?.focus();
+      });
+    }
   };
 
   const orderedIds = () => props.draft.layout.rows.flatMap((row) =>
@@ -401,10 +427,14 @@ export function CompositionGraphDesignCanvas(
                         {value}
                         <button
                           type="button"
+                          id={`composition-text-edit-${component().id}`}
                           class="compositionGraphSelect compositionGraphTextSelect"
                           data-component-select="true"
                           aria-label={t("composition.studioEditText")}
-                          onClick={select}
+                          onClick={() => {
+                            select();
+                            focusComponent(component().id);
+                          }}
                         >
                           <UiIcon name="edit" />
                         </button>
@@ -416,7 +446,20 @@ export function CompositionGraphDesignCanvas(
                     const text = component() as TextComponent;
                     let editor: HTMLTextAreaElement | undefined;
                     return (
-                      <div class="compositionGraphTextEditing">
+                      <div
+                        class="compositionGraphTextEditing"
+                        onFocusOut={(event) => {
+                          const editingContainer = event.currentTarget;
+                          queueMicrotask(() => {
+                            if (
+                              !editingContainer.isConnected ||
+                              editingContainer.contains(document.activeElement) ||
+                              textUpdatesInProgress.has(text.id)
+                            ) return;
+                            exitTextEditing(text.id, false);
+                          });
+                        }}
+                      >
                         <textarea
                           ref={(element) => editor = element}
                           id={`composition-text-editor-${text.id}`}
@@ -424,6 +467,11 @@ export function CompositionGraphDesignCanvas(
                           aria-label={t("composition.studioText")}
                           value={text.content}
                           onFocus={select}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape" || event.isComposing) return;
+                            event.preventDefault();
+                            exitTextEditing(text.id, true);
+                          }}
                           onInput={(event) => updateText(text.id, event.currentTarget.value)}
                         />
                         <div class="compositionGraphTextTools">

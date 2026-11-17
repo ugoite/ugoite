@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { CompositionGraphRenderer } from "./CompositionGraphRenderer";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
 import {
@@ -155,6 +156,38 @@ describe("CompositionGraphRenderer", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
+  it("shows the current literal Text while a previous template parse is stale", async () => {
+    const [currentDraft, setCurrentDraft] = createSignal(draft);
+    render(() => (
+      <CompositionGraphRenderer
+        draft={currentDraft()}
+        evaluation={evaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: /Total: 2/ }))
+      .toBeVisible();
+    setCurrentDraft({
+      ...draft,
+      components: draft.components.map((component) =>
+        component.id === "text_1" && component.kind === "text"
+          ? { ...component, content: "Current text" }
+          : component
+      ),
+    });
+
+    expect(screen.getByRole("heading", { name: "Current text" }))
+      .toBeVisible();
+  });
+
   it("uses the common no-value display for a null scalar", async () => {
     const nullDraft: CompositionGraphDraft = {
       ...draft,
@@ -259,6 +292,74 @@ describe("CompositionGraphRenderer", () => {
     ));
 
     expect(await screen.findByText(`${maximum} / ${decimal}`)).toBeVisible();
+  });
+
+  it("renders displayable scalar types together as one plain Text value", async () => {
+    const values = [
+      { id: "name", scalar_type: "string", value: { kind: "string", value: "<img src=x onerror=alert(1)> & Co." }, display: "<img src=x onerror=alert(1)> & Co." },
+      { id: "active", scalar_type: "boolean", value: { kind: "boolean", value: true }, display: "true" },
+      { id: "count", scalar_type: "integer", value: { kind: "integer", value: "9223372036854775807" }, display: "9223372036854775807" },
+      { id: "precise", scalar_type: "decimal", value: { kind: "decimal", value: "12345678901234567890.0000000000000001" }, display: "12345678901234567890.0000000000000001" },
+      { id: "today", scalar_type: "date", value: { kind: "date", value: "2026-11-17" }, display: "2026-11-17" },
+      { id: "created", scalar_type: "timestamp", value: { kind: "timestamp", value: "2026-11-17T09:30:45.123456Z" }, display: "2026-11-17T09:30:45.123456Z" },
+    ] as const;
+    const content = values.map(({ id }) => `{{${id}}}`).join(" | ");
+    const expected = values.map(({ display }) => display).join(" | ");
+    const segments = values.flatMap((value, index) => [
+      { kind: "variable" as const, variable: value.id },
+      ...(index < values.length - 1
+        ? [{ kind: "literal" as const, text: " | " }]
+        : []),
+    ]);
+    const scalarDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: values.map((value) => ({
+        id: value.id,
+        kind: "constant" as const,
+        value_type: { scalar_type: value.scalar_type, nullable: false as const },
+        value: value.value,
+      })),
+      components: [{
+        id: "text_scalars",
+        kind: "text",
+        content,
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_scalars" }],
+        }],
+      },
+    };
+    const scalarEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      component_bindings: [{
+        component_id: "text_scalars",
+        kind: "text",
+        text_segments: segments,
+      }],
+    };
+    const { container } = render(() => (
+      <CompositionGraphRenderer
+        draft={scalarDraft}
+        evaluation={scalarEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    const textValue = await screen.findByText(expected, { exact: true });
+    expect(textValue.textContent).toBe(expected);
+    expect(container.querySelector("img")).toBeNull();
+    expect([...textValue.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE)).toHaveLength(1);
   });
 
   it("keeps exact i64 result tokens in Table cells", () => {
