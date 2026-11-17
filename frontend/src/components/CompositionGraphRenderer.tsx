@@ -130,7 +130,7 @@ function CompositionTextValue(props: {
       try {
         return (await parseCompositionTextTemplate(content)).segments;
       } catch {
-        return undefined;
+        return [{ kind: "literal", text: content }];
       }
     },
   );
