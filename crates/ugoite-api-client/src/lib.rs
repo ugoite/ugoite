@@ -3049,6 +3049,7 @@ mod tests {
             base_revision_id: Some("018f0000-0000-7000-8000-000000000002".to_owned()),
             variables: variables.clone(),
             unset_variables: Vec::new(),
+            requested_queries: Some(vec!["expense_rows".to_owned()]),
         };
         let preview_wire = serde_json::to_value(preview).expect("preview request");
         assert_variable_wire_shape(preview_wire.clone());
@@ -3060,12 +3061,14 @@ mod tests {
             preview_wire["base_revision_id"],
             "018f0000-0000-7000-8000-000000000002"
         );
+        assert_eq!(preview_wire["requested_queries"], json!(["expense_rows"]));
         let new_preview = serde_json::from_value::<CompositionPreviewRequest>(json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML
         }))
         .expect("new Composition preview omits its edit base");
         assert_eq!(new_preview.base_entry_id, None);
         assert_eq!(new_preview.base_revision_id, None);
+        assert_eq!(new_preview.requested_queries, None);
         let partial_base = serde_json::from_value::<CompositionPreviewRequest>(json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML,
             "base_entry_id": "018f0000-0000-7000-8000-000000000001"

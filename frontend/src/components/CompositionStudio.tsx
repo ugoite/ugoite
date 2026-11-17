@@ -51,11 +51,7 @@ import {
   dependentCompositionQueryIds,
 } from "~/lib/composition-evaluation";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
-import {
-  authApi,
-  formApi,
-  sqlApi,
-} from "~/lib/ugoite-client";
+import { authApi, formApi, sqlApi } from "~/lib/ugoite-client";
 import type { SqlResultColumnType } from "~/lib/types";
 import { buildSqlSchema } from "~/lib/sql";
 
@@ -145,8 +141,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
   );
-  const editorValid = () =>
-    invalidEditorVariables().size === 0;
+  const editorValid = () => invalidEditorVariables().size === 0;
   const [saveGeneration, setSaveGeneration] = createSignal(0);
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
@@ -384,29 +379,34 @@ export function CompositionStudio(props: CompositionStudioProps) {
         runGenerations.get(variableId) !== generation ||
         draft() !== currentDraft || queryChecks()[variableId] !== checked
       ) return;
-      const evaluation = await compositionApi.evaluate(spaceId, {
-        evaluation_id: evaluationId,
-        target: { kind: "draft", yaml },
-        ...(props.saveMode.kind === "update"
-          ? {
-            base_entry_id: props.saveMode.compositionId,
-            base_revision_id: props.saveMode.baseRevisionId,
-          }
-          : {}),
-        variables: inputSnapshot.variables,
-        ...(inputSnapshot.unset_variables.length
-          ? { unset_variables: inputSnapshot.unset_variables }
-          : {}),
-        requested_queries: [variableId],
-        ...(activeCursor
-          ? { page: { variable_id: variableId, cursor: activeCursor } }
-          : {}),
-      }, controller.signal, currentDraft.variables.flatMap((node) =>
-        node.kind === "input" &&
+      const evaluation = await compositionApi.evaluate(
+        spaceId,
+        {
+          evaluation_id: evaluationId,
+          target: { kind: "draft", yaml },
+          ...(props.saveMode.kind === "update"
+            ? {
+              base_entry_id: props.saveMode.compositionId,
+              base_revision_id: props.saveMode.baseRevisionId,
+            }
+            : {}),
+          variables: inputSnapshot.variables,
+          ...(inputSnapshot.unset_variables.length
+            ? { unset_variables: inputSnapshot.unset_variables }
+            : {}),
+          requested_queries: [variableId],
+          ...(activeCursor
+            ? { page: { variable_id: variableId, cursor: activeCursor } }
+            : {}),
+        },
+        controller.signal,
+        currentDraft.variables.flatMap((node) =>
+          node.kind === "input" &&
             node.value_type.scalar_type === "integer"
-          ? [node.id]
-          : []
-      ));
+            ? [node.id]
+            : []
+        ),
+      );
       if (
         controller.signal.aborted ||
         runGenerations.get(variableId) !== generation ||
@@ -549,6 +549,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const previewCandidate = async (
     candidate: CompositionGraphDraft,
     signal?: AbortSignal,
+    requestedQueries?: readonly string[],
   ): Promise<CompositionGraphPreviewResponse> => {
     const document = compositionGraphAuthoringDocument(candidate);
     return await compositionApi.previewGraph(
@@ -572,6 +573,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           ? [node.id]
           : []
       ),
+      requestedQueries,
     );
   };
 
@@ -585,7 +587,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (
       evaluated &&
       (!inputSnapshot || evaluated.inputSnapshotKey !==
-        inputSnapshotKey(inputSnapshot) || evaluated.draft !== draft())
+          inputSnapshotKey(inputSnapshot) ||
+        evaluated.draft !== draft())
     ) return { ...preview, isCurrent: false };
     return preview;
   };
@@ -615,7 +618,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
     try {
       const principal = await getPrincipalGeneration();
       if (!isCurrent()) return;
-      const response = await previewCandidate(candidate, controller.signal);
+      const response = await previewCandidate(candidate, controller.signal, [
+        variableId,
+      ]);
       if (!isCurrent()) return;
       const currentPrincipal = await getPrincipalGeneration();
       if (!isCurrent()) return;
@@ -962,7 +967,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onPlanColumnsForQuery={async (variableId) => {
             const currentDraft = draft();
             const currentSpace = props.spaceId;
-            const response = await previewCandidate(currentDraft);
+            const response = await previewCandidate(currentDraft, undefined, [
+              variableId,
+            ]);
             const query = response.plan?.queries.find((query) =>
               query.variable_id === variableId
             );

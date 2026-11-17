@@ -144,9 +144,11 @@ vi.mock("~/components/SQLWorkspace", () => ({
       />
       <button
         type="button"
-        disabled={props.previewDisabled || Boolean(props.onCheck &&
-          (props.planner?.status !== "success" ||
-            !props.planner.isCurrent))}
+        disabled={props.previewDisabled || Boolean(
+          props.onCheck &&
+            (props.planner?.status !== "success" ||
+              !props.planner.isCurrent),
+        )}
         onClick={() => props.onPreview?.()}
       >
         Run query
@@ -1202,6 +1204,7 @@ describe("CompositionStudio graph surface", () => {
     expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     await waitFor(() => expect(previewGraphMock).toHaveBeenCalledOnce());
+    expect(previewGraphMock.mock.calls[0][6]).toEqual(["query_1"]);
     const staleYaml = previewGraphMock.mock.calls[0][1];
 
     fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {

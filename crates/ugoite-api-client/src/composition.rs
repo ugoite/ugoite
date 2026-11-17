@@ -268,6 +268,12 @@ pub struct CompositionPreviewRequest {
     /// declared default when one exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unset_variables: Vec<String>,
+    /// Nonempty query variable IDs whose metadata should be resolved for this
+    /// preview. Core expands the selection to include all transitive query
+    /// dependencies. Omission previews every query in the Composition graph;
+    /// an empty or invalid selection returns diagnostics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_queries: Option<Vec<String>>,
 }
 
 /// Caller-visible result of a side-effect-free Composition preview pass.

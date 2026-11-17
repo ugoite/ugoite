@@ -1,3 +1,7 @@
+---
+title: SQL structure GUI retirement record
+---
+
 # SQL structure GUI retirement record
 
 The former SQL structure GUI was retired under the text-first Composition

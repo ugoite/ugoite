@@ -417,6 +417,7 @@ export const compositionApi = {
     base?: CompositionRevisionBase,
     signal?: AbortSignal,
     integerVariableIds: readonly string[] = [],
+    requestedQueries?: readonly string[],
   ): Promise<CompositionGraphPreviewResponse> {
     const snapshot = splitVariableSnapshot(variables);
     return await protocolFetch<CompositionGraphPreviewResponse>(
@@ -437,6 +438,9 @@ export const compositionApi = {
         ...(snapshot.unset_variables.length > 0
           ? { unset_variables: snapshot.unset_variables }
           : {}),
+        ...(requestedQueries === undefined
+          ? {}
+          : { requested_queries: [...requestedQueries] }),
       },
       { signal },
     );

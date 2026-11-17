@@ -11527,13 +11527,14 @@ async fn preview_composition_handler(
     let principals = authorization_principal_ids(&identity, principal_id);
     let preview = state
         .service
-        .preview_composition_authoring_authorized_for_principals_with_base(
+        .preview_composition_authoring_authorized_for_principals_with_base_and_query_selection(
             &space_id,
             &request.yaml,
             &request.variables,
             &request.unset_variables,
             &principals,
             base,
+            request.requested_queries.as_deref(),
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -15572,6 +15573,131 @@ spec:
         assert_eq!(
             body["diagnostics"][0]["range"],
             json!({"start": 7, "end": 10})
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_preview_can_check_one_query_without_unrelated_sources(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-selected-preview-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(351208);
+        let space_id = state
+            .service
+            .create_space_for_principal(
+                "composition-selected-preview",
+                principal_id,
+                "Selected preview test",
+            )
+            .await?
+            .to_string();
+        let yaml = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Selected preview
+spec:
+  variables:
+    - id: selected_rows
+      kind: query
+      returns: {kind: table, columns: []}
+      query:
+        kind: inline_sql
+        sql: 'SELECT CAST(1 AS BIGINT) AS value'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+    - id: unrelated_rows
+      kind: query
+      returns: {kind: table, columns: []}
+      query:
+        kind: inline_sql
+        sql: 'SELECT "value" FROM "UnavailableForm"'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+  components:
+    - id: selected_table
+      kind: table
+      variable: selected_rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: selected_table
+"#;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+        let request = |payload: Value| {
+            Request::post(format!("/spaces/{space_id}/compositions/preview"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&payload).expect("preview serializes"),
+                ))
+        };
+
+        let (full_status, full_body) = route_json(
+            route.clone(),
+            request(json!({"yaml": yaml, "variables": {}}))?,
+        )
+        .await?;
+        assert_eq!(full_status, StatusCode::OK, "{full_body}");
+        assert_eq!(full_body["ok"], false, "{full_body}");
+
+        let (stale_status, stale_body) = route_json(
+            route.clone(),
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": ["missing_rows"]
+            }))?,
+        )
+        .await?;
+        assert_eq!(stale_status, StatusCode::OK, "{stale_body}");
+        assert_eq!(stale_body["ok"], false, "{stale_body}");
+        assert_eq!(
+            stale_body["diagnostics"][0]["variable_id"], "missing_rows",
+            "invalid query selections must fail with the requested variable ID"
+        );
+
+        let (empty_status, empty_body) = route_json(
+            route.clone(),
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": []
+            }))?,
+        )
+        .await?;
+        assert_eq!(empty_status, StatusCode::OK, "{empty_body}");
+        assert_eq!(empty_body["ok"], false, "{empty_body}");
+
+        let (selected_status, selected_body) = route_json(
+            route,
+            request(json!({
+                "yaml": yaml,
+                "variables": {},
+                "requested_queries": ["selected_rows"]
+            }))?,
+        )
+        .await?;
+        assert_eq!(selected_status, StatusCode::OK, "{selected_body}");
+        assert_eq!(selected_body["ok"], true, "{selected_body}");
+        assert_eq!(
+            selected_body["plan"]["queries"]
+                .as_array()
+                .expect("selected preview queries")
+                .iter()
+                .map(|query| query["variable_id"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            ["selected_rows"]
         );
         Ok(())
     }

@@ -2079,7 +2079,7 @@ spec:
       returns: {{ kind: table, columns: [] }}
       query:
         kind: inline_sql
-        sql: SELECT * FROM "{form_name}"
+        sql: SELECT "field_100" FROM "{form_name}"
   components:
     - id: salary_table
       kind: table
@@ -2116,15 +2116,14 @@ spec:
             &json!({
                 "name": form_name,
                 "version": 2,
-                "template": format!("# {form_name}\n\n## Salary amount\n\n## Bonus\n"),
+                "template": format!("# {form_name}\n\n## Salary amount\n"),
                 "fields": {
-                    "Salary amount": {"type": "integer", "required": true},
-                    "Bonus": {"type": "string", "required": false}
+                    "Salary amount": {"type": "integer", "required": false}
                 }
             }),
         )
         .await
-        .expect("change the source result type after Composition save");
+        .expect("change projected Form field nullability after Composition save");
 
     let core_config_path = fixture
         .config_path
