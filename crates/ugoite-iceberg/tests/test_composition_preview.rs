@@ -28,6 +28,10 @@ use ugoite_iceberg::service::{
 };
 use uuid::Uuid;
 
+#[cfg(debug_assertions)]
+static COMPOSITION_FINAL_AUTHORIZATION_TEST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
+
 async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocument, FormId)> {
     let op = common::setup_operator()?;
     let service = UgoiteService::from_operator(
@@ -1118,6 +1122,7 @@ impl Drop for CompositionFinalAuthorizationGateCleanup {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check(
 ) -> Result<()> {
+    let _gate_lock = COMPOSITION_FINAL_AUTHORIZATION_TEST_LOCK.lock().await;
     use ugoite_domain::identity::AccessPolicy;
     use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 
@@ -1201,6 +1206,185 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
                 .expect("final authorization check returns a typed AppError")
                 .kind(),
             ugoite_core::error::ErrorKind::Forbidden
+        );
+        let authorization_after = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.state(&space_id),
+        )
+        .await??;
+        assert_eq!(
+            authorization_after.revision,
+            authorization_before.revision + 1
+        );
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        evaluation.abort();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await;
+    }
+    if evaluation.is_finished() {
+        cleanup.evaluation_abort = None;
+    }
+    result
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn graph_evaluation_drops_query_results_when_composition_access_is_revoked_before_final_check(
+) -> Result<()> {
+    let _gate_lock = COMPOSITION_FINAL_AUTHORIZATION_TEST_LOCK.lock().await;
+    use ugoite_domain::identity::{
+        AccessPolicy, Action, Grant, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+    };
+    use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+    use ugoite_iceberg::composition::CompositionSaveRequest;
+
+    let (service, space_id, document, form_id) = setup_preview_space().await?;
+    let owner = Uuid::from_u128(3_434_001);
+    let viewer = Uuid::from_u128(3_434_003);
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_owned(),
+                state: PrincipalState::Active,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Form,
+                id: form_id.to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: vec![Grant {
+                    principal_id: viewer,
+                    actions: [Action::Read].into_iter().collect(),
+                }],
+            },
+        )
+        .await?;
+    let saved = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let composition_resource = ResourceRef {
+        kind: ResourceKind::Entry,
+        id: saved.entry_id.to_string(),
+        parent: None,
+    };
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &composition_resource,
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: vec![Grant {
+                    principal_id: viewer,
+                    actions: [Action::Read].into_iter().collect(),
+                }],
+            },
+        )
+        .await?;
+
+    let gate = ugoite_iceberg::service::TestCompositionFinalAuthorizationGate::new(
+        space_id.clone(),
+        "source",
+    );
+    ugoite_iceberg::service::install_test_composition_final_authorization_gate(gate.clone());
+    let evaluating_service = service.clone();
+    let evaluating_space = space_id.clone();
+    let composition_id = saved.entry_id.to_string();
+    let revision_id = saved.revision_id.to_string();
+    let mut evaluation = tokio::spawn(async move {
+        evaluating_service
+            .evaluate_composition_graph_authorized_for_principals(
+                &evaluating_space,
+                &[viewer],
+                CompositionQueryEvaluationTarget::SavedRevision {
+                    composition_id,
+                    revision_id,
+                },
+                Uuid::now_v7(),
+                None,
+                None,
+                &BTreeMap::new(),
+                &[],
+                None,
+                None,
+            )
+            .await
+    });
+    let mut cleanup = CompositionFinalAuthorizationGateCleanup {
+        gate: gate.clone(),
+        evaluation_abort: Some(evaluation.abort_handle()),
+    };
+
+    let result: Result<()> = async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            gate.wait_until_entered(),
+        )
+        .await?;
+        assert!(
+            gate.staged_row_count() > 0,
+            "the gate must be reached only after a nonempty saved-revision result is staged"
+        );
+        let authorization_before = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.state(&space_id),
+        )
+        .await??;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            authorizer.set_policy(
+                &space_id,
+                owner,
+                &composition_resource,
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            ),
+        )
+        .await??;
+        gate.release();
+
+        let joined_evaluation =
+            tokio::time::timeout(std::time::Duration::from_secs(10), &mut evaluation).await??;
+        let error = joined_evaluation
+            .expect_err("revoked saved Composition access must not return query results");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("final authorization check returns a typed AppError")
+                .kind(),
+            ugoite_core::error::ErrorKind::NotFound
         );
         let authorization_after = tokio::time::timeout(
             std::time::Duration::from_secs(10),
