@@ -9,6 +9,21 @@ title: "Historical SQL-first Composition acceptance plan"
 > REQ-COMP-010, REQ-FE-083, FEAT-COMP-010, and FEAT-COMP-015. This page records
 > history only and does not authorize a release.
 
+## v0.2.2 acceptance scope amendment (2026-11-17)
+
+Current Text-first Composition acceptance uses the automated browser, viewport,
+keyboard, and focus checks mapped in
+[`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
+Responsive widths, keyboard reachability, visible focus, accessible names,
+focus restoration, and locally scrollable Tables remain in scope. The attached
+plan's G10 remains a keyboard editing requirement; its screen-reader test
+requirement is removed. G18 and R06 use automated checks for the listed CSS
+viewport widths, touch targets, focus behavior, and page overflow. Testing on
+physical Safari devices, checking actual native browser zoom, and running
+manual VoiceOver/NVDA sessions are not required acceptance evidence. The
+historical matrix below records an earlier candidate; its old evidence gaps are
+not current requirements.
+
 This matrix tracks the former unreleased typed query graph and its Browser
 workflows. It preserves implementation and validation evidence from that
 candidate. The prior source-based Composition evidence is retained in the
@@ -63,8 +78,9 @@ and unapproved functions are outside that matrix.
 
 ## Explicit evidence gaps
 
-The candidate still needs required CI and independent review. Manual
-assistive-technology and iOS Safari evidence remains open. The SQL editor
-capability matrix and complete construct-authoring evidence under #4565 must be
-resolved before declaring full executor-to-GUI coverage complete. No release has
-been performed.
+At the time this historical candidate was recorded, required CI, independent
+review, and manual device evidence had not completed. The v0.2.2 Text-first
+scope amendment above retires physical-device and manual assistive-technology
+checks as acceptance gates. The earlier full-SQL-GUI construction gap was
+superseded by ADR-027 and is not a current requirement. No release has been
+performed.
