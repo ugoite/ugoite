@@ -137,7 +137,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await page.getByLabel("Variable name", { exact: true }).fill(variableId);
     await page.getByRole("button", { name: "Add", exact: true }).click();
     const originalSql = expectedCompositionFormSeedSql(
-      formBefore?.sql_relation ?? formName,
+      formName,
       formBefore?.fields,
     );
     await chooseCompositionFormSource(page, formName, originalSql);
@@ -195,7 +195,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
     expect(
       normalizeCompositionFormSeedSql(originalQuery?.query?.sql ?? ""),
     ).toBe(expectedCompositionFormSeedSql(
-      formBefore?.sql_relation ?? formName,
+      formName,
       formBefore?.fields,
     ));
     const originalTable = originalDocument.spec?.components?.find(

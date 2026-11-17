@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, type Page } from "@playwright/test";
 import { getBackendUrl } from "./client.ts";
+import { normalizeCompositionFormSeedSql } from "./composition-form.ts";
 
 type GraphVariable = Record<string, unknown> & {
   id: string;
@@ -29,8 +30,15 @@ export async function chooseCompositionFormSource(
   });
   await forms.getByRole("button", { name: formName, exact: true }).click();
   await expect(forms).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
-    .toHaveText(expectedSeedSql);
+  const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+  await expect.poll(async () => {
+    const actual = await editor.textContent() ?? "";
+    try {
+      return normalizeCompositionFormSeedSql(actual);
+    } catch {
+      return actual;
+    }
+  }).toBe(normalizeCompositionFormSeedSql(expectedSeedSql));
 }
 
 export async function checkCompositionQuery(page: Page): Promise<void> {

@@ -753,7 +753,7 @@ test.describe("Composition Studio Journey", () => {
     const scalarVariable = `${formSlug}_sum_amount`;
     expect(form?.sql_relation).toBeTruthy();
     const tableSql = expectedCompositionFormSeedSql(
-      form!.sql_relation!,
+      seed.formName,
       form?.fields,
     );
     const scalarSql = `SELECT SUM(${
@@ -825,7 +825,7 @@ test.describe("Composition Studio Journey", () => {
       await chooseCompositionFormSource(
         page,
         seed.formName,
-        expectedCompositionFormSeedSql(form!.sql_relation!, form!.fields),
+        expectedCompositionFormSeedSql(seed.formName, form!.fields),
       );
       await page.getByRole("textbox", { name: "SQL", exact: true })
         .fill(scalarSql);
@@ -1113,7 +1113,7 @@ test.describe("Composition Studio Journey", () => {
     await chooseCompositionFormSource(
       page,
       formName,
-      expectedCompositionFormSeedSql(form!.sql_relation!, form!.fields),
+      expectedCompositionFormSeedSql(formName, form!.fields),
     );
     const sql = `SELECT ${sqlIdentifier(nameColumn!)} AS name FROM ${
       sqlIdentifier(form!.sql_relation!)
@@ -1394,7 +1394,7 @@ test.describe("Composition Studio Journey", () => {
       variable.id === "threshold"
     )).toMatchObject({
       value_type: { scalar_type: "integer" },
-      default: { kind: "integer", value: "7" },
+      default: { kind: "integer", value: 7 },
       required: false,
     });
     const variablesInput = document.spec?.variables?.find((variable) =>
