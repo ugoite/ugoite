@@ -5,6 +5,7 @@ import {
   compositionBindingDiagnostics,
   compositionGraphDocumentDraft,
   compositionGraphAuthoringDocument,
+  compositionGraphQueryWorkbenchDocument,
   compositionGraphDraftFromDocument,
   createCompositionGraphDraft,
   removeCompositionGraphComponent,
@@ -37,6 +38,65 @@ const total: CompositionVariableNode = {
 };
 
 describe("Composition graph authoring model", () => {
+  it("adds a transient layout anchor only to query planning for an empty draft", async () => {
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [total],
+    };
+
+    const document = compositionGraphQueryWorkbenchDocument(draft);
+
+    expect(document.spec.components).toEqual([{
+      id: "query_workbench_anchor",
+      kind: "text",
+      content: "",
+      style: "body",
+    }]);
+    expect(document.spec.layout).toEqual({
+      kind: "flow",
+      rows: [{
+        id: "query_workbench",
+        items: [{
+          kind: "component",
+          component: "query_workbench_anchor",
+        }],
+      }],
+    });
+    expect(draft).toMatchObject({
+      components: [],
+      layout: { kind: "flow", rows: [{ id: "main", items: [] }] },
+    });
+    await expect(canonicalizeCompositionDocument(
+      compositionGraphAuthoringDocument(draft),
+    )).rejects.toThrow();
+    await expect(canonicalizeCompositionDocument(document))
+      .resolves.toHaveProperty("canonical_yaml");
+  });
+
+  it("leaves a populated graph unchanged for query planning", () => {
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      components: [{
+        id: "text_1",
+        kind: "text",
+        content: "Ready",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: "text_1" }],
+        }],
+      },
+    };
+
+    expect(compositionGraphQueryWorkbenchDocument(draft)).toEqual(
+      compositionGraphAuthoringDocument(draft),
+    );
+    expect(draft.components).toHaveLength(1);
+  });
+
   it("uses a temporary name only for authoring preview and keeps save strict", async () => {
     const draft = {
       ...createCompositionGraphDraft(" "),

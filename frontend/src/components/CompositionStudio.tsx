@@ -25,6 +25,7 @@ import {
   compositionBindingDiagnostics,
   compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
+  compositionGraphQueryWorkbenchDocument,
   type CompositionGraphDraft,
   type CompositionLiteral,
   type CompositionVariableNode,
@@ -374,7 +375,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         pageNumber = previous.pageNumber + 1;
       } else {
         yaml = (await compositionApi.canonicalizeDocument(
-          compositionGraphAuthoringDocument(currentDraft),
+          compositionGraphQueryWorkbenchDocument(currentDraft),
         )).canonical_yaml;
         evaluationId = crypto.randomUUID();
         pageNumber = 1;
@@ -567,7 +568,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
     signal?: AbortSignal,
     requestedQueries?: readonly string[],
   ): Promise<CompositionGraphPreviewResponse> => {
-    const document = compositionGraphAuthoringDocument(candidate);
+    const document = requestedQueries?.length
+      ? compositionGraphQueryWorkbenchDocument(candidate)
+      : compositionGraphAuthoringDocument(candidate);
     return await compositionApi.previewGraph(
       props.spaceId,
       stringifyCompositionDocument(document),
