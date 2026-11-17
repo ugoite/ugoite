@@ -178,7 +178,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       setQueryPreviews({});
       setQueryEvaluations({});
-      setInvalidEditorVariables(new Set());
+      setInvalidEditorVariables(new Set<string>());
       setSaveError(null);
       setDraft(
         props.saveMode.kind === "create"

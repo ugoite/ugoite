@@ -9447,6 +9447,7 @@
       "tools": {
         "dependencies": [
           "jsr:@std/assert@1",
+          "npm:typescript@5.9.3",
           "npm:yaml@2.9.0"
         ]
       }

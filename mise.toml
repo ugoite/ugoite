@@ -291,6 +291,10 @@ run = "cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- -
 description = "Run Deno workspace type and framework checks"
 run = "deno task check"
 
+[tasks."check:frontend-changed-types"]
+description = "Strictly type-check changed frontend application sources and imports"
+run = "deno run -A tools/check_frontend_changed_types.ts"
+
 [tasks."check:repo"]
 description = "Validate repository architecture and maintained contracts"
 run = [
@@ -321,6 +325,7 @@ run = [
   { task = "check:wasm:composition-parity" },
   { task = "check:wasm:sql-structure-fixtures" },
   { task = "check:deno" },
+  { task = "check:frontend-changed-types" },
   { task = "check:repo" },
 ]
 
@@ -770,6 +775,7 @@ run = [
   { task = "fmt:check" },
   { task = "lint:deno" },
   { task = "check:deno" },
+  { task = "check:frontend-changed-types" },
   { tasks = [
     "test:tools",
     "test:frontend:coverage",

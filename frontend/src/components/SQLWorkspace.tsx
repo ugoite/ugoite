@@ -337,7 +337,7 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
                         : variable.type === "float"
                         ? "decimal"
                         : "text"}
-                      autoComplete="off"
+                      autocomplete="off"
                       spellcheck={false}
                       required={variable.required}
                       aria-required={variable.required || undefined}
@@ -424,22 +424,23 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           ? props.preview.page
           : null}
       >
-        {(page) => (
-          <section
-            class="sql-workspace__results"
-            aria-label={t("sqlPage.results")}
-          >
+        {(page) => {
+          const currentPage = page();
+          const pageNumber = currentPage.pageNumber;
+          return (
+            <section
+              class="sql-workspace__results"
+              aria-label={t("sqlPage.results")}
+            >
             <h2 class="ui-label">{t("sqlPage.results")}</h2>
             <div class="sql-workspace__result-controls">
-              <Show when={page().pageNumber !== undefined}>
-                <span>
-                  {t("sqlPage.pageNumber", { page: page().pageNumber })}
-                </span>
-              </Show>
-              <Show when={page().canPrevious || page().canNext}>
+              {pageNumber === undefined
+                ? null
+                : <span>{t("sqlPage.pageNumber", { page: pageNumber })}</span>}
+              <Show when={currentPage.canPrevious || currentPage.canNext}>
                 <ResultPagination
-                  canPrevious={Boolean(page().canPrevious && props.onPrevious)}
-                  canNext={Boolean(page().canNext && props.onNext)}
+                  canPrevious={Boolean(currentPage.canPrevious && props.onPrevious)}
+                  canNext={Boolean(currentPage.canNext && props.onNext)}
                   busy={props.preview.status === "loading"}
                   previousLabel={t("common.previous")}
                   nextLabel={t("common.next")}
@@ -479,20 +480,21 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
               </p>
             </Show>
             <Show
-              when={page().rows.length > 0}
+              when={currentPage.rows.length > 0}
               fallback={<p>{t("sqlPage.noResults")}</p>}
             >
               <SqlResultTable
-                columns={page().columns}
-                columnTypes={page().columnTypes}
-                rows={page().rows}
-                exactIntegerRows={page().exactIntegerRows}
-                pageIdentity={page().pageIdentity}
+                columns={currentPage.columns}
+                columnTypes={currentPage.columnTypes}
+                rows={currentPage.rows}
+                exactIntegerRows={currentPage.exactIntegerRows}
+                pageIdentity={currentPage.pageIdentity}
                 tableLabel={t("sqlPage.results")}
               />
             </Show>
           </section>
-        )}
+          );
+        }}
       </Show>
     </div>
   );

@@ -277,7 +277,7 @@ export function createCompositionDesignEvaluation(options: {
         setEvaluation(undefined);
         setPages({});
         setQueryErrors({});
-        setBlocked(new Set());
+        setBlocked(new Set<string>());
         previousDraft = undefined;
         previousScope = scope;
       }

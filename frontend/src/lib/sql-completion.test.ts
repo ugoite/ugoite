@@ -5,7 +5,7 @@ import { buildSqlSchema } from "./sql";
 import { sqlCompletionSource } from "./sql-completion";
 
 describe("SQL Form completion", () => {
-  it("completes common aggregate functions while editing SQL", () => {
+  it("completes common aggregate functions while editing SQL", async () => {
     const schema = buildSqlSchema([]);
     const functions = [
       ["COUNT", "co"],
@@ -22,7 +22,7 @@ describe("SQL Form completion", () => {
         extensions: [sql({ schema })],
       });
       const context = new CompletionContext(state, query.length, true);
-      const result = sqlCompletionSource(schema)(context);
+      const result = await sqlCompletionSource(schema)(context);
 
       expect(result?.options.map(({ label }) => label), prefix).toContain(name);
       expect(result?.options.find(({ label }) => label === name)?.type)
@@ -30,7 +30,7 @@ describe("SQL Form completion", () => {
     }
   });
 
-  it("inserts aggregate parentheses with the cursor inside", () => {
+  it("inserts aggregate parentheses with the cursor inside", async () => {
     const schema = buildSqlSchema([]);
     const query = "SELECT CO";
     const state = EditorState.create({
@@ -38,9 +38,8 @@ describe("SQL Form completion", () => {
       extensions: [sql({ schema })],
     });
     const context = new CompletionContext(state, query.length, true);
-    const option = sqlCompletionSource(schema)(context)?.options.find((item) =>
-      item.label === "COUNT"
-    );
+    const result = await sqlCompletionSource(schema)(context);
+    const option = result?.options.find((item) => item.label === "COUNT");
     let dispatched: unknown;
     const view = {
       state: {
@@ -60,7 +59,7 @@ describe("SQL Form completion", () => {
     });
   });
 
-  it("shows Form names and inserts their server-owned SQL relations", () => {
+  it("shows Form names and inserts their server-owned SQL relations", async () => {
     const relation = "form_00000000000070008000000000000001";
     const schema = buildSqlSchema([
       {
@@ -77,7 +76,7 @@ describe("SQL Form completion", () => {
       extensions: [sql({ schema })],
     });
     const context = new CompletionContext(state, query.length, true);
-    const result = sqlCompletionSource(schema)(context);
+    const result = await sqlCompletionSource(schema)(context);
 
     expect(result?.options).toContainEqual({
       label: "1-Expense",
@@ -86,7 +85,7 @@ describe("SQL Form completion", () => {
     });
   });
 
-  it("completes __proto__ as an ordinary Form name", () => {
+  it("completes __proto__ as an ordinary Form name", async () => {
     const relation = "form_00000000000070008000000000000002";
     const schema = buildSqlSchema([
       {
@@ -103,7 +102,7 @@ describe("SQL Form completion", () => {
       extensions: [sql({ schema })],
     });
     const context = new CompletionContext(state, query.length, true);
-    const result = sqlCompletionSource(schema)(context);
+    const result = await sqlCompletionSource(schema)(context);
 
     expect(result?.options).toContainEqual({
       label: "__proto__",

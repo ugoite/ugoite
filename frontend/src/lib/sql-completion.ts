@@ -2,6 +2,7 @@ import {
   autocompletion,
   type Completion,
   type CompletionContext,
+  type CompletionResult,
   type CompletionSource,
 } from "@codemirror/autocomplete";
 import { syntaxTree } from "@codemirror/language";
@@ -42,10 +43,10 @@ const aggregateCompletions: Completion[] = SQL_AGGREGATE_FUNCTIONS.map(
 export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
   const schemaSource = schemaCompletionSource({ schema });
   const keywords = keywordCompletionSource(StandardSQL);
-  const names = Object.keys(schema.tables ?? {});
+  const names = Object.keys(schema.tables);
   const tableLabels = sqlSchemaFormLabelsFor(schema);
   const quoteIdentifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
-  const withTableLabels = (result: ReturnType<typeof schemaSource>) => {
+  const withTableLabels = (result: CompletionResult | null) => {
     if (!result) return result;
     return {
       ...result,
@@ -61,10 +62,10 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
     };
   };
 
-  return (context: CompletionContext) => {
+  return async (context: CompletionContext) => {
     const node = syntaxTree(context.state).resolve(context.pos, -1);
     if (node.name === "QuotedIdentifier") {
-      return withTableLabels(schemaSource(context));
+      return withTableLabels(await schemaSource(context));
     }
     if (NON_CODE_NODES.has(node.name)) return null;
 
@@ -85,7 +86,8 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
       };
     }
 
-    const existingCompletions = schemaSource(context) ?? keywords(context);
+    const existingCompletions = (await schemaSource(context)) ??
+      (await keywords(context));
     const functionToken = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*$/);
     if (!functionToken) return existingCompletions;
 

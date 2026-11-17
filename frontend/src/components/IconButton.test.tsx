@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import { IconButton } from "./IconButton";
 import { IconLink } from "./IconLink";
@@ -26,6 +26,23 @@ describe("IconButton", () => {
     const button = screen.getByRole("button", { name: "Settings" });
     expect(button.tagName).toBe("BUTTON");
     expect(container.querySelector(".icononly")).toBeInTheDocument();
+  });
+
+  it("forwards bound click handlers with their data", () => {
+    const calls: string[] = [];
+    const onClick = (value: string) => calls.push(value);
+
+    render(() => (
+      <IconButton
+        icon="settings"
+        label="Settings"
+        onClick={[onClick, "bound"]}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(calls).toEqual(["bound"]);
   });
 });
 
