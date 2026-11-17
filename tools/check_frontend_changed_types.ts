@@ -10,6 +10,10 @@ export function isFrontendApplicationTypeScript(path: string): boolean {
     !/\.test\.tsx?$/.test(path);
 }
 
+export function changedSourceDiffRange(base: string): string {
+  return `${base}..HEAD`;
+}
+
 async function gitOutput(args: string[]): Promise<string> {
   const result = await new Deno.Command("git", {
     args,
@@ -49,7 +53,7 @@ async function main(): Promise<void> {
     "--name-only",
     "--diff-filter=ACMR",
     // CI fetches base and PR merge commits shallowly, so avoid merge-base.
-    `${base}..HEAD`,
+    changedSourceDiffRange(base),
     "--",
     sourcePrefix,
   ]);
