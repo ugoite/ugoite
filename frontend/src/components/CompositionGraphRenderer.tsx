@@ -243,8 +243,16 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                 return (
                   <Show when={component()}>
                     {(entry) => {
-                      const variableId = () =>
-                        entry().kind === "text" ? undefined : entry().variable;
+                      const variableId = () => {
+                        const current = entry();
+                        return current.kind === "text"
+                          ? undefined
+                          : current.variable;
+                      };
+                      const textComponent = () => {
+                        const current = entry();
+                        return current.kind === "text" ? current : undefined;
+                      };
                       const node = () => {
                         const id = variableId();
                         return id ? variableNode(props.draft, id) : undefined;
@@ -274,14 +282,15 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
 
                       let rendered: JSX.Element;
                       if (entry().kind === "text") {
-                        const tag = entry().style === "title" ||
-                            entry().style === "heading"
+                        const style = () => textComponent()?.style ?? "body";
+                        const tag = style() === "title" ||
+                            style() === "heading"
                           ? "h2"
                           : "p";
                         const text = (
                           <CompositionTextValue
                             componentId={entry().id}
-                            content={entry().content}
+                            content={textComponent()?.content ?? ""}
                             draft={props.draft}
                             evaluation={props.evaluation}
                             rawInputs={props.rawInputs}
@@ -294,8 +303,8 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                           />
                         );
                         rendered = tag === "h2"
-                          ? <h2 class={`compositionGraphText compositionGraphText--${entry().style}`}>{text}</h2>
-                          : <p class={`compositionGraphText compositionGraphText--${entry().style}`}>{text}</p>;
+                          ? <h2 class={`compositionGraphText compositionGraphText--${style()}`}>{text}</h2>
+                          : <p class={`compositionGraphText compositionGraphText--${style()}`}>{text}</p>;
                       } else if (entry().kind === "input") {
                         const input = node();
                         if (!input || input.kind !== "input") return null;
@@ -354,10 +363,12 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                             </Show>
                             <Show when={result()?.kind === "table" && !blocked() && !error()}>
                               {(() => {
-                                const table = () =>
-                                  result()?.kind === "table"
-                                    ? result() as Extract<NonNullable<typeof result>, { kind: "table" }>
+                                const table = () => {
+                                  const value = result();
+                                  return value?.kind === "table"
+                                    ? value
                                     : undefined;
+                                };
                                 return (
                                   <>
                                     <SqlResultTable

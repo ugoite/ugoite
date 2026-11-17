@@ -1,4 +1,3 @@
-import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import { isReservedMetadataForm } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
@@ -39,7 +38,7 @@ export type SqlStructureFilterOperator =
   | "is_null"
   | "is_not_null";
 
-export type SqlSchema = NonNullable<SQLConfig["schema"]>;
+export type SqlSchema = { tables: Record<string, string[]> };
 
 const sqlSchemaFormLabels = new WeakMap<
   object,

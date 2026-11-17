@@ -22,10 +22,11 @@ type SqlApiResponse = Omit<SqlEntry, "created_at" | "updated_at"> & {
 };
 
 const normalizeSqlEntry = (entry: SqlApiResponse): SqlEntry => {
-  const normalizedEntry = { ...entry };
-  normalizedEntry.created_at = normalizeTimestamp(entry.created_at);
-  normalizedEntry.updated_at = normalizeTimestamp(entry.updated_at);
-  return normalizedEntry;
+  return {
+    ...entry,
+    created_at: normalizeTimestamp(entry.created_at),
+    updated_at: normalizeTimestamp(entry.updated_at),
+  };
 };
 
 export const sqlApi = {

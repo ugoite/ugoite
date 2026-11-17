@@ -245,6 +245,7 @@ jobs:
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"
+      UGOITE_FRONTEND_TYPECHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -252,6 +253,10 @@ jobs:
 
       - name: Configure Deno cache path
         run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+
+      - name: Fetch frontend type-check base
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: git fetch --no-tags --depth=1 origin "$UGOITE_FRONTEND_TYPECHECK_BASE"
 
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:

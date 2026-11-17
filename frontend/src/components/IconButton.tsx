@@ -54,8 +54,8 @@ export function IconButton(props: IconButtonProps) {
           return;
         }
         const handler = props.onClick;
-        if (Array.isArray(handler)) handler[0](handler[1], event);
-        else handler?.(event);
+        if (typeof handler === "function") handler(event);
+        else if (handler) handler[0](handler[1], event);
       }}
     >
       <UiIcon name={props.icon} />
