@@ -311,18 +311,20 @@ const projectableField = (
 describe("CompositionStudio graph surface", () => {
   beforeEach(() => {
     setLocale("en");
-    for (const mock of [
-      authSessionMock,
-      navigateMock,
-      formsMock,
-      previewGraphMock,
-      evaluateMock,
-      countMock,
-      canonicalizeMock,
-      parseInputMock,
-      saveMock,
-      formReferenceGateMock,
-    ]) mock.mockReset();
+    for (
+      const mock of [
+        authSessionMock,
+        navigateMock,
+        formsMock,
+        previewGraphMock,
+        evaluateMock,
+        countMock,
+        canonicalizeMock,
+        parseInputMock,
+        saveMock,
+        formReferenceGateMock,
+      ]
+    ) mock.mockReset();
     routePathMock.value = "/spaces/space-1/compositions/new";
     clearPendingSaveAttempts();
     formReferenceGateMock.mockImplementation(async (references: string[]) =>
@@ -887,7 +889,7 @@ describe("CompositionStudio graph surface", () => {
         },
         query: {
           kind: "inline_sql",
-          sql: "SELECT $limit",
+          sql: "SELECT {{limit}}",
           arguments: [{ name: "limit", variable: "threshold" }],
         },
       },
@@ -925,9 +927,12 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
 
-    fireEvent.change(screen.getByRole("combobox", { name: "limit" }), {
-      target: { value: "replacement" },
-    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Choose a variable for limit" }),
+      {
+        target: { value: "replacement" },
+      },
+    );
     expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
       "idle",
     );
@@ -1101,7 +1106,11 @@ describe("CompositionStudio graph surface", () => {
         version: 1,
         template: "",
         fields: {
-          amount: { type: "float", required: false, sql_column: "amount" },
+          amount: projectableField(
+            { type: "float", required: false, sql_column: "amount" },
+            "amount",
+            1,
+          ),
         },
       },
       {
@@ -1111,7 +1120,11 @@ describe("CompositionStudio graph surface", () => {
         version: 1,
         template: "",
         fields: {
-          amount: { type: "float", required: false, sql_column: "amount" },
+          amount: projectableField(
+            { type: "float", required: false, sql_column: "amount" },
+            "amount",
+            1,
+          ),
         },
       },
     ];
@@ -1187,14 +1200,15 @@ describe("CompositionStudio graph surface", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
-        'SELECT 1 FROM "Receipts"',
+        'SELECT "amount" AS "amount" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
       )
     );
     expect(
       JSON.parse(screen.getByTestId("host-draft").textContent!).variables
         .find((node: { id: string }) => node.id === "rows").query,
     ).toMatchObject({
-      sql: 'SELECT 1 FROM "Receipts"',
+      sql:
+        'SELECT "amount" AS "amount" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
       form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
     });
     await waitFor(() => expect(pendingReferenceResolvers).toHaveLength(1));
@@ -1217,39 +1231,13 @@ describe("CompositionStudio graph surface", () => {
     expect(runDrafts[0].variables.find((node) => node.id === "rows"))
       .toMatchObject({
         query: {
-          sql: 'SELECT 1 FROM "Receipts"',
+          sql:
+            'SELECT "amount" AS "amount" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
           form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
         },
       });
 
-    fireEvent.click(screen.getByRole("button", { name: "Form" }));
-    const expenses = within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Expenses",
-    });
-    await waitFor(() => expect(expenses).toBeEnabled());
-    fireEvent.click(expenses);
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
-        'SELECT 1 FROM "Expenses"',
-      )
-    );
-    expect(
-      JSON.parse(screen.getByTestId("host-draft").textContent!).variables
-        .find((node: { id: string }) => node.id === "rows").query,
-    ).toMatchObject({
-      sql: 'SELECT 1 FROM "Expenses"',
-      form_bindings: [
-        { relation: "Receipts", form_id: "form-id" },
-        { relation: "Expenses", form_id: "form-id-b" },
-      ],
-    });
-    await waitFor(() => expect(pendingReferenceResolvers).toHaveLength(2));
-    fireEvent.click(screen.getByRole("button", { name: "other" }));
-    pendingReferenceResolvers[1](["Expenses"]);
-    fireEvent.click(screen.getByRole("button", { name: "rows" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
-    );
+    expect(screen.getByRole("button", { name: "Form" })).toBeDisabled();
   });
 
   it("saves authored SQL with the selected Form identity in a Table component", async () => {
@@ -1284,7 +1272,8 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(createCompositionGraphDraft("Report"));
     const editor = await createTableQueryFromDesign("receipts_rows");
     await selectFormForQuery("Receipts");
-    const sql = 'SELECT 1 FROM "Receipts"';
+    const sql =
+      'SELECT "amount" AS "Amount paid" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"';
     await waitFor(() => expect(editor).toHaveValue(sql));
     const saveButton = screen.getByRole("button", {
       name: "Save",
@@ -1326,7 +1315,7 @@ describe("CompositionStudio graph surface", () => {
     }]);
   });
 
-  it("selects an empty Form as a source without rewriting the SQL projection", async () => {
+  it("keeps an empty Form selection local without rewriting the SQL", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
       name: "System records",
@@ -1336,10 +1325,8 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(createCompositionGraphDraft("Report"));
     const editor = await createTableQueryFromDesign("system_records_rows");
     await selectFormForQuery("System records");
-    await waitFor(() =>
-      expect(editor).toHaveValue('SELECT 1 FROM "System records"')
-    );
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(editor).toHaveValue("SELECT 1");
   });
 
   it("saves the current planned Table schema without a presentation projection", async () => {
@@ -1391,7 +1378,6 @@ describe("CompositionStudio graph surface", () => {
     expect(savedSpec.components[0]).not.toHaveProperty("presentation");
   });
 
-
   it("edits a Form-backed query before the Composition is named without enabling Save", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
@@ -1412,13 +1398,15 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(createCompositionGraphDraft(""));
     const editor = await createTableQueryFromDesign("receipts_rows");
     await selectFormForQuery("Receipts");
-    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Receipts"'));
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT "amount" AS "amount" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"',
+      )
+    );
     expect(screen.getByRole("textbox", { name: "Name", exact: true }))
       .toHaveValue("");
     expect(screen.getByRole("button", { name: "Save", exact: true }))
       .toBeDisabled();
     expect(saveMock).not.toHaveBeenCalled();
   });
-
-
 });

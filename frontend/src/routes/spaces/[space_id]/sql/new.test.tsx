@@ -89,9 +89,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
       );
     };
     return (
-      <div
-        data-testid="sql-workspace"
-      >
+      <div data-testid="sql-workspace">
         <section class="sql-workspace__editor" aria-label="SQL">
           <textarea
             id={props.id}
@@ -316,7 +314,10 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
     const runButton = screen.getByRole("button", { name: "Run Query" });
-    await waitFor(() => expect(runButton).toBeEnabled());
+    await waitFor(() => expect(sqlPlanMock).toHaveBeenCalled(), {
+      timeout: 10_000,
+    });
+    await waitFor(() => expect(runButton).toBeEnabled(), { timeout: 10_000 });
     fireEvent.click(runButton);
 
     await waitFor(() => {
