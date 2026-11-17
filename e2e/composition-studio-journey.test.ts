@@ -1329,6 +1329,8 @@ test.describe("Composition Studio Journey", () => {
       name: "Choose a variable for threshold",
       exact: true,
     })).toHaveValue("threshold");
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toBeFocused();
     await checkCompositionQuery(page);
 
     await page.getByRole("tab", { name: "Design", exact: true }).click();
@@ -1350,6 +1352,11 @@ test.describe("Composition Studio Journey", () => {
     await page.getByRole("button", { name: "Use", exact: true }).click();
     await expect(page.locator('[data-component-id="input_3"]'))
       .toHaveAttribute("aria-label", "design_input");
+    await expect(
+      page.locator(
+        '[data-component-id="input_3"][data-component-select="true"]',
+      ),
+    ).toBeFocused();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {

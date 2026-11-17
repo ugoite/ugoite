@@ -244,6 +244,45 @@ describe("Composition inline SQL argument bindings", () => {
     );
   });
 
+  it("rolls back a marker Input and its pending Table query when both are canceled", async () => {
+    const draft = renderStudio(createCompositionGraphDraft("Report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    const queryName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(queryName, { target: { value: "rows" } });
+    fireEvent.submit(queryName.closest("form")!);
+    const sql = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.input(sql, {
+      target: { textContent: "SELECT {{month}} AS value" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Create a variable for month",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Input" }));
+
+    const inputName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.submit(inputName.closest("form")!);
+    await screen.findByRole("combobox", { name: "Type" });
+    expect(draft().variables.map((node) => node.id)).toEqual(["rows", "month"]);
+    expect(draft().components).toHaveLength(0);
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(draft().variables.map((node) => node.id))
+      .toEqual(["rows"]));
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Design" }))
+      .toHaveAttribute("aria-selected", "true"));
+    expect(draft().variables).toEqual([]);
+    expect(draft().components).toEqual([]);
+  });
+
   it("suggests a unique name for variables created from Design", async () => {
     const initial = createCompositionGraphDraft("Report");
     initial.variables = [{

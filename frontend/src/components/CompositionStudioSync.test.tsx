@@ -1214,6 +1214,9 @@ describe("CompositionStudio graph surface", () => {
     expect(request.variables).toEqual({ limit: 7 });
     expect(integerVariableIds).toContain("limit");
     expect(request).not.toHaveProperty("component_values");
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(draft.variables.find((variable) => variable.id === "limit"))
+      .not.toHaveProperty("value");
   });
 
   it("requires a current Check and discards a delayed result after SQL changes", async () => {

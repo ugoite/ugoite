@@ -439,6 +439,15 @@ features:
                 criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Table query replacement uses Check and preserves the component position on cancel" } }
+          - id: input-work-remains-transient
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "passes the current typed Input Work snapshot to Run without saving it" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.input-creation-places-once
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "passes the current typed Input Work snapshot to Run without saving it" } }
           - id: input-creation-entrypoints
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts

@@ -389,6 +389,7 @@
         "selectors": [
           { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Input creation from Variables and SQL markers places one bound Input" },
           { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "edits a Design Input in Variables and commits placement only on Use" },
+          { "path": "frontend/src/components/CompositionStudioSync.test.tsx", "kind": "test", "name": "passes the current typed Input Work snapshot to Run without saving it" },
           { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "cancels SQL marker Input creation without leaving its variable or binding" }
         ]
       },
