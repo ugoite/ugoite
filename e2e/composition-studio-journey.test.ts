@@ -1316,6 +1316,8 @@ test.describe("Composition Studio Journey", () => {
       .selectOption("integer");
     await page.getByRole("textbox", { name: "Default", exact: true })
       .fill("7");
+    await page.getByRole("checkbox", { name: "Required", exact: true })
+      .uncheck();
     await expect(page.getByRole("button", { name: "Use", exact: true }))
       .toBeEnabled();
     await expect(page.locator('[data-component-id="input_2"]'))
@@ -1343,6 +1345,8 @@ test.describe("Composition Studio Journey", () => {
       .toHaveAttribute("aria-selected", "true");
     await page.getByRole("combobox", { name: "Type", exact: true })
       .selectOption("boolean");
+    await page.getByRole("checkbox", { name: "Required", exact: true })
+      .uncheck();
     await page.getByRole("button", { name: "Use", exact: true }).click();
     await expect(page.locator('[data-component-id="input_3"]'))
       .toHaveAttribute("aria-label", "design_input");
@@ -1365,6 +1369,7 @@ test.describe("Composition Studio Journey", () => {
           id?: string;
           value_type?: { scalar_type?: string };
           default?: { kind?: string; value?: string | number | boolean };
+          required?: boolean;
           query?: { arguments?: Array<{ name: string; variable: string }> };
         }>;
         components?: Array<{ kind?: string; variable?: string }>;
@@ -1382,10 +1387,14 @@ test.describe("Composition Studio Journey", () => {
     )).toMatchObject({
       value_type: { scalar_type: "integer" },
       default: { kind: "integer", value: "7" },
+      required: false,
     });
     expect(document.spec?.variables?.find((variable) =>
       variable.id === "design_input"
-    )).toMatchObject({ value_type: { scalar_type: "boolean" } });
+    )).toMatchObject({
+      value_type: { scalar_type: "boolean" },
+      required: false,
+    });
   });
 
   test("Inline SQL preview refreshes the dependent Text value when an Input changes", async ({ page, request }) => {
