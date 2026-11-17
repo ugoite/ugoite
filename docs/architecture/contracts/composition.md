@@ -3,8 +3,10 @@ title: Composition contract
 description: The portable typed graph and execution boundaries for Composition.
 ---
 
-**Status:** [ADR-027](./adr-027-text-first-composition.md) is the accepted
-Composition model; its implementation and focused verification are in progress.
+**Status:** [ADR-027](./adr-027-text-first-composition.md) is the accepted and
+implemented Composition model. The focused verification selectors and their
+evidence limits are tracked in
+[issue #4613](https://github.com/ugoite/ugoite/issues/4613).
 This document does not authorize release preparation, version changes, or
 publication.
 
