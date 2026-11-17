@@ -234,9 +234,10 @@ describe("EntryList", () => {
     it("should render empty state when no entries exist", async () => {
       render(() => <EntryList spaceId="ui-test-ws" />);
 
+      // The first standalone list request also initializes the WASM protocol.
       await waitFor(() => {
         expect(screen.getByText(/no entries/i)).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it("should render generic Entry labels without exposing IDs", async () => {

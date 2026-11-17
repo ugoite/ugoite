@@ -1,19 +1,20 @@
 import { assertEquals } from "@std/assert/equals";
 
 const repository = new URL("../", import.meta.url);
-const [registrySource, toolbarSource, sqlSource, protocolSource] = await Promise
-  .all([
-    Deno.readTextFile(
-      new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
-    ),
-    Deno.readTextFile(
-      new URL("frontend/src/components/SqlDocumentTreeEditor.tsx", repository),
-    ),
-    Deno.readTextFile(new URL("frontend/src/lib/sql.ts", repository)),
-    Deno.readTextFile(
-      new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
-    ),
-  ]);
+const [registrySource, completionSource, sqlSource, protocolSource] =
+  await Promise
+    .all([
+      Deno.readTextFile(
+        new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
+      ),
+      Deno.readTextFile(
+        new URL("frontend/src/lib/sql-completion.ts", repository),
+      ),
+      Deno.readTextFile(new URL("frontend/src/lib/sql.ts", repository)),
+      Deno.readTextFile(
+        new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
+      ),
+    ]);
 
 function registryFunctions(): Array<{
   name: string;
@@ -108,31 +109,29 @@ Deno.test("browser aggregate picker follows the Rust aggregate registry", () => 
     assertEquals(descriptor.distinct, "SingleArgument", descriptor.name);
     assertEquals(descriptor.wildcard, "Unsupported", descriptor.name);
   }
-  const toolbarList = toolbarSource.match(
-    /const aggregateFunctions:[\s\S]*?= \[([\s\S]*?)\];/,
+  const completionList = completionSource.match(
+    /const SQL_AGGREGATE_FUNCTIONS = \[([\s\S]*?)\];/,
   );
   const protocolList = protocolSource.match(
     /export type SqlDocumentAggregateFunction =([\s\S]*?);/,
   );
-  if (!toolbarList || !protocolList) {
-    throw new Error("Typed aggregate editor or protocol list was not found");
+  if (!completionList || !protocolList) {
+    throw new Error("SQL completion source or protocol list was not found");
   }
-  const toolbarNames = [...toolbarList[1].matchAll(/kind: "([^"]+)"/g)].map((
+  const completionNames = [...completionList[1].matchAll(/"([A-Z]+)"/g)].map((
     [, name],
-  ) => name);
+  ) => name.toLowerCase());
   const protocolNames = [...protocolList[1].matchAll(/"([^"]+)"/g)].map((
     [, name],
   ) => name);
   const canonical = functions.map(({ name }) => name);
-  assertEquals(toolbarNames.slice().sort(), canonical.slice().sort());
+  assertEquals(completionNames.slice().sort(), canonical.slice().sort());
   assertEquals(protocolNames.slice().sort(), canonical.slice().sort());
   assertEquals(
     registeredSpellings.includes("mean"),
     true,
     "MEAN remains an accepted AVG alias rather than a separate picker entry",
   );
-  assertEquals(toolbarSource.includes('kind: "set_function_argument"'), true);
-  assertEquals(toolbarSource.includes('kind: "set_aggregate_distinct"'), true);
 
   const byType = returnedAggregateLists(sqlSource);
   const numericTypes = new Set(["integer", "float", "decimal"]);
@@ -158,6 +157,6 @@ Deno.test("browser aggregate picker follows the Rust aggregate registry", () => 
   assertEquals(
     byType.size,
     9,
-    "all SQL structure types have an aggregate capability row",
+    "all scalar SQL types have an aggregate completion capability row",
   );
 });

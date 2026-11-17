@@ -1,0 +1,38 @@
+{
+  "contract": "ugoite sql lint v0.2.1 default output",
+  "cases": [
+    {
+      "sql": "SELECT 1",
+      "success": true,
+      "stdout": {
+        "syntax_valid": true,
+        "sql": "SELECT 1"
+      }
+    },
+    {
+      "sql": "DROP TABLE entries",
+      "success": true,
+      "stdout": {
+        "syntax_valid": true,
+        "sql": "DROP TABLE entries"
+      }
+    },
+    {
+      "sql": "SELECT * FROM \"Expenses\"",
+      "success": true,
+      "stdout": {
+        "syntax_valid": true,
+        "sql": "SELECT * FROM \"Expenses\""
+      }
+    },
+    {
+      "sql": "SELECT FROM",
+      "success": true,
+      "stdout": {
+        "syntax_valid": false,
+        "sql": "SELECT FROM",
+        "reason": "parse SQL with DataFusion"
+      }
+    }
+  ]
+}

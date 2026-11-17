@@ -6,6 +6,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 import {
+  checkCompositionQuery,
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
 } from "./lib/composition-graph.ts";
@@ -484,6 +485,7 @@ test.describe("Composition Table and Text pagination", () => {
     await inputDefault.fill("0");
     await uiExpect(inputDefault).toHaveValue("0");
     await page.getByRole("button", { name: "paged_rows", exact: true }).click();
+    await checkCompositionQuery(page);
     const studioRun = page.getByRole("button", {
       name: "Run Query",
       exact: true,

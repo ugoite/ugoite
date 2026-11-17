@@ -1,9 +1,8 @@
 import type { Diagnostic } from "@codemirror/lint";
-import { createSignal, createUniqueId, For, Show } from "solid-js";
+import { createUniqueId, For, Show } from "solid-js";
 import type { SqlResultColumnType } from "~/lib/types";
 import { t } from "~/lib/i18n";
 import { ButtonSpinner } from "./ButtonSpinner";
-import { IconButton } from "./IconButton";
 import { ResultPagination } from "./ResultPagination";
 import { SqlQueryEditor } from "./SqlQueryEditor";
 import { SqlResultTable } from "./SqlResultTable";
@@ -17,45 +16,6 @@ export interface SQLWorkspaceVariable {
   type: string;
   required?: boolean;
   default?: SQLWorkspaceScalar;
-}
-
-export type SQLWorkspaceActionKind =
-  | "copy"
-  | "form"
-  | "columns"
-  | "filter"
-  | "sort"
-  | "aggregate"
-  | "group_by"
-  | "distinct"
-  | "row_limit"
-  | "structure"
-  | "arguments";
-
-/**
- * A capability supplied by the owning SQL adapter. This component only
- * dispatches the operation; it never parses or regenerates SQL itself.
- */
-export interface SQLWorkspaceAction {
-  kind: SQLWorkspaceActionKind;
-  icon:
-    | "edit"
-    | "forms"
-    | "columns"
-    | "filter"
-    | "sort"
-    | "aggregate"
-    | "group-by"
-    | "distinct"
-    | "row-limit"
-    | "tree"
-    | "appearance"
-    | "sql";
-  label: string;
-  disabled?: boolean;
-  disabledReason?: string;
-  active?: boolean;
-  onActivate: (returnFocus?: HTMLElement | null) => void;
 }
 
 export interface SQLWorkspacePage {
@@ -89,6 +49,11 @@ export interface SQLWorkspacePlanState {
   /** The result matches the current SQL, parameters, revision, and Space. */
   isCurrent: boolean;
   error?: string;
+  resultColumns?: readonly {
+    name: string;
+    type: SqlResultColumnType;
+    nullable: boolean;
+  }[];
 }
 
 export interface SQLWorkspaceProps {
@@ -106,11 +71,11 @@ export interface SQLWorkspaceProps {
   parameterValues?: Readonly<Record<string, SQLWorkspaceScalar | undefined>>;
   onParameterChange?: (name: string, rawValue: string) => void;
   parametersReadOnly?: boolean;
-  actions?: readonly SQLWorkspaceAction[];
-  /** Hide the default action bar when the host places it outside this workspace. */
-  hideActions?: boolean;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   planner?: SQLWorkspacePlanState;
+  onCheck?: () => void;
+  sqlArgumentVariables?: readonly string[];
+  onSqlArgumentCompletion?: (name: string, sql: string) => void;
   previewDisabled?: boolean;
   onPreview: () => void;
   preview: SQLWorkspacePreview;
@@ -122,157 +87,16 @@ export interface SQLWorkspaceProps {
 const formatValue = (value: SQLWorkspaceScalar | undefined): string =>
   value === undefined ? "" : String(value);
 
-export interface SQLWorkspaceActionBarProps {
-  actions?: readonly SQLWorkspaceAction[];
-}
-
-/** Render the workspace's host-supplied structure actions at the host's chosen position. */
-export function SQLWorkspaceActionBar(props: SQLWorkspaceActionBarProps) {
-  const actions = () => props.actions ?? [];
-  const [structureOpen, setStructureOpen] = createSignal(false);
-  const structureMenuId = `sql-workspace-structure-${createUniqueId()}`;
-  const structureButton = () =>
-    document.querySelector<HTMLButtonElement>(
-      `button[aria-controls="${structureMenuId}"]`,
-    );
-
-  const structureActions = () =>
-    actions().filter((action) =>
-      action.kind === "structure" || action.kind === "aggregate" ||
-      action.kind === "group_by" || action.kind === "distinct" ||
-      action.kind === "row_limit"
-    );
-
-  // Keep this action identity stable across menu open/close. The persistent
-  // button is also the focus-return target for dialogs opened by nested items.
-  const structureAction: SQLWorkspaceAction = {
-    kind: "structure",
-    icon: "appearance",
-    label: t("sqlPage.structure.structure"),
-    // Keep the entry point reachable so unavailable operations and their
-    // reasons remain inspectable inside the menu.
-    onActivate: () => setStructureOpen((current) => !current),
-  };
-
-  const visibleActions = () => {
-    const current = actions();
-    const primary = current.filter((action) =>
-      action.kind === "form" || action.kind === "columns" ||
-      action.kind === "filter" || action.kind === "sort"
-    );
-    const structure =
-      current.some((action) =>
-          action.kind === "structure" || action.kind === "aggregate" ||
-          action.kind === "group_by" || action.kind === "distinct" ||
-          action.kind === "row_limit"
-        )
-        ? [structureAction]
-        : [];
-    const argumentsAction = current.filter((action) =>
-      action.kind === "arguments"
-    );
-    return [
-      ...primary,
-      ...structure,
-      ...argumentsAction,
-      ...current.filter((action) => action.kind === "copy"),
-    ];
-  };
-
-  const actionName = (action: SQLWorkspaceAction) =>
-    action.disabled && action.disabledReason
-      ? `${action.label}: ${action.disabledReason}`
-      : action.label;
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !structureOpen()) return;
-    event.preventDefault();
-    setStructureOpen(false);
-    structureButton()?.focus();
-  };
-
-  return (
-    <Show when={actions().length > 0}>
-      <div class="sql-workspace__action-bar" onKeyDown={handleKeyDown}>
-        <div
-          class="sql-workspace__actions"
-          role="group"
-          aria-label={t("sqlPage.sql")}
-        >
-          <For each={visibleActions()}>
-            {(action) => {
-              const isStructure = action.kind === "structure";
-              const visibleAction = action;
-              return (
-                <IconButton
-                  icon={visibleAction.icon}
-                  label={actionName(visibleAction)}
-                  title={actionName(visibleAction)}
-                  disabled={visibleAction.disabled}
-                  active={isStructure
-                    ? structureOpen() ||
-                      structureActions().some((nested) => nested.active)
-                    : visibleAction.active}
-                  ariaExpanded={isStructure ? structureOpen() : undefined}
-                  ariaControls={isStructure ? structureMenuId : undefined}
-                  onClick={(event) => {
-                    if (isStructure) {
-                      visibleAction.onActivate(event.currentTarget);
-                    } else {
-                      setStructureOpen(false);
-                      visibleAction.onActivate(event.currentTarget);
-                    }
-                  }}
-                />
-              );
-            }}
-          </For>
-        </div>
-        <Show when={structureOpen()}>
-          <div
-            id={structureMenuId}
-            class="sql-workspace__structure-actions"
-            role="group"
-            aria-label={t("sqlPage.structure.structureOptions")}
-          >
-            <For each={structureActions()}>
-              {(action) => (
-                <IconButton
-                  icon={action.icon}
-                  label={actionName(action)}
-                  title={actionName(action)}
-                  disabled={action.disabled}
-                  active={action.active}
-                  onClick={() => {
-                    setStructureOpen(false);
-                    // The nested action unmounts with the menu. Focus the
-                    // persistent opener after closing it and before dispatch,
-                    // so any dialog captures a stable return target.
-                    structureButton()?.focus();
-                    action.onActivate(structureButton() ?? null);
-                  }}
-                />
-              )}
-            </For>
-          </div>
-        </Show>
-      </div>
-    </Show>
-  );
-}
-
 /**
  * Shared SQL editing and preview presentation. The owning route or
  * Composition source supplies persistence, query execution, typed SQL schema,
  * parameters, count, and continuation callbacks. SQL text changes only when
- * the editor emits a direct edit; structured actions are explicit adapter
- * capabilities and never rewrite it from this component.
+ * the editor emits a direct edit.
  */
 export function SQLWorkspace(props: SQLWorkspaceProps) {
   const generatedId = createUniqueId();
   const workspaceId = () => props.id ?? `sql-workspace-${generatedId}`;
   const variables = () => props.variables ?? [];
-  const actions = () => props.actions ?? [];
   const editorReadOnly = () => props.readOnly || !props.onSqlChange;
   const plannerDiagnostics = (): Diagnostic[] => {
     const planner = props.planner;
@@ -310,9 +134,6 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
 
   return (
     <div class="sql-workspace">
-      <Show when={!props.hideActions}>
-        <SQLWorkspaceActionBar actions={actions()} />
-      </Show>
       <Show when={variables().length > 0}>
         <section
           class="sql-workspace__variables"
@@ -372,12 +193,31 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           schema={props.schema}
           lintProfile={props.lintProfile}
           onDiagnostics={props.onDiagnostics}
+          sqlArgumentVariables={props.sqlArgumentVariables}
+          onSqlArgumentCompletion={props.onSqlArgumentCompletion}
           additionalDiagnostics={plannerDiagnostics()}
           disabled={editorReadOnly()}
         />
       </section>
 
       <div class="sql-workspace__preview-action">
+        <Show when={props.onCheck}>
+          <button
+            type="button"
+            class="btn"
+            onClick={() => props.onCheck?.()}
+            disabled={props.planner?.status === "pending" &&
+                props.planner.isCurrent || props.previewDisabled}
+            aria-busy={props.planner?.status === "pending" &&
+                props.planner.isCurrent || undefined}
+          >
+            <Show when={props.planner?.status === "pending" &&
+              props.planner.isCurrent}>
+              <ButtonSpinner />
+            </Show>
+            {t("sqlPage.checkSql")}
+          </button>
+        </Show>
         <button
           type="button"
           class="btn primary"
@@ -396,6 +236,25 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           </Show>
           {t("sqlPage.runQuery")}
         </button>
+        <Show when={props.planner?.status === "success" &&
+          props.planner.isCurrent &&
+          props.planner.resultColumns?.length}>
+          <span class="sql-workspace__check-columns" role="status">
+            <For each={props.planner?.resultColumns ?? []}>
+              {(column, index) => (
+                <span>
+                  {index() > 0 ? ", " : ""}{column.name}: {column.type}{column.nullable ? "?" : ""}
+                </span>
+              )}
+            </For>
+          </span>
+        </Show>
+        <Show when={props.planner?.status === "error" &&
+          props.planner.isCurrent && props.planner.error}>
+          <span class="sql-workspace__error" role="status">
+            {props.planner?.error}
+          </span>
+        </Show>
         <Show when={previewDisabledReason()}>
           {(reason) => (
             <span

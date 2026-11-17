@@ -504,6 +504,7 @@ pub enum FlowItem {
 pub enum CompositionDiagnosticCode {
     UnsupportedFormatVersion,
     InvalidComposition,
+    WildcardProjection,
     VariableUnknown,
     VariableMissing,
     VariableTypeMismatch,
@@ -522,6 +523,7 @@ impl CompositionDiagnosticCode {
         match self {
             Self::UnsupportedFormatVersion => "unsupported_format_version",
             Self::InvalidComposition => "invalid_composition",
+            Self::WildcardProjection => "wildcard_projection",
             Self::VariableUnknown => "variable_unknown",
             Self::VariableMissing => "variable_missing",
             Self::VariableTypeMismatch => "variable_type_mismatch",

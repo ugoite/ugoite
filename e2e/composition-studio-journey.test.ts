@@ -14,6 +14,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 import {
+  checkCompositionQuery,
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
   saveCompositionGraph,
@@ -793,6 +794,7 @@ test.describe("Composition Studio Journey", () => {
         exact: true,
       });
       await tableEditor.fill(tableSql);
+      await checkCompositionQuery(page);
       const tablePreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, rowsVariable, tableSql)
       );
@@ -838,6 +840,7 @@ test.describe("Composition Studio Journey", () => {
       expect(scalarShapePlanResponse.ok()).toBe(true);
       await expect(queryResultShape).toBeEnabled();
       await expect(queryResultShape).toHaveValue("scalar");
+      await checkCompositionQuery(page);
       const scalarPreviewResponse = page.waitForResponse((response) =>
         isDraftQueryEvaluation(response, scalarVariable, scalarSql)
       );
@@ -1105,6 +1108,7 @@ test.describe("Composition Studio Journey", () => {
     }`;
     const editor = page.getByRole("textbox", { name: "SQL", exact: true });
     await editor.fill(sql);
+    await checkCompositionQuery(page);
     const emptyPreview = page.waitForResponse((response) =>
       isDraftQueryEvaluation(response, "studio_rows", sql)
     );

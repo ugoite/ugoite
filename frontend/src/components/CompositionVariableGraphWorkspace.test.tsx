@@ -651,6 +651,85 @@ describe("CompositionVariableGraphWorkspace", () => {
       .toBeInTheDocument();
   });
 
+  it("connects one same-named scalar SQL marker and keeps an explicit unbind", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [
+        {
+          id: "month",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: "11" },
+        },
+        {
+          id: "rows",
+          kind: "query",
+          returns: { kind: "table", columns: [] },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT 1",
+            arguments: [],
+          },
+        },
+      ],
+    });
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="rows"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+        onQueryChange={(id, sql, _guards, queryArguments) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.map((node) =>
+              node.id === id && node.kind === "query"
+                ? {
+                  ...node,
+                  query: {
+                    ...node.query,
+                    kind: "inline_sql",
+                    sql,
+                    ...(queryArguments
+                      ? { arguments: queryArguments }
+                      : {}),
+                  },
+                }
+                : node
+            ),
+          }))}
+      />
+    ));
+
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT {{month}}" },
+    });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
+        query: {
+          arguments: [{ name: "month", variable: "month" }],
+        },
+      });
+    });
+
+    const binding = screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    });
+    fireEvent.change(binding, { target: { value: "" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
+        query: { arguments: [] },
+      });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
+      query: { arguments: [] },
+    });
+  });
+
   it("traps and restores focus when the mobile variable drawer closes", async () => {
     setLocale("en");
     const draft = createCompositionGraphDraft("Report");

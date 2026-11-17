@@ -15,8 +15,11 @@ use ugoite_core::sql_query::{
     SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryPage, SqlQueryPlanRequest, SqlQueryRequest,
 };
 use ugoite_domain::sql_lint::{lint_sql, SqlLintProfile};
-use ugoite_iceberg::saved_sql::{SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::{
+    index::validate_sql_syntax,
+    saved_sql::{SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload},
+};
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -41,8 +44,12 @@ pub enum SqlSubCmd {
             required_unless_present = "sql_text"
         )]
         file: Option<PathBuf>,
-        #[arg(long, value_enum, default_value_t = SqlLintProfileArg::Standard)]
-        profile: SqlLintProfileArg,
+        /// Emit the structured portable lint diagnostics instead of the v0.2.1-compatible result.
+        #[arg(long)]
+        diagnostics: bool,
+        /// Select a structured lint profile. Supplying this option enables structured diagnostics.
+        #[arg(long, value_enum)]
+        profile: Option<SqlLintProfileArg>,
     },
     /// Check one query against the current authorized Space schema without reading rows
     Check {
@@ -879,9 +886,10 @@ pub async fn run(
         SqlSubCmd::Lint {
             sql_text,
             file,
+            diagnostics,
             profile,
         } => {
-            run_lint(sql_text, file, profile)?;
+            run_lint(sql_text, file, diagnostics, profile)?;
         }
         SqlSubCmd::Check {
             sql_text,
@@ -1340,7 +1348,8 @@ mod sql_cli_tests {
             SqlSubCmd::Lint {
                 sql_text: None,
                 file: Some(path),
-                profile: SqlLintProfileArg::Composition,
+                diagnostics: false,
+                profile: Some(SqlLintProfileArg::Composition),
             } if path.as_path() == Path::new("query.sql")
         ));
 
@@ -1351,7 +1360,8 @@ mod sql_cli_tests {
             SqlSubCmd::Lint {
                 sql_text: Some(sql),
                 file: None,
-                profile: SqlLintProfileArg::Standard,
+                diagnostics: false,
+                profile: None,
             } if sql == "SELECT 1"
         ));
     }
@@ -1385,7 +1395,8 @@ mod sql_cli_tests {
 fn run_lint(
     sql_text: Option<String>,
     file: Option<PathBuf>,
-    profile: SqlLintProfileArg,
+    diagnostics: bool,
+    profile: Option<SqlLintProfileArg>,
 ) -> Result<()> {
     let sql = match (sql_text, file) {
         (Some(sql), None) => sql,
@@ -1397,6 +1408,21 @@ fn run_lint(
             )
         }
     };
-    print_json(&lint_sql(&sql, profile.into()));
+    if diagnostics || profile.is_some() {
+        let profile = profile.unwrap_or(SqlLintProfileArg::Standard);
+        print_json(&lint_sql(&sql, profile.into()));
+    } else {
+        match validate_sql_syntax(&sql) {
+            Ok(()) => print_json(&serde_json::json!({
+                "syntax_valid": true,
+                "sql": sql,
+            })),
+            Err(error) => print_json(&serde_json::json!({
+                "syntax_valid": false,
+                "sql": sql,
+                "reason": error.to_string(),
+            })),
+        }
+    }
     Ok(())
 }

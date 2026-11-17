@@ -15451,6 +15451,131 @@ spec:
         Ok(())
     }
 
+    #[tokio::test]
+    async fn composition_save_rejects_projection_wildcard_from_non_browser_client(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-save-wildcard-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351206);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-save-wildcard", owner_id, "Save test")
+            .await?
+            .to_string();
+        let form_name = "StudioWildcardCompositionSave";
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": Uuid::from_u128(351207),
+                    "name": form_name,
+                    "version": 1,
+                    "fields": {
+                        "Value": {"id": 100, "type": "string", "required": true}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let forms_before = serde_json::to_value(state.service.list_forms(&space_id).await?)?;
+        let entries_before = serde_json::to_value(state.service.list_entries(&space_id).await?)?;
+        let yaml = format!(
+            r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Wildcard save regression
+spec:
+  variables:
+    - id: rows
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: 'SELECT * FROM "{form_name}"'
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+  components:
+    - id: table
+      kind: table
+      variable: rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: table
+"#
+        );
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let request = Request::post(format!("/spaces/{space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("idempotency-key", Uuid::now_v7().to_string())
+            .body(Body::from(serde_json::to_vec(&json!({"yaml": yaml}))?))?;
+
+        let (status, body) = route_json(route.clone(), request).await?;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "wildcard_projection");
+        let (list_status, list) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/compositions?limit=10")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(list_status, StatusCode::OK, "{list}");
+        assert_eq!(list["items"], json!([]));
+        assert_eq!(
+            serde_json::to_value(state.service.list_forms(&space_id).await?)?,
+            forms_before,
+            "rejected SQL must not create Composition registry state"
+        );
+        assert_eq!(
+            serde_json::to_value(state.service.list_entries(&space_id).await?)?,
+            entries_before,
+            "rejected SQL must not append a revision or publication"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sql_lint_route_matches_composition_profile_without_space() -> anyhow::Result<()> {
+        let state =
+            AppState::new_for_tests(format!("memory://server-sql-lint-route-{}", Uuid::now_v7()))?;
+        let route = Router::new()
+            .route("/sql/lint", post(super::lint_sql))
+            .with_state(state);
+        let sql = "SELECT t.* FROM \"Events\" t";
+        let request = Request::post("/sql/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&json!({
+                "sql": sql,
+                "profile": "composition"
+            }))?))?;
+
+        let (status, body) = route_json(route, request).await?;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body,
+            serde_json::to_value(ugoite_domain::sql_lint::lint_sql(
+                sql,
+                ugoite_domain::sql_lint::SqlLintProfile::Composition
+            ))?
+        );
+        assert_eq!(body["diagnostics"][0]["code"], "wildcard_projection");
+        assert_eq!(
+            body["diagnostics"][0]["range"],
+            json!({"start": 7, "end": 10})
+        );
+        Ok(())
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn composition_save_route_concurrent_same_key_returns_one_publication_and_receipt(
     ) -> anyhow::Result<()> {

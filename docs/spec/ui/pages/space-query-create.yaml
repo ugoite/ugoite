@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-18"
+updated: "2026-11-17"
 page:
   id: space-query-create
   title: New
@@ -33,7 +33,7 @@ components:
       reference: ../components/sql-workspace.yaml
       initial_sql: SELECT 1
       schema: current authorized Forms, server-owned SQL relations, and public field columns
-      structured_actions: shared SQL structure toolbar only
+      editing: direct SQL text with shared Rust/WASM lint and authorized preview
       preview: stateless SQL request with request-owned paging
     - id: query-variable-default-editor
       type: typed-variable-list

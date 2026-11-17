@@ -181,8 +181,8 @@ describe("Composition inline SQL argument bindings", () => {
     initial.variables.push({
       id: "limit",
       kind: "constant",
-      value_type: { scalar_type: "string", nullable: false },
-      value: { kind: "string", value: "existing" },
+      value_type: { scalar_type: "json", nullable: false },
+      value: { kind: "json", value: { existing: true } },
     });
     const draft = renderStudio(initial);
     await openQuery();

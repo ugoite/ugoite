@@ -22,7 +22,9 @@ use ugoite_domain::composition::{
     MAX_COMPOSITION_COLLECTION_ITEMS,
 };
 use ugoite_domain::form::sql_relation_name;
-use ugoite_domain::sql_document::{normalize_sql_template, parse_sql_document, SqlDocumentStatus};
+use ugoite_domain::sql_document::{
+    normalize_sql_template, parse_sql_document, SqlDocumentStatus, SqlSourceRange,
+};
 use uuid::Uuid;
 
 /// The default bounded page size for one variable-graph table query.
@@ -140,6 +142,8 @@ pub struct VariableGraphQueryRequestDiagnostic {
     pub reference_id: Option<String>,
     /// Original stable Domain diagnostic code when graph validation fails.
     pub domain_code: Option<String>,
+    /// Source span of an inline SQL graph diagnostic when the parser provides one.
+    pub source_range: Option<SqlSourceRange>,
     /// Dependency cycle from Domain validation, when applicable.
     pub cycle: Vec<String>,
 }
@@ -152,6 +156,7 @@ impl VariableGraphQueryRequestDiagnostic {
             argument_name: None,
             reference_id: None,
             domain_code: None,
+            source_range: None,
             cycle: Vec::new(),
         }
     }
@@ -167,6 +172,7 @@ impl VariableGraphQueryRequestDiagnostic {
             argument_name: Some(argument.name.clone()),
             reference_id: Some(argument.variable.clone()),
             domain_code: None,
+            source_range: None,
             cycle: Vec::new(),
         }
     }
@@ -180,6 +186,7 @@ impl VariableGraphQueryRequestDiagnostic {
             argument_name: diagnostic.argument_name,
             reference_id: diagnostic.reference_id,
             domain_code: Some(diagnostic.code.as_str().to_owned()),
+            source_range: diagnostic.source_range,
             cycle: diagnostic.cycle,
         }
     }
@@ -1755,7 +1762,7 @@ mod tests {
             "rows",
             VariableGraphQueryDefinition::InlineSql {
                 sql: format!(
-                    "SELECT * FROM \"Shared\", \"{stable_relation}\", \"{legacy_shaped_name}\""
+                    "SELECT 1 FROM \"Shared\", \"{stable_relation}\", \"{legacy_shaped_name}\""
                 ),
             },
             VariableGraphResultType::Table {
@@ -1865,6 +1872,7 @@ mod tests {
             argument_name: Some(name.to_owned()),
             reference_id: Some(variable.to_owned()),
             domain_code: None,
+            source_range: None,
             cycle: Vec::new(),
         }
     }
@@ -1879,6 +1887,7 @@ mod tests {
             argument_name: None,
             reference_id: None,
             domain_code: Some(domain_code.to_owned()),
+            source_range: None,
             cycle: Vec::new(),
         }
     }
@@ -2515,9 +2524,40 @@ mod tests {
                 argument_name: Some("threshold".to_owned()),
                 reference_id: None,
                 domain_code: Some("duplicate_argument_name".to_owned()),
+                source_range: None,
                 cycle: Vec::new(),
             }]
         );
+    }
+
+    #[test]
+    fn composition_sql_lint_diagnostic_reaches_core_with_variable_and_source_range() {
+        let sql = "SELECT e.* FROM entries e";
+        let node = query_node(
+            "rows",
+            VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            },
+            VariableGraphResultType::Table {
+                columns: Vec::new(),
+            },
+            Vec::new(),
+        );
+        let diagnostics = compile_node(&node, &BTreeMap::new())
+            .expect_err("Composition graph compilation must reject wildcard projections");
+        assert_eq!(diagnostics.len(), 1);
+        let diagnostic = &diagnostics[0];
+        assert_eq!(
+            diagnostic.code,
+            VariableGraphQueryRequestDiagnosticCode::InvalidGraph
+        );
+        assert_eq!(diagnostic.variable_id, "rows");
+        assert_eq!(
+            diagnostic.domain_code.as_deref(),
+            Some("wildcard_projection")
+        );
+        let range = diagnostic.source_range.expect("source range");
+        assert_eq!(&sql[range.start..range.end], "e.*");
     }
 
     #[test]
@@ -2526,12 +2566,18 @@ mod tests {
         let VariableGraphNodeKind::Query { query, .. } = &mut oversized_sql.kind else {
             unreachable!("helper constructs a query node")
         };
+        let oversized_source = format!("SELECT 1 /* {} */", "x".repeat(MAX_SQL_QUERY_BYTES + 1));
         query.definition = VariableGraphQueryDefinition::InlineSql {
-            sql: format!("SELECT 1 /* {} */", "x".repeat(MAX_SQL_QUERY_BYTES + 1)),
+            sql: oversized_source.clone(),
         };
+        let mut oversized_diagnostic = graph_diagnostic("rows", "invalid_inline_sql");
+        oversized_diagnostic.source_range = Some(SqlSourceRange {
+            start: 0,
+            end: oversized_source.len(),
+        });
         assert_eq!(
             compile_node(&oversized_sql, &BTreeMap::new()).expect_err("query byte bound"),
-            [graph_diagnostic("rows", "invalid_inline_sql")]
+            [oversized_diagnostic]
         );
 
         let node = inline_node(vec![argument(
@@ -2618,6 +2664,7 @@ mod tests {
                 argument_name: Some("missing".to_owned()),
                 reference_id: None,
                 domain_code: Some("missing_argument_binding".to_owned()),
+                source_range: None,
                 cycle: Vec::new(),
             }]
         );
@@ -2932,6 +2979,7 @@ mod tests {
                 argument_name: Some("amount".to_owned()),
                 reference_id: Some("amount_input".to_owned()),
                 domain_code: None,
+                source_range: None,
                 cycle: Vec::new(),
             }]
         );

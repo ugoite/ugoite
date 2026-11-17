@@ -11,6 +11,7 @@ import {
 import { BackLink } from "~/components/BackLink";
 import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
 import type {
+  SQLWorkspacePlanState,
   SQLWorkspacePreview,
 } from "~/components/SQLWorkspace";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
@@ -60,6 +61,25 @@ import { buildSqlSchema } from "~/lib/sql";
 
 export type CompositionStudioSaveMode = CompositionSaveTarget;
 
+type CompositionQueryCheck = SQLWorkspacePlanState & {
+  draft: CompositionGraphDraft;
+  scope: string;
+  principal: string;
+};
+
+type CompositionInputSnapshot = {
+  variables: Record<string, unknown>;
+  unset_variables: string[];
+};
+
+const inputSnapshotKey = (snapshot: CompositionInputSnapshot) =>
+  JSON.stringify({
+    variables: Object.entries(snapshot.variables).sort(([left], [right]) =>
+      left.localeCompare(right)
+    ),
+    unset_variables: [...snapshot.unset_variables].sort(),
+  });
+
 export interface CompositionStudioProps {
   spaceId: string;
   initialDraft?: CompositionGraphDraft;
@@ -97,9 +117,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
     initialPending?.state === "uncertain",
   );
-  let getSaveInputSnapshot: () =>
-    | { variables: Record<string, unknown>; unset_variables: string[] }
-    | undefined = () => ({ variables: {}, unset_variables: [] });
+  let getSaveInputSnapshot: () => CompositionInputSnapshot | undefined =
+    () => ({ variables: {}, unset_variables: [] });
   createEffect(() => {
     const identity = routeIdentity();
     const stored = getPendingCompositionSaveAttempt(identity);
@@ -132,6 +151,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [queryPreviews, setQueryPreviews] = createSignal<
     Record<string, SQLWorkspacePreview>
   >({});
+  const [queryChecks, setQueryChecks] = createSignal<
+    Record<string, CompositionQueryCheck>
+  >({});
   const [designPreviewGeneration, setDesignPreviewGeneration] = createSignal(0);
   const [queryEvaluations, setQueryEvaluations] = createSignal<
     Record<string, {
@@ -139,17 +161,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
       yaml: string;
       next?: string;
       pageNumber: number;
+      inputSnapshotKey: string;
+      draft: CompositionGraphDraft;
       pages: Array<{ preview: SQLWorkspacePreview; next?: string }>;
       response: CompositionEvaluationResponse;
     }>
   >({});
   const runGenerations = new Map<string, number>();
   const runControllers = new Map<string, AbortController>();
+  const checkGenerations = new Map<string, number>();
+  const checkControllers = new Map<string, AbortController>();
   const countControllers = new Map<string, AbortController>();
   onCleanup(() => {
     for (
       const controller of [
         ...runControllers.values(),
+        ...checkControllers.values(),
         ...countControllers.values(),
       ]
     ) controller.abort();
@@ -170,13 +197,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
       for (
         const controller of [
           ...runControllers.values(),
+          ...checkControllers.values(),
           ...countControllers.values(),
         ]
       ) controller.abort();
       for (const [id, generation] of runGenerations) {
         runGenerations.set(id, generation + 1);
       }
+      for (const [id, generation] of checkGenerations) {
+        checkGenerations.set(id, generation + 1);
+      }
       setQueryPreviews({});
+      setQueryChecks({});
       setQueryEvaluations({});
       setInvalidEditorVariables(new Set<string>());
       setSaveError(null);
@@ -252,7 +284,67 @@ export function CompositionStudio(props: CompositionStudioProps) {
     };
   };
 
+  const queryCheckFor = (variableId: string): SQLWorkspacePlanState => {
+    const checked = queryChecks()[variableId];
+    if (!checked) return { status: "pending", isCurrent: false };
+    return {
+      status: checked.status,
+      isCurrent: checked.isCurrent && checked.draft === draft() &&
+        checked.scope === JSON.stringify(routeIdentity()),
+      error: checked.error,
+      resultColumns: checked.resultColumns,
+    };
+  };
+
   const runQuery = async (variableId: string, cursor?: string) => {
+    const currentDraft = draft();
+    const scope = JSON.stringify(routeIdentity());
+    const checked = queryChecks()[variableId];
+    if (
+      !checked || checked.status !== "success" || !checked.isCurrent ||
+      checked.draft !== currentDraft || checked.scope !== scope
+    ) return;
+    let principal: string;
+    try {
+      principal = await getPrincipalGeneration();
+    } catch {
+      setQueryPreviews((current) => ({
+        ...current,
+        [variableId]: {
+          status: "error",
+          isCurrent: true,
+          error: t("composition.queryFailed"),
+        },
+      }));
+      return;
+    }
+    if (
+      principal !== checked.principal || draft() !== currentDraft ||
+      JSON.stringify(routeIdentity()) !== scope ||
+      queryChecks()[variableId] !== checked
+    ) {
+      if (principal !== checked.principal) {
+        setQueryChecks((current) => {
+          const next = { ...current };
+          delete next[variableId];
+          return next;
+        });
+      }
+      return;
+    }
+    const inputSnapshot = getSaveInputSnapshot();
+    if (!inputSnapshot) {
+      setQueryPreviews((current) => ({
+        ...current,
+        [variableId]: {
+          status: "error",
+          isCurrent: true,
+          error: t("composition.queryFailed"),
+        },
+      }));
+      return;
+    }
+    const currentInputKey = inputSnapshotKey(inputSnapshot);
     const generation = (runGenerations.get(variableId) ?? 0) + 1;
     runGenerations.set(variableId, generation);
     runControllers.get(variableId)?.abort();
@@ -260,9 +352,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
     runControllers.set(variableId, controller);
     if (!cursor) countControllers.get(variableId)?.abort();
     const spaceId = props.spaceId;
-    const scope = JSON.stringify(routeIdentity());
     const previous = queryEvaluations()[variableId];
-    const isContinuation = Boolean(cursor && previous);
+    const isContinuation = Boolean(
+      cursor && previous && previous.draft === currentDraft &&
+        previous.inputSnapshotKey === currentInputKey,
+    );
+    const activeCursor = isContinuation ? cursor : undefined;
     setQueryPreviews((current) => ({
       ...current,
       [variableId]: { status: "loading", isCurrent: false },
@@ -279,14 +374,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
         pageNumber = previous.pageNumber + 1;
       } else {
         yaml = (await compositionApi.canonicalizeDocument(
-          compositionGraphAuthoringDocument(draft()),
+          compositionGraphAuthoringDocument(currentDraft),
         )).canonical_yaml;
         evaluationId = crypto.randomUUID();
         pageNumber = 1;
       }
       if (
         controller.signal.aborted ||
-        runGenerations.get(variableId) !== generation
+        runGenerations.get(variableId) !== generation ||
+        draft() !== currentDraft || queryChecks()[variableId] !== checked
       ) return;
       const evaluation = await compositionApi.evaluate(spaceId, {
         evaluation_id: evaluationId,
@@ -297,14 +393,40 @@ export function CompositionStudio(props: CompositionStudioProps) {
             base_revision_id: props.saveMode.baseRevisionId,
           }
           : {}),
-        variables: {},
+        variables: inputSnapshot.variables,
+        ...(inputSnapshot.unset_variables.length
+          ? { unset_variables: inputSnapshot.unset_variables }
+          : {}),
         requested_queries: [variableId],
-        ...(cursor ? { page: { variable_id: variableId, cursor } } : {}),
-      }, controller.signal);
+        ...(activeCursor
+          ? { page: { variable_id: variableId, cursor: activeCursor } }
+          : {}),
+      }, controller.signal, currentDraft.variables.flatMap((node) =>
+        node.kind === "input" &&
+            node.value_type.scalar_type === "integer"
+          ? [node.id]
+          : []
+      ));
+      if (
+        controller.signal.aborted ||
+        runGenerations.get(variableId) !== generation ||
+        draft() !== currentDraft || queryChecks()[variableId] !== checked ||
+        JSON.stringify(routeIdentity()) !== scope
+      ) return;
+      const currentPrincipal = await getPrincipalGeneration();
+      if (currentPrincipal !== principal) {
+        setQueryChecks((current) => {
+          const next = { ...current };
+          delete next[variableId];
+          return next;
+        });
+        return;
+      }
       if (
         controller.signal.aborted ||
         JSON.stringify(routeIdentity()) !== scope ||
         runGenerations.get(variableId) !== generation ||
+        draft() !== currentDraft || queryChecks()[variableId] !== checked ||
         evaluation.evaluation_id !== evaluationId
       ) return;
       const evaluated = evaluation.query_results[variableId];
@@ -316,6 +438,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
           yaml,
           next: evaluated?.next,
           pageNumber,
+          inputSnapshotKey: currentInputKey,
+          draft: currentDraft,
           response: evaluation,
           pages: [
             ...(isContinuation
@@ -326,7 +450,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         },
       }));
       setQueryPreviews((current) => ({ ...current, [variableId]: preview }));
-      if (!cursor) {
+      if (!activeCursor) {
         setDesignPreviewGeneration((generation) => generation + 1);
       }
     } catch {
@@ -347,17 +471,29 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
   const countQuery = async (variableId: string) => {
     const evaluated = queryEvaluations()[variableId];
-    const preview = queryPreviews()[variableId];
-    if (!evaluated || preview?.status !== "success" || !preview.isCurrent) {
+    const preview = queryPreviewFor(variableId);
+    const inputSnapshot = getSaveInputSnapshot();
+    if (
+      !evaluated || !inputSnapshot ||
+      evaluated.inputSnapshotKey !== inputSnapshotKey(inputSnapshot) ||
+      evaluated.draft !== draft() || preview?.status !== "success" ||
+      !preview.isCurrent
+    ) {
       return;
     }
     countControllers.get(variableId)?.abort();
     const controller = new AbortController();
     countControllers.set(variableId, controller);
-    const isCurrent = () =>
-      !controller.signal.aborted &&
-      queryEvaluations()[variableId]?.evaluationId === evaluated.evaluationId &&
-      queryEvaluations()[variableId]?.yaml === evaluated.yaml;
+    const isCurrent = () => {
+      const currentSnapshot = getSaveInputSnapshot();
+      return !controller.signal.aborted &&
+        queryEvaluations()[variableId]?.evaluationId ===
+          evaluated.evaluationId &&
+        queryEvaluations()[variableId]?.yaml === evaluated.yaml &&
+        currentSnapshot !== undefined &&
+        inputSnapshotKey(currentSnapshot) === evaluated.inputSnapshotKey &&
+        draft() === evaluated.draft;
+    };
     const updateCount = (count: SQLWorkspacePreview["count"]) => {
       if (isCurrent()) {
         setQueryPreviews((all) => ({
@@ -386,7 +522,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const previousQueryPage = (variableId: string) => {
     const current = queryEvaluations()[variableId];
-    if (!current || current.pageNumber <= 1) return;
+    const inputSnapshot = getSaveInputSnapshot();
+    if (
+      !current || !inputSnapshot || current.draft !== draft() ||
+      current.inputSnapshotKey !== inputSnapshotKey(inputSnapshot) ||
+      current.pageNumber <= 1
+    ) return;
     const pageNumber = current.pageNumber - 1;
     const page = current.pages[pageNumber - 1];
     if (!page) return;
@@ -432,6 +573,106 @@ export function CompositionStudio(props: CompositionStudioProps) {
           : []
       ),
     );
+  };
+
+  const queryPreviewFor = (variableId: string): SQLWorkspacePreview => {
+    const preview = queryPreviews()[variableId] ?? {
+      status: "idle" as const,
+      isCurrent: false,
+    };
+    const evaluated = queryEvaluations()[variableId];
+    const inputSnapshot = getSaveInputSnapshot();
+    if (
+      evaluated &&
+      (!inputSnapshot || evaluated.inputSnapshotKey !==
+        inputSnapshotKey(inputSnapshot) || evaluated.draft !== draft())
+    ) return { ...preview, isCurrent: false };
+    return preview;
+  };
+
+  const checkQuery = async (variableId: string) => {
+    const candidate = draft();
+    const scope = JSON.stringify(routeIdentity());
+    const generation = (checkGenerations.get(variableId) ?? 0) + 1;
+    checkGenerations.set(variableId, generation);
+    checkControllers.get(variableId)?.abort();
+    const controller = new AbortController();
+    checkControllers.set(variableId, controller);
+    const pending: CompositionQueryCheck = {
+      status: "pending",
+      isCurrent: true,
+      draft: candidate,
+      scope,
+      principal: "",
+    };
+    setQueryChecks((current) => ({ ...current, [variableId]: pending }));
+    const isCurrent = () =>
+      !controller.signal.aborted &&
+      checkGenerations.get(variableId) === generation &&
+      draft() === candidate &&
+      JSON.stringify(routeIdentity()) === scope &&
+      queryChecks()[variableId] === pending;
+    try {
+      const principal = await getPrincipalGeneration();
+      if (!isCurrent()) return;
+      const response = await previewCandidate(candidate, controller.signal);
+      if (!isCurrent()) return;
+      const currentPrincipal = await getPrincipalGeneration();
+      if (!isCurrent()) return;
+      if (principal !== currentPrincipal) {
+        setQueryChecks((current) => ({
+          ...current,
+          [variableId]: {
+            ...pending,
+            status: "error",
+            error: t("composition.queryFailed"),
+            principal,
+          },
+        }));
+        return;
+      }
+      const planned = response.plan?.queries.find((query) =>
+        query.variable_id === variableId
+      );
+      if (!response.ok || !planned) {
+        const diagnostic = response.diagnostics?.find((entry) =>
+          entry.variable_id === variableId
+        ) ?? response.diagnostics?.[0];
+        setQueryChecks((current) => ({
+          ...current,
+          [variableId]: {
+            ...pending,
+            status: "error",
+            error: diagnostic?.message || t("composition.queryFailed"),
+            principal,
+          },
+        }));
+        return;
+      }
+      setQueryChecks((current) => ({
+        ...current,
+        [variableId]: {
+          ...pending,
+          status: "success",
+          principal,
+          resultColumns: planned.result_columns.map((column) => ({
+            name: column.name,
+            type: column.value_type.scalar_type as SqlResultColumnType,
+            nullable: column.value_type.nullable,
+          })),
+        },
+      }));
+    } catch {
+      if (!isCurrent()) return;
+      setQueryChecks((current) => ({
+        ...current,
+        [variableId]: {
+          ...pending,
+          status: "error",
+          error: t("composition.queryFailed"),
+        },
+      }));
+    }
   };
 
   const saveRequest = async (
@@ -653,6 +894,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const onDraftChange = (next: CompositionGraphDraft) => {
     if (saving() || saveRetryAvailable()) return;
+    for (const controller of checkControllers.values()) controller.abort();
+    for (const [id, generation] of checkGenerations) {
+      checkGenerations.set(id, generation + 1);
+    }
+    setQueryChecks({});
     const invalidated = changedCompositionQueryIds(draft(), next);
     markQueryPreviewsStale(invalidated);
     const remainingEditorIds = new Set(
@@ -711,11 +957,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
           }}
           sqlSchema={sqlSchema()}
           sqlForms={formsResource() ?? []}
-          previewForQuery={(variableId) =>
-            queryPreviews()[variableId] ?? {
-              status: "idle",
-              isCurrent: false,
-            }}
+          previewForQuery={queryPreviewFor}
+          checkForQuery={queryCheckFor}
           onPlanColumnsForQuery={async (variableId) => {
             const currentDraft = draft();
             const currentSpace = props.spaceId;
@@ -733,6 +976,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
                 draft() === currentDraft && props.spaceId === currentSpace,
             };
           }}
+          onCheckQuery={(variableId) => void checkQuery(variableId)}
           onRunQuery={(variableId) => void runQuery(variableId)}
           onPreviousQuery={previousQueryPage}
           onCountQuery={(variableId) => void countQuery(variableId)}
@@ -742,21 +986,27 @@ export function CompositionStudio(props: CompositionStudioProps) {
           }}
           onDraftChange={onDraftChange}
           onQueryChange={(variableId, sql, formBindings, queryArguments) => {
+            const currentDraft = draft();
+            const current = currentDraft.variables.find((node) =>
+              node.id === variableId && node.kind === "query"
+            );
+            if (
+              !current || current.kind !== "query" ||
+              current.query.kind !== "inline_sql"
+            ) return;
+            const query = {
+              ...current.query,
+              sql,
+              schema_fingerprint: "",
+              ...(formBindings ? { form_bindings: formBindings } : {}),
+              ...(queryArguments ? { arguments: queryArguments } : {}),
+            };
+            if (JSON.stringify(current.query) === JSON.stringify(query)) return;
             onDraftChange({
-              ...draft(),
-              variables: draft().variables.map((node) =>
-                node.id === variableId && node.kind === "query" &&
-                  node.query.kind === "inline_sql"
-                  ? {
-                    ...node,
-                    query: {
-                      ...node.query,
-                      sql,
-                      schema_fingerprint: "",
-                      ...(formBindings ? { form_bindings: formBindings } : {}),
-                      ...(queryArguments ? { arguments: queryArguments } : {}),
-                    },
-                  }
+              ...currentDraft,
+              variables: currentDraft.variables.map((node) =>
+                node.id === variableId && node.kind === "query"
+                  ? { ...node, query }
                   : node
               ),
             });

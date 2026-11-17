@@ -20,6 +20,8 @@ export interface SqlQueryEditorProps {
   ariaLabel?: string;
   wrapLines?: boolean;
   disabled?: boolean;
+  sqlArgumentVariables?: readonly string[];
+  onSqlArgumentCompletion?: (name: string, sql: string) => void;
 }
 
 export function SqlQueryEditor(props: SqlQueryEditorProps) {
@@ -29,6 +31,15 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
   const wrappingCompartment = new Compartment();
   const readonlyCompartment = new Compartment();
   const editableCompartment = new Compartment();
+  let suppressChangeForSql: string | undefined;
+
+  const completion = () => ({
+    names: props.sqlArgumentVariables ?? [],
+    onComplete: (name: string, nextSql: string) => {
+      suppressChangeForSql = nextSql;
+      props.onSqlArgumentCompletion?.(name, nextSql);
+    },
+  });
 
   const initEditor = (container: HTMLDivElement) => {
     if (view()) return;
@@ -54,7 +65,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
         lintGutter(),
         schemaCompartment.of([
           sql({ schema: props.schema }),
-          sqlEditorAutocompletion(props.schema),
+          sqlEditorAutocompletion(props.schema, completion()),
         ]),
         contentAttributesCompartment.of(
           EditorView.contentAttributes.of(
@@ -73,7 +84,12 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
         EditorView.updateListener.of((update) => {
           /* v8 ignore start */
           if (update.docChanged) {
-            props.onChange(update.state.doc.toString());
+            const nextSql = update.state.doc.toString();
+            if (suppressChangeForSql === nextSql) {
+              suppressChangeForSql = undefined;
+              return;
+            }
+            props.onChange(nextSql);
           }
           /* v8 ignore stop */
         }),
@@ -136,7 +152,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     editorView.dispatch({
       effects: schemaCompartment.reconfigure([
         sql({ schema: props.schema }),
-        sqlEditorAutocompletion(props.schema),
+        sqlEditorAutocompletion(props.schema, completion()),
       ]),
     });
     /* v8 ignore stop */

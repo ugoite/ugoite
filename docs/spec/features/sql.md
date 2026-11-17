@@ -18,12 +18,14 @@ bounded `ugoite sql export`. `sql saved run` selects a current or exact Saved
 SQL revision through the existing `sql.query` operation. Export repeatedly calls
 that operation and streams complete results as NDJSON; it is CLI orchestration,
 not another REST operation. Local Core and remote REST targets use the same
-request DTOs and semantics. `ugoite sql lint` and `POST /sql/lint` share the
-Rust static lint contract. Lint requires one read-only `SELECT`, returns typed
-diagnostics with source ranges, and does not read Space data, resolve a Form, or
-authorize execution. The `composition` profile additionally rejects wildcard
-output projections; the standard profile preserves ordinary `SELECT *` SQL.
-The browser editor runs the same linter through WASM. `ugoite sql check` uses
+request DTOs and semantics. `ugoite sql lint --diagnostics`, an explicit
+`--profile`, `POST /sql/lint`, and the browser WASM action share the Rust static
+lint contract. Bare `ugoite sql lint <SQL>` retains the v0.2.1 syntax-only JSON
+result and exit status. Structured lint requires one read-only `SELECT`,
+returns typed diagnostics with source ranges, and does not read Space data,
+resolve a Form, or authorize execution. The `composition` profile additionally
+rejects wildcard output projections; the standard profile preserves ordinary
+`SELECT *` SQL. `ugoite sql check` uses
 the authorized plan operation and returns the output schema without reading
 result rows; `sql query` is the separate execution path.
 

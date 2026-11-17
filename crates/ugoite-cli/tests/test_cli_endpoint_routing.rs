@@ -568,6 +568,29 @@ fn test_sql_lint_returns_portable_diagnostics_without_a_connection() {
 }
 
 #[test]
+fn test_sql_lint_default_preserves_v021_stdout_and_success_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/sql-lint-v0.2.1.json"))
+            .expect("v0.2.1 CLI lint fixture is valid JSON");
+
+    for case in fixture["cases"].as_array().expect("lint cases") {
+        let sql = case["sql"].as_str().expect("SQL source");
+        let output = run(&config, &["sql", "lint", sql]);
+        assert_eq!(
+            output.status.success(),
+            case["success"].as_bool().expect("expected process status"),
+            "legacy syntax lint must not fail its process status: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let response: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("legacy lint stdout is JSON");
+        assert_eq!(response, case["stdout"], "SQL: {sql}");
+    }
+}
+
+#[test]
 fn test_sql_export_reuses_stateless_route_and_continuation() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
