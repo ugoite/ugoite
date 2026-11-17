@@ -21,9 +21,14 @@ export async function checkCompositionQuery(page: Page): Promise<void> {
   const check = page.getByRole("button", { name: "Check", exact: true });
   await expect(check).toBeEnabled();
   await check.click();
-  await expect(
-    page.getByRole("button", { name: "Run Query", exact: true }),
-  ).toBeEnabled();
+  const use = page.getByRole("button", { name: "Use", exact: true });
+  if (await use.count()) {
+    await expect(use).toBeEnabled();
+  } else {
+    await expect(
+      page.getByRole("button", { name: "Run Query", exact: true }),
+    ).toBeEnabled();
+  }
 }
 
 type PreviewQuery = {

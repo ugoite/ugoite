@@ -28,6 +28,9 @@ export interface CompositionGraphDesignCanvasProps {
   onCommitCreateInput?: (name: string) => boolean;
   onCancelCreateInput?: () => void;
   onFocusCreatedInput?: () => void;
+  focusComponentId?: string;
+  focusComponentGeneration?: number;
+  focusTableButton?: number;
   onRequestCreateTableQuery?: (componentId?: string) => void;
   onEditVariable?: (id: string) => void;
   onSaveSnapshotReady?: (
@@ -74,10 +77,44 @@ export function CompositionGraphDesignCanvas(
     string | null | undefined
   >();
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  const [inputRemovalNotice, setInputRemovalNotice] = createSignal(false);
   let addButton: HTMLButtonElement | undefined;
   let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
   const textUpdatesInProgress = new Set<string>();
+  let previousFocusComponentId: string | undefined;
+  let previousFocusComponentGeneration =
+    props.focusComponentGeneration ?? 0;
+  let previousFocusTableButton = props.focusTableButton ?? 0;
+  createEffect(() => {
+    selectedId();
+    setInputRemovalNotice(false);
+  });
+  createEffect(() => {
+    const id = props.focusComponentId;
+    const generation = props.focusComponentGeneration ?? 0;
+    if (
+      !id ||
+      (id === previousFocusComponentId &&
+        generation === previousFocusComponentGeneration)
+    ) return;
+    previousFocusComponentId = id;
+    previousFocusComponentGeneration = generation;
+    setSelectedId(id);
+    queueMicrotask(() => {
+      const component = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-component-id]"),
+      ).find((element) => element.dataset.componentId === id);
+      component?.querySelector<HTMLElement>("[data-component-select='true']")
+        ?.focus();
+    });
+  });
+  createEffect(() => {
+    const generation = props.focusTableButton ?? 0;
+    if (generation === previousFocusTableButton) return;
+    previousFocusTableButton = generation;
+    queueMicrotask(() => addButton?.focus());
+  });
 
   const focusComponent = (id: string) => {
     queueMicrotask(() => {
@@ -85,14 +122,14 @@ export function CompositionGraphDesignCanvas(
     });
   };
   const openTablePicker = (componentId?: string) => {
+    bindingOpener = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     const tables = props.draft.variables.filter(compositionNodeReturnsTable);
     if (tables.length === 0) {
       props.onRequestCreateTableQuery?.(componentId);
       return;
     }
-    bindingOpener = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
     setPickerComponentId(componentId ?? null);
   };
   const createTableQuery = () => {
@@ -247,6 +284,18 @@ export function CompositionGraphDesignCanvas(
   const removeSelected = () => {
     const id = selectedId();
     if (!id) return;
+    const selected = props.draft.components.find((component) =>
+      component.id === id
+    );
+    if (
+      selected?.kind === "input" &&
+      props.draft.components.filter((component) =>
+        component.kind === "input" && component.variable === selected.variable
+      ).length === 1
+    ) {
+      setInputRemovalNotice(true);
+      return;
+    }
     const ids = orderedIds();
     const index = ids.indexOf(id);
     const adjacent = ids[index + 1] ?? ids[index - 1];
@@ -314,6 +363,11 @@ export function CompositionGraphDesignCanvas(
         })}
         onClick={removeSelected}
       />
+      <Show when={inputRemovalNotice()}>
+        <span class="compositionGraphInputRemovalNotice" role="status">
+          {t("composition.studioCannotRemoveLastInput")}
+        </span>
+      </Show>
     </div>
   );
 

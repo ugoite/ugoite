@@ -78,6 +78,11 @@ export interface SQLWorkspaceProps {
   onSqlArgumentCompletion?: (name: string, sql: string) => void;
   previewDisabled?: boolean;
   onPreview: () => void;
+  hideRun?: boolean;
+  onAccept?: () => void;
+  acceptLabel?: string;
+  acceptDisabled?: boolean;
+  onCancel?: () => void;
   preview: SQLWorkspacePreview;
   onCount?: () => void;
   onPrevious?: () => void;
@@ -218,24 +223,45 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
             {t("sqlPage.checkSql")}
           </button>
         </Show>
-        <button
-          type="button"
-          class="btn primary"
-          onClick={() => props.onPreview()}
-          disabled={props.preview.status === "loading" ||
-            props.previewDisabled ||
-            Boolean(previewDisabledReason())}
-          title={previewDisabledReason()}
-          aria-describedby={previewDisabledReason()
-            ? `${workspaceId()}-run-plan-reason`
-            : undefined}
-          aria-busy={props.preview.status === "loading" || undefined}
-        >
-          <Show when={props.preview.status === "loading"}>
-            <ButtonSpinner />
-          </Show>
-          {t("sqlPage.runQuery")}
-        </button>
+        <Show when={!props.hideRun}>
+          <button
+            type="button"
+            class="btn primary"
+            onClick={() => props.onPreview()}
+            disabled={props.preview.status === "loading" ||
+              props.previewDisabled ||
+              Boolean(previewDisabledReason())}
+            title={previewDisabledReason()}
+            aria-describedby={previewDisabledReason()
+              ? `${workspaceId()}-run-plan-reason`
+              : undefined}
+            aria-busy={props.preview.status === "loading" || undefined}
+          >
+            <Show when={props.preview.status === "loading"}>
+              <ButtonSpinner />
+            </Show>
+            {t("sqlPage.runQuery")}
+          </button>
+        </Show>
+        <Show when={props.onAccept}>
+          <button
+            type="button"
+            class="btn primary"
+            onClick={() => props.onAccept?.()}
+            disabled={props.acceptDisabled}
+          >
+            {props.acceptLabel}
+          </button>
+        </Show>
+        <Show when={props.onCancel}>
+          <button
+            type="button"
+            class="btn"
+            onClick={() => props.onCancel?.()}
+          >
+            {t("common.cancel")}
+          </button>
+        </Show>
         <Show when={props.planner?.status === "success" &&
           props.planner.isCurrent &&
           props.planner.resultColumns?.length}>

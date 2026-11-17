@@ -33,6 +33,7 @@ features:
               - { kind: documents, anchor: REQ-FE-083#criterion.text-is-edited-in-place }
               - { kind: documents, anchor: REQ-FE-083#criterion.reader-table-scroll-stays-local }
               - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: documents, anchor: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: documents, anchor: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
               - { kind: documents, anchor: REQ-FE-083#criterion.variable-name-is-suggested }
               - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
@@ -168,6 +169,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
@@ -179,6 +181,7 @@ features:
               - { kind: satisfies, criterion: REQ-FE-082#criterion.inline-template-parameters }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.sql-arguments-bind-locally }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
           - id: reader-renderer
             adapter: typescript
@@ -427,6 +430,26 @@ features:
                 criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
                 covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Studio creates a Form-backed Table query from Design and reopens its result" } }
+          - id: table-query-replacement-rollback
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Table query replacement uses Check and preserves the component position on cancel" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Table query replacement uses Check and preserves the component position on cancel" } }
+          - id: input-creation-entrypoints
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Input creation from Variables and SQL markers places one bound Input" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.input-creation-places-once
+                covers:
+                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Input creation from Variables and SQL markers places one bound Input" } }
           - id: current-form-acl-recheck
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs

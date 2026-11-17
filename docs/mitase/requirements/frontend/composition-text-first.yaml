@@ -46,10 +46,21 @@ requirements:
       - id: variable-creation-completes-pending-placement
         kind: behavior
         statement: >-
-          When Design needs a missing Table or Input variable, successful
-          creation in Variables returns to the originating Design position and
-          completes the pending reference and placement. Cancel or failed
-          creation leaves no partial component or binding in the draft.
+          When Design needs a Table, creating its SQL query keeps the author in
+          Variables until lint and an authorized Check succeed. Use returns to
+          the originating Design position and places the Table without running
+          the query. Existing Table references change in place. Cancel or
+          failed creation leaves the previous variable, component, and layout
+          intact.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: input-creation-places-once
+        kind: behavior
+        statement: >-
+          Creating a new Input from Design, Variables, or a SQL marker commits
+          one input variable and one matching Design component together. SQL
+          marker creation also commits its explicit typed binding and returns
+          to the SQL editor. Cancel leaves no variable, component, or binding;
+          current input values remain transient Work.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: duplicate-variable-name-is-rejected
         kind: behavior

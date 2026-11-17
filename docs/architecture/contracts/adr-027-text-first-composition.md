@@ -2,13 +2,16 @@
 title: "ADR-027 — Text-first Composition graph and Studio"
 ---
 
-**Status: Accepted and implemented on `main` by PR #4893.** This decision
-replaces the Composition query and component shape defined by ADR-025. Although
-that shape has not been released as a stable public format, it is now saveable
-from the current `main` branch. Replacing it without a migration can make
-existing Composition revisions non-executable, so this change is scheduled for
-the next minor version under the repository compatibility rule. This decision
-does not authorize release preparation, version changes, or publication.
+**Status: Accepted and implemented on `main` by PR #4893; compatibility review
+closed for v0.2.2 by PR #4908.** This decision replaces the Composition query
+and component shape defined by ADR-025. The v0.2.1 release, tagged CLI/API and
+OpenAPI contract do not expose Composition as a supported surface. The prior
+shape was saveable from prerelease `main`, but was not part of the released
+compatibility promise. v0.2.2 may therefore reject that shape without adding a
+migration or dual reader. Its stored Entry data remains available through raw
+inspect, exact reads, export, and history; it cannot be restored or executed as
+a current Composition. This decision does not authorize release preparation,
+version changes, or publication.
 
 ## Context
 
@@ -16,11 +19,13 @@ The Composition document is Space-owned Knowledge. Its current graph and
 stateless evaluation provide the right ownership and security boundaries, but
 the authoring model exposes more concepts than the product needs: Saved SQL
 query references, Metric components, a second Table column projection, and
-multiple SQL editing controls. The Composition schema has no stable released
-format contract, but current `main` can persist this shape. The new parser
-therefore rejects it without aliases or migration, while the release target
-must move to the next minor version. Published Saved SQL operations and
-unrelated EntryBrowser controls remain established user paths.
+multiple SQL editing controls. The v0.2.1 release notes and tagged supported
+CLI/API/OpenAPI contract contain no Composition surface. The old shape was
+saveable from prerelease `main`; those entries remain raw Space-owned Knowledge
+and are not rewritten or deleted, but the current executable reader rejects
+them. This reviewed v0.2.2 patch changes that unpublished shape without aliases,
+migration, or dual read. Published Saved SQL operations and unrelated
+EntryBrowser controls remain established user paths.
 
 ## Decisions
 
@@ -62,11 +67,14 @@ is guaranteed.
 Studio opens in Design and offers Text, Table, and Input placement. Text is
 edited at its canvas position with a compact Title, Heading, Body, or Caption
 control. Variables is a focused list and editor; SQL remains one authored
-document with local lint, authorized schema check, and explicit execution.
-Creating a missing variable from Design returns to the pending placement only
-after successful creation. Readers see the shared renderer without authoring
-controls. Ugoite's UI policy governs labels, layout, focus, keyboard operation,
-and narrow-screen behavior.
+document with local lint, authorized schema check, and explicit execution. A
+missing Table query is created and edited in Variables; after Check confirms
+its table schema, Use returns to the original Design position without running
+the query. A new Input created from Design, Variables, or a SQL marker is
+placed with its variable and binding atomically. Cancelling either pending
+operation restores the previous draft. Readers see the shared renderer without
+authoring controls. Ugoite's UI policy governs labels, layout, focus, keyboard
+operation, and narrow-screen behavior.
 
 ### 5. Persistence and authority are unchanged
 

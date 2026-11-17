@@ -84,11 +84,15 @@ export interface CompositionVariableGraphWorkspaceProps {
   onDraftChange: (draft: CompositionGraphDraft) => void;
   pendingCreationKind?: CompositionVariableCreationKind;
   pendingCreationSuggestedName?: string;
+  pendingQueryVariableId?: string;
+  onUsePendingQuery?: () => void;
+  onCancelPendingQuery?: () => void;
   onRequestCreation?: (kind: CompositionVariableCreationKind) => void;
   onRequestArgumentVariableCreation?: (
     queryId: string,
     argumentName: string,
     sourceSql: string,
+    kind?: CompositionVariableCreationKind,
   ) => void;
   onCommitCreation?: (name: string) => boolean;
   onCancelCreation?: () => void;
@@ -164,6 +168,9 @@ export function CompositionVariableGraphWorkspace(
   props: CompositionVariableGraphWorkspaceProps,
 ) {
   const [menu, setMenu] = createSignal(false);
+  const [argumentCreationMenu, setArgumentCreationMenu] = createSignal<
+    string | null
+  >(null);
   const [mobileOpen, setMobileOpen] = createSignal(false);
   const [rawValues, setRawValues] = createSignal<Record<string, string>>({});
   const [pendingOrInvalidLiterals, setPendingOrInvalidLiterals] = createSignal(
@@ -421,6 +428,7 @@ export function CompositionVariableGraphWorkspace(
                 ? "true"
                 : undefined}
               aria-label={node.id}
+              disabled={!!props.pendingQueryVariableId}
               onClick={() => {
                 if (props.pendingCreationKind) {
                   props.onCancelCreation?.();
@@ -439,7 +447,8 @@ export function CompositionVariableGraphWorkspace(
         <IconButton
           icon="plus"
           label={t("composition.studioAddVariable")}
-          disabled={!!props.pendingCreationKind}
+          disabled={!!props.pendingCreationKind ||
+            !!props.pendingQueryVariableId}
           ref={(element) => addVariableButton = element}
           onClick={() => setMenu((value) => !value)}
         />
@@ -560,6 +569,7 @@ export function CompositionVariableGraphWorkspace(
                   class="ui-input compositionVariableName"
                   aria-invalid={invalidRenames().has(node().id) || undefined}
                   aria-label={t("composition.studioVariableId")}
+                  disabled={!!props.pendingQueryVariableId}
                   value={node().id}
                   onInput={(event) => rename(node(), event.currentTarget.value)}
                 />
@@ -568,6 +578,7 @@ export function CompositionVariableGraphWorkspace(
                   label={t("composition.studioRemoveVariable", {
                     name: node().id,
                   })}
+                  disabled={!!props.pendingQueryVariableId}
                   onClick={() => removeVariable(node().id)}
                 />
               </div>
@@ -1107,6 +1118,22 @@ export function CompositionVariableGraphWorkspace(
                             props.onCountQuery
                           ? () => props.onCountQuery?.(query().id)
                           : undefined}
+                        onAccept={props.pendingQueryVariableId === query().id
+                          ? () => props.onUsePendingQuery?.()
+                          : undefined}
+                        acceptLabel={t("composition.studioUseQuery")}
+                        acceptDisabled={
+                          query().returns.kind !== "table" ||
+                          props.checkForQuery?.(query().id)?.status !==
+                            "success" ||
+                          !props.checkForQuery?.(query().id)?.isCurrent ||
+                          !(props.checkForQuery?.(query().id)?.resultColumns
+                            ?.length)
+                        }
+                        onCancel={props.pendingQueryVariableId === query().id
+                          ? () => props.onCancelPendingQuery?.()
+                          : undefined}
+                        hideRun={props.pendingQueryVariableId === query().id}
                       />
                       <SqlFormSourceControl
                         sql={sql}
@@ -1169,21 +1196,64 @@ export function CompositionVariableGraphWorkspace(
                                     when={!bound() && props
                                       .onRequestArgumentVariableCreation}
                                   >
-                                    <IconButton
-                                      icon="plus"
-                                      label={t(
-                                        "composition.createSqlArgumentVariable",
-                                        { name: argument.name },
-                                      )}
-                                      disabled={!!bound()}
-                                      onClick={() =>
-                                        props
-                                          .onRequestArgumentVariableCreation?.(
-                                            query().id,
-                                            argument.name,
-                                            sql(),
+                                    <Show
+                                      when={argumentCreationMenu() ===
+                                        argument.name}
+                                      fallback={
+                                        <IconButton
+                                          icon="plus"
+                                          label={t(
+                                            "composition.createSqlArgumentVariable",
+                                            { name: argument.name },
                                           )}
-                                    />
+                                          disabled={!!bound()}
+                                          onClick={() =>
+                                            setArgumentCreationMenu(
+                                              argument.name,
+                                            )}
+                                        />
+                                      }
+                                    >
+                                      <div
+                                        class="compositionSqlArgumentCreateMenu"
+                                        role="group"
+                                        aria-label={t(
+                                          "composition.createSqlArgumentVariable",
+                                          { name: argument.name },
+                                        )}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setArgumentCreationMenu(null);
+                                            props
+                                              .onRequestArgumentVariableCreation?.(
+                                                query().id,
+                                                argument.name,
+                                                sql(),
+                                                "constant",
+                                              );
+                                          }}
+                                        >
+                                          {t("composition.studioValue")}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setArgumentCreationMenu(null);
+                                            props
+                                              .onRequestArgumentVariableCreation?.(
+                                                query().id,
+                                                argument.name,
+                                                sql(),
+                                                "input",
+                                              );
+                                          }}
+                                        >
+                                          {t("composition.studioAddInput")}
+                                        </button>
+                                      </div>
+                                    </Show>
                                   </Show>
                                 </div>
                               );

@@ -5,6 +5,7 @@ import {
   expect,
   type Page,
   type Response,
+  type TestInfo,
   test,
 } from "@playwright/test";
 import {
@@ -727,7 +728,7 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
-  test("Composition Studio creates Form-backed SQL and edits a plain Text component", async ({ browser, context, request }) => {
+  test("Composition Studio creates Form-backed SQL and edits a plain Text component", async ({ browser, context, request }, testInfo: TestInfo) => {
     test.setTimeout(180_000);
     const formsResponse = await request.get(
       getBackendUrl(`/spaces/${seed.spaceId}/forms`),
@@ -788,31 +789,30 @@ test.describe("Composition Studio Journey", () => {
       await expect(tableNameField).toBeVisible();
       await tableNameField.fill(rowsVariable);
       await page.getByRole("button", { name: "Add", exact: true }).click();
-      await page.getByRole("tab", { name: "Variables", exact: true }).click();
-      await page.getByRole("button", { name: rowsVariable, exact: true })
-        .click();
+      await expect(page.getByRole("tab", { name: "Variables", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
       const tableEditor = page.getByRole("textbox", {
         name: "SQL",
         exact: true,
       });
+      await page.getByRole("button", { name: "Form", exact: true }).click();
+      await page.getByRole("group", { name: "Available Forms", exact: true })
+        .getByRole("button", { name: seed.formName, exact: true }).click();
       await tableEditor.fill(tableSql);
       await checkCompositionQuery(page);
-      const tablePreviewResponse = page.waitForResponse((response) =>
-        isDraftQueryEvaluation(response, rowsVariable, tableSql)
-      );
-      await page.getByRole("button", { name: "Run Query", exact: true })
-        .click();
-      const tablePreview = await (await tablePreviewResponse).json() as {
-        ok?: boolean;
-        queries?: Array<{ variable_id?: string; schema_fingerprint?: string }>;
-      };
-      expect(tablePreview.ok).toBe(true);
-      expect(
-        tablePreview.queries?.find((query) =>
-          query.variable_id === rowsVariable
-        )
-          ?.schema_fingerprint,
-      ).toMatch(/^[0-9a-f]{64}$/);
+      await expect(page.getByRole("button", { name: "Run Query", exact: true }))
+        .toHaveCount(0);
+      const useTable = page.getByRole("button", { name: "Use", exact: true });
+      await expect(useTable).toBeEnabled();
+      await useTable.click();
+      await expect(page.getByRole("tab", { name: "Design", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
+      await expect(page.locator('[data-component-id="table_1"]'))
+        .toHaveAttribute("aria-label", rowsVariable);
+      await page.screenshot({
+        path: testInfo.outputPath("composition-table-return-to-design.png"),
+        fullPage: true,
+      });
 
       await page.getByRole("button", { name: "Add variable", exact: true })
         .click();
@@ -1039,7 +1039,7 @@ test.describe("Composition Studio Journey", () => {
     });
   });
 
-  test("Studio creates a Form-backed Table query from Design and reopens its result", async ({ page, request }) => {
+  test("Studio creates a Form-backed Table query from Design and reopens its result", async ({ page, request }, testInfo: TestInfo) => {
     test.setTimeout(150_000);
     const spaceId = await createSpace(request);
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -1085,19 +1085,31 @@ test.describe("Composition Studio Journey", () => {
     await expect(page.getByRole("tab", { name: "Design", exact: true }))
       .toHaveAttribute("aria-selected", "true");
     await expect(page.locator('[data-component-id="table_1"]')).toHaveCount(0);
+    await expect(palette.getByRole("button", { name: "Table", exact: true }))
+      .toBeFocused();
+
+    await palette.getByRole("button", { name: "Table", exact: true }).click();
+    await variableName.fill("discarded_rows");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("textbox", { name: "SQL", exact: true })
+      .fill("SELECT 7 AS transient");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]')).toHaveCount(0);
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await expect(page.getByRole("button", { name: "discarded_rows", exact: true }))
+      .toHaveCount(0);
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
 
     await palette.getByRole("button", { name: "Table", exact: true }).click();
     await expect(variableName).toBeVisible();
     await variableName.fill("studio_rows");
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+    await expect(page.getByRole("tab", { name: "Variables", exact: true }))
       .toHaveAttribute("aria-selected", "true");
-    await expect(page.locator('[data-component-id="table_1"]'))
-      .toHaveAttribute("aria-label", "studio_rows");
-
-    await page.getByRole("tab", { name: "Variables", exact: true }).click();
-    await page.getByRole("button", { name: "studio_rows", exact: true })
-      .click();
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toBeVisible();
     await page.getByRole("button", { name: "Form", exact: true }).click();
     const availableForms = page.getByRole("group", {
       name: "Available Forms",
@@ -1111,17 +1123,21 @@ test.describe("Composition Studio Journey", () => {
     const editor = page.getByRole("textbox", { name: "SQL", exact: true });
     await editor.fill(sql);
     await checkCompositionQuery(page);
-    const emptyPreview = page.waitForResponse((response) =>
-      isDraftQueryEvaluation(response, "studio_rows", sql, true)
-    );
-    await page.getByRole("button", { name: "Run Query", exact: true }).click();
-    expect((await (await emptyPreview).json() as { ok?: boolean }).ok).toBe(
-      true,
-    );
-    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]'))
+      .toHaveAttribute("aria-label", "studio_rows");
     const resultTable = page.getByRole("table", { name: "studio_rows" });
     await expect(resultTable).toBeVisible();
     await expect(resultTable.locator("tbody tr")).toHaveCount(0);
+    await expect(page.locator(
+      '[data-component-id="table_1"] [data-component-select="true"]',
+    )).toBeFocused();
+    await page.screenshot({
+      path: testInfo.outputPath("composition-table-after-use-empty.png"),
+      fullPage: true,
+    });
 
     const entryResponse = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
@@ -1133,6 +1149,9 @@ test.describe("Composition Studio Journey", () => {
       isDraftQueryEvaluation(response, "studio_rows", sql, true)
     );
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "studio_rows", exact: true })
+      .click();
+    await checkCompositionQuery(page);
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     const refreshedDraftEvaluation = await (await refreshedDraftResponse)
       .json() as {
@@ -1244,6 +1263,98 @@ test.describe("Composition Studio Journey", () => {
       .toHaveCount(0);
     await expect(page.getByRole("table", { name: "studio_rows" }))
       .toContainText(reopenedRow);
+  });
+
+  test("Input creation from Variables and SQL markers places one bound Input", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByLabel("Name", { exact: true }).fill(`Inputs ${suffix}`);
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+
+    await page.getByRole("button", { name: "Add variable", exact: true })
+      .click();
+    await page.getByRole("group", { name: "Add variable", exact: true })
+      .getByRole("button", { name: "Input", exact: true }).click();
+    await page.getByLabel("Variable name", { exact: true })
+      .fill("variables_input");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Type", exact: true }))
+      .toBeVisible();
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await expect(page.locator('[data-component-id="input_1"]'))
+      .toHaveAttribute("aria-label", "variables_input");
+
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "Add variable", exact: true })
+      .click();
+    await page.getByRole("group", { name: "Add variable", exact: true })
+      .getByRole("button", { name: "SQL", exact: true }).click();
+    await page.getByLabel("Variable name", { exact: true }).fill("rows");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    const sql = page.getByRole("textbox", { name: "SQL", exact: true });
+    await sql.fill("SELECT {{threshold}} AS value");
+    await page.getByRole("button", {
+      name: "Create a variable for threshold",
+      exact: true,
+    }).click();
+    await page.getByRole("group", {
+      name: "Create a variable for threshold",
+      exact: true,
+    }).getByRole("button", { name: "Input", exact: true }).click();
+    await expect(page.getByLabel("Variable name", { exact: true }))
+      .toHaveValue("threshold");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("combobox", {
+      name: "Choose a variable for threshold",
+      exact: true,
+    })).toHaveValue("threshold");
+    await checkCompositionQuery(page);
+
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await expect(page.locator('[data-component-id="input_2"]'))
+      .toHaveAttribute("aria-label", "threshold");
+    await page.locator('[data-component-id="input_1"]').click();
+    await page.getByRole("button", {
+      name: "Remove variables_input",
+      exact: true,
+    }).click();
+    await expect(page.locator(".compositionGraphInputRemovalNotice")).toHaveText(
+      "Place another Input before removing this one.",
+    );
+    await expect(page.locator('[data-component-id="input_1"]')).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    const saved = revisionFromUrl(page.url());
+    const revisionResponse = await request.get(
+      getBackendUrl(
+        `/spaces/${spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+      ),
+    );
+    expect(revisionResponse.ok()).toBe(true);
+    const revision = await revisionResponse.json() as StudioRawRevision;
+    const document = parseYaml(String(revision.fields["spec"])) as {
+      spec?: {
+        variables?: Array<{
+          id?: string;
+          query?: { arguments?: Array<{ name: string; variable: string }> };
+        }>;
+        components?: Array<{ kind?: string; variable?: string }>;
+      };
+    };
+    expect(document.spec?.variables?.find((variable) =>
+      variable.id === "rows"
+    )?.query?.arguments).toEqual([{ name: "threshold", variable: "threshold" }]);
+    expect(document.spec?.components?.filter((component) =>
+      component.kind === "input" &&
+      ["variables_input", "threshold"].includes(component.variable ?? "")
+    )).toHaveLength(2);
   });
 
   test("Inline SQL preview refreshes the dependent Text value when an Input changes", async ({ page, request }) => {
@@ -1466,6 +1577,78 @@ test.describe("Composition Studio Journey", () => {
     await expect(
       page.getByRole("button", { name: "unique_query", exact: true }),
     )
+      .toHaveCount(1);
+  });
+
+  test("Table query replacement uses Check and preserves the component position on cancel", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const yaml = await completeCompositionGraphYaml(request, spaceId, {
+      name: `Table replacement ${suffix}`,
+      variables: [{
+        id: "original_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT 1 AS original",
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      }],
+      components: [{
+        id: "results_table",
+        kind: "table",
+        variable: "original_rows",
+      }],
+      rows: [{
+        id: "results",
+        items: [{ kind: "component", component: "results_table" }],
+      }],
+    });
+    const saved = await saveCompositionGraph(request, spaceId, yaml);
+    await page.goto(
+      getFrontendUrl(
+        `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}/edit`,
+      ),
+      { waitUntil: "domcontentloaded" },
+    );
+    const table = page.locator('[data-component-id="results_table"]');
+    const openTablePicker = async () => {
+      await table.click();
+      await page.getByRole("button", {
+        name: "Change variable, original_rows",
+        exact: true,
+      }).click();
+      await page.getByRole("button", { name: "New table query", exact: true })
+        .click();
+    };
+
+    await openTablePicker();
+    await page.getByLabel("Variable name", { exact: true }).fill("discarded_rows");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("textbox", { name: "SQL", exact: true })
+      .fill("SELECT 2 AS value");
+    await checkCompositionQuery(page);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(table).toHaveAttribute("aria-label", "original_rows");
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await expect(page.getByRole("button", { name: "discarded_rows", exact: true }))
+      .toHaveCount(0);
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
+
+    await openTablePicker();
+    await page.getByLabel("Variable name", { exact: true }).fill("replacement_rows");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("textbox", { name: "SQL", exact: true })
+      .fill("SELECT 3 AS value");
+    await checkCompositionQuery(page);
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    await expect(page.locator('[data-component-id="results_table"]'))
+      .toHaveAttribute("aria-label", "replacement_rows");
+    await expect(page.locator('[data-component-id="results_table"]'))
       .toHaveCount(1);
   });
 

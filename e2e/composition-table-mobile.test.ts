@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type TestInfo } from "@playwright/test";
 import {
   getBackendUrl,
   getDefaultSpaceId,
@@ -9,7 +9,7 @@ import {
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
 
-test("Composition Table scrolls inside a narrow read-only reader", async ({ page, request }) => {
+test("Composition Table scrolls inside a narrow read-only reader", async ({ page, request }, testInfo: TestInfo) => {
   test.setTimeout(150_000);
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -216,5 +216,11 @@ test("Composition Table scrolls inside a narrow read-only reader", async ({ page
     );
     await expect(total).toBeVisible();
     await expect(total).toHaveText("Total: 42");
+    if (width === 320) {
+      await page.screenshot({
+        path: testInfo.outputPath("composition-mobile-table-local-scroll.png"),
+        fullPage: true,
+      });
+    }
   }
 });

@@ -56,10 +56,16 @@ and Variables; Metric and Saved SQL binding pickers are not offered.
 - Input references one input variable. Its current value is transient Work,
   not part of the Composition document.
 
-When Table or Input needs a variable that is not yet declared, creation moves
-to Variables and returns to the pending Design placement only on success.
-Cancel or failure leaves no unplaced component or dangling reference. Existing
-variables can be selected without changing their shared query definition.
+When Table needs a query, naming starts its editor in Variables. A selected
+Form may seed the SQL; after Lint and an authorized Check, Use returns to the
+same Design position and places the Table. Use does not run the query. The
+pending query cannot be saved and Cancel restores the previous draft. Existing
+table variables can be placed immediately; changing a Table reference keeps
+its component position. A new Input created from Design or Variables is placed
+with its variable. Creating one from an SQL marker also commits its explicit
+binding. These pending changes cannot be saved until complete; Cancel leaves no
+variable, component, binding, or layout change. Existing variables can be
+selected without changing their shared query definition.
 
 ## Reader
 

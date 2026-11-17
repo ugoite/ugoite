@@ -30,6 +30,22 @@ candidate. The prior source-based Composition evidence is retained in the
 [prereplacement snapshot](history/composition-prereplacement-acceptance.md) and
 does not make that grammar executable.
 
+## 2026-11-17 review closure
+
+The additional v0.2.2 review plan's A01–A12 selectors live under
+`review_closure_2026_11_17` in the current acceptance-plan fixture. Their IDs
+are scoped to that review and do not replace the historical Text-first A01–A16
+matrix above. F01–F09 and each gate's source SHA, selector, runner, fixture,
+result, artifact, and limitation are recorded in the closure record on
+[#4613](https://github.com/ugoite/ugoite/issues/4613).
+
+The Form rename/delete and result-descriptor mismatch browser paths remain
+unavailable through the current public UI. Their acceptance evidence comes
+from stable-Form-identity and strict typed-result Core/Rust checks; no UI-only
+feature was added to manufacture those cases. Physical Safari, native browser
+zoom, and manual VoiceOver/NVDA sessions are excluded; this does not mark those
+manual checks as performed or passed.
+
 The then-current document contract was in the
 [Composition contract](../contracts/composition.md),
 [ADR-024](../contracts/adr-024-composition-sql-first.md), and

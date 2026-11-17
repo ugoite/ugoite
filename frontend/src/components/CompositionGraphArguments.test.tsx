@@ -192,6 +192,7 @@ describe("Composition inline SQL argument bindings", () => {
         name: "Create a variable for limit",
       }),
     );
+    fireEvent.click(await screen.findByRole("button", { name: "Value" }));
     const name = screen.getByRole("textbox", { name: "Variable name" });
     await waitFor(() => expect(name).toHaveValue("limit_2"));
     fireEvent.submit(name.closest("form")!);
