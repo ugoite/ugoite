@@ -145,7 +145,11 @@ function CompositionTextValue(props: {
   const segments = () => {
     const local = parsedSegments();
     const server = serverSegments();
-    if (!local) return undefined;
+    if (!local) {
+      return props.content.includes("{{")
+        ? undefined
+        : [{ kind: "literal" as const, text: props.content }];
+    }
     // A response from a previous draft cannot replace the Rust parser's
     // interpretation of the currently edited template.
     return server && JSON.stringify(server) === JSON.stringify(local)
@@ -162,7 +166,7 @@ function CompositionTextValue(props: {
     referencedQueries().map((id) =>
       props.queryErrors?.[id] ?? queryError(props.evaluation, id)
     ).find((message) => message);
-  const loading = () => !segments();
+  const loading = () => props.content.includes("{{") && parsedSegments.loading;
   const waitingForInputs = () => (segments() ?? []).some((part) => {
     if (part.kind !== "variable") return false;
     if (props.inputStates[part.variable]) return true;

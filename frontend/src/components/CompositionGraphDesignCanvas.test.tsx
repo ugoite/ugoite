@@ -92,7 +92,11 @@ describe("CompositionGraphDesignCanvas", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     const editor = await screen.findByRole("textbox", { name: "Text" });
+    editor.focus();
     fireEvent.input(editor, { target: { value: "Total: " } });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Text" })).toHaveFocus()
+    );
     fireEvent.change(screen.getByRole("combobox", { name: "Text style" }), {
       target: { value: "heading" },
     });
@@ -141,6 +145,10 @@ describe("CompositionGraphDesignCanvas", () => {
     );
 
     const currentEditor = screen.getByRole("textbox", { name: "Text" });
+    fireEvent.focusOut(currentEditor, { relatedTarget: document.body });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Text" })).toHaveFocus()
+    );
     currentEditor.focus();
     fireEvent.keyDown(currentEditor, { key: "Escape", isComposing: false });
     await waitFor(() =>

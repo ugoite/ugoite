@@ -77,6 +77,7 @@ export function CompositionGraphDesignCanvas(
   let addButton: HTMLButtonElement | undefined;
   let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
+  const textUpdatesInProgress = new Set<string>();
 
   const focusComponent = (id: string) => {
     queueMicrotask(() => {
@@ -124,14 +125,31 @@ export function CompositionGraphDesignCanvas(
     setSelectedId(id);
   };
   const updateText = (id: string, content: string) => {
-    props.onDraftChange({
-      ...props.draft,
-      components: props.draft.components.map((component) =>
-        component.id === id && component.kind === "text"
-          ? { ...component, content }
-          : component
-      ),
-    });
+    const editor = document.getElementById(`composition-text-editor-${id}`);
+    const restoreFocus = editor instanceof HTMLTextAreaElement &&
+      document.activeElement === editor;
+    textUpdatesInProgress.add(id);
+    try {
+      props.onDraftChange({
+        ...props.draft,
+        components: props.draft.components.map((component) =>
+          component.id === id && component.kind === "text"
+            ? { ...component, content }
+            : component
+        ),
+      });
+    } finally {
+      queueMicrotask(() => {
+        textUpdatesInProgress.delete(id);
+        const currentEditor = document.getElementById(
+          `composition-text-editor-${id}`,
+        );
+        if (
+          restoreFocus && document.activeElement === document.body &&
+          currentEditor instanceof HTMLTextAreaElement
+        ) currentEditor.focus();
+      });
+    }
   };
   const updateTextStyle = (
     id: string,
@@ -413,7 +431,10 @@ export function CompositionGraphDesignCanvas(
                           class="compositionGraphSelect compositionGraphTextSelect"
                           data-component-select="true"
                           aria-label={t("composition.studioEditText")}
-                          onClick={select}
+                          onClick={() => {
+                            select();
+                            focusComponent(component().id);
+                          }}
                         >
                           <UiIcon name="edit" />
                         </button>
@@ -428,12 +449,15 @@ export function CompositionGraphDesignCanvas(
                       <div
                         class="compositionGraphTextEditing"
                         onFocusOut={(event) => {
-                          const target = event.relatedTarget;
-                          if (
-                            target instanceof Node &&
-                            event.currentTarget.contains(target)
-                          ) return;
-                          exitTextEditing(text.id, false);
+                          const editingContainer = event.currentTarget;
+                          queueMicrotask(() => {
+                            if (
+                              !editingContainer.isConnected ||
+                              editingContainer.contains(document.activeElement) ||
+                              textUpdatesInProgress.has(text.id)
+                            ) return;
+                            exitTextEditing(text.id, false);
+                          });
                         }}
                       >
                         <textarea
