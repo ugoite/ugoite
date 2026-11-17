@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Response, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import {
@@ -27,6 +27,40 @@ function revisionFromUrl(url: string) {
   const match = url.match(/\/compositions\/([^/]+)\/([^/]+)$/);
   expect(match).toBeTruthy();
   return { compositionId: match![1], revisionId: match![2] };
+}
+
+function isDesignTableEvaluation(
+  response: Response,
+  variableId: string,
+  sql: string,
+): boolean {
+  if (
+    !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
+    response.request().method() !== "POST"
+  ) return false;
+  const body = response.request().postDataJSON() as {
+    target?: { kind?: string; yaml?: string };
+    requested_queries?: string[];
+  };
+  if (
+    body.target?.kind !== "draft" || !body.target.yaml ||
+    !body.requested_queries?.includes(variableId)
+  ) return false;
+  try {
+    const document = parseYaml(body.target.yaml) as {
+      spec?: {
+        variables?: Array<{ id?: string; query?: { sql?: string } }>;
+        components?: Array<{ kind?: string; variable?: string }>;
+      };
+    };
+    return document.spec?.variables?.some((variable) =>
+      variable.id === variableId && variable.query?.sql === sql
+    ) === true && document.spec?.components?.some((component) =>
+      component.kind === "table" && component.variable === variableId
+    ) === true;
+  } catch {
+    return false;
+  }
 }
 
 test("Composition keeps a saved query executable after an unused Form field is added", async ({ browser, context, request }) => {
@@ -109,8 +143,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await chooseCompositionFormSource(page, formName, originalSql);
     await checkCompositionQuery(page);
     const initialEvaluationResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-      response.request().method() === "POST"
+      isDesignTableEvaluation(response, variableId, originalSql)
     );
     await page.getByRole("button", { name: "Use", exact: true }).click();
     const initialEvaluation = await (await initialEvaluationResponse)
