@@ -281,8 +281,12 @@ test.describe("Composition invalid variable Input", () => {
     const unsetResult = await unsetResponse.json() as {
       ok?: boolean;
       computed_query_ids?: string[];
+      diagnostics?: Array<{ code?: string }>;
     };
-    expect(unsetResult.ok).toBe(true);
+    expect(unsetResult.ok).toBe(false);
+    expect(unsetResult.diagnostics).toContainEqual({
+      code: "invalid_composition",
+    });
     expect(unsetResult.computed_query_ids).toEqual([]);
     await settleWithoutReferencedQuery(
       page,
