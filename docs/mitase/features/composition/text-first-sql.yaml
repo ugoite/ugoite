@@ -37,17 +37,8 @@ features:
       - id: frontend-implementation
         role: implementation
         facet: frontend
-        responsibility: Keep authored Composition SQL in its variable editor and seed standalone SQL from explicit Form fields with Rust-owned SQL generation.
+        responsibility: Seed standalone SQL from explicit Form fields with Rust-owned SQL generation.
         targets:
-          - id: composition-data-workspace
-            adapter: typescript
-            path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
-            selector: { kind: symbol, name: CompositionVariableGraphWorkspace }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-082#criterion.inline-template-parameters
-              - kind: satisfies
-                criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics
           - id: sql-form-seed-control
             adapter: typescript
             path: frontend/src/components/SqlFormSourceControl.tsx
@@ -78,7 +69,7 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-082#criterion.inline-template-parameters
-                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-data-workspace]
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "writes inline SQL template source back to the graph node" } }
           - id: variables-local-sql-diagnostics
             adapter: typescript
@@ -87,7 +78,7 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics
-                covers: [FEAT-COMP-015#binding.frontend-implementation/target.composition-data-workspace]
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableGraphWorkspace.test.tsx, test: "keeps SQL lint, parameter bindings, and execution errors local to the selected query" } }
           - id: explicit-form-projection
             adapter: rust
@@ -134,7 +125,7 @@ features:
             role: rust-graph-validation
           - target: FEAT-COMP-015#binding.core-service-implementation/target.composition-query-template-normalization
             role: application-core
-          - target: FEAT-COMP-015#binding.frontend-implementation/target.composition-data-workspace
+          - target: FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
             role: browser-authoring
         guarantees: [REQ-FE-082#criterion.inline-template-parameters]
       - id: form-seed-projection

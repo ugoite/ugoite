@@ -2,12 +2,15 @@
 title: "Shared SQL Workspace"
 ---
 
-**Status: text-first for Saved SQL.** `/sql/new` and Saved SQL detail/edit use
+**Status: text-first for SQL authoring.** `/sql/new` and Saved SQL detail/edit use
 the shared controlled SQL text editor. The owning route supplies saving,
 current schema authorization, parameter values, query execution, counting, and
 paging. The Workspace does not own query persistence or Knowledge authority.
-Composition query variables also use direct text editing, but retain their
-host-owned Structure Toolbar until the planned migration in REQ-FE-079.
+Composition query variables use direct text editing with one local typed
+variable binding for each Rust-parsed `{{name}}` marker. Composition does not
+show the Structure, Columns, Filter, Sort, or Arguments SQL construction
+controls. The optional Form source starter remains available for a blank inline
+query.
 
 ## SQL authoring
 
@@ -38,8 +41,8 @@ host-owned Structure Toolbar until the planned migration in REQ-FE-079.
   Arguments SQL construction actions. Its typed argument definitions and
   optional defaults remain editable in the separate argument editor, while
   query values stay transient in the runtime input surface. Composition shows
-  a typed variable selector beside each `{{name}}` reference; its Structure
-  Toolbar remains available pending the planned migration.
+  one typed graph-variable selector beside each `{{name}}` reference; creating
+  a variable there adds the variable and binding together.
 
 ## Results
 

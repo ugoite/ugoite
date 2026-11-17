@@ -23,6 +23,7 @@ export interface CompositionGraphDesignCanvasProps {
   previewGeneration?: number;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   pendingInputCreation?: boolean;
+  pendingInputSuggestedName?: string;
   onRequestCreateInput?: () => void;
   onCommitCreateInput?: (name: string) => boolean;
   onCancelCreateInput?: () => void;
@@ -347,6 +348,7 @@ export function CompositionGraphDesignCanvas(
           >
             <CompositionVariableCreationForm
               existingNames={props.draft.variables.map((node) => node.id)}
+              suggestedName={props.pendingInputSuggestedName}
               onCreate={(name) => props.onCommitCreateInput?.(name) ?? false}
               onCancel={() => {
                 props.onCancelCreateInput?.();

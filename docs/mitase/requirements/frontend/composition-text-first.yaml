@@ -56,6 +56,13 @@ requirements:
           the Composition draft and keeps Add unavailable until the name is
           unique.
         governed_by: [POL-UI-002#rule.governance]
+      - id: variable-name-is-suggested
+        kind: behavior
+        statement: >-
+          Variable creation starts with the next unique suggested name for its
+          kind or SQL marker. The suggestion remains editable and duplicate
+          names remain rejected.
+        governed_by: [POL-UI-002#rule.governance]
       - id: table-picker-focus-restoration
         kind: behavior
         statement: >-
@@ -70,4 +77,14 @@ requirements:
           authorized schema check, and explicit execution have distinct
           outcomes; parameter bindings and errors are presented next to the
           relevant SQL or variable control without a separate arguments page.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: sql-arguments-bind-locally
+        kind: behavior
+        statement: >-
+          Each Rust-parsed SQL `{{name}}` marker has one adjacent selector for
+          a typed scalar graph variable. Creating a variable from that marker
+          creates the variable and binding together only while the owning SQL
+          remains unchanged. Composition does not expose Structure, Columns,
+          Filter, Sort, or Arguments SQL construction controls; an optional
+          authorized Form source remains available for a blank query.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]

@@ -1075,8 +1075,20 @@ test.describe("Composition Studio Journey", () => {
     await palette.getByRole("button", { name: "Table", exact: true }).click();
     const variableName = page.getByLabel("Variable name", { exact: true });
     await expect(variableName).toBeVisible();
+    await expect(variableName).toHaveValue("rows");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]')).toHaveCount(0);
+
+    await palette.getByRole("button", { name: "Table", exact: true }).click();
+    await expect(variableName).toBeVisible();
     await variableName.fill("studio_rows");
     await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-component-id="table_1"]'))
+      .toHaveAttribute("aria-label", "studio_rows");
 
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
     await page.getByRole("button", { name: "studio_rows", exact: true })

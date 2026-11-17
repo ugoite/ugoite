@@ -5,11 +5,13 @@ export type CompositionVariableCreationKind = "constant" | "input" | "query";
 
 export function CompositionVariableCreationForm(props: {
   existingNames: readonly string[];
+  suggestedName?: string;
   onCreate: (name: string) => boolean;
   onCancel: () => void;
   focusAfterCreate?: () => void;
 }) {
-  const [rawName, setRawName] = createSignal("");
+  const [rawName, setRawName] = createSignal(props.suggestedName ?? "");
+  const [creationFailed, setCreationFailed] = createSignal(false);
   let nameInput: HTMLInputElement | undefined;
   const name = () => rawName().trim();
   const duplicate = () => !!name() && props.existingNames.includes(name());
@@ -17,8 +19,11 @@ export function CompositionVariableCreationForm(props: {
     event.preventDefault();
     if (!name() || duplicate()) return;
     if (props.onCreate(name())) {
+      setCreationFailed(false);
       nameInput?.blur();
       queueMicrotask(() => props.focusAfterCreate?.());
+    } else {
+      setCreationFailed(true);
     }
   };
 
@@ -49,7 +54,10 @@ export function CompositionVariableCreationForm(props: {
             ? "composition-variable-name-error"
             : undefined}
           value={rawName()}
-          onInput={(event) => setRawName(event.currentTarget.value)}
+          onInput={(event) => {
+            setRawName(event.currentTarget.value);
+            setCreationFailed(false);
+          }}
         />
       </label>
       <div class="compositionVariableCreationActions">
@@ -67,6 +75,11 @@ export function CompositionVariableCreationForm(props: {
           role="alert"
         >
           {t("composition.studioVariableNameDuplicate")}
+        </p>
+      )}
+      {creationFailed() && !duplicate() && (
+        <p class="ui-text-danger" role="alert">
+          {t("composition.studioVariableCreationFailed")}
         </p>
       )}
     </form>
