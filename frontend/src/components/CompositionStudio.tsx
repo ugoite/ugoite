@@ -160,17 +160,30 @@ export function CompositionStudio(props: CompositionStudioProps) {
   let pendingSave: PendingCompositionSaveAttempt | undefined;
   const [saving, setSaving] = createSignal(false);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
-  let saveInvocationPending = false;
-  let saveInvocationStartEpoch = 0;
-  let saveInvocationPrincipal: string | undefined;
-  let saveInvocationScope: string | undefined;
+  let nextSaveInvocationId = 0;
+  let activeSaveInvocation: {
+    id: number;
+    scope: string;
+    principalEpoch: number;
+    principalId?: string;
+  } | undefined;
+  const currentSaveInvocation = (id?: number) => {
+    const active = activeSaveInvocation;
+    if (
+      !active || (id !== undefined && active.id !== id) ||
+      active.scope !== editorScope() ||
+      active.principalEpoch !== principalEpoch() ||
+      (active.principalId !== undefined && active.principalId !== principalId())
+    ) return undefined;
+    return active;
+  };
   let getSaveInputSnapshot: () => CompositionInputSnapshot | undefined =
     () => ({ variables: {}, unset_variables: [] });
   createEffect(() => {
     const owner = principalId();
     if (!owner) {
       pendingSave = undefined;
-      if (!saveInvocationPending) setSaving(false);
+      if (!currentSaveInvocation()) setSaving(false);
       setSaveRetryAvailable(false);
       return;
     }
@@ -178,10 +191,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const saveIdentity = { ...identity, principalId: owner };
     const stored = getPendingCompositionSaveAttempt(saveIdentity);
     pendingSave = stored?.attempt;
-    const preflightIsCurrent = saveInvocationPending &&
-      saveInvocationStartEpoch === principalEpoch() &&
-      (!saveInvocationPrincipal || saveInvocationPrincipal === owner) &&
-      saveInvocationScope === editorScope();
+    const preflightIsCurrent = currentSaveInvocation() !== undefined;
     setSaving(stored?.state === "in_flight" || preflightIsCurrent);
     setSaveRetryAvailable(stored?.state === "uncertain");
     const unsubscribe = subscribeToPendingCompositionSaveAttempt(
@@ -240,7 +250,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const checkGenerations = new Map<string, number>();
   const checkControllers = new Map<string, AbortController>();
   const countControllers = new Map<string, AbortController>();
+  let editorScopeGeneration = 0;
   onCleanup(() => {
+    activeSaveInvocation = undefined;
+    editorScopeGeneration++;
     for (
       const controller of [
         ...runControllers.values(),
@@ -257,6 +270,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const scope = editorScope();
     if (previousEditorScope === scope) return;
     previousEditorScope = scope;
+    editorScopeGeneration++;
+    if (activeSaveInvocation?.scope !== scope) {
+      activeSaveInvocation = undefined;
+    }
     untrack(() => {
       for (
         const controller of [
@@ -839,7 +856,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const save = async () => {
     if (
-      saveInvocationPending || saving() || saveRetryAvailable() ||
+      currentSaveInvocation() || saving() || saveRetryAvailable() ||
       pendingSave ||
       !editorValid()
     ) {
@@ -862,11 +879,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     const saveRouteIdentity = routeIdentity();
     const saveScope = editorScope();
-    const startingPrincipalEpoch = principalEpoch();
-    saveInvocationPending = true;
-    saveInvocationStartEpoch = startingPrincipalEpoch;
-    saveInvocationPrincipal = principalId();
-    saveInvocationScope = saveScope;
+    const invocationId = ++nextSaveInvocationId;
+    activeSaveInvocation = {
+      id: invocationId,
+      scope: saveScope,
+      principalEpoch: principalEpoch(),
+      principalId: principalId(),
+    };
     const generation = saveGeneration() + 1;
     setSaveGeneration(generation);
     setSaving(true);
@@ -877,10 +896,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const owner = await getPrincipalGeneration();
       if (
         generation !== saveGeneration() ||
-        startingPrincipalEpoch !== principalEpoch() ||
-        editorScope() !== saveScope
+        !currentSaveInvocation(invocationId)
       ) return;
-      saveInvocationPrincipal = owner;
+      activeSaveInvocation!.principalId = owner;
       const existing = getPendingCompositionSaveAttempt({
         ...saveRouteIdentity,
         principalId: owner,
@@ -910,11 +928,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       };
       pendingSave = attempt;
       setSaving(true);
-      stagePendingCompositionSaveAttempt(attempt, undefined);
       const checked = await previewCandidate(current);
       if (
         principalEpoch() !== ownerEpoch || principalId() !== owner ||
-        editorScope() !== saveScope
+        !currentSaveInvocation(invocationId)
       ) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
         return;
@@ -950,7 +967,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         generation !== saveGeneration() ||
         principalEpoch() !== ownerEpoch ||
         principalId() !== owner ||
-        editorScope() !== saveScope
+        !currentSaveInvocation(invocationId)
       ) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
         return;
@@ -961,16 +978,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
         latestOwner !== owner ||
         principalEpoch() !== ownerEpoch ||
         principalId() !== owner ||
-        editorScope() !== saveScope
+        !currentSaveInvocation(invocationId)
       ) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
         return;
       }
       attempt = { ...attempt, yaml: canonical.canonical_yaml };
       pendingSave = attempt;
-      saveInvocationPending = false;
-      saveInvocationPrincipal = undefined;
-      saveInvocationScope = undefined;
+      if (activeSaveInvocation?.id === invocationId) {
+        activeSaveInvocation = undefined;
+      }
       await saveRequest(attempt, false);
     } catch (error) {
       if (attempt) {
@@ -982,15 +999,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       if (
         generation === saveGeneration() &&
-        editorScope() === saveScope
+        currentSaveInvocation(invocationId)
       ) {
         setSaveError(compositionCanonicalizeErrorMessage(error));
       }
     } finally {
-      saveInvocationPending = false;
-      saveInvocationPrincipal = undefined;
-      saveInvocationScope = undefined;
+      const ownsPreflight = activeSaveInvocation?.id === invocationId;
+      if (ownsPreflight) activeSaveInvocation = undefined;
       if (
+        ownsPreflight &&
         generation === saveGeneration() &&
         editorScope() === saveScope &&
         !foundPendingAttempt
@@ -1005,6 +1022,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
       !isCurrentSaveIdentity(attempt)
     ) return;
     const generation = saveGeneration() + 1;
+    const retryScope = editorScope();
+    const retryScopeGeneration = editorScopeGeneration;
     const retryPrincipalEpoch = principalEpoch();
     setSaveGeneration(generation);
     setSaving(true);
@@ -1013,13 +1032,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const owner = await getPrincipalGeneration();
       if (
         generation !== saveGeneration() ||
+        editorScopeGeneration !== retryScopeGeneration ||
+        editorScope() !== retryScope ||
         owner !== attempt.principalId ||
         principalEpoch() !== retryPrincipalEpoch ||
         !isCurrentSaveIdentity(attempt)
       ) return;
       await saveRequest(attempt, true);
     } finally {
-      if (generation === saveGeneration()) setSaving(false);
+      if (
+        generation === saveGeneration() &&
+        editorScopeGeneration === retryScopeGeneration &&
+        editorScope() === retryScope
+      ) setSaving(false);
     }
   };
 
@@ -1067,7 +1092,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const onDraftChange = (next: CompositionGraphDraft) => {
-    if (saveInvocationPending || saving() || saveRetryAvailable()) return;
+    if (currentSaveInvocation() || saving() || saveRetryAvailable()) return;
     for (const controller of checkControllers.values()) controller.abort();
     for (const [id, generation] of checkGenerations) {
       checkGenerations.set(id, generation + 1);

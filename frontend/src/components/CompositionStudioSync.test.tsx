@@ -1299,18 +1299,29 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
-  it("does not dispatch a preflight save after its route scope changes", async () => {
+  it("allows a new scope save before an old preflight resolves", async () => {
     let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
+    let finishOtherSave!: (result: {
+      composition_id: string;
+      revision_id: string;
+    }) => void;
     canonicalizeMock.mockImplementationOnce(() =>
       new Promise((resolve) => finishCanonicalize = resolve)
     );
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    const [initialDraft, setInitialDraft] = createSignal(
+      renderedDraftWithTable(),
+    );
     const [saveMode, setSaveMode] = createSignal<CompositionStudioSaveMode>({
-      kind: "create",
+      kind: "update",
+      compositionId: "composition-1",
+      baseRevisionId: "revision-1",
     });
+    routePathMock.value = "/spaces/space-1/compositions/composition-1/edit";
     render(() => (
       <CompositionStudio
-        spaceId="space-1"
-        initialDraft={renderedDraftWithTable()}
+        spaceId={spaceId()}
+        initialDraft={initialDraft()}
         saveMode={saveMode()}
         backHref="/spaces/space-1/compositions"
         backLabel="Back to compositions"
@@ -1319,23 +1330,67 @@ describe("CompositionStudio graph surface", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
-    routePathMock.value = "/spaces/space-1/compositions/composition-2/edit";
+    routePathMock.value = "/spaces/space-2/compositions/composition-2/edit";
+    setSpaceId("space-2");
+    setInitialDraft({
+      ...renderedDraftWithTable(),
+      name: "Other Space Report",
+    });
     setSaveMode({
       kind: "update",
       compositionId: "composition-2",
       baseRevisionId: "revision-2",
     });
     await waitFor(() =>
-      expect(document.querySelector(".compositionGraphStudioEditor"))
-        .not.toHaveAttribute("inert")
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("Other Space Report")
     );
+    saveMock.mockImplementationOnce(() =>
+      new Promise((resolve) => finishOtherSave = resolve)
+    );
+    const save = screen.getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
+    expect(saveMock.mock.calls[0][0]).toBe("space-2");
+    expect(JSON.parse(saveMock.mock.calls[0][1]).name)
+      .toBe("Other Space Report");
+    expect(document.querySelector(".compositionGraphStudioRoot"))
+      .toHaveAttribute("aria-busy", "true");
+
+    routePathMock.value = "/spaces/space-1/compositions/composition-1/edit";
+    setSpaceId("space-1");
+    setInitialDraft(renderedDraftWithTable());
+    setSaveMode({
+      kind: "update",
+      compositionId: "composition-1",
+      baseRevisionId: "revision-1",
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("Report")
+    );
+    const originalScopeSave = screen.getByRole("button", { name: "Save" });
+    await waitFor(() => expect(originalScopeSave).toBeEnabled());
+    fireEvent.click(originalScopeSave);
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+
     finishCanonicalize({
       canonical_yaml: JSON.stringify(canonicalizeMock.mock.calls[0][0]),
     });
-
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(saveMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(saveMock).toHaveBeenCalledTimes(2);
+    expect(navigateMock).toHaveBeenCalledOnce();
+
+    finishOtherSave({
+      composition_id: "composition-2",
+      revision_id: "revision-3",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(navigateMock).toHaveBeenCalledOnce();
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/space-1/compositions/composition-1/revision-1",
+    );
   });
 
   it("edits the shared graph through the Variables mode", async () => {

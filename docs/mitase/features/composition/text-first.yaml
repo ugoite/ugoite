@@ -744,12 +744,12 @@ features:
           - id: composition-save-preflight-route-change
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "does not dispatch a preflight save after its route scope changes" }
+            selector: { kind: test, name: "allows a new scope save before an old preflight resolves" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
                 covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not dispatch a preflight save after its route scope changes" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "allows a new scope save before an old preflight resolves" } }
           - id: composition-sent-save-route-retry
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
