@@ -174,7 +174,7 @@ revisions without bindings remain readable; quoted Form-name execution
 requires an explicitly saved revision with bindings.
 
 Saved SQL variable definitions may also persist an optional non-null scalar
-default whose JSON value matches the declared ADR-023 type. Defaults are part
+default whose JSON value matches the declared Saved SQL type. Defaults are part
 of the versioned Saved SQL content and its integrity payload. The stateless SQL
 query operation does not read them: callers still supply every parameter
 explicitly.

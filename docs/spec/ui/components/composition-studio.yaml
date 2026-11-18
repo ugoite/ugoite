@@ -88,7 +88,7 @@ names. Text editing retains focus and supports multiline input. Variable lists
 and pickers fit narrow screens without page-level horizontal overflow. Reader
 tables scroll within their own region. Current implementation evidence is
 tracked by the Composition Studio feature and verification bindings. Required
-responsive, keyboard, and focus evidence comes from automated browser checks at
-the widths listed in the acceptance plan. Physical-device Safari, actual native
+responsive, keyboard, and focus evidence comes from the automated checks linked
+by the current Mitase bindings. Physical-device Safari, actual native
 browser zoom, and manual screen-reader sessions are not v0.2.2 acceptance
 requirements.

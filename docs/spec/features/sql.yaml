@@ -84,7 +84,7 @@ apis:
 - id: sql.create
   method: POST
   status: implemented
-  description: Create a durable Saved SQL query. The name is optional; an unnamed query uses name null and metadata.generatedName untitled. The shared application boundary generates SQL identity. Each variable definition may include a non-null scalar default matching its declared ADR-023 type; defaults are stored with the revision and never implicitly bound during execution.
+  description: Create a durable Saved SQL query. The name is optional; an unnamed query uses name null and metadata.generatedName untitled. The shared application boundary generates SQL identity. Each variable definition may include a non-null scalar default matching its declared Saved SQL type; defaults are stored with the revision and never implicitly bound during execution.
   backend:
     path: /spaces/{space_id}/sql
     file: crates/ugoite-server/src/lib.rs

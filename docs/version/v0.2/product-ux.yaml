@@ -172,8 +172,8 @@ verification_evidence:
         This lane evidence covers Entry narrow viewports and smoke stale
         suppression only; it does not establish Composition
         narrow-viewport behavior. Composition golden/metric/stale Browser
-        evidence is recorded separately in
-        e2e/fixtures/composition/evidence-archive.json.
+        evidence for the earlier Composition model is available at
+        https://github.com/ugoite/ugoite/blob/6bcb5426b937f7981fca1fb97ae70c035651da89/e2e/fixtures/composition/evidence-archive.json.
       - It does not establish screen-reader acceptance.
     broader_product_ux_tasks_completed: false
     cp1_acceptance_tasks_completed: false
