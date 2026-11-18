@@ -54,7 +54,10 @@ function isDesignTableEvaluation(
       };
     };
     return document.spec?.variables?.some((variable) =>
-      variable.id === variableId && variable.query?.sql === sql
+      variable.id === variableId &&
+      typeof variable.query?.sql === "string" &&
+      normalizeCompositionFormSeedSql(variable.query.sql) ===
+        normalizeCompositionFormSeedSql(sql)
     ) === true && document.spec?.components?.some((component) =>
       component.kind === "table" && component.variable === variableId
     ) === true;

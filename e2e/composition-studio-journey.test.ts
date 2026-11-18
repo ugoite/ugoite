@@ -812,6 +812,7 @@ test.describe("Composition Studio Journey", () => {
         fullPage: true,
       });
 
+      await page.getByRole("tab", { name: "Variables", exact: true }).click();
       await page.getByRole("button", { name: "Add variable", exact: true })
         .click();
       await page.getByRole("group", { name: "Add variable" })
