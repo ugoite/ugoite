@@ -1027,7 +1027,9 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(draft().variables.find((node) => node.id === "rows_a"))
       .toMatchObject({ query: { arguments: [] } });
     expect(draft().variables.find((node) => node.id === "rows_b"))
-      .toMatchObject({ query: { arguments: [] } });
+      .toMatchObject({
+        query: { arguments: [{ name: "month", variable: "month" }] },
+      });
   });
 
   it("traps and restores focus when the mobile variable drawer closes", async () => {

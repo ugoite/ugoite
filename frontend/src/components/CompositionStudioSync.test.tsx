@@ -1381,8 +1381,10 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
     const retry = await screen.findByRole("button", { name: "Retry" });
     await waitFor(() =>
-      expect(document.querySelector(".compositionGraphStudioEditor"))
-        .toHaveAttribute("inert")
+      expect(
+        document.querySelector<HTMLElement>(".compositionGraphStudioEditor")
+          ?.inert,
+      ).toBe(true)
     );
 
     rejectOldCanonicalize(new Error("old preflight failed"));
@@ -1390,8 +1392,10 @@ describe("CompositionStudio graph surface", () => {
     expect(saveMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
     await waitFor(() =>
-      expect(document.querySelector(".compositionGraphStudioEditor"))
-        .toHaveAttribute("inert")
+      expect(
+        document.querySelector<HTMLElement>(".compositionGraphStudioEditor")
+          ?.inert,
+      ).toBe(true)
     );
 
     fireEvent.click(retry);
