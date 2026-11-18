@@ -4,8 +4,8 @@ title: "Cross-surface acceptance"
 
 Informational. This document describes the acceptance model, not a new
 specification authority. Outcome semantics stay with Mitase Requirement /
-Criterion; the operation inventory stays with `UGOITE_API_OPERATIONS` and its
-Rust mirror `SUPPORTED_OPERATIONS`.
+Criterion; the operation inventory stays with `SUPPORTED_OPERATIONS` in
+`ugoite-api-client`.
 
 ## Principle: three surfaces, one meaning
 
@@ -133,7 +133,7 @@ business semantics.
 
 `tools/capability_report.ts` projects the journey from existing authorities:
 
-- Inventory: `UGOITE_API_OPERATIONS` + `SUPPORTED_OPERATIONS` (must match).
+- Inventory: the generated TypeScript projection of `SUPPORTED_OPERATIONS`.
 - Surface usage: Frontend `*-api.ts`, CLI remote `http::execute`, CLI core
   `UgoiteService` methods.
 - Verification: exact e2e test names plus exact Mitase `verifies` claims.

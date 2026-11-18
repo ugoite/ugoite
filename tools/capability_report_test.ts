@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert/equals";
+import { UGOITE_API_OPERATIONS } from "../frontend/src/lib/generated/operation-registry.ts";
 import {
   buildPreflightReport,
   buildReport,
@@ -14,31 +15,10 @@ import {
   resolveFeatureBindingRef,
   resolveRequirementCriterionRef,
   resolveVerificationClaimRef,
-  rustManifestOperations,
   selectorLocated,
   SERVICE_METHOD_OPERATIONS,
-  typescriptManifestOperations,
   validatePreflightSeedShape,
 } from "./capability_report.ts";
-
-// The projection inventory must track the portable operation manifests
-// exactly; it never invents operations of its own.
-Deno.test("capability projection tracks the portable operation manifests", async () => {
-  const rustSource = await Deno.readTextFile(
-    "crates/ugoite-api-client/src/lib.rs",
-  );
-  const tsSource = await Deno.readTextFile(
-    "frontend/src/lib/ugoite-client/protocol.ts",
-  );
-  const rustOperations = rustManifestOperations(rustSource);
-  const tsOperations = typescriptManifestOperations(tsSource);
-  assertEquals(rustOperations.length, 83);
-  assertEquals(rustOperations.includes("composition.snapshot_check"), true);
-  assertEquals(rustOperations.includes("sql.query.plan"), true);
-  assertEquals(rustOperations.includes("sql.lint"), true);
-  assertEquals(tsOperations.includes("sql.lint"), true);
-  assertEquals(tsOperations, rustOperations);
-});
 
 Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", async () => {
   const report = await buildPreflightReport();
@@ -46,7 +26,7 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
   assertEquals(report.generated_projection, true);
   assertEquals(report.authority, "not-authority");
   assertEquals(report.evidence_limit, "static-evidence-not-executed-proof");
-  assertEquals(report.manifestsMatch, true);
+  assertEquals(report.inventorySize, UGOITE_API_OPERATIONS.length);
   const mitaseSources = new Map<string, string>();
   for (
     const path of [
@@ -326,9 +306,7 @@ Deno.test("CLI core service map covers the journey mutations", () => {
 Deno.test("capability report projects every journey capability", async () => {
   const report = await buildReport();
   assertEquals(report.journey, "JOURNEY-KNOWLEDGE-001");
-  assertEquals(report.manifestsMatch, true);
-  assertEquals(report.rustOnly, []);
-  assertEquals(report.tsOnly, []);
+  assertEquals(report.inventorySize, UGOITE_API_OPERATIONS.length);
   assertEquals(
     report.capabilities.map((row) => row.id),
     JOURNEY_CAPABILITIES.map((capability) => capability.id),
