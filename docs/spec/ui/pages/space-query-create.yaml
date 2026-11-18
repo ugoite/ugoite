@@ -39,7 +39,7 @@ components:
       type: typed-variable-list
       visibility: only-when-sql-contains-variables
       behavior: each variable can have an explicitly enabled typed default or remain without a default
-      validation: ADR-023 typed-value rules; empty string is distinct from no default
+      validation: shared Saved SQL typed-value rules (REQ-API-020); empty string is distinct from no default
     - id: query-save-button
       type: button
       variant: primary
