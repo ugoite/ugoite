@@ -181,14 +181,27 @@ export function CompositionVariableGraphWorkspace(
   );
   const parseGenerations = new Map<string, number>();
   const renameGenerations = new Map<string, number>();
+  const manuallyUnboundArguments = new Map<string, Set<string>>();
   const [invalidRenames, setInvalidRenames] = createSignal(new Set<string>());
   const formGuardGenerations = new Map<string, number>();
   const [formGuardPruningPending, setFormGuardPruningPending] = createSignal<
     Record<string, boolean>
   >({});
   onCleanup(() => {
+    parseGenerations.clear();
     formGuardGenerations.clear();
     renameGenerations.clear();
+    manuallyUnboundArguments.clear();
+  });
+  createEffect(() => {
+    const queryIds = new Set(
+      props.draft.variables.flatMap((node) =>
+        node.kind === "query" ? [node.id] : []
+      ),
+    );
+    for (const queryId of manuallyUnboundArguments.keys()) {
+      if (!queryIds.has(queryId)) manuallyUnboundArguments.delete(queryId);
+    }
   });
   let mobileDialog: HTMLElement | undefined;
   let mobileOpener: HTMLElement | null = null;
@@ -986,7 +999,15 @@ export function CompositionVariableGraphWorkspace(
                           type as CompositionSqlArgumentType,
                         ) && !wouldCreateArgumentCycle(entry.id, query().id);
                     });
-                  const manuallyUnboundArguments = new Set<string>();
+                  const unboundArguments = () => {
+                    const queryId = query().id;
+                    let unbound = manuallyUnboundArguments.get(queryId);
+                    if (!unbound) {
+                      unbound = new Set<string>();
+                      manuallyUnboundArguments.set(queryId, unbound);
+                    }
+                    return unbound;
+                  };
                   const setArgumentBinding = (
                     name: string,
                     variable: string,
@@ -997,14 +1018,15 @@ export function CompositionVariableGraphWorkspace(
                       )
                     ) return;
                     const current = query();
+                    const unbound = unboundArguments();
                     const argumentsNext = current.query.arguments.filter((
                       entry,
                     ) => entry.name !== name);
                     if (variable) {
-                      manuallyUnboundArguments.delete(name);
+                      unbound.delete(name);
                       argumentsNext.push({ name, variable });
                     } else {
-                      manuallyUnboundArguments.add(name);
+                      unbound.add(name);
                     }
                     updateNode({
                       ...current,
@@ -1017,8 +1039,9 @@ export function CompositionVariableGraphWorkspace(
                     const names = new Set(
                       referencedArguments().map((entry) => entry.name),
                     );
-                    for (const name of manuallyUnboundArguments) {
-                      if (!names.has(name)) manuallyUnboundArguments.delete(name);
+                    const unbound = unboundArguments();
+                    for (const name of unbound) {
+                      if (!names.has(name)) unbound.delete(name);
                     }
                     const current = query();
                     const argumentsNext = current.query.arguments.filter((entry) =>
@@ -1026,7 +1049,7 @@ export function CompositionVariableGraphWorkspace(
                     );
                     for (const name of names) {
                       if (
-                        manuallyUnboundArguments.has(name) ||
+                        unbound.has(name) ||
                         argumentsNext.some((entry) => entry.name === name)
                       ) continue;
                       const matching = bindableVariables().filter((entry) =>
@@ -1124,7 +1147,7 @@ export function CompositionVariableGraphWorkspace(
                           entry.id
                         )}
                         onSqlArgumentCompletion={(name, nextSql) => {
-                          manuallyUnboundArguments.delete(name);
+                          unboundArguments().delete(name);
                           const argumentsNext = query().query.arguments.filter(
                             (entry) => entry.name !== name,
                           );

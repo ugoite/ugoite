@@ -12,6 +12,7 @@ import {
   compositionGraphAuthoringDocument,
   type CompositionGraphDraft,
 } from "./composition-variable-binding";
+import { formatUserFacingError } from "./user-facing-error";
 import { parseVariableGraphInput } from "./ugoite-client";
 import { t } from "./i18n";
 
@@ -64,6 +65,7 @@ export function createCompositionDesignEvaluation(options: {
     setBusy(false);
   };
   const invalidate = (ids: readonly string[]) => {
+    if (ids.length > 0) setError(undefined);
     ids.forEach((id) => pending.add(id));
     setBlocked((current) => new Set([...current, ...ids]));
     setQueryErrors((current) =>
@@ -235,7 +237,7 @@ export function createCompositionDesignEvaluation(options: {
           : t("composition.queryFailed");
         setError(message);
       }
-    } catch {
+    } catch (error) {
       if (!current()) return;
       setEvaluation(undefined);
       setPages({});
@@ -243,7 +245,7 @@ export function createCompositionDesignEvaluation(options: {
         node.kind === "query" ? [node.id] : []
       );
       invalidate(failedQueryIds);
-      const message = t("composition.queryFailed");
+      const message = formatUserFacingError(error, "composition.queryFailed");
       setError(message);
       setQueryErrors(Object.fromEntries(
         failedQueryIds.map((id) => [id, message]),

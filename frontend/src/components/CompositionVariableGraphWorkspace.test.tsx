@@ -7,7 +7,7 @@ import {
   within,
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompositionVariableGraphWorkspace } from "./CompositionVariableGraphWorkspace";
 import {
   type CompositionGraphDraft,
@@ -15,7 +15,7 @@ import {
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
-import { buildSqlSchema } from "~/lib/sql";
+import * as sqlModule from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 
@@ -23,6 +23,9 @@ const { parseInputMock, parseTemplateMock } = vi.hoisted(() => ({
   parseInputMock: vi.fn(),
   parseTemplateMock: vi.fn(),
 }));
+
+const { buildSqlSchema } = sqlModule;
+afterEach(() => vi.restoreAllMocks());
 
 const creationProps = (
   draft: () => CompositionGraphDraft,
@@ -728,6 +731,305 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
       query: { arguments: [] },
     });
+  });
+
+  it("keeps explicit marker unbinds independent across selected SQL queries", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [
+        {
+          id: "month",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: "11" },
+        },
+        ...["rows_a", "rows_b"].map((id) => ({
+          id,
+          kind: "query" as const,
+          returns: { kind: "table" as const, columns: [] },
+          query: {
+            kind: "inline_sql" as const,
+            sql: "SELECT 1",
+            arguments: [],
+          },
+        })),
+      ],
+    });
+    const [selected, setSelected] = createSignal<string | null>("rows_a");
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId={selected()}
+        onSelect={setSelected}
+        onDraftChange={setDraft}
+        onRemove={(id) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.filter((node) => node.id !== id),
+          }))}
+        sqlSchema={buildSqlSchema([])}
+        onQueryChange={(id, sql, _guards, queryArguments) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.map((node) =>
+              node.id === id && node.kind === "query"
+                ? {
+                  ...node,
+                  query: {
+                    ...node.query,
+                    kind: "inline_sql",
+                    sql,
+                    ...(queryArguments ? { arguments: queryArguments } : {}),
+                  },
+                }
+                : node
+            ),
+          }))}
+      />
+    ));
+
+    const sql = screen.getByRole("textbox", { name: "SQL" });
+    fireEvent.input(sql, { target: { value: "SELECT {{month}}" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+    const binding = screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    });
+    fireEvent.change(binding, { target: { value: "" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a"))
+        .toMatchObject({ query: { arguments: [] } });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "rows_b" }));
+    await waitFor(() => expect(sql).toHaveValue("SELECT 1"));
+    fireEvent.input(sql, { target: { value: "SELECT {{month}}" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_b"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "rows_a" }));
+    await waitFor(() => expect(sql).toHaveValue("SELECT {{month}}"));
+    expect(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    })).toHaveValue("");
+    expect(draft().variables.find((node) => node.id === "rows_b"))
+      .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+
+    fireEvent.input(sql, { target: { value: "SELECT {{month" } });
+    fireEvent.input(sql, { target: { value: "SELECT {{month}}" } });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", {
+        name: "Choose a variable for month",
+      })).toHaveValue("");
+    });
+    expect(draft().variables.find((node) => node.id === "rows_a"))
+      .toMatchObject({ query: { arguments: [] } });
+
+    fireEvent.input(sql, { target: { value: "SELECT 1" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a"))
+        .toMatchObject({ query: { arguments: [] } });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("combobox", {
+        name: "Choose a variable for month",
+      })).not.toBeInTheDocument();
+    });
+    fireEvent.input(sql, { target: { value: "SELECT {{month}}" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+
+    const reconnect = screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    });
+    fireEvent.change(reconnect, { target: { value: "" } });
+    await waitFor(() => expect(reconnect).toHaveValue(""));
+    fireEvent.change(reconnect, { target: { value: "month" } });
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+
+    fireEvent.change(reconnect, { target: { value: "" } });
+    await waitFor(() => expect(reconnect).toHaveValue(""));
+    setSelected("rows_b");
+    setDraft((current) => ({
+      ...current,
+      variables: current.variables.map((node) =>
+        node.id === "rows_a" && node.kind === "query"
+          ? { ...node, id: "rows_a_renamed", query: { ...node.query, arguments: [] } }
+          : node
+      ),
+    }));
+    setSelected("rows_a_renamed");
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a_renamed"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+
+    const renamedBinding = screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    });
+    fireEvent.change(renamedBinding, { target: { value: "" } });
+    await waitFor(() => expect(renamedBinding).toHaveValue(""));
+    setSelected("rows_b");
+    setDraft((current) => ({
+      ...current,
+      variables: current.variables.filter((node) => node.id !== "rows_a_renamed"),
+    }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "rows_a_renamed" }))
+        .not.toBeInTheDocument();
+    });
+    setDraft((current) => ({
+      ...current,
+      variables: [...current.variables, {
+        id: "rows_a_renamed",
+        kind: "query" as const,
+        returns: { kind: "table" as const, columns: [] },
+        query: {
+          kind: "inline_sql" as const,
+          sql: "SELECT {{month}}",
+          arguments: [],
+        },
+      }],
+    }));
+    setSelected("rows_a_renamed");
+    await waitFor(() => {
+      expect(draft().variables.find((node) => node.id === "rows_a_renamed"))
+        .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+    });
+  });
+
+  it("keeps a manual unbind through a delayed SQL normalization and query switch", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [
+        {
+          id: "month",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: "11" },
+        },
+        ...["rows_a", "rows_b"].map((id) => ({
+          id,
+          kind: "query" as const,
+          returns: { kind: "table" as const, columns: [] },
+          query: {
+            kind: "inline_sql" as const,
+            sql: id === "rows_a" ? "SELECT {{month}}" : "SELECT 1",
+            arguments: id === "rows_a"
+              ? [{ name: "month", variable: "month" }]
+              : [],
+          },
+        })),
+      ],
+    });
+    const [selected, setSelected] = createSignal<string | null>("rows_a");
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId={selected()}
+        onSelect={setSelected}
+        onDraftChange={setDraft}
+        onRemove={(id) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.filter((node) => node.id !== id),
+          }))}
+        sqlSchema={buildSqlSchema([])}
+        onQueryChange={(id, sql, _guards, queryArguments) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.map((node) =>
+              node.id === id && node.kind === "query"
+                ? {
+                  ...node,
+                  query: {
+                    ...node.query,
+                    kind: "inline_sql",
+                    sql,
+                    ...(queryArguments ? { arguments: queryArguments } : {}),
+                  },
+                }
+                : node
+            ),
+          }))}
+      />
+    ));
+
+    const sql = screen.getByRole("textbox", { name: "SQL" });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", {
+        name: "Choose a variable for month",
+      })).toHaveValue("month");
+    });
+    fireEvent.change(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    }), { target: { value: "" } });
+    await waitFor(() => expect(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    })).toHaveValue(""));
+
+    const editedSql = "SELECT {{month}} + 1";
+    let resolveNormalize!: (
+      result: Awaited<ReturnType<typeof sqlModule.normalizeSqlDocument>>,
+    ) => void;
+    const normalizeSqlDocumentSpy = vi.spyOn(
+      sqlModule,
+      "normalizeSqlDocument",
+    );
+    normalizeSqlDocumentSpy.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveNormalize = resolve;
+      })
+    );
+    fireEvent.input(sql, { target: { value: editedSql } });
+    await waitFor(() => expect(normalizeSqlDocumentSpy).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "rows_b" }));
+    await waitFor(() => expect(sql).toHaveValue("SELECT 1"));
+    fireEvent.input(sql, { target: { value: editedSql } });
+    await waitFor(() => expect(sql).toHaveValue(editedSql));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", {
+        name: "Choose a variable for month",
+      })).toHaveValue("month")
+    );
+
+    resolveNormalize({
+      source: editedSql,
+      sql: "SELECT $month + 1",
+      variables: [{ type: "string", name: "month", description: "" }],
+      document: { status: "parsed" },
+      replacements: [],
+    });
+    await Promise.resolve();
+    expect(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    })).toHaveValue("month");
+    expect(draft().variables.find((node) => node.id === "rows_b"))
+      .toMatchObject({ query: { arguments: [{ name: "month", variable: "month" }] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "rows_a" }));
+    await waitFor(() => expect(sql).toHaveValue(editedSql));
+    expect(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    })).toHaveValue("");
+    expect(draft().variables.find((node) => node.id === "rows_a"))
+      .toMatchObject({ query: { arguments: [] } });
+    expect(draft().variables.find((node) => node.id === "rows_b"))
+      .toMatchObject({
+        query: { arguments: [{ name: "month", variable: "month" }] },
+      });
   });
 
   it("traps and restores focus when the mobile variable drawer closes", async () => {

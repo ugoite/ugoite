@@ -2,9 +2,11 @@ import { useLocation, useNavigate } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
+  createRenderEffect,
   createResource,
   createSignal,
   onCleanup,
+  onMount,
   Show,
   untrack,
 } from "solid-js";
@@ -25,8 +27,8 @@ import {
   compositionBindingDiagnostics,
   compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
-  compositionGraphQueryWorkbenchDocument,
   type CompositionGraphDraft,
+  compositionGraphQueryWorkbenchDocument,
   type CompositionLiteral,
   type CompositionVariableNode,
   createCompositionGraphDraft,
@@ -106,25 +108,94 @@ export function CompositionStudio(props: CompositionStudioProps) {
       ? { ...props.saveMode }
       : { kind: "create" as const },
   });
-  const initialPending = getPendingCompositionSaveAttempt(routeIdentity());
-  let pendingSave: PendingCompositionSaveAttempt | undefined = initialPending
-    ?.attempt;
-  const [saving, setSaving] = createSignal(
-    initialPending?.state === "in_flight",
-  );
-  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
-    initialPending?.state === "uncertain",
-  );
+  const [principalEpoch, setPrincipalEpoch] = createSignal(0);
+  const [principalId, setPrincipalId] = createSignal<string>();
+  let knownPrincipal: string | undefined;
+  let principalRefreshGeneration = 0;
+  const observePrincipal = (principal: string) => {
+    if (knownPrincipal === undefined) {
+      knownPrincipal = principal;
+      setPrincipalId(principal);
+      return;
+    }
+    if (knownPrincipal === principal) return;
+    knownPrincipal = principal;
+    setPrincipalId(principal);
+    setPrincipalEpoch((generation) => generation + 1);
+  };
+  const readPrincipal = async () => {
+    const authSession = await authApi.getSession();
+    if (!authSession.authenticated) return "anonymous";
+    const accountId = authSession.account?.account_id.trim();
+    if (!accountId) throw new Error("Authenticated account is unavailable");
+    return `account:${accountId}`;
+  };
+  const getPrincipalGeneration = async () => {
+    const generation = ++principalRefreshGeneration;
+    const principal = await readPrincipal();
+    if (principalRefreshGeneration === generation) observePrincipal(principal);
+    return principal;
+  };
+  const refreshPrincipal = () => {
+    void getPrincipalGeneration().catch(() => undefined);
+  };
+  onMount(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshPrincipal();
+    };
+    window.addEventListener("focus", refreshPrincipal);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    refreshPrincipal();
+    onCleanup(() => {
+      principalRefreshGeneration++;
+      window.removeEventListener("focus", refreshPrincipal);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    });
+  });
+  const editorScope = () =>
+    JSON.stringify({
+      route: routeIdentity(),
+      principalEpoch: principalEpoch(),
+    });
+  let pendingSave: PendingCompositionSaveAttempt | undefined;
+  const [saving, setSaving] = createSignal(false);
+  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
+  let nextSaveInvocationId = 0;
+  let activeSaveInvocation: {
+    id: number;
+    scope: string;
+    principalEpoch: number;
+    principalId?: string;
+  } | undefined;
+  const currentSaveInvocation = (id?: number) => {
+    const active = activeSaveInvocation;
+    if (
+      !active || (id !== undefined && active.id !== id) ||
+      active.scope !== editorScope() ||
+      active.principalEpoch !== principalEpoch() ||
+      (active.principalId !== undefined && active.principalId !== principalId())
+    ) return undefined;
+    return active;
+  };
   let getSaveInputSnapshot: () => CompositionInputSnapshot | undefined =
     () => ({ variables: {}, unset_variables: [] });
   createEffect(() => {
+    const owner = principalId();
+    if (!owner) {
+      pendingSave = undefined;
+      if (!currentSaveInvocation()) setSaving(false);
+      setSaveRetryAvailable(false);
+      return;
+    }
     const identity = routeIdentity();
-    const stored = getPendingCompositionSaveAttempt(identity);
+    const saveIdentity = { ...identity, principalId: owner };
+    const stored = getPendingCompositionSaveAttempt(saveIdentity);
     pendingSave = stored?.attempt;
-    setSaving(stored?.state === "in_flight");
+    const preflightIsCurrent = currentSaveInvocation() !== undefined;
+    setSaving(stored?.state === "in_flight" || preflightIsCurrent);
     setSaveRetryAvailable(stored?.state === "uncertain");
     const unsubscribe = subscribeToPendingCompositionSaveAttempt(
-      identity,
+      saveIdentity,
       (event) => {
         if (event.type === "pending") {
           pendingSave = event.stored.attempt;
@@ -139,6 +210,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
     );
     onCleanup(unsubscribe);
   });
+  const currentSaveIdentity = () => {
+    const owner = principalId();
+    return owner ? { ...routeIdentity(), principalId: owner } : undefined;
+  };
+  const isCurrentSaveIdentity = (attempt: PendingCompositionSaveAttempt) => {
+    const identity = currentSaveIdentity();
+    return identity !== undefined &&
+      sameCompositionSaveIdentity(attempt, identity);
+  };
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
@@ -156,6 +236,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     Record<string, {
       evaluationId: string;
       yaml: string;
+      scope: string;
       next?: string;
       pageNumber: number;
       inputSnapshotKey: string;
@@ -169,7 +250,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const checkGenerations = new Map<string, number>();
   const checkControllers = new Map<string, AbortController>();
   const countControllers = new Map<string, AbortController>();
+  let editorScopeGeneration = 0;
   onCleanup(() => {
+    activeSaveInvocation = undefined;
+    editorScopeGeneration++;
     for (
       const controller of [
         ...runControllers.values(),
@@ -181,15 +265,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
       runGenerations.set(id, generation + 1);
     }
   });
-  let editorScope: string | undefined;
-  createEffect(() => {
-    const scope = JSON.stringify(routeIdentity());
-    if (editorScope === undefined) {
-      editorScope = scope;
-      return;
+  let previousEditorScope = editorScope();
+  createRenderEffect(() => {
+    const scope = editorScope();
+    if (previousEditorScope === scope) return;
+    previousEditorScope = scope;
+    editorScopeGeneration++;
+    if (activeSaveInvocation?.scope !== scope) {
+      activeSaveInvocation = undefined;
     }
-    if (editorScope === scope) return;
-    editorScope = scope;
     untrack(() => {
       for (
         const controller of [
@@ -287,7 +371,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     return {
       status: checked.status,
       isCurrent: checked.isCurrent && checked.draft === draft() &&
-        checked.scope === JSON.stringify(routeIdentity()),
+        checked.scope === editorScope(),
       error: checked.error,
       resultColumns: checked.resultColumns,
     };
@@ -299,7 +383,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     publicationConflictRetry = false,
   ) => {
     const currentDraft = draft();
-    const scope = JSON.stringify(routeIdentity());
+    const scope = editorScope();
     const checked = queryChecks()[variableId];
     if (
       !checked || checked.status !== "success" || !checked.isCurrent ||
@@ -309,6 +393,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
     try {
       principal = await getPrincipalGeneration();
     } catch {
+      if (
+        editorScope() !== scope || draft() !== currentDraft ||
+        queryChecks()[variableId] !== checked
+      ) return;
       setQueryPreviews((current) => ({
         ...current,
         [variableId]: {
@@ -321,7 +409,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     if (
       principal !== checked.principal || draft() !== currentDraft ||
-      JSON.stringify(routeIdentity()) !== scope ||
+      editorScope() !== scope ||
       queryChecks()[variableId] !== checked
     ) {
       if (principal !== checked.principal) {
@@ -417,7 +505,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         controller.signal.aborted ||
         runGenerations.get(variableId) !== generation ||
         draft() !== currentDraft || queryChecks()[variableId] !== checked ||
-        JSON.stringify(routeIdentity()) !== scope
+        editorScope() !== scope
       ) return;
       const currentPrincipal = await getPrincipalGeneration();
       if (currentPrincipal !== principal) {
@@ -430,7 +518,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       if (
         controller.signal.aborted ||
-        JSON.stringify(routeIdentity()) !== scope ||
+        editorScope() !== scope ||
         runGenerations.get(variableId) !== generation ||
         draft() !== currentDraft || queryChecks()[variableId] !== checked ||
         evaluation.evaluation_id !== evaluationId
@@ -442,6 +530,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         [variableId]: {
           evaluationId,
           yaml,
+          scope,
           next: evaluated?.next,
           pageNumber,
           inputSnapshotKey: currentInputKey,
@@ -462,7 +551,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     } catch (error) {
       if (
         !controller.signal.aborted &&
-        runGenerations.get(variableId) === generation
+        runGenerations.get(variableId) === generation &&
+        editorScope() === scope
       ) {
         if (
           !publicationConflictRetry && !cursor &&
@@ -492,6 +582,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const inputSnapshot = getSaveInputSnapshot();
     if (
       !evaluated || !inputSnapshot ||
+      evaluated.scope !== editorScope() ||
       evaluated.inputSnapshotKey !== inputSnapshotKey(inputSnapshot) ||
       evaluated.draft !== draft() || preview?.status !== "success" ||
       !preview.isCurrent
@@ -501,9 +592,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     countControllers.get(variableId)?.abort();
     const controller = new AbortController();
     countControllers.set(variableId, controller);
+    const scope = editorScope();
     const isCurrent = () => {
       const currentSnapshot = getSaveInputSnapshot();
       return !controller.signal.aborted &&
+        editorScope() === scope &&
         queryEvaluations()[variableId]?.evaluationId ===
           evaluated.evaluationId &&
         queryEvaluations()[variableId]?.yaml === evaluated.yaml &&
@@ -541,7 +634,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const current = queryEvaluations()[variableId];
     const inputSnapshot = getSaveInputSnapshot();
     if (
-      !current || !inputSnapshot || current.draft !== draft() ||
+      !current || current.scope !== editorScope() || !inputSnapshot ||
+      current.draft !== draft() ||
       current.inputSnapshotKey !== inputSnapshotKey(inputSnapshot) ||
       current.pageNumber <= 1
     ) return;
@@ -556,13 +650,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setQueryPreviews((all) => ({ ...all, [variableId]: page.preview }));
   };
 
-  const getPrincipalGeneration = async () => {
-    const authSession = await authApi.getSession();
-    if (!authSession.authenticated) return "anonymous";
-    const accountId = authSession.account?.account_id.trim();
-    if (!accountId) throw new Error("Authenticated account is unavailable");
-    return `account:${accountId}`;
-  };
   const previewCandidate = async (
     candidate: CompositionGraphDraft,
     signal?: AbortSignal,
@@ -605,7 +692,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const inputSnapshot = getSaveInputSnapshot();
     if (
       evaluated &&
-      (!inputSnapshot || evaluated.inputSnapshotKey !==
+      (evaluated.scope !== editorScope() || !inputSnapshot ||
+        evaluated.inputSnapshotKey !==
           inputSnapshotKey(inputSnapshot) ||
         evaluated.draft !== draft())
     ) return { ...preview, isCurrent: false };
@@ -614,7 +702,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const checkQuery = async (variableId: string) => {
     const candidate = draft();
-    const scope = JSON.stringify(routeIdentity());
+    const scope = editorScope();
     const generation = (checkGenerations.get(variableId) ?? 0) + 1;
     checkGenerations.set(variableId, generation);
     checkControllers.get(variableId)?.abort();
@@ -632,7 +720,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       !controller.signal.aborted &&
       checkGenerations.get(variableId) === generation &&
       draft() === candidate &&
-      JSON.stringify(routeIdentity()) === scope &&
+      editorScope() === scope &&
       queryChecks()[variableId] === pending;
     try {
       const principal = await getPrincipalGeneration();
@@ -727,7 +815,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             unset_variables: attempt.unset_variables ?? [],
           },
       );
-      if (!sameCompositionSaveIdentity(attempt, routeIdentity())) {
+      if (!isCurrentSaveIdentity(attempt)) {
         clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
         return;
       }
@@ -750,14 +838,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const retryWasDenied = isRetry && (status === 401 || status === 403);
       if (outcome === "rejected" && !retryWasDenied) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        if (isCurrentSaveIdentity(attempt)) {
           pendingSave = undefined;
           setSaveRetryAvailable(false);
           setSaveError(compositionSaveErrorMessage(error));
         }
       } else {
         markPendingCompositionSaveAttemptUncertain(attempt, undefined);
-        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        if (isCurrentSaveIdentity(attempt)) {
           pendingSave = attempt;
           setSaveRetryAvailable(true);
           setSaveError(t("composition.saveFailed"));
@@ -767,7 +855,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const save = async () => {
-    if (saving() || saveRetryAvailable() || pendingSave || !editorValid()) {
+    if (
+      currentSaveInvocation() || saving() || saveRetryAvailable() ||
+      pendingSave ||
+      !editorValid()
+    ) {
       return;
     }
     const current = draft();
@@ -785,29 +877,65 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSaveError(t("composition.queryFailed"));
       return;
     }
-    const saveIdentity = routeIdentity();
+    const saveRouteIdentity = routeIdentity();
+    const saveScope = editorScope();
+    const invocationId = ++nextSaveInvocationId;
+    activeSaveInvocation = {
+      id: invocationId,
+      scope: saveScope,
+      principalEpoch: principalEpoch(),
+      principalId: principalId(),
+    };
     const generation = saveGeneration() + 1;
     setSaveGeneration(generation);
     setSaving(true);
     setSaveError(null);
-    let attempt: PendingCompositionSaveAttempt = {
-      ...saveIdentity,
-      name: current.name.trim(),
-      yaml: "",
-      variables: { ...inputSnapshot.variables },
-      integerVariableIds: current.variables.flatMap((node) =>
-        node.kind === "input" &&
-          node.value_type.scalar_type === "integer"
-          ? [node.id]
-          : []
-      ),
-      unset_variables: [...inputSnapshot.unset_variables],
-      idempotencyKey: crypto.randomUUID(),
-    };
-    pendingSave = attempt;
-    stagePendingCompositionSaveAttempt(attempt, undefined);
+    let attempt: PendingCompositionSaveAttempt | undefined;
+    let foundPendingAttempt = false;
     try {
+      const owner = await getPrincipalGeneration();
+      if (
+        generation !== saveGeneration() ||
+        !currentSaveInvocation(invocationId)
+      ) return;
+      activeSaveInvocation!.principalId = owner;
+      const existing = getPendingCompositionSaveAttempt({
+        ...saveRouteIdentity,
+        principalId: owner,
+      });
+      if (existing) {
+        foundPendingAttempt = true;
+        pendingSave = existing.attempt;
+        setSaving(existing.state === "in_flight");
+        setSaveRetryAvailable(existing.state === "uncertain");
+        return;
+      }
+      const ownerEpoch = principalEpoch();
+      attempt = {
+        ...saveRouteIdentity,
+        principalId: owner,
+        name: current.name.trim(),
+        yaml: "",
+        variables: { ...inputSnapshot.variables },
+        integerVariableIds: current.variables.flatMap((node) =>
+          node.kind === "input" &&
+            node.value_type.scalar_type === "integer"
+            ? [node.id]
+            : []
+        ),
+        unset_variables: [...inputSnapshot.unset_variables],
+        idempotencyKey: crypto.randomUUID(),
+      };
+      pendingSave = attempt;
+      setSaving(true);
       const checked = await previewCandidate(current);
+      if (
+        principalEpoch() !== ownerEpoch || principalId() !== owner ||
+        !currentSaveInvocation(invocationId)
+      ) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        return;
+      }
       if (!checked.ok || !checked.plan) {
         throw new Error("Composition preview failed");
       }
@@ -835,41 +963,87 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const canonical = await compositionApi.canonicalizeDocument(
         compositionGraphDocumentDraft(verified),
       );
-      if (generation !== saveGeneration()) return;
+      if (
+        generation !== saveGeneration() ||
+        principalEpoch() !== ownerEpoch ||
+        principalId() !== owner ||
+        !currentSaveInvocation(invocationId)
+      ) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        return;
+      }
+      const latestOwner = await getPrincipalGeneration();
+      if (
+        generation !== saveGeneration() ||
+        latestOwner !== owner ||
+        principalEpoch() !== ownerEpoch ||
+        principalId() !== owner ||
+        !currentSaveInvocation(invocationId)
+      ) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        return;
+      }
       attempt = { ...attempt, yaml: canonical.canonical_yaml };
       pendingSave = attempt;
+      if (activeSaveInvocation?.id === invocationId) {
+        activeSaveInvocation = undefined;
+      }
       await saveRequest(attempt, false);
     } catch (error) {
-      clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-      if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
-        pendingSave = undefined;
-        setSaveRetryAvailable(false);
+      const stillOwnsCurrentPreflight = generation === saveGeneration() &&
+        currentSaveInvocation(invocationId) !== undefined;
+      if (attempt) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        if (stillOwnsCurrentPreflight && isCurrentSaveIdentity(attempt)) {
+          pendingSave = undefined;
+          setSaveRetryAvailable(false);
+        }
       }
-      if (
-        generation === saveGeneration() &&
-        sameCompositionSaveIdentity(attempt, routeIdentity())
-      ) {
+      if (stillOwnsCurrentPreflight) {
         setSaveError(compositionCanonicalizeErrorMessage(error));
       }
     } finally {
+      const ownsPreflight = activeSaveInvocation?.id === invocationId;
+      if (ownsPreflight) activeSaveInvocation = undefined;
       if (
+        ownsPreflight &&
         generation === saveGeneration() &&
-        sameCompositionSaveIdentity(attempt, routeIdentity())
+        editorScope() === saveScope &&
+        !foundPendingAttempt
       ) setSaving(false);
     }
   };
 
   const retrySave = async () => {
     const attempt = pendingSave;
-    if (saving() || !saveRetryAvailable() || !attempt) return;
+    if (
+      saving() || !saveRetryAvailable() || !attempt ||
+      !isCurrentSaveIdentity(attempt)
+    ) return;
     const generation = saveGeneration() + 1;
+    const retryScope = editorScope();
+    const retryScopeGeneration = editorScopeGeneration;
+    const retryPrincipalEpoch = principalEpoch();
     setSaveGeneration(generation);
     setSaving(true);
     setSaveError(null);
     try {
+      const owner = await getPrincipalGeneration();
+      if (
+        generation !== saveGeneration() ||
+        editorScopeGeneration !== retryScopeGeneration ||
+        editorScope() !== retryScope ||
+        owner !== attempt.principalId ||
+        principalEpoch() !== retryPrincipalEpoch ||
+        !isCurrentSaveIdentity(attempt)
+      ) return;
       await saveRequest(attempt, true);
     } finally {
-      if (generation === saveGeneration()) setSaving(false);
+      if (
+        generation === saveGeneration() &&
+        editorScopeGeneration === retryScopeGeneration &&
+        editorScope() === retryScope
+      ) setSaving(false);
     }
   };
 
@@ -917,7 +1091,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const onDraftChange = (next: CompositionGraphDraft) => {
-    if (saving() || saveRetryAvailable()) return;
+    if (currentSaveInvocation() || saving() || saveRetryAvailable()) return;
     for (const controller of checkControllers.values()) controller.abort();
     for (const [id, generation] of checkGenerations) {
       checkGenerations.set(id, generation + 1);
@@ -965,84 +1139,132 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <Show when={formsResource.loading}>
           <LocalBusyIndicator label={t("common.loading")} />
         </Show>
-        <CompositionGraphStudio
-          spaceId={props.spaceId}
-          draft={draft()}
-          previewGeneration={designPreviewGeneration()}
-          previewBase={props.saveMode.kind === "update"
-            ? {
-              entryId: props.saveMode.compositionId,
-              revisionId: props.saveMode.baseRevisionId,
-            }
-            : undefined}
-          getPrincipalGeneration={getPrincipalGeneration}
-          onSaveSnapshotReady={(getter) => {
-            getSaveInputSnapshot = getter;
-          }}
-          sqlSchema={sqlSchema()}
-          sqlForms={formsResource() ?? []}
-          previewForQuery={queryPreviewFor}
-          checkForQuery={queryCheckFor}
-          onPlanColumnsForQuery={async (variableId) => {
-            const currentDraft = draft();
-            const currentSpace = props.spaceId;
-            const response = await previewCandidate(currentDraft, undefined, [
-              variableId,
-            ]);
-            const query = response.plan?.queries.find((query) =>
-              query.variable_id === variableId
-            );
-            if (!response.ok || !query) {
-              throw new Error(t("composition.queryFailed"));
-            }
-            return {
-              columns: query.result_columns.map((column) => column.name),
-              result_columns: query.result_columns,
-              isCurrent: () =>
-                draft() === currentDraft && props.spaceId === currentSpace,
-            };
-          }}
-          onCheckQuery={(variableId) => void checkQuery(variableId)}
-          onRunQuery={(variableId) => void runQuery(variableId)}
-          onPreviousQuery={previousQueryPage}
-          onCountQuery={(variableId) => void countQuery(variableId)}
-          onNextQuery={(variableId) => {
-            const evaluation = queryEvaluations()[variableId];
-            if (evaluation?.next) void runQuery(variableId, evaluation.next);
-          }}
-          onDraftChange={onDraftChange}
-          onQueryChange={(variableId, sql, formBindings, queryArguments) => {
-            const currentDraft = draft();
-            const current = currentDraft.variables.find((node) =>
-              node.id === variableId && node.kind === "query"
-            );
-            if (
-              !current || current.kind !== "query" ||
-              current.query.kind !== "inline_sql"
-            ) return;
-            const query = {
-              ...current.query,
-              sql,
-              schema_fingerprint: "",
-              ...(formBindings ? { form_bindings: formBindings } : {}),
-              ...(queryArguments ? { arguments: queryArguments } : {}),
-            };
-            if (JSON.stringify(current.query) === JSON.stringify(query)) return;
-            onDraftChange({
-              ...currentDraft,
-              variables: currentDraft.variables.map((node) =>
-                node.id === variableId && node.kind === "query"
-                  ? { ...node, query }
-                  : node
-              ),
-            });
-          }}
-          onSave={save}
-          saveDisabled={!editorValid() || !draft().name.trim() ||
-            draft().components.length === 0 || saveRetryAvailable()}
-          saving={saving()}
-          onEditorValidityChange={onEditorValidityChange}
-        />
+        <Show when={editorScope()} keyed>
+          {(scope) => (
+            <CompositionGraphStudio
+              spaceId={props.spaceId}
+              editorScope={scope}
+              draft={draft()}
+              previewGeneration={designPreviewGeneration()}
+              previewBase={props.saveMode.kind === "update"
+                ? {
+                  entryId: props.saveMode.compositionId,
+                  revisionId: props.saveMode.baseRevisionId,
+                }
+                : undefined}
+              getPrincipalGeneration={async () => {
+                const principal = await getPrincipalGeneration();
+                if (editorScope() !== scope) {
+                  throw new Error("Composition editor scope changed");
+                }
+                return principal;
+              }}
+              onSaveSnapshotReady={(getter) => {
+                if (editorScope() === scope) getSaveInputSnapshot = getter;
+              }}
+              sqlSchema={sqlSchema()}
+              sqlForms={formsResource() ?? []}
+              previewForQuery={(variableId) =>
+                editorScope() === scope
+                  ? queryPreviewFor(variableId)
+                  : { status: "idle", isCurrent: false }}
+              checkForQuery={(variableId) =>
+                editorScope() === scope
+                  ? queryCheckFor(variableId)
+                  : { status: "pending", isCurrent: false }}
+              onPlanColumnsForQuery={async (variableId) => {
+                const currentDraft = draft();
+                const currentSpace = props.spaceId;
+                const response = await previewCandidate(
+                  currentDraft,
+                  undefined,
+                  [variableId],
+                );
+                const query = response.plan?.queries.find((query) =>
+                  query.variable_id === variableId
+                );
+                if (
+                  editorScope() !== scope || !response.ok || !query
+                ) throw new Error(t("composition.queryFailed"));
+                return {
+                  columns: query.result_columns.map((column) => column.name),
+                  result_columns: query.result_columns,
+                  isCurrent: () =>
+                    editorScope() === scope &&
+                    draft() === currentDraft &&
+                    props.spaceId === currentSpace,
+                };
+              }}
+              onCheckQuery={(variableId) => {
+                if (editorScope() === scope) void checkQuery(variableId);
+              }}
+              onRunQuery={(variableId) => {
+                if (editorScope() === scope) void runQuery(variableId);
+              }}
+              onPreviousQuery={(variableId) => {
+                if (editorScope() === scope) previousQueryPage(variableId);
+              }}
+              onCountQuery={(variableId) => {
+                if (editorScope() === scope) void countQuery(variableId);
+              }}
+              onNextQuery={(variableId) => {
+                if (editorScope() !== scope) return;
+                const evaluation = queryEvaluations()[variableId];
+                if (evaluation?.scope === scope && evaluation.next) {
+                  void runQuery(variableId, evaluation.next);
+                }
+              }}
+              onDraftChange={(next) => {
+                if (editorScope() === scope) onDraftChange(next);
+              }}
+              onQueryChange={(
+                variableId,
+                sql,
+                formBindings,
+                queryArguments,
+              ) => {
+                if (editorScope() !== scope) return;
+                const currentDraft = draft();
+                const current = currentDraft.variables.find((node) =>
+                  node.id === variableId && node.kind === "query"
+                );
+                if (
+                  !current || current.kind !== "query" ||
+                  current.query.kind !== "inline_sql"
+                ) return;
+                const query = {
+                  ...current.query,
+                  sql,
+                  schema_fingerprint: "",
+                  ...(formBindings ? { form_bindings: formBindings } : {}),
+                  ...(queryArguments ? { arguments: queryArguments } : {}),
+                };
+                if (JSON.stringify(current.query) === JSON.stringify(query)) {
+                  return;
+                }
+                onDraftChange({
+                  ...currentDraft,
+                  variables: currentDraft.variables.map((node) =>
+                    node.id === variableId && node.kind === "query"
+                      ? { ...node, query }
+                      : node
+                  ),
+                });
+              }}
+              onSave={() => {
+                if (editorScope() === scope) void save();
+              }}
+              saveDisabled={!editorValid() || !draft().name.trim() ||
+                draft().components.length === 0 || saveRetryAvailable()}
+              saving={saving()}
+              onEditorValidityChange={(variableId, valid) => {
+                if (editorScope() === scope) {
+                  onEditorValidityChange(variableId, valid);
+                }
+              }}
+            />
+          )}
+        </Show>
       </div>
       <Show when={saveError()}>
         <p class="ui-text-danger" role="alert">{saveError()}</p>

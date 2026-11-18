@@ -5,6 +5,8 @@
  */
 export interface PendingCompositionSaveAttempt {
   spaceId: string;
+  /** Authenticated owner of this in-memory Work; never an auth credential. */
+  principalId: string;
   /** Saved-SQL route identity. EntryQuery saves identify by routePath only. */
   sqlId?: string;
   routePath: string;
@@ -29,10 +31,13 @@ export interface StoredCompositionSaveAttempt {
   routeVisitId: number | undefined;
 }
 
-export type CompositionSaveAttemptIdentity = Pick<
+export type CompositionSaveRouteIdentity = Pick<
   PendingCompositionSaveAttempt,
   "spaceId" | "sqlId" | "routePath" | "saveTarget"
 >;
+export type CompositionSaveAttemptIdentity =
+  & CompositionSaveRouteIdentity
+  & Pick<PendingCompositionSaveAttempt, "principalId">;
 type CompositionSaveAttemptEvent =
   | { type: "pending"; stored: StoredCompositionSaveAttempt }
   | {
@@ -55,11 +60,12 @@ let activeRouteVisit: { key: string; id: number } | undefined;
 
 const identityKey = ({
   spaceId,
+  principalId,
   sqlId,
   routePath,
   saveTarget,
 }: CompositionSaveAttemptIdentity) =>
-  JSON.stringify([spaceId, sqlId, routePath, saveTarget]);
+  JSON.stringify([spaceId, principalId, sqlId, routePath, saveTarget]);
 
 export function sameCompositionSaveIdentity(
   left: CompositionSaveAttemptIdentity,

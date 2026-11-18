@@ -159,6 +159,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.text-is-edited-in-place }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.design-evaluation-has-current-state }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
           - id: graph-studio
             adapter: typescript
@@ -167,6 +168,7 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.design-and-variables-modes }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
@@ -179,6 +181,7 @@ features:
               - { kind: satisfies, criterion: REQ-FE-082#criterion.inline-template-parameters }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.sql-arguments-bind-locally }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
           - id: reader-renderer
@@ -209,6 +212,7 @@ features:
             selector: { kind: symbol, name: CompositionStudio }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
       - id: cli
         role: implementation
         facet: cli
@@ -672,6 +676,125 @@ features:
                 criterion: REQ-FE-083#criterion.table-picker-focus-restoration
                 covers: [FEAT-COMP-010#binding.frontend/target.composition-variable-binding-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one table picker modal and restores focus after Escape" } }
+          - id: composition-editor-work-scope
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "discards a delayed Check after Space changes and the query ID is reused" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers:
+                  - FEAT-COMP-010#binding.frontend/target.composition-studio-count
+                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "discards a delayed Check after Space changes and the query ID is reused" } }
+          - id: composition-editor-stale-literal
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "discards a delayed literal parse after Space changes and the variable ID is reused" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "discards a delayed literal parse after Space changes and the variable ID is reused" } }
+          - id: composition-editor-stale-form-guard
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "discards delayed Form-guard parsing after Space changes and a query ID is reused" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.graph-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "discards delayed Form-guard parsing after Space changes and a query ID is reused" } }
+          - id: composition-run-rejected-principal-scope
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "discards a rejected principal lookup from an obsolete Run after SQL changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "discards a rejected principal lookup from an obsolete Run after SQL changes" } }
+          - id: composition-editor-unbind-scope-reset
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "clears a manual SQL marker unbind when the editor scope changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "clears a manual SQL marker unbind when the editor scope changes" } }
+          - id: composition-save-preflight-principal-change
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "does not dispatch a preflight save after its principal changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not dispatch a preflight save after its principal changes" } }
+          - id: composition-save-retry-principal-ownership
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "parks an uncertain retry under its original authenticated principal" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "parks an uncertain retry under its original authenticated principal" } }
+          - id: composition-save-preflight-route-change
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "preserves a newer retry when an old scope preflight fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "preserves a newer retry when an old scope preflight fails" } }
+          - id: composition-sent-save-route-retry
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "keeps an already-sent save bound to its original route for retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "keeps an already-sent save bound to its original route for retry" } }
+          - id: composition-design-evaluation-statuses
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Check and Use keep a real Form-backed execution failure local and recoverable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.design-evaluation-has-current-state
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Check and Use keep a real Form-backed execution failure local and recoverable" } }
+          - id: composition-check-use-delayed-evaluation
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio creates Form-backed SQL and edits a plain Text component" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.design-evaluation-has-current-state
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio creates Form-backed SQL and edits a plain Text component" } }
+          - id: composition-design-stale-authorization-error
+            adapter: typescript
+            path: frontend/src/lib/composition-design-evaluation.test.ts
+            selector: { kind: test, name: "does not restore a delayed Design result after a scope change is denied" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.design-evaluation-has-current-state
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-design-evaluation.test.ts, test: "does not restore a delayed Design result after a scope change is denied" } }
+          - id: composition-marker-unbind-delay-and-query-switch
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableGraphWorkspace.test.tsx
+            selector: { kind: test, name: "keeps a manual unbind through a delayed SQL normalization and query switch" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.sql-arguments-bind-locally
+                covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableGraphWorkspace.test.tsx, test: "keeps a manual unbind through a delayed SQL normalization and query switch" } }
     contracts:
       - id: typed-graph-and-inline-query-contract
         kind: custom

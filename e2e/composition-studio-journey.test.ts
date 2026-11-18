@@ -4,6 +4,7 @@ import {
   type BrowserContext,
   expect,
   type Page,
+  type Request,
   type Response,
   type TestInfo,
   test,
@@ -445,21 +446,25 @@ async function openToolFromSavedTools(
   return path;
 }
 
-function isDraftQueryEvaluation(
-  response: Response,
+function isDraftQueryEvaluationRequest(
+  request: Request,
   variableId: string,
   sql: string,
-  successfulResponseOnly = false,
+  placedComponentId?: string,
 ): boolean {
   if (
-    !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
-    response.request().method() !== "POST" ||
-    (successfulResponseOnly && !response.ok())
+    !new URL(request.url()).pathname.endsWith("/compositions/evaluate") ||
+    request.method() !== "POST"
   ) return false;
-  const body = response.request().postDataJSON() as {
+  let body: {
     target?: { kind?: string; yaml?: string };
     requested_queries?: string[];
   };
+  try {
+    body = request.postDataJSON() as typeof body;
+  } catch {
+    return false;
+  }
   if (
     body.target?.kind !== "draft" || !body.target.yaml ||
     !body.requested_queries?.includes(variableId)
@@ -471,6 +476,7 @@ function isDraftQueryEvaluation(
           id?: string;
           query?: { kind?: string; sql?: string };
         }>;
+        components?: Array<{ id?: string; kind?: string; variable?: string }>;
       };
     };
     const variable = document.spec?.variables?.find((entry) =>
@@ -478,10 +484,149 @@ function isDraftQueryEvaluation(
     );
     return variable?.query?.kind === "inline_sql" &&
       normalizeCompositionFormSeedSql(variable.query.sql ?? "") ===
-        normalizeCompositionFormSeedSql(sql);
+        normalizeCompositionFormSeedSql(sql) &&
+      (!placedComponentId || document.spec?.components?.some((component) =>
+        component.id === placedComponentId && component.kind === "table" &&
+        component.variable === variableId
+      ) === true);
   } catch {
     return false;
   }
+}
+
+function isDraftQueryEvaluation(
+  response: Response,
+  variableId: string,
+  sql: string,
+  successfulResponseOnly = false,
+  placedComponentId?: string,
+): boolean {
+  return (!successfulResponseOnly || response.ok()) &&
+    isDraftQueryEvaluationRequest(
+      response.request(),
+      variableId,
+      sql,
+      placedComponentId,
+    );
+}
+
+function summarizeDraftEvaluationRequest(request: Request): Record<string, unknown> | undefined {
+  if (
+    request.method() !== "POST" ||
+    !new URL(request.url()).pathname.endsWith("/compositions/evaluate")
+  ) return undefined;
+  try {
+    const body = request.postDataJSON() as {
+      evaluation_id?: string;
+      target?: { kind?: string; yaml?: string };
+      requested_queries?: string[];
+      variables?: Record<string, unknown>;
+      unset_variables?: string[];
+      base_entry_id?: string;
+      base_revision_id?: string;
+    };
+    if (body.target?.kind !== "draft" || !body.target.yaml) return undefined;
+    const document = parseYaml(body.target.yaml) as {
+      spec?: {
+        variables?: Array<{
+          id?: string;
+          kind?: string;
+          returns?: {
+            kind?: string;
+            columns?: Array<{
+              value_type?: { scalar_type?: string; nullable?: boolean };
+            }>;
+          };
+        }>;
+        components?: Array<{ id?: string; kind?: string; variable?: string }>;
+      };
+    };
+    return {
+      evaluation_id: body.evaluation_id,
+      requested_query_ids: body.requested_queries ?? [],
+      query_ids: document.spec?.variables?.flatMap((variable) =>
+        variable.kind === "query" && variable.id ? [variable.id] : []
+      ) ?? [],
+      table_components: document.spec?.components?.flatMap((component) =>
+        component.kind === "table"
+          ? [{ id: component.id, variable: component.variable }]
+          : []
+      ) ?? [],
+      table_descriptors: document.spec?.variables?.flatMap((variable) =>
+        variable.kind === "query" && variable.returns?.kind === "table"
+          ? [{
+            id: variable.id,
+            columns: variable.returns.columns?.map((column) => ({
+              type: column.value_type?.scalar_type,
+              nullable: column.value_type?.nullable,
+            })) ?? [],
+          }]
+          : []
+      ) ?? [],
+      input_keys: Object.keys(body.variables ?? {}).sort(),
+      unset_input_ids: [...(body.unset_variables ?? [])].sort(),
+      has_base_revision: Boolean(body.base_entry_id && body.base_revision_id),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function summarizeDraftEvaluationResponse(
+  response: Response,
+): Promise<Record<string, unknown>> {
+  type EvaluationBody = {
+    evaluation_id?: string;
+    ok?: boolean;
+    computed_query_ids?: string[];
+    authorization_fingerprint?: string;
+    publication_fingerprint?: string;
+    query_diagnostics?: Array<{
+      variable_id?: string;
+      code?: string;
+      result_diagnostic?: {
+        code?: string;
+        result_diagnostic?: { code?: string };
+      };
+    }>;
+    query_results?: Record<string, {
+      value?: {
+        kind?: string;
+        columns?: Array<{ value_type?: { scalar_type?: string; nullable?: boolean } }>;
+        rows?: unknown[][];
+      };
+    }>;
+    variable_values?: Record<string, unknown>;
+  };
+  let body: EvaluationBody;
+  try {
+    body = await response.json() as EvaluationBody;
+  } catch {
+    return { status: response.status(), ok: response.ok(), body_json: false };
+  }
+  return {
+    evaluation_id: body.evaluation_id,
+    status: response.status(),
+    ok: body.ok,
+    computed_query_ids: body.computed_query_ids ?? [],
+    diagnostic_codes: body.query_diagnostics?.map((diagnostic) => ({
+      variable_id: diagnostic.variable_id,
+      code: diagnostic.result_diagnostic?.result_diagnostic?.code ??
+        diagnostic.result_diagnostic?.code ?? diagnostic.code,
+    })) ?? [],
+    query_results: Object.entries(body.query_results ?? {}).map(([id, result]) => ({
+      id,
+      kind: result.value?.kind,
+      columns: result.value?.columns?.map((column) => ({
+        type: column.value_type?.scalar_type,
+        nullable: column.value_type?.nullable,
+      })) ?? [],
+      row_count: result.value?.rows?.length,
+    })),
+    input_keys: Object.keys(body.variable_values ?? {}).sort(),
+    has_authorization_fingerprint: Boolean(body.authorization_fingerprint),
+    has_publication_fingerprint: Boolean(body.publication_fingerprint),
+  };
 }
 
 type CompositionSemanticValues = {
@@ -796,21 +941,149 @@ test.describe("Composition Studio Journey", () => {
         name: "SQL",
         exact: true,
       });
+      const evaluationTrace: Array<Record<string, unknown>> = [];
+      const evaluationResponseTasks: Promise<void>[] = [];
+      const onEvaluationRequest = (evaluationRequest: Request) => {
+        const summary = summarizeDraftEvaluationRequest(evaluationRequest);
+        if (summary) evaluationTrace.push({ request: summary });
+      };
+      const onEvaluationResponse = (evaluationResponse: Response) => {
+        if (
+          !new URL(evaluationResponse.url()).pathname.endsWith(
+            "/compositions/evaluate",
+          )
+        ) return;
+        evaluationResponseTasks.push(
+          summarizeDraftEvaluationResponse(evaluationResponse).then((summary) => {
+            evaluationTrace.push({ response: summary });
+          }),
+        );
+      };
+      page.on("request", onEvaluationRequest);
+      page.on("response", onEvaluationResponse);
       await chooseCompositionFormSource(page, seed.formName, tableSql);
+      const checkResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname.endsWith("/compositions/preview")
+      );
       await checkCompositionQuery(page);
+      const checkResponse = await checkResponsePromise;
+      expect(checkResponse.ok()).toBe(true);
+      const checkPayload = await checkResponse.json() as {
+        ok?: boolean;
+        plan?: { queries?: Array<{
+          variable_id?: string;
+          result_columns?: Array<{
+            value_type?: { scalar_type?: string; nullable?: boolean };
+          }>;
+        }> };
+        query_results?: unknown;
+      };
+      expect(checkPayload).not.toHaveProperty("query_results");
+      evaluationTrace.push({
+        check_response: {
+          status: checkResponse.status(),
+          ok: checkPayload.ok,
+          planned_queries: checkPayload.plan?.queries?.map((query) => ({
+            variable_id: query.variable_id,
+            columns: query.result_columns?.map((column) => ({
+              type: column.value_type?.scalar_type,
+              nullable: column.value_type?.nullable,
+            })) ?? [],
+          })) ?? [],
+          has_result_rows: Object.hasOwn(checkPayload, "query_results"),
+        },
+      });
       await expect(page.getByRole("button", { name: "Run Query", exact: true }))
         .toHaveCount(0);
       const useTable = page.getByRole("button", { name: "Use", exact: true });
       await expect(useTable).toBeEnabled();
-      await useTable.click();
-      await expect(page.getByRole("tab", { name: "Design", exact: true }))
-        .toHaveAttribute("aria-selected", "true");
-      await expect(page.locator('[data-component-id="table_1"]'))
-        .toHaveAttribute("aria-label", rowsVariable);
-      await page.screenshot({
-        path: testInfo.outputPath("composition-table-return-to-design.png"),
-        fullPage: true,
+      let releaseFirstEvaluation!: () => void;
+      let markEvaluationStarted!: () => void;
+      const delayedEvaluation = new Promise<void>((resolve) => {
+        releaseFirstEvaluation = resolve;
       });
+      const evaluationStarted = new Promise<void>((resolve) => {
+        markEvaluationStarted = resolve;
+      });
+      await page.route("**/compositions/evaluate", async (route) => {
+        if (
+          isDraftQueryEvaluationRequest(
+            route.request(),
+            rowsVariable,
+            tableSql,
+            "table_1",
+          )
+        ) {
+          markEvaluationStarted();
+          await delayedEvaluation;
+        }
+        await route.continue();
+      });
+      try {
+        const evaluationResponsePromise = page.waitForResponse((response) =>
+          isDraftQueryEvaluation(
+            response,
+            rowsVariable,
+            tableSql,
+            false,
+            "table_1",
+          )
+        );
+        await useTable.click();
+        await expect(page.getByRole("tab", { name: "Design", exact: true }))
+          .toHaveAttribute("aria-selected", "true");
+        const tableComponent = page.locator('[data-component-id="table_1"]');
+        await expect(tableComponent).toHaveAttribute("aria-label", rowsVariable);
+        await expect(tableComponent).toBeFocused();
+        await evaluationStarted;
+        await expect(tableComponent.getByRole("status")).toBeVisible();
+        await expect(tableComponent.getByRole("alert")).toHaveCount(0);
+        await expect(page.getByRole("alert")).toHaveCount(0);
+
+        releaseFirstEvaluation();
+        const evaluationResponse = await evaluationResponsePromise;
+        expect(evaluationResponse.ok()).toBe(true);
+        const evaluation = await evaluationResponse.json() as {
+          ok?: boolean;
+          query_diagnostics?: Array<{
+            variable_id?: string;
+            code?: string;
+            result_diagnostic?: { code?: string };
+          }>;
+          query_results?: Record<string, {
+            value?: { kind?: string; rows?: unknown[][] };
+          }>;
+        };
+        const diagnosticCodes = evaluation.query_diagnostics?.map((item) =>
+          `${item.variable_id ?? "?"}:${item.code ?? item.result_diagnostic?.code ?? "?"}`
+        ).join(", ") ?? "none";
+        expect(evaluation.ok, `Design evaluation diagnostic codes: ${diagnosticCodes}`)
+          .toBe(true);
+        expect(evaluation.query_results?.[rowsVariable]?.value?.kind)
+          .toBe("table");
+        expect(evaluation.query_results?.[rowsVariable]?.value?.rows?.length)
+          .toBeGreaterThan(0);
+        await expect(tableComponent.getByRole("status")).toHaveCount(0);
+        await expect(tableComponent.getByRole("alert")).toHaveCount(0);
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        await expect(page.getByRole("table", { name: rowsVariable }))
+          .toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath("composition-table-return-to-design.png"),
+          fullPage: true,
+        });
+      } finally {
+        releaseFirstEvaluation();
+        await page.unroute("**/compositions/evaluate");
+        page.off("request", onEvaluationRequest);
+        page.off("response", onEvaluationResponse);
+        await Promise.all(evaluationResponseTasks);
+        await testInfo.attach("composition-check-use-evaluation-trace.json", {
+          body: JSON.stringify(evaluationTrace, null, 2),
+          contentType: "application/json",
+        });
+      }
 
       await page.getByRole("tab", { name: "Variables", exact: true }).click();
       await page.getByRole("button", { name: "Add variable", exact: true })
@@ -1133,6 +1406,9 @@ test.describe("Composition Studio Journey", () => {
     const resultTable = page.getByRole("table", { name: "studio_rows" });
     await expect(resultTable).toBeVisible();
     await expect(resultTable.locator("tbody tr")).toHaveCount(0);
+    await expect(
+      page.locator('[data-component-id="table_1"]').getByRole("alert"),
+    ).toHaveCount(0);
     await page.screenshot({
       path: testInfo.outputPath("composition-table-after-use-empty.png"),
       fullPage: true,
@@ -1262,6 +1538,200 @@ test.describe("Composition Studio Journey", () => {
       .toHaveCount(0);
     await expect(page.getByRole("table", { name: "studio_rows" }))
       .toContainText(reopenedRow);
+  });
+
+  test("Check and Use keep a real Form-backed execution failure local and recoverable", async ({ page, request }, testInfo: TestInfo) => {
+    test.setTimeout(120_000);
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+    );
+    expect(formsResponse.ok()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      id?: string;
+      name?: string;
+      sql_relation?: string;
+      fields?: Record<string, CompositionFormSeedField>;
+    }>;
+    const form = forms.find((candidate) => candidate.name === seed.formName);
+    expect(form?.id).toBeTruthy();
+    expect(form?.sql_relation).toBeTruthy();
+    const purposeColumn = form?.fields?.Purpose?.sql_column;
+    expect(purposeColumn).toBeTruthy();
+    const failureSql = `SELECT CAST(${sqlIdentifier(purposeColumn!)} AS BIGINT) AS invalid_value FROM ${sqlIdentifier(form!.sql_relation!)}`;
+    const recoverySql = `SELECT ${sqlIdentifier(purposeColumn!)} AS purpose FROM ${sqlIdentifier(form!.sql_relation!)}`;
+
+    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByLabel("Name", { exact: true }).fill(
+      `Use failure ${crypto.randomUUID().slice(0, 8)}`,
+    );
+    await page.getByRole("group", { name: "Add to design" })
+      .getByRole("button", { name: "Table", exact: true }).click();
+    await page.getByLabel("Variable name", { exact: true }).fill("failed_rows");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await chooseCompositionFormSource(
+      page,
+      seed.formName,
+      expectedCompositionFormSeedSql(seed.formName, form!.fields),
+    );
+    const sqlEditor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await sqlEditor.fill(failureSql);
+    const checkResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith("/compositions/preview")
+    );
+    await checkCompositionQuery(page);
+    const checkResponse = await checkResponsePromise;
+    expect(checkResponse.ok()).toBe(true);
+    const check = await checkResponse.json() as {
+      ok?: boolean;
+      query_results?: unknown;
+    };
+    expect(check.ok).toBe(true);
+    expect(check).not.toHaveProperty("query_results");
+
+    const failureResponsePromise = page.waitForResponse((response) =>
+      isDraftQueryEvaluation(
+        response,
+        "failed_rows",
+        failureSql,
+        false,
+        "table_1",
+      )
+    );
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    const component = page.locator('[data-component-id="table_1"]');
+    await expect(component).toHaveAttribute("aria-label", "failed_rows");
+    const failureResponse = await failureResponsePromise;
+    expect(failureResponse.status()).toBe(422);
+    const failure = await failureResponse.json() as {
+      code?: string;
+      message?: string;
+    };
+    expect(failure.code).toBe("INVALID_INPUT");
+    expect(failure.message).toContain("SQL query execution failed");
+    await expect(component.getByRole("alert")).toBeVisible();
+    await expect(component.getByRole("status")).toHaveCount(0);
+    const visibleFailure = (await component.getByRole("alert").textContent()) ?? "";
+    expect(visibleFailure).not.toContain("source is unavailable");
+
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "failed_rows", exact: true }).click();
+    await sqlEditor.fill(recoverySql);
+    await checkCompositionQuery(page);
+    const recoveryResponsePromise = page.waitForResponse((response) =>
+      isDraftQueryEvaluation(response, "failed_rows", recoverySql)
+    );
+    await page.getByRole("button", { name: "Run Query", exact: true }).click();
+    const recoveryResponse = await recoveryResponsePromise;
+    expect(recoveryResponse.ok()).toBe(true);
+    const recovered = await recoveryResponse.json() as {
+      ok?: boolean;
+      query_results?: Record<string, {
+        value?: { kind?: string; rows?: unknown[][] };
+      }>;
+    };
+    expect(recovered.ok).toBe(true);
+    expect(recovered.query_results?.failed_rows?.value?.rows).toHaveLength(2);
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await expect(component.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "failed_rows" }))
+      .toBeVisible();
+    await expect(page.getByRole("table", { name: "failed_rows" }).locator("tbody tr"))
+      .toHaveCount(2);
+
+    const deniedSql = `SELECT ${sqlIdentifier(purposeColumn!)} AS purpose FROM ${sqlIdentifier(form!.sql_relation!)} WHERE ${sqlIdentifier(form!.fields?.Amount?.sql_column ?? "Amount")} > 0`;
+    let releaseDeniedEvaluation!: () => void;
+    let markDeniedEvaluationStarted!: () => void;
+    const deniedEvaluationGate = new Promise<void>((resolve) => {
+      releaseDeniedEvaluation = resolve;
+    });
+    const deniedEvaluationStarted = new Promise<void>((resolve) => {
+      markDeniedEvaluationStarted = resolve;
+    });
+    await page.route("**/compositions/evaluate", async (route) => {
+      if (
+        isDraftQueryEvaluationRequest(
+          route.request(),
+          "failed_rows",
+          deniedSql,
+          "table_1",
+        )
+      ) {
+        markDeniedEvaluationStarted();
+        await deniedEvaluationGate;
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({
+            kind: "forbidden",
+            code: "FORBIDDEN",
+            message: "Access was revoked.",
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "failed_rows", exact: true }).click();
+    await sqlEditor.fill(deniedSql);
+    const deniedResponsePromise = page.waitForResponse((response) =>
+      isDraftQueryEvaluation(
+        response,
+        "failed_rows",
+        deniedSql,
+        false,
+        "table_1",
+      )
+    );
+    await deniedEvaluationStarted;
+    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    await expect(component.getByRole("status")).toBeVisible();
+    await expect(component.getByRole("alert")).toHaveCount(0);
+    releaseDeniedEvaluation();
+    const deniedResponse = await deniedResponsePromise;
+    expect(deniedResponse.status()).toBe(403);
+    await expect(component.getByRole("alert")).toBeVisible();
+    const authorizationMessage =
+      (await component.getByRole("alert").textContent()) ?? "";
+    expect(authorizationMessage).toContain("permission");
+    expect(authorizationMessage).not.toContain("Could not load results");
+    await expect(page.getByRole("table", { name: "failed_rows" }))
+      .toHaveCount(0);
+    await page.unroute("**/compositions/evaluate");
+
+    await testInfo.attach("composition-check-use-runtime-failure.json", {
+      body: JSON.stringify({
+        check: {
+          status: checkResponse.status(),
+          ok: check.ok,
+          has_result_rows: Object.hasOwn(check, "query_results"),
+        },
+        failure: {
+          status: failureResponse.status(),
+          code: failure.code,
+          visible_local_alert: Boolean(visibleFailure),
+          misclassified_as_source_unavailable: false,
+        },
+        recovery: {
+          status: recoveryResponse.status(),
+          ok: recovered.ok,
+          row_count: recovered.query_results?.failed_rows?.value?.rows?.length,
+          alert_cleared: true,
+        },
+        authorization_denial: {
+          status: deniedResponse.status(),
+          diagnostic_class: authorizationMessage.includes("permission")
+            ? "forbidden"
+            : "other",
+          in_flight_had_no_error: true,
+          prior_results_cleared: true,
+        },
+      }, null, 2),
+      contentType: "application/json",
+    });
   });
 
   test("Input creation from Variables and SQL markers places one bound Input", async ({ page, request }) => {

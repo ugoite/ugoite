@@ -20,6 +20,7 @@ import { t } from "~/lib/i18n";
 
 export interface CompositionGraphStudioProps {
   spaceId: string;
+  editorScope?: string;
   draft: CompositionGraphDraft;
   previewBase?: { entryId: string; revisionId: string };
   previewGeneration?: number;
@@ -647,6 +648,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       <section hidden={mode() !== "design"}>
         <CompositionGraphDesignCanvas
           spaceId={props.spaceId}
+          editorScope={props.editorScope ?? props.spaceId}
           draft={props.draft}
           previewBase={props.previewBase}
           previewGeneration={props.previewGeneration}
