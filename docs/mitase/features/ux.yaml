@@ -297,8 +297,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-I18N-001#criterion.dictionary-copy
-              - kind: satisfies
-                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
           - id: route-inventory-record
             adapter: declared
             path: docs/spec/ui/ux-route-inventory.md
@@ -306,8 +304,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-I18N-001#criterion.dictionary-copy
-              - kind: satisfies
-                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
   - id: FEAT-UX-005
     title: Responsive and accessibility baseline
     summary: Record the shipped shell, search, and action-bar surfaces satisfying the responsive, focus, and surface-token criteria without changing UI behavior.

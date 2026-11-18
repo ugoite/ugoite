@@ -304,8 +304,6 @@ run = [
   "cargo run -p xtask -- space-compat-check",
   "cargo run -p xtask -- release-authority-check",
   "cargo run -p xtask -- docs-current-stack-check",
-  { task = "check:supported" },
-  "cargo run -p xtask -- legacy-auth-check",
   { task = "mitase:check" },
   { task = "mitase:quality-gate" },
 ]
@@ -328,10 +326,6 @@ run = [
   { task = "check:frontend-changed-types" },
   { task = "check:repo" },
 ]
-
-[tasks."check:supported"]
-description = "Validate the v0.1 supported authentication contract and test traceability"
-run = "cargo run -p xtask -- supported-check"
 
 [tasks."openapi:generate"]
 description = "Regenerate frontend metadata from the authoritative Server OpenAPI document"

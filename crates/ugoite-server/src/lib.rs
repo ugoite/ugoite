@@ -14859,20 +14859,16 @@ mod authentication_regression_tests {
     const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
     const SQL_FIRST_COMPOSITION_TEST_YAML: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
-    const REMOVED_SOURCE_GRAMMAR_TEST_YAML: &str =
-        include_str!("../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
-
     #[tokio::test]
-    async fn composition_save_rejects_prerelease_source_shape_without_side_effects(
-    ) -> anyhow::Result<()> {
+    async fn composition_save_rejects_invalid_schema_without_side_effects() -> anyhow::Result<()> {
         let state = AppState::new_for_tests(format!(
-            "memory://server-composition-removed-source-{}",
+            "memory://server-composition-invalid-schema-{}",
             Uuid::now_v7()
         ))?;
         let owner_id = Uuid::from_u128(351299);
         let space_id = state
             .service
-            .create_space_for_principal("composition-removed-source", owner_id, "Save test")
+            .create_space_for_principal("composition-invalid-schema", owner_id, "Save test")
             .await?
             .to_string();
         let space_uid = state.service.space_uid(&space_id).await?;
@@ -14884,9 +14880,9 @@ mod authentication_regression_tests {
         let entries_before = serde_json::to_value(state.service.list_entries(&space_id).await?)?;
         let request = Request::post(format!("/spaces/{space_id}/compositions"))
             .header(header::CONTENT_TYPE, "application/json")
-            .header("idempotency-key", "prerelease-source-rejection")
+            .header("idempotency-key", "invalid-schema-rejection")
             .body(Body::from(serde_json::to_vec(&json!({
-                "yaml": REMOVED_SOURCE_GRAMMAR_TEST_YAML
+                "yaml": format!("{BASIC_COMPOSITION_TEST_YAML}unknown: true\n")
             }))?))?;
 
         let (status, body) = route_json(route.clone(), request).await?;
@@ -14903,12 +14899,12 @@ mod authentication_regression_tests {
         assert_eq!(
             serde_json::to_value(state.service.list_forms(&space_id).await?)?,
             forms_before,
-            "rejected source-shaped input must not initialize the Composition registry"
+            "rejected input must not initialize the Composition registry"
         );
         assert_eq!(
             serde_json::to_value(state.service.list_entries(&space_id).await?)?,
             entries_before,
-            "rejected source-shaped input must not append an Entry"
+            "rejected input must not append an Entry"
         );
         Ok(())
     }

@@ -353,6 +353,8 @@ inventory:
         - AGENTS.md
         - frontend/src/app.css
         - docs/spec/index.md
+        - docs/spec/requirements/ops.yaml
+        - docs/spec/requirements/security.yaml
         - docs/mitase/philosophies/foundation.yaml
         - docs/mitase/policies
         - docs/mitase/requirements/search.yaml
@@ -406,9 +408,6 @@ inventory:
         - docsite/src/content.config.ts
         - docsite/src/docs-ssot.mjs
         - docsite/src/satteri-doc-links.mjs
-        - docs/spec/features/features.yaml
-        - docs/spec/philosophy/foundation.yaml
-        - docs/spec/policies/policies.yaml
         - docs/architecture/release/v0.1.md
         - docs/architecture/release/v0.1-knowledge-compatibility.md
         - docs/version/v0.1.yaml
@@ -555,7 +554,7 @@ validation:
   # canonically-owned artifact is in the change scope (canonical spec
   # artifact when the semantic definition migrated). Never fake-change
   # retired legacy implementation/tests as "migration".
-  # See docs/spec/migration.md. Readiness stays strict/traceable.
+  # Readiness stays strict/traceable.
   changed:
     baseline: { strategy: parent }
     require_owned_changes: false

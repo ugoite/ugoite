@@ -6,10 +6,8 @@ requirements:
   - id: REQ-COMP-010
     title: Text-first Composition graph and evaluation
     description: >-
-      Define the replacement executable Composition document and graph
-      behavior. The replaced prerelease shape is not migrated into the new
-      executable document, while raw Entry history remains available for
-      inspection and recovery.
+      Define the executable Composition document and graph behavior, and the
+      availability of raw Entry history for inspection and recovery.
     priority: high
     status: implemented
     criteria:
@@ -18,9 +16,8 @@ requirements:
         statement: >-
           Composition variables are typed constants, inputs, or inline-SQL
           queries with explicit SQL-parameter-to-variable bindings. A query
-          declares either an ordered table result or a scalar result. Saved SQL
-          references and all unrecognized query variants are rejected by the
-          executable document parser.
+          declares either an ordered table result or a scalar result. The
+          executable document parser rejects unrecognized query variants.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: table-text-input-components
         kind: behavior
@@ -28,8 +25,7 @@ requirements:
           Composition components are Table, Text, or Input. Table references
           one table-valued query and renders its result columns in SQL
           projection order without a stored presentation projection. Input
-          references one input variable. Metric and unrecognized component
-          variants are rejected.
+          references one input variable. Unrecognized component variants are rejected.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: rust-parsed-text-templates
         kind: behavior
@@ -74,14 +70,6 @@ requirements:
           Composition save retains the existing idempotent receipt, stale
           revision conflict, and append-only Entry history behavior. Restore
           remains supported for revisions in the current Composition shape.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
-      - id: replaced-shape-is-not-executable
-        kind: behavior
-        statement: >-
-          The replaced prerelease Composition shape is rejected by executable
-          document validation and is not silently converted or restored as a
-          current Composition. Existing records remain raw Knowledge; a new
-          current-shape Composition is required for execution.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: raw-history-remains-readable
         kind: behavior

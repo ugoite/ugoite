@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn replaced_composition_shape_is_rejected_without_hidden_fields() {
+    fn schema_rejects_unknown_fields() {
         for (field, invalid) in [
             (
                 "spec.sources",

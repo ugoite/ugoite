@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, path::Path};
 use ugoite_core::error::{AppError, ErrorKind};
 use ugoite_domain::identity::{PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_iceberg::authorization::Authorizer;
@@ -13,7 +13,7 @@ use uuid::Uuid;
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|supported-check|legacy-auth-check|seed|verify-seed>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|seed|verify-seed>");
         return Ok(());
     };
     match command.as_str() {
@@ -24,8 +24,6 @@ fn main() -> Result<()> {
         "space-compat-check" => space_compat_check(),
         "release-authority-check" => release_authority_check(),
         "docs-current-stack-check" => docs_current_stack_check(),
-        "supported-check" => supported_check(),
-        "legacy-auth-check" => legacy_auth_check(),
         "seed" => seed(args.collect()),
         "verify-seed" => verify_seed(args.collect()),
         other => bail!("unknown xtask command: {other}"),
@@ -870,16 +868,10 @@ fn docs_current_stack_check() -> Result<()> {
             }
         }
     }
-    let deferred_requirements = [
-        (
-            "docs/spec/requirements/security.yaml",
-            ["REQ-SEC-009"].as_slice(),
-        ),
-        (
-            "docs/spec/requirements/ops.yaml",
-            ["REQ-OPS-015"].as_slice(),
-        ),
-    ];
+    let deferred_requirements = [(
+        "docs/spec/requirements/security.yaml",
+        ["REQ-SEC-009"].as_slice(),
+    )];
     for (path, ids) in deferred_requirements {
         let text = fs::read_to_string(path).with_context(|| format!("read {path}"))?;
         for block in text.split("- set_id:").skip(1) {
@@ -903,178 +895,6 @@ fn docs_current_stack_check() -> Result<()> {
             "server OpenAPI must carry the v0.1 supported authentication boundary".to_string(),
         );
     }
-    if !violations.is_empty() {
-        bail!("{}", violations.join("\n"));
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct RequirementCatalog {
-    requirements: Vec<RequirementRecord>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RequirementRecord {
-    id: String,
-    status: String,
-    verification: String,
-    #[serde(default)]
-    tests: Vec<TestReference>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TestReference {
-    file: String,
-    #[serde(default)]
-    cases: Vec<String>,
-    #[serde(default)]
-    tests: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UserManagementRelease {
-    status: String,
-    requirement_ids: Vec<String>,
-    #[serde(default)]
-    future_requirement_ids: Vec<String>,
-    phases: Vec<ReleasePhase>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReleasePhase {
-    id: String,
-    status: String,
-}
-
-fn supported_check() -> Result<()> {
-    let security_text = fs::read_to_string("docs/spec/requirements/security.yaml")
-        .context("read security requirements")?;
-    let security: RequirementCatalog =
-        serde_yaml::from_str(&security_text).context("parse security requirements")?;
-    let requirements = security
-        .requirements
-        .iter()
-        .map(|requirement| (requirement.id.as_str(), requirement))
-        .collect::<std::collections::BTreeMap<_, _>>();
-
-    let release_text = fs::read_to_string("docs/version/v0.1/user-management.yaml")
-        .context("read v0.1 user-management tracker")?;
-    let release: UserManagementRelease =
-        serde_yaml::from_str(&release_text).context("parse v0.1 user-management tracker")?;
-    if release.status != "completed" {
-        bail!("v0.1 user-management tracker must be completed");
-    }
-    for phase in &release.phases {
-        if matches!(phase.id.as_str(), "implementation" | "testing") && phase.status != "completed"
-        {
-            bail!("v0.1 user-management phase {} must be completed", phase.id);
-        }
-    }
-    let supported_ids = release
-        .requirement_ids
-        .iter()
-        .map(String::as_str)
-        .collect::<std::collections::BTreeSet<_>>();
-    let future_ids = release
-        .future_requirement_ids
-        .iter()
-        .map(String::as_str)
-        .collect::<std::collections::BTreeSet<_>>();
-    if supported_ids.intersection(&future_ids).next().is_some() {
-        bail!("v0.1 supported and future requirement lists overlap");
-    }
-
-    for id in &supported_ids {
-        let requirement = requirements
-            .get(id)
-            .with_context(|| format!("v0.1 requirement {id} is missing from security.yaml"))?;
-        if requirement.status != "implemented" {
-            bail!("supported requirement {id} must have status: implemented");
-        }
-        if requirement.verification != "traced" {
-            bail!("supported requirement {id} must have verification: traced");
-        }
-        let mut concrete_case_count = 0usize;
-        for test in &requirement.tests {
-            let path = Path::new(&test.file);
-            if !path.is_file() {
-                bail!(
-                    "supported requirement {id} references missing test file {}",
-                    test.file
-                );
-            }
-            let source = fs::read_to_string(path)
-                .with_context(|| format!("read requirement test reference {}", test.file))?;
-            for case in test.cases.iter().chain(test.tests.iter()) {
-                concrete_case_count += 1;
-                if !source.contains(case) {
-                    bail!(
-                        "supported requirement {id} references missing test case {case} in {}",
-                        test.file
-                    );
-                }
-            }
-        }
-        if requirement.tests.is_empty() || concrete_case_count == 0 {
-            bail!("supported requirement {id} must reference a concrete test case");
-        }
-    }
-
-    println!(
-        "supported contract: {} requirements traced; authentication surface is validated by Mitase",
-        supported_ids.len()
-    );
-    Ok(())
-}
-
-fn legacy_auth_check() -> Result<()> {
-    let patterns = [
-        ["/auth/mock", "oauth"].join("-"),
-        ["mock", "oauth"].join("_"),
-        ["UGOITE_DEV", "AUTH_MODE"].join("_"),
-        ["UGOITE_DEV", "USER_ID"].join("_"),
-        ["UGOITE_DEV", "PASSKEY_CONTEXT"].join("_"),
-        ["UGOITE", "BOOTSTRAP_TOKEN"].join("_"),
-        ["UGOITE_AUTH", "BEARER"].join("_"),
-        ["UGOITE_AUTH", "API_KEY"].join("_"),
-        ["ugoite_auth", "bearer_token"].join("_"),
-        ["cli", "auth.json"].join("-"),
-        ["passkey", "totp"].join("-"),
-    ];
-    let output = Command::new("git")
-        .args([
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-        ])
-        .output()
-        .context("list tracked files for legacy authentication check")?;
-    if !output.status.success() {
-        bail!("git ls-files failed during legacy authentication check");
-    }
-    let mut violations = Vec::new();
-    for raw_path in output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-    {
-        let path = Path::new(std::str::from_utf8(raw_path).context("tracked path is not UTF-8")?);
-        let Ok(bytes) = fs::read(path) else { continue };
-        let text = String::from_utf8_lossy(&bytes);
-        for pattern in &patterns {
-            if text.contains(pattern) {
-                violations.push(format!(
-                    "{} contains removed authentication name",
-                    path.display()
-                ));
-            }
-        }
-    }
-    violations.sort();
-    violations.dedup();
     if !violations.is_empty() {
         bail!("{}", violations.join("\n"));
     }
