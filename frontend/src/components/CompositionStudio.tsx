@@ -990,17 +990,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       await saveRequest(attempt, false);
     } catch (error) {
+      const stillOwnsCurrentPreflight = generation === saveGeneration() &&
+        currentSaveInvocation(invocationId) !== undefined;
       if (attempt) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-        if (isCurrentSaveIdentity(attempt)) {
+        if (stillOwnsCurrentPreflight && isCurrentSaveIdentity(attempt)) {
           pendingSave = undefined;
           setSaveRetryAvailable(false);
         }
       }
-      if (
-        generation === saveGeneration() &&
-        currentSaveInvocation(invocationId)
-      ) {
+      if (stillOwnsCurrentPreflight) {
         setSaveError(compositionCanonicalizeErrorMessage(error));
       }
     } finally {

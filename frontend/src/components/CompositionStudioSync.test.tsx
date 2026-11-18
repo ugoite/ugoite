@@ -1299,14 +1299,14 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
-  it("allows a new scope save before an old preflight resolves", async () => {
-    let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
+  it("preserves a newer retry when an old scope preflight fails", async () => {
+    let rejectOldCanonicalize!: (error: unknown) => void;
     let finishOtherSave!: (result: {
       composition_id: string;
       revision_id: string;
     }) => void;
     canonicalizeMock.mockImplementationOnce(() =>
-      new Promise((resolve) => finishCanonicalize = resolve)
+      new Promise((_resolve, reject) => rejectOldCanonicalize = reject)
     );
     const [spaceId, setSpaceId] = createSignal("space-1");
     const [initialDraft, setInitialDraft] = createSignal(
@@ -1372,15 +1372,31 @@ describe("CompositionStudio graph surface", () => {
     );
     const originalScopeSave = screen.getByRole("button", { name: "Save" });
     await waitFor(() => expect(originalScopeSave).toBeEnabled());
+    saveMock.mockRejectedValueOnce(
+      Object.assign(new Error("response lost"), {
+        mutationOutcome: "unknown",
+      }),
+    );
     fireEvent.click(originalScopeSave);
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(document.querySelector(".compositionGraphStudioEditor"))
+      .toHaveAttribute("inert");
 
-    finishCanonicalize({
-      canonical_yaml: JSON.stringify(canonicalizeMock.mock.calls[0][0]),
-    });
+    rejectOldCanonicalize(new Error("old preflight failed"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(saveMock).toHaveBeenCalledTimes(2);
-    expect(navigateMock).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(document.querySelector(".compositionGraphStudioEditor"))
+      .toHaveAttribute("inert");
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/space-1/compositions/composition-1/revision-1",
+      )
+    );
 
     finishOtherSave({
       composition_id: "composition-2",
