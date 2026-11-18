@@ -100,8 +100,10 @@ requirements:
           target and base revision, and authenticated account. A detected
           scope change discards pending creation, selection, editor validity,
           checks, and results; an old asynchronous response cannot update the
-          new draft. An in-flight save and its receipt remain bound to the
-          original route identity.
+          new draft. A save preflight is not dispatched after its scope
+          changes. An already-sent save and its receipt remain bound to the
+          original route and principal, and an uncertain retry is exposed only
+          to that principal.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: design-evaluation-has-current-state
         kind: behavior

@@ -346,11 +346,13 @@ let releasePendingFormReferences: ((references: string[]) => void) | undefined;
 const clearPendingSaveAttempts = () => {
   clearPendingCompositionSaveAttempt({
     spaceId: "space-1",
+    principalId: "account:editor-1",
     routePath: "/spaces/space-1/compositions/new",
     saveTarget: { kind: "create" },
   });
   clearPendingCompositionSaveAttempt({
     spaceId: "space-1",
+    principalId: "account:editor-1",
     routePath: "/spaces/space-1/compositions/composition-2/edit",
     saveTarget: {
       kind: "update",
@@ -729,8 +731,10 @@ describe("CompositionStudio graph surface", () => {
     const oldYaml = previewGraphMock.mock.calls[0][1];
 
     setSpaceId("space-2");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
-      .toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("")
+    );
     const newSql = await createTableQueryFromDesign("rows");
     fireEvent.input(newSql, { target: { value: "SELECT 4 AS old_value" } });
     await checkQuery();
@@ -761,9 +765,11 @@ describe("CompositionStudio graph surface", () => {
       value: { kind: "string", value: "old" },
     }];
     let resolveOldParse!: (value: unknown) => void;
-    parseInputMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveOldParse = (value) => resolve(value);
-    }));
+    parseInputMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveOldParse = (value) => resolve(value);
+      })
+    );
     render(() => (
       <CompositionStudio
         spaceId={spaceId()}
@@ -781,12 +787,16 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(parseInputMock).toHaveBeenCalledOnce());
 
     setSpaceId("space-2");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
-      .toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("")
+    );
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
-      .getByRole("button", { name: "Value", exact: true }));
+    fireEvent.click(
+      screen.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Value", exact: true }),
+    );
     const name = await screen.findByRole("textbox", { name: "Variable name" });
     fireEvent.input(name, { target: { value: "month" } });
     fireEvent.submit(name.closest("form")!);
@@ -823,12 +833,16 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(formReferenceGateMock).toHaveBeenCalledOnce());
 
     setSpaceId("space-2");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
-      .toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("")
+    );
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
-      .getByRole("button", { name: "SQL", exact: true }));
+    fireEvent.click(
+      screen.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "SQL", exact: true }),
+    );
     const name = await screen.findByRole("textbox", { name: "Variable name" });
     fireEvent.input(name, { target: { value: "rows" } });
     fireEvent.submit(name.closest("form")!);
@@ -837,9 +851,11 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.input(currentSql, {
       target: { value: 'SELECT 1 FROM "Receipts"' },
     });
-    await waitFor(() => expect(currentSql).toHaveValue(
-      'SELECT 1 FROM "Receipts"',
-    ));
+    await waitFor(() =>
+      expect(currentSql).toHaveValue(
+        'SELECT 1 FROM "Receipts"',
+      )
+    );
 
     resolveOldGuard(["Receipts"]);
     await Promise.resolve();
@@ -885,12 +901,16 @@ describe("CompositionStudio graph surface", () => {
     await waitFor(() => expect(binding).toHaveValue(""));
 
     setSpaceId("space-2");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
-      .toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Name" }))
+        .toHaveValue("")
+    );
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
-      .getByRole("button", { name: "Value", exact: true }));
+    fireEvent.click(
+      screen.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "Value", exact: true }),
+    );
     const constantName = await screen.findByRole("textbox", {
       name: "Variable name",
     });
@@ -898,8 +918,10 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.submit(constantName.closest("form")!);
 
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
-      .getByRole("button", { name: "SQL", exact: true }));
+    fireEvent.click(
+      screen.getByRole("group", { name: "Add variable" })
+        .getByRole("button", { name: "SQL", exact: true }),
+    );
     const queryName = await screen.findByRole("textbox", {
       name: "Variable name",
     });
@@ -907,9 +929,11 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.submit(queryName.closest("form")!);
     const sql = await screen.findByRole("textbox", { name: "SQL" });
     fireEvent.input(sql, { target: { value: "SELECT {{month}} AS value" } });
-    await waitFor(() => expect(screen.getByRole("combobox", {
-      name: "Choose a variable for month",
-    })).toHaveValue("month"));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", {
+        name: "Choose a variable for month",
+      })).toHaveValue("month")
+    );
   });
 
   it("resets same-Space editing when the target revision or principal changes", async () => {
@@ -1016,8 +1040,10 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
       target: { value: "42" },
     });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Use" }))
-      .toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Use" }))
+        .toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Use" }));
     expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
       "aria-selected",
@@ -1124,6 +1150,69 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
+  it("parks an uncertain retry under its original authenticated principal", async () => {
+    saveMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("response lost"), {
+          mutationOutcome: "unknown",
+        }),
+      )
+      .mockResolvedValueOnce({
+        composition_id: "composition-1",
+        revision_id: "revision-1",
+      });
+    renderStudio(renderedDraftWithTable());
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await screen.findByRole("button", { name: "Retry" });
+
+    authSessionMock.mockResolvedValue({
+      authenticated: true,
+      account: { account_id: "editor-2", display_name: "Other editor" },
+    });
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()
+    );
+    expect(saveMock).toHaveBeenCalledOnce();
+
+    authSessionMock.mockResolvedValue({
+      authenticated: true,
+      account: { account_id: "editor-1", display_name: "Editor" },
+    });
+    window.dispatchEvent(new Event("focus"));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
+  });
+
+  it("does not dispatch a preflight save after its principal changes", async () => {
+    let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
+    canonicalizeMock.mockImplementationOnce(() =>
+      new Promise((resolve) => finishCanonicalize = resolve)
+    );
+    renderStudio(renderedDraftWithTable());
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+
+    authSessionMock.mockResolvedValue({
+      authenticated: true,
+      account: { account_id: "editor-2", display_name: "Other editor" },
+    });
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() =>
+      expect(document.querySelector(".compositionGraphStudioEditor"))
+        .not.toHaveAttribute("inert")
+    );
+    finishCanonicalize({
+      canonical_yaml: JSON.stringify(canonicalizeMock.mock.calls[0][0]),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
   it("keeps a remounted editor locked while a save is in flight", async () => {
     let rejectSave!: (error: unknown) => void;
     saveMock.mockImplementationOnce(() =>
@@ -1138,7 +1227,7 @@ describe("CompositionStudio graph surface", () => {
     firstVisit.unmount();
     renderStudio(renderedDraftWithTable());
     const save = await screen.findByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();
+    await waitFor(() => expect(save).toBeDisabled());
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
     rejectSave(
@@ -1158,19 +1247,63 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
-  it("keeps an in-flight save bound to the route target captured before canonicalization", async () => {
-    let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
-    canonicalizeMock.mockImplementationOnce(() =>
-      new Promise((resolve) => finishCanonicalize = resolve)
-    );
-    saveMock.mockRejectedValueOnce(
-      Object.assign(new Error("response lost"), {
-        mutationOutcome: "unknown",
-      }),
+  it("keeps an already-sent save bound to its original route for retry", async () => {
+    let rejectSave!: (error: unknown) => void;
+    saveMock.mockImplementationOnce(() =>
+      new Promise((_resolve, reject) => rejectSave = reject)
     ).mockResolvedValueOnce({
       composition_id: "composition-1",
       revision_id: "revision-1",
     });
+    const [saveMode, setSaveMode] = createSignal<CompositionStudioSaveMode>({
+      kind: "create",
+    });
+    render(() => (
+      <CompositionStudio
+        spaceId="space-1"
+        initialDraft={renderedDraftWithTable()}
+        saveMode={saveMode()}
+        backHref="/spaces/space-1/compositions"
+        backLabel="Back to compositions"
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
+    const originalCall = saveMock.mock.calls[0];
+    routePathMock.value = "/spaces/space-1/compositions/composition-2/edit";
+    setSaveMode({
+      kind: "update",
+      compositionId: "composition-2",
+      baseRevisionId: "revision-2",
+    });
+    rejectSave(
+      Object.assign(new Error("response lost"), {
+        mutationOutcome: "unknown",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()
+    );
+
+    routePathMock.value = "/spaces/space-1/compositions/new";
+    setSaveMode({ kind: "create" });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    expect(saveMock.mock.calls[1]).toEqual(originalCall);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/space-1/compositions/composition-1/revision-1",
+      )
+    );
+  });
+
+  it("does not dispatch a preflight save after its route scope changes", async () => {
+    let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
+    canonicalizeMock.mockImplementationOnce(() =>
+      new Promise((resolve) => finishCanonicalize = resolve)
+    );
     const [saveMode, setSaveMode] = createSignal<CompositionStudioSaveMode>({
       kind: "create",
     });
@@ -1192,32 +1325,17 @@ describe("CompositionStudio graph surface", () => {
       compositionId: "composition-2",
       baseRevisionId: "revision-2",
     });
+    await waitFor(() =>
+      expect(document.querySelector(".compositionGraphStudioEditor"))
+        .not.toHaveAttribute("inert")
+    );
     finishCanonicalize({
       canonical_yaml: JSON.stringify(canonicalizeMock.mock.calls[0][0]),
     });
 
-    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
-    expect(saveMock.mock.calls[0]).toEqual([
-      "space-1",
-      expect.any(String),
-      expect.any(String),
-      { variables: {}, unset_variables: [] },
-    ]);
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()
-    );
-
-    routePathMock.value = "/spaces/space-1/compositions/new";
-    setSaveMode({ kind: "create" });
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    fireEvent.click(retry);
-    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
-    expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
-    await waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith(
-        "/spaces/space-1/compositions/composition-1/revision-1",
-      )
-    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("edits the shared graph through the Variables mode", async () => {
@@ -1620,9 +1738,11 @@ describe("CompositionStudio graph surface", () => {
 
     let rejectPrincipal!: (error: Error) => void;
     authSessionMock.mockClear();
-    authSessionMock.mockImplementationOnce(() => new Promise((_, reject) => {
-      rejectPrincipal = reject;
-    }));
+    authSessionMock.mockImplementationOnce(() =>
+      new Promise((_, reject) => {
+        rejectPrincipal = reject;
+      })
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(authSessionMock).toHaveBeenCalledOnce());
 

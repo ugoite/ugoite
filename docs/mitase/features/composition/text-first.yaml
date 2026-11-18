@@ -723,6 +723,42 @@ features:
                 criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
                 covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "clears a manual SQL marker unbind when the editor scope changes" } }
+          - id: composition-save-preflight-principal-change
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "does not dispatch a preflight save after its principal changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not dispatch a preflight save after its principal changes" } }
+          - id: composition-save-retry-principal-ownership
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "parks an uncertain retry under its original authenticated principal" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "parks an uncertain retry under its original authenticated principal" } }
+          - id: composition-save-preflight-route-change
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "does not dispatch a preflight save after its route scope changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "does not dispatch a preflight save after its route scope changes" } }
+          - id: composition-sent-save-route-retry
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "keeps an already-sent save bound to its original route for retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-083#criterion.editor-work-is-scope-bound
+                covers: [FEAT-COMP-010#binding.frontend/target.composition-studio-count]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "keeps an already-sent save bound to its original route for retry" } }
           - id: composition-design-evaluation-statuses
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts
