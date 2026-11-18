@@ -835,6 +835,11 @@ describe("CompositionVariableGraphWorkspace", () => {
       expect(draft().variables.find((node) => node.id === "rows_a"))
         .toMatchObject({ query: { arguments: [] } });
     });
+    await waitFor(() => {
+      expect(screen.queryByRole("combobox", {
+        name: "Choose a variable for month",
+      })).not.toBeInTheDocument();
+    });
     fireEvent.input(sql, { target: { value: "SELECT {{month}}" } });
     await waitFor(() => {
       expect(draft().variables.find((node) => node.id === "rows_a"))
@@ -994,9 +999,11 @@ describe("CompositionVariableGraphWorkspace", () => {
     await waitFor(() => expect(sql).toHaveValue("SELECT 1"));
     fireEvent.input(sql, { target: { value: editedSql } });
     await waitFor(() => expect(sql).toHaveValue(editedSql));
-    expect(screen.getByRole("combobox", {
-      name: "Choose a variable for month",
-    })).toHaveValue("month");
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", {
+        name: "Choose a variable for month",
+      })).toHaveValue("month")
+    );
 
     resolveNormalize({
       source: editedSql,

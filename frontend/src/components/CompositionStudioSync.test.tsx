@@ -794,7 +794,7 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(
-      screen.getByRole("group", { name: "Add variable" })
+      within(screen.getByRole("group", { name: "Add variable" }))
         .getByRole("button", { name: "Value", exact: true }),
     );
     const name = await screen.findByRole("textbox", { name: "Variable name" });
@@ -840,7 +840,7 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(
-      screen.getByRole("group", { name: "Add variable" })
+      within(screen.getByRole("group", { name: "Add variable" }))
         .getByRole("button", { name: "SQL", exact: true }),
     );
     const name = await screen.findByRole("textbox", { name: "Variable name" });
@@ -908,7 +908,7 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(
-      screen.getByRole("group", { name: "Add variable" })
+      within(screen.getByRole("group", { name: "Add variable" }))
         .getByRole("button", { name: "Value", exact: true }),
     );
     const constantName = await screen.findByRole("textbox", {
@@ -919,7 +919,7 @@ describe("CompositionStudio graph surface", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.click(
-      screen.getByRole("group", { name: "Add variable" })
+      within(screen.getByRole("group", { name: "Add variable" }))
         .getByRole("button", { name: "SQL", exact: true }),
     );
     const queryName = await screen.findByRole("textbox", {
@@ -1380,15 +1380,19 @@ describe("CompositionStudio graph surface", () => {
     fireEvent.click(originalScopeSave);
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(document.querySelector(".compositionGraphStudioEditor"))
-      .toHaveAttribute("inert");
+    await waitFor(() =>
+      expect(document.querySelector(".compositionGraphStudioEditor"))
+        .toHaveAttribute("inert")
+    );
 
     rejectOldCanonicalize(new Error("old preflight failed"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(saveMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
-    expect(document.querySelector(".compositionGraphStudioEditor"))
-      .toHaveAttribute("inert");
+    await waitFor(() =>
+      expect(document.querySelector(".compositionGraphStudioEditor"))
+        .toHaveAttribute("inert")
+    );
 
     fireEvent.click(retry);
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(3));

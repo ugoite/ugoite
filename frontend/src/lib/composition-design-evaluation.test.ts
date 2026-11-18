@@ -92,14 +92,17 @@ const response = (
   ),
 });
 let dispose: () => void;
-const setup = (base?: { entryId: string; revisionId: string }) => {
+const setup = (
+  base?: { entryId: string; revisionId: string },
+  initialDraft = draft(),
+) => {
   let state!: ReturnType<typeof createCompositionDesignEvaluation>;
   let changeScope!: (value: string) => void;
   let changeDraft!: (value: CompositionGraphDraft) => void;
   createRoot((cleanup) => {
     dispose = cleanup;
     const [scope, setScope] = createSignal("one");
-    const [graph, setGraph] = createSignal(draft());
+    const [graph, setGraph] = createSignal(initialDraft);
     changeScope = setScope;
     changeDraft = setGraph;
     state = createCompositionDesignEvaluation({
@@ -229,7 +232,11 @@ describe("Composition Design Work evaluation", () => {
   });
 
   it("clears a failed Design result as soon as its query is invalidated", async () => {
-    const { state } = setup();
+    const singleQueryDraft = draft();
+    singleQueryDraft.variables = singleQueryDraft.variables.filter((node) =>
+      node.id !== "stable"
+    );
+    const { state } = setup(undefined, singleQueryDraft);
     evaluate.mockRejectedValueOnce(new Error("request failed"));
     await vi.advanceTimersByTimeAsync(250);
     expect(state.error()).toBeDefined();
