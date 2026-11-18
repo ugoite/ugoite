@@ -1,92 +1,26 @@
 import { assertEquals } from "@std/assert/equals";
+import { assertThrows } from "@std/assert/throws";
 import {
-  CP1_FIXTURE_SPEC_SCHEMA_VERSION,
   cp1FixtureBySlug,
   cp1FixtureRows,
   cp1FixturesFor,
 } from "./cp1_fixture_spec.ts";
 
-Deno.test("CP1 fixture specification preserves the query and export contracts", () => {
-  assertEquals(CP1_FIXTURE_SPEC_SCHEMA_VERSION, 1);
-  assertEquals(
-    cp1FixturesFor("query").map((fixture) => ({
-      slug: fixture.slug,
-      scenario: fixture.scenario,
-      seed: fixture.seed,
-      entryCount: fixture.entryCount,
-      ownerDisplayName: fixture.ownerDisplayName,
-      formNames: [...fixture.formNames],
-    })),
-    [
-      {
-        slug: "query-space-a",
-        scenario: "renewable-ops",
-        seed: 3134001,
-        entryCount: 1200,
-        ownerDisplayName: "Query Measurement Owner",
-        formNames: [
-          "Array",
-          "EnergyReport",
-          "Entry",
-          "Inspection",
-          "MaintenanceTicket",
-          "Site",
-        ],
-      },
-      {
-        slug: "query-space-b",
-        scenario: "renewable-ops",
-        seed: 3134002,
-        entryCount: 800,
-        ownerDisplayName: "Query Measurement Owner",
-        formNames: [
-          "Array",
-          "EnergyReport",
-          "Entry",
-          "Inspection",
-          "MaintenanceTicket",
-          "Site",
-        ],
-      },
-    ],
-  );
-  assertEquals(
-    cp1FixturesFor("export").map((fixture) => ({
-      slug: fixture.slug,
-      scenario: fixture.scenario,
-      seed: fixture.seed,
-      entryCount: fixture.entryCount,
-      ownerDisplayName: fixture.ownerDisplayName,
-      formNames: [...fixture.formNames],
-    })),
-    [{
-      slug: "sql-export-measure",
-      scenario: "renewable-ops",
-      seed: 3140001,
-      entryCount: 1000,
-      ownerDisplayName: null,
-      formNames: [
-        "Array",
-        "EnergyReport",
-        "Entry",
-        "Inspection",
-        "MaintenanceTicket",
-        "Site",
-      ],
-    }],
-  );
-  assertEquals(cp1FixtureBySlug("query-space-a"), cp1FixturesFor("query")[0]);
-  assertEquals(
-    cp1FixtureRows("query").split("\n"),
-    [
-      "query-space-a\trenewable-ops\t3134001\t1200\tQuery Measurement Owner",
-      "query-space-b\trenewable-ops\t3134002\t800\tQuery Measurement Owner",
-    ],
-  );
-  assertEquals(
-    cp1FixtureRows("export"),
-    "sql-export-measure\trenewable-ops\t3140001\t1000\t",
-  );
+Deno.test("CP1 fixture CLI defaults to structural counts and opts in to measurement volumes", () => {
+  for (
+    const [kind, acceptance, measurement] of [
+      ["query", [404, 12], [1200, 800]],
+      ["export", [5], [1000]],
+    ] as const
+  ) {
+    const entryCounts = (rows: string) =>
+      rows.split("\n").map((row) => Number(row.split("\t")[3]));
+    assertEquals(entryCounts(cp1FixtureRows(kind)), [...acceptance]);
+    assertEquals(
+      entryCounts(cp1FixtureRows(kind, "measurement")),
+      [...measurement],
+    );
+  }
 });
 
 Deno.test("CP1 fixture slugs and seeds are unique", () => {
@@ -99,11 +33,9 @@ Deno.test("CP1 fixture slugs and seeds are unique", () => {
     new Set(fixtures.map((fixture) => fixture.seed)).size,
     fixtures.length,
   );
-  let unknownSlugError = "";
-  try {
-    cp1FixtureBySlug("unlisted-space");
-  } catch (error) {
-    unknownSlugError = error instanceof Error ? error.message : String(error);
-  }
-  assertEquals(unknownSlugError, "unknown CP1 fixture slug: unlisted-space");
+  assertThrows(
+    () => cp1FixtureBySlug("unlisted-space"),
+    Error,
+    "unknown CP1 fixture slug: unlisted-space",
+  );
 });

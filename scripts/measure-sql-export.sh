@@ -8,7 +8,9 @@ FIXTURE_BUNDLE_DIR="${UGOITE_CP1_FIXTURE_BUNDLE_DIR:-}"
 if [[ -n "$FIXTURE_BUNDLE_DIR" && "$FIXTURE_BUNDLE_DIR" != /* ]]; then
   FIXTURE_BUNDLE_DIR="$ROOT_DIR/$FIXTURE_BUNDLE_DIR"
 fi
-EXPORT_FIXTURE_ROW="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" export)"
+FIXTURE_MODE_ARGS=()
+if [[ -z "$FIXTURE_BUNDLE_DIR" ]]; then FIXTURE_MODE_ARGS=(--measurement); fi
+EXPORT_FIXTURE_ROW="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" export "${FIXTURE_MODE_ARGS[@]}")"
 if [[ "$EXPORT_FIXTURE_ROW" == *$'\n'* ]]; then
   echo "CP1 export fixture specification must contain exactly one fixture" >&2
   exit 1
@@ -18,6 +20,12 @@ if [[ -z "$FIXTURE_SLUG" || -z "$FIXTURE_SCENARIO" ]] \
   || ! [[ "$FIXTURE_SEED" =~ ^[0-9]+$ && "$FIXTURE_ENTRY_COUNT" =~ ^[0-9]+$ ]]; then
   echo "Invalid CP1 export fixture specification" >&2
   exit 1
+fi
+if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  # Compare one complete page plus a continuation against one full export.
+  PAGE_SIZES=("$((FIXTURE_ENTRY_COUNT - 1))" "$FIXTURE_ENTRY_COUNT")
+else
+  PAGE_SIZES=(100 1000)
 fi
 PROFILE_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 PROFILE_STARTED_MS="$(deno eval --quiet 'console.log(Date.now())')"
@@ -61,17 +69,20 @@ cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
   set +e
-  deno run -A "$ROOT_DIR/tools/cp1_profile.ts" export \
+  local export_runs=()
+  local page_size
+  for page_size in "${PAGE_SIZES[@]}"; do
+    local page_path="$OUTPUT_DIR/page-$page_size"
+    export_runs+=(--export-run "$page_size" "$page_path.ndjson" "$page_path.summary.json" "$page_path.time.txt")
+  done
+  deno run -A "$ROOT_DIR/tools/cp1_profile.ts" export "${FIXTURE_MODE_ARGS[@]}" \
     --output "$PROFILE_REPORT" \
     --root "$DATA_ROOT" \
     --started-ms "$PROFILE_STARTED_MS" \
     --exit-code "$exit_code" \
     --evidence-report "$OUTPUT_DIR/measurement.json" \
     --seed "$FIXTURE_SLUG" "$SEED_PROFILE" "${SEED_PROFILE%.json}.time.txt" \
-    --export-run 100 "$OUTPUT_DIR/page-100.ndjson" \
-      "$OUTPUT_DIR/page-100.summary.json" "$OUTPUT_DIR/page-100.time.txt" \
-    --export-run 1000 "$OUTPUT_DIR/page-1000.ndjson" \
-      "$OUTPUT_DIR/page-1000.summary.json" "$OUTPUT_DIR/page-1000.time.txt" \
+    "${export_runs[@]}" \
     "${CLI_PROFILE_TIMED_STEP_ARGS[@]}"
   local profile_exit_code=$?
   if [[ "$KEEP_ROOT" == false ]]; then
@@ -207,7 +218,7 @@ else
   TIME_ARGS=(-v)
 fi
 
-for PAGE_SIZE in 100 1000; do
+for PAGE_SIZE in "${PAGE_SIZES[@]}"; do
   RESULT="$OUTPUT_DIR/page-${PAGE_SIZE}.ndjson"
   SUMMARY="$OUTPUT_DIR/page-${PAGE_SIZE}.summary.json"
   TIME_LOG="$OUTPUT_DIR/page-${PAGE_SIZE}.time.txt"
@@ -246,15 +257,21 @@ deno eval --quiet '
     throw new Error("page-size exports differ: " + JSON.stringify({ small, large }));
   }
   console.log(JSON.stringify({ rows: small.rows, canonical_sha256: small.sha256 }));
-' -- "$OUTPUT_DIR/page-100.ndjson" "$OUTPUT_DIR/page-1000.ndjson" "$FIXTURE_ENTRY_COUNT" >"$OUTPUT_DIR/equivalence.json"
+' -- "$OUTPUT_DIR/page-${PAGE_SIZES[0]}.ndjson" "$OUTPUT_DIR/page-${PAGE_SIZES[1]}.ndjson" "$FIXTURE_ENTRY_COUNT" >"$OUTPUT_DIR/equivalence.json"
 
 # A byte-bound failure must be explicit and must not publish a partial file.
+MAX_BYTES=1024
+if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  # Allow the first page to be written to the temporary file. The continuation
+  # crosses the byte cap and must roll back the complete file.
+  MAX_BYTES="$(head -n "${PAGE_SIZES[0]}" "$OUTPUT_DIR/page-${PAGE_SIZES[0]}.ndjson" | wc -c | tr -d '[:space:]')"
+fi
 BYTE_LIMIT_OUTPUT="$OUTPUT_DIR/byte-limited.ndjson"
 if "$BIN" --config "$CONFIG" sql export "$SQL_FILE" \
-  --max-rows "$FIXTURE_ENTRY_COUNT" --max-bytes 1024 --page-size 1000 \
+  --max-rows "$FIXTURE_ENTRY_COUNT" --max-bytes "$MAX_BYTES" --page-size "${PAGE_SIZES[0]}" \
   --output "$BYTE_LIMIT_OUTPUT" \
   2>"$OUTPUT_DIR/byte-limit.stderr"; then
-  echo "Expected the fixed fixture to exceed the 1,024-byte export bound" >&2
+  echo "Expected the fixed fixture to exceed the $MAX_BYTES-byte export bound" >&2
   exit 1
 fi
 if [[ -e "$BYTE_LIMIT_OUTPUT" ]]; then
@@ -274,10 +291,15 @@ if find "$OUTPUT_DIR" -maxdepth 1 -name '.ugoite-export-*' -print -quit | grep -
 fi
 
 deno eval --quiet '
-  const [output, sourceSha, spaceUid, dataRoot, fixtureSlug, scenario, seedText, entryCountText] = Deno.args;
+  const [output, sourceSha, spaceUid, dataRoot, fixtureSlug, scenario, seedText, entryCountText, maxBytes, ...pageSizes] = Deno.args;
   const seed = Number(seedText);
   const entryCount = Number(entryCountText);
-  const readSummary = async (size: number) => JSON.parse(await Deno.readTextFile(`${output}/page-${size}.summary.json`));
+  const runs = await Promise.all(pageSizes.map(async (size) => ({
+    page_size: Number(size),
+    summary: JSON.parse(await Deno.readTextFile(`${output}/page-${size}.summary.json`)),
+    output: `page-${size}.ndjson`,
+    peak_rss_raw_log: `page-${size}.time.txt`,
+  })));
   const equivalence = JSON.parse(await Deno.readTextFile(`${output}/equivalence.json`));
   const report = {
     source_sha: sourceSha,
@@ -295,15 +317,12 @@ deno eval --quiet '
     query_semantics: "SELECT _ugoite_id from every seeded Form, UNION ALL, ordered by _ugoite_id",
     max_rows: entryCount,
     byte_limit_failure: {
-      max_bytes: 1024,
+      max_bytes: Number(maxBytes),
       expected_error: "serialized NDJSON byte bound exceeded",
       published_partial_file: false,
       temporary_file_left: false,
     },
-    runs: [
-      { page_size: 100, summary: await readSummary(100), output: "page-100.ndjson", peak_rss_raw_log: "page-100.time.txt" },
-      { page_size: 1000, summary: await readSummary(1000), output: "page-1000.ndjson", peak_rss_raw_log: "page-1000.time.txt" },
-    ],
+    runs,
     output_equivalence: equivalence,
     measurement_limits: [
       "Local filesystem-backed core; this does not measure a Remote server or network.",
@@ -312,7 +331,7 @@ deno eval --quiet '
     ],
   };
   await Deno.writeTextFile(`${output}/measurement.json`, JSON.stringify(report, null, 2) + "\n");
-' -- "$OUTPUT_DIR" "$SOURCE_SHA" "$SPACE_UID" "$DATA_ROOT" "$FIXTURE_SLUG" "$FIXTURE_SCENARIO" "$FIXTURE_SEED" "$FIXTURE_ENTRY_COUNT"
+' -- "$OUTPUT_DIR" "$SOURCE_SHA" "$SPACE_UID" "$DATA_ROOT" "$FIXTURE_SLUG" "$FIXTURE_SCENARIO" "$FIXTURE_SEED" "$FIXTURE_ENTRY_COUNT" "$MAX_BYTES" "${PAGE_SIZES[@]}"
 
 echo "Measurement completed: $OUTPUT_DIR/measurement.json" >&2
 echo "Raw outputs and platform time logs are retained in: $OUTPUT_DIR" >&2

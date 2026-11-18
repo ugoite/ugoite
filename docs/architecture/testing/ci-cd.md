@@ -54,13 +54,11 @@ Root task composition:
   for consumer download; query and export bundles upload as separate
   artifacts with no cross-run cache;
 - `ci:lane:cp1-query`: hosted query consumer that restores only the query
-  bundle to a unique temp root and runs the fixed 1,200 + 800 Entry,
-  two-Space browser query-lifecycle assertions against the verified release
-  image through the Compose runner; its Playwright report fails when any test
-  is skipped, and it never builds the server, WASM, or frontend;
+  bundle to a unique temp root and exercises query lifecycle and two-Space
+  isolation against the verified image through the Compose runner. Its
+  Playwright report fails when any test is skipped;
 - `ci:lane:cp1-export`: hosted export consumer that restores only the export
-  bundle and runs the separate bounded 1,000-row SQL export acceptance check
-  with the verified release CLI; it never rebuilds the CLI;
+  bundle and verifies bounded, paged SQL export with the verified CLI;
 - `ci:lane:cp1-acceptance`: the local integrated entry that runs the same
   shared fixture preparation, query, and export scripts in one process;
   hosted CI runs the fixtures/query/export trio instead, gated as a unit by
@@ -176,14 +174,19 @@ dominating the gate again.
 
 The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
 query/count, or SQL export implementation and acceptance paths. Merge groups
-and main pushes run it unconditionally. It uses a fixed-seed 1,200/800
-two-Space browser fixture for stale-result, count, cancellation, retry, and
-pagination assertions, then checks bounded 1,000-row export completion. Its
-100,000-row/RSS/p95 performance measurements stay outside the required lane.
-The required CP1 lane uses only these minimal structural fixtures. Larger
-fixed-count volumes (the retired 10,000-row/two-Space lane and any larger
-probes) belong to scheduled or profile-only measurement; they are never merge
-gates and never release contracts (#3324).
+and main pushes run it unconditionally. The first query Space has 404
+renewable-ops Entries, of which 101 are tickets. This crosses the Browser's
+100-row SQL page limit by one. The second Space has 12 Entries for
+isolation, authorization and count checks, with at least one Entry per
+scenario Form. Request interception exercises cancellation and retry. The
+export fixture has five Entries. It compares page sizes four and five and
+checks rollback when a byte cap allows the first page and rejects the last row.
+
+Standalone `measure:query-surfaces` and `measure:sql-export` use the same
+seeder and consumers with larger measurement fixtures. The query measurement
+takes five timing samples per surface and Space. The required acceptance lane
+visits each surface once and uses the smaller fixtures. Performance
+measurements have no merge or release threshold (#3324).
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies
 the canonical frontend and Rust release outputs into the image instead of

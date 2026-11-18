@@ -277,7 +277,7 @@ Deno.test("CP1 seed profiles accept fully batched entry distributions", () => {
 });
 
 Deno.test("CP1 seed profiles reject invalid or compensating batch entry counts", () => {
-  const fixture = cp1FixtureBySlug("query-space-b");
+  const fixture = cp1FixtureBySlug("query-space-a");
   const total = fixture.entryCount;
   assert(total > CP1_SEED_MUTATION_BATCH_LIMIT);
   // A filler that sums exactly to the fixture total; appending a zero keeps
