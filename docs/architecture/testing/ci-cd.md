@@ -50,9 +50,9 @@ Root task composition:
   build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;
 - `ci:cp1:fixtures`: hosted fixtures entry that builds the fixture seeder
-  once, prepares one run-scoped bundle per fixture set, and stages the seeder
-  for consumer download; query and export bundles upload as separate
-  artifacts with no cross-run cache;
+  once, prepares one run-scoped bundle per fixture set, and stages a seeder
+  copy without debug sections for consumer download. Query and export bundles
+  upload as separate artifacts with no cross-run cache;
 - `ci:lane:cp1-query`: hosted query consumer that restores only the query
   bundle to a unique temp root and exercises query lifecycle and two-Space
   isolation against the verified image through the Compose runner. Its
