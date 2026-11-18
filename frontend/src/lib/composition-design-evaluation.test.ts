@@ -5,6 +5,7 @@ import {
   type CompositionGraphDraft,
   createCompositionGraphDraft,
 } from "./composition-variable-binding";
+import { UgoiteApiError } from "./ugoite-client/protocol";
 
 const { evaluate, canonicalize, parse } = vi.hoisted(() => ({
   evaluate: vi.fn(),
@@ -225,6 +226,71 @@ describe("Composition Design Work evaluation", () => {
     expect(state.blocked()).toEqual(new Set(["rows", "stable"]));
     expect(state.previousIds().size).toBe(0);
     expect(state.error()).toBeDefined();
+  });
+
+  it("clears a failed Design result as soon as its query is invalidated", async () => {
+    const { state } = setup();
+    evaluate.mockRejectedValueOnce(new Error("request failed"));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(state.error()).toBeDefined();
+
+    state.onInput("minimum", "2");
+    expect(state.error()).toBeUndefined();
+    expect(state.blocked()).toEqual(new Set(["rows"]));
+  });
+
+  it("does not restore an old Design response after the query changes", async () => {
+    const { state, changeDraft } = setup();
+    let finishOld!: (value: unknown) => void;
+    evaluate.mockImplementationOnce((_space, request) =>
+      new Promise((resolve) => {
+        finishOld = () => resolve(response(request));
+      })
+    );
+    await vi.advanceTimersByTimeAsync(250);
+    const updated = draft();
+    updated.variables = updated.variables.map((node) =>
+      node.id === "rows" && node.kind === "query"
+        ? { ...node, query: { ...node.query, kind: "inline_sql", sql: "SELECT 2", arguments: [] } }
+        : node
+    );
+    changeDraft(updated);
+    await vi.advanceTimersByTimeAsync(250);
+    const currentEvaluationId = state.evaluation()?.evaluation_id;
+    expect(currentEvaluationId).toBeTruthy();
+
+    finishOld({});
+    await Promise.resolve();
+    expect(state.evaluation()?.evaluation_id).toBe(currentEvaluationId);
+  });
+
+  it("does not restore a delayed Design result after a scope change is denied", async () => {
+    const { state, changeScope } = setup();
+    let finishOld!: (value: unknown) => void;
+    evaluate.mockImplementationOnce((_space, request) =>
+      new Promise((resolve) => {
+        finishOld = () => resolve(response(request));
+      })
+    );
+    await vi.advanceTimersByTimeAsync(250);
+
+    evaluate.mockRejectedValueOnce(new UgoiteApiError({
+      kind: "forbidden",
+      code: "FORBIDDEN",
+      status: 403,
+      message: "Access was revoked.",
+    }));
+    changeScope("account:changed");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(state.evaluation()).toBeUndefined();
+    expect(state.error()).toContain("permission");
+    expect(state.queryErrors().rows).toContain("permission");
+
+    finishOld({});
+    await Promise.resolve();
+    expect(state.evaluation()).toBeUndefined();
+    expect(state.error()).toContain("permission");
+    expect(state.blocked()).toEqual(new Set(["rows", "stable"]));
   });
 
   it("keeps source-unavailable diagnostics global instead of duplicating them per component", async () => {

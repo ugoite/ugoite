@@ -598,6 +598,356 @@ describe("CompositionStudio graph surface", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
+  it("drops a mounted pending Table creation when Space changes", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+
+    const sql = await createTableQueryFromDesign("space_a_rows");
+    expect(sql).toHaveValue("SELECT 1");
+    setSpaceId("space-2");
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+      expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+    expect(screen.queryByRole("button", { name: "Use", exact: true }))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.queryByRole("button", { name: "space_a_rows" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
+    const nextSql = await createTableQueryFromDesign("space_b_rows");
+    expect(nextSql).toHaveValue("SELECT 1");
+  });
+
+  it("drops nested marker Input Work before and after Use when Space changes", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+
+    const createMarkerInput = async (queryId: string) => {
+      const sql = await createTableQueryFromDesign(queryId);
+      fireEvent.input(sql, {
+        target: { value: "SELECT {{month}} AS value" },
+      });
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Create a variable for month",
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "Input" }));
+      const name = await screen.findByRole("textbox", {
+        name: "Variable name",
+      });
+      fireEvent.submit(name.closest("form")!);
+      await screen.findByRole("combobox", { name: "Type" });
+    };
+
+    await createMarkerInput("space_a_rows");
+    setSpaceId("space-2");
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+      expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+    expect(screen.queryByRole("button", { name: "Use", exact: true }))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.queryByRole("button", { name: "space_a_rows" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "month" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
+    await createMarkerInput("space_b_rows");
+    const inputUse = (await screen.findAllByRole("button", {
+      name: "Use",
+      exact: true,
+    })).find((button) => !(button as HTMLButtonElement).disabled);
+    expect(inputUse).toBeDefined();
+    fireEvent.click(inputUse!);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+        "SELECT {{month}} AS value",
+      );
+    });
+    setSpaceId("space-3");
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+      expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.queryByRole("button", { name: "space_b_rows" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "month" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("discards a delayed Check after Space changes and the query ID is reused", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    let resolveOldCheck!: (value: unknown) => void;
+    previewGraphMock.mockImplementationOnce((_space: string, _yaml: string) =>
+      new Promise((resolve) => {
+        resolveOldCheck = (value) => resolve(value);
+      })
+    );
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+
+    const oldSql = await createTableQueryFromDesign("rows");
+    fireEvent.input(oldSql, { target: { value: "SELECT 4 AS old_value" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    await waitFor(() => expect(previewGraphMock).toHaveBeenCalledOnce());
+    const oldYaml = previewGraphMock.mock.calls[0][1];
+
+    setSpaceId("space-2");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
+      .toHaveValue(""));
+    const newSql = await createTableQueryFromDesign("rows");
+    fireEvent.input(newSql, { target: { value: "SELECT 4 AS old_value" } });
+    await checkQuery();
+    expect(screen.getByRole("button", { name: "Use", exact: true }))
+      .toBeEnabled();
+
+    resolveOldCheck(plannedQuery(oldYaml, {
+      kind: "table",
+      columns: [{
+        name: "old_value",
+        value_type: { scalar_type: "integer", nullable: false },
+      }],
+    }));
+    await Promise.resolve();
+    expect(screen.getByRole("textbox", { name: "SQL" }))
+      .toHaveValue("SELECT 4 AS old_value");
+    expect(screen.getByRole("button", { name: "Use", exact: true }))
+      .toBeEnabled();
+  });
+
+  it("discards a delayed literal parse after Space changes and the variable ID is reused", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    const initialDraft = createCompositionGraphDraft("Report");
+    initialDraft.variables = [{
+      id: "month",
+      kind: "constant",
+      value_type: { scalar_type: "string", nullable: false },
+      value: { kind: "string", value: "old" },
+    }];
+    let resolveOldParse!: (value: unknown) => void;
+    parseInputMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveOldParse = (value) => resolve(value);
+    }));
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        initialDraft={initialDraft}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "month" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "old-scope-value" },
+    });
+    await waitFor(() => expect(parseInputMock).toHaveBeenCalledOnce());
+
+    setSpaceId("space-2");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
+      .toHaveValue(""));
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
+      .getByRole("button", { name: "Value", exact: true }));
+    const name = await screen.findByRole("textbox", { name: "Variable name" });
+    fireEvent.input(name, { target: { value: "month" } });
+    fireEvent.submit(name.closest("form")!);
+    const currentValue = await screen.findByRole("textbox", { name: "Value" });
+    expect(currentValue).toHaveValue("");
+
+    resolveOldParse({ status: "valid", value: "old-scope-value" });
+    await Promise.resolve();
+    expect(currentValue).toHaveValue("");
+  });
+
+  it("discards delayed Form-guard parsing after Space changes and a query ID is reused", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    let resolveOldGuard!: (references: string[]) => void;
+    formReferenceGateMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveOldGuard = resolve;
+      })
+    );
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        initialDraft={draftWithTable()}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: 'SELECT 1 FROM "Receipts"' },
+    });
+    await waitFor(() => expect(formReferenceGateMock).toHaveBeenCalledOnce());
+
+    setSpaceId("space-2");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
+      .toHaveValue(""));
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
+      .getByRole("button", { name: "SQL", exact: true }));
+    const name = await screen.findByRole("textbox", { name: "Variable name" });
+    fireEvent.input(name, { target: { value: "rows" } });
+    fireEvent.submit(name.closest("form")!);
+    const currentSql = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(currentSql).toHaveValue("SELECT 1"));
+    fireEvent.input(currentSql, {
+      target: { value: 'SELECT 1 FROM "Receipts"' },
+    });
+    await waitFor(() => expect(currentSql).toHaveValue(
+      'SELECT 1 FROM "Receipts"',
+    ));
+
+    resolveOldGuard(["Receipts"]);
+    await Promise.resolve();
+    expect(currentSql).toHaveValue('SELECT 1 FROM "Receipts"');
+  });
+
+  it("clears a manual SQL marker unbind when the editor scope changes", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    const initialDraft = createCompositionGraphDraft("Report");
+    initialDraft.variables = [
+      {
+        id: "month",
+        kind: "constant",
+        value_type: { scalar_type: "string", nullable: false },
+        value: { kind: "string", value: "January" },
+      },
+      {
+        id: "rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT {{month}} AS value",
+          arguments: [{ name: "month", variable: "month" }],
+        },
+      },
+    ];
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        initialDraft={initialDraft}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    const binding = await screen.findByRole("combobox", {
+      name: "Choose a variable for month",
+    });
+    fireEvent.change(binding, { target: { value: "" } });
+    await waitFor(() => expect(binding).toHaveValue(""));
+
+    setSpaceId("space-2");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Name" }))
+      .toHaveValue(""));
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
+      .getByRole("button", { name: "Value", exact: true }));
+    const constantName = await screen.findByRole("textbox", {
+      name: "Variable name",
+    });
+    fireEvent.input(constantName, { target: { value: "month" } });
+    fireEvent.submit(constantName.closest("form")!);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("group", { name: "Add variable" })
+      .getByRole("button", { name: "SQL", exact: true }));
+    const queryName = await screen.findByRole("textbox", {
+      name: "Variable name",
+    });
+    fireEvent.input(queryName, { target: { value: "rows" } });
+    fireEvent.submit(queryName.closest("form")!);
+    const sql = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.input(sql, { target: { value: "SELECT {{month}} AS value" } });
+    await waitFor(() => expect(screen.getByRole("combobox", {
+      name: "Choose a variable for month",
+    })).toHaveValue("month"));
+  });
+
+  it("resets same-Space editing when the target revision or principal changes", async () => {
+    const [saveMode, setSaveMode] = createSignal<CompositionStudioSaveMode>(
+      { kind: "create" },
+    );
+    const targetDraft = createCompositionGraphDraft("Saved target");
+    render(() => (
+      <CompositionStudio
+        spaceId="space-1"
+        initialDraft={targetDraft}
+        saveMode={saveMode()}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.input(name, { target: { value: "create-local" } });
+    setSaveMode({
+      kind: "update",
+      compositionId: "composition-2",
+      baseRevisionId: "revision-2",
+    });
+    await waitFor(() => expect(name).toHaveValue("Saved target"));
+
+    fireEvent.input(name, { target: { value: "old-principal-local" } });
+    authSessionMock.mockResolvedValue({
+      authenticated: true,
+      account: { account_id: "editor-2", display_name: "Editor 2" },
+    });
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(name).toHaveValue("Saved target"));
+    expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("offers only Design and Variables and keeps Table controls in the canvas", async () => {
     renderStudio();
     const designTab = await screen.findByRole("tab", { name: "Design" });
@@ -1260,6 +1610,33 @@ describe("CompositionStudio graph surface", () => {
     await checkQuery();
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+  });
+
+  it("discards a rejected principal lookup from an obsolete Run after SQL changes", async () => {
+    renderStudio();
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await checkQuery();
+
+    let rejectPrincipal!: (error: Error) => void;
+    authSessionMock.mockClear();
+    authSessionMock.mockImplementationOnce(() => new Promise((_, reject) => {
+      rejectPrincipal = reject;
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() => expect(authSessionMock).toHaveBeenCalledOnce());
+
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT 2" },
+    });
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
+    rejectPrincipal(new Error("session lookup failed"));
+    await Promise.resolve();
+
+    expect(screen.getByTestId("query-preview-status"))
+      .not.toHaveTextContent("error");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(evaluateMock).not.toHaveBeenCalled();
   });
 
   it("writes the real SQL toolbar Form selection into the host before first preview and clears pending per query", async () => {

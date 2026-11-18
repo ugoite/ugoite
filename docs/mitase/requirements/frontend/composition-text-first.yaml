@@ -93,13 +93,36 @@ requirements:
           outcomes; parameter bindings and errors are presented next to the
           relevant SQL or variable control without a separate arguments page.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: editor-work-is-scope-bound
+        kind: behavior
+        statement: >-
+          Pending Composition editor work belongs to the current Space, route
+          target and base revision, and authenticated account. A detected
+          scope change discards pending creation, selection, editor validity,
+          checks, and results; an old asynchronous response cannot update the
+          new draft. An in-flight save and its receipt remain bound to the
+          original route identity.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: design-evaluation-has-current-state
+        kind: behavior
+        statement: >-
+          After a Table is placed, Design distinguishes evaluation in progress,
+          a successful empty Table, populated results, and current execution or
+          authorization failure. Invalidating a query clears its stale result
+          and failure while it is reevaluated; a current failure stays visible
+          until a successful evaluation. Check and Use do not execute SQL.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: sql-arguments-bind-locally
         kind: behavior
         statement: >-
           Each Rust-parsed SQL `{{name}}` marker has one adjacent selector for
           a typed scalar graph variable. Creating a variable from that marker
           creates the variable and binding together only while the owning SQL
-          remains unchanged. Composition does not expose Structure, Columns,
-          Filter, Sort, or Arguments SQL construction controls; an optional
-          authorized Form source remains available for a blank query.
+          remains unchanged. A manual unbind stays local to that query while
+          its marker exists; an explicit reconnect clears it, and Rust-parsed
+          marker removal clears only that query's unbind state. Query deletion
+          or an editor scope change discards this transient state. Composition
+          does not expose Structure, Columns, Filter, Sort, or Arguments SQL
+          construction controls; an optional authorized Form source remains
+          available for a blank query.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]

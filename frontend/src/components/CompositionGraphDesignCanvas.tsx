@@ -16,6 +16,7 @@ import { t } from "~/lib/i18n";
 
 export interface CompositionGraphDesignCanvasProps {
   spaceId: string;
+  editorScope?: string;
   getPrincipalGeneration: () => Promise<string>;
   draft: CompositionGraphDraft;
   previewBase?: { entryId: string; revisionId: string };
@@ -55,7 +56,11 @@ export function CompositionGraphDesignCanvas(
 ) {
   const preview = createCompositionDesignEvaluation({
     draft: () => props.draft,
-    scope: () => JSON.stringify({ spaceId: props.spaceId, base: props.previewBase }),
+    scope: () => JSON.stringify({
+      editorScope: props.editorScope ?? props.spaceId,
+      spaceId: props.spaceId,
+      base: props.previewBase,
+    }),
     spaceId: () => props.spaceId,
     principal: props.getPrincipalGeneration,
     base: () => props.previewBase,
