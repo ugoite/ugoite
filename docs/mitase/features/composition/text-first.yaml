@@ -212,6 +212,7 @@ features:
             selector: { kind: symbol, name: CompositionStudio }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-query-authority-and-schema }
+              - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
       - id: cli
         role: implementation
         facet: cli
@@ -729,9 +730,7 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.design-evaluation-has-current-state
-                covers:
-                  - FEAT-COMP-010#binding.frontend/target.design-canvas
-                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Check and Use keep a real Form-backed execution failure local and recoverable" } }
           - id: composition-check-use-delayed-evaluation
             adapter: typescript
@@ -740,9 +739,7 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.design-evaluation-has-current-state
-                covers:
-                  - FEAT-COMP-010#binding.frontend/target.design-canvas
-                  - FEAT-COMP-010#binding.frontend/target.graph-studio
+                covers: [FEAT-COMP-010#binding.frontend/target.design-canvas]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio creates Form-backed SQL and edits a plain Text component" } }
           - id: composition-design-stale-authorization-error
             adapter: typescript

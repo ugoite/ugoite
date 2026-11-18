@@ -488,7 +488,7 @@ function isDraftQueryEvaluationRequest(
       (!placedComponentId || document.spec?.components?.some((component) =>
         component.id === placedComponentId && component.kind === "table" &&
         component.variable === variableId
-      ));
+      ) === true);
   } catch {
     return false;
   }

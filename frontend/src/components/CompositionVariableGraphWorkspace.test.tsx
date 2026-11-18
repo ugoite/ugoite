@@ -7,7 +7,7 @@ import {
   within,
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompositionVariableGraphWorkspace } from "./CompositionVariableGraphWorkspace";
 import {
   type CompositionGraphDraft,
@@ -15,25 +15,17 @@ import {
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
 import type { CompositionVariableCreationKind } from "~/components/CompositionVariableCreationForm";
-import { buildSqlSchema } from "~/lib/sql";
+import * as sqlModule from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 
-const { parseInputMock, parseTemplateMock, normalizeSqlDocumentMock } = vi.hoisted(() => ({
+const { parseInputMock, parseTemplateMock } = vi.hoisted(() => ({
   parseInputMock: vi.fn(),
   parseTemplateMock: vi.fn(),
-  normalizeSqlDocumentMock: vi.fn(),
 }));
 
-vi.mock("~/lib/sql", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/sql")>();
-  normalizeSqlDocumentMock.mockImplementation(actual.normalizeSqlDocument);
-  return {
-    ...actual,
-    normalizeSqlDocument: (...args: unknown[]) =>
-      normalizeSqlDocumentMock(...args),
-  };
-});
+const { buildSqlSchema } = sqlModule;
+afterEach(() => vi.restoreAllMocks());
 
 const creationProps = (
   draft: () => CompositionGraphDraft,
@@ -983,15 +975,20 @@ describe("CompositionVariableGraphWorkspace", () => {
     })).toHaveValue(""));
 
     const editedSql = "SELECT {{month}} + 1";
-    let resolveNormalize!: (result: unknown) => void;
-    normalizeSqlDocumentMock.mockClear();
-    normalizeSqlDocumentMock.mockImplementationOnce(() =>
+    let resolveNormalize!: (
+      result: Awaited<ReturnType<typeof sqlModule.normalizeSqlDocument>>,
+    ) => void;
+    const normalizeSqlDocumentSpy = vi.spyOn(
+      sqlModule,
+      "normalizeSqlDocument",
+    );
+    normalizeSqlDocumentSpy.mockImplementationOnce(() =>
       new Promise((resolve) => {
-        resolveNormalize = (result) => resolve(result);
+        resolveNormalize = resolve;
       })
     );
     fireEvent.input(sql, { target: { value: editedSql } });
-    await waitFor(() => expect(normalizeSqlDocumentMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(normalizeSqlDocumentSpy).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByRole("button", { name: "rows_b" }));
     await waitFor(() => expect(sql).toHaveValue("SELECT 1"));
