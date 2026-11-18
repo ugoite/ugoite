@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, type Page } from "@playwright/test";
 import { getBackendUrl } from "./client.ts";
+import { normalizeCompositionFormSeedSql } from "./composition-form.ts";
 
 type GraphVariable = Record<string, unknown> & {
   id: string;
@@ -17,13 +18,41 @@ export type CompositionGraphSeed = {
   }>;
 };
 
+export async function chooseCompositionFormSource(
+  page: Page,
+  formName: string,
+  expectedSeedSql: string,
+): Promise<void> {
+  await page.getByRole("button", { name: "Form", exact: true }).click();
+  const forms = page.getByRole("group", {
+    name: "Available Forms",
+    exact: true,
+  });
+  await forms.getByRole("button", { name: formName, exact: true }).click();
+  await expect(forms).toHaveCount(0);
+  const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+  await expect.poll(async () => {
+    const actual = await editor.textContent() ?? "";
+    try {
+      return normalizeCompositionFormSeedSql(actual);
+    } catch {
+      return actual;
+    }
+  }).toBe(normalizeCompositionFormSeedSql(expectedSeedSql));
+}
+
 export async function checkCompositionQuery(page: Page): Promise<void> {
   const check = page.getByRole("button", { name: "Check", exact: true });
   await expect(check).toBeEnabled();
   await check.click();
-  await expect(
-    page.getByRole("button", { name: "Run Query", exact: true }),
-  ).toBeEnabled();
+  const use = page.getByRole("button", { name: "Use", exact: true });
+  if (await use.count()) {
+    await expect(use).toBeEnabled({ timeout: 30_000 });
+  } else {
+    await expect(
+      page.getByRole("button", { name: "Run Query", exact: true }),
+    ).toBeEnabled({ timeout: 30_000 });
+  }
 }
 
 type PreviewQuery = {

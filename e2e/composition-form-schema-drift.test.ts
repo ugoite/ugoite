@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Response, test } from "@playwright/test";
 import { parse as parseYaml } from "yaml";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import {
@@ -6,7 +6,10 @@ import {
   expectedCompositionFormSeedSql,
   normalizeCompositionFormSeedSql,
 } from "./lib/composition-form.ts";
-import { checkCompositionQuery } from "./lib/composition-graph.ts";
+import {
+  checkCompositionQuery,
+  chooseCompositionFormSource,
+} from "./lib/composition-graph.ts";
 
 type FormSummary = {
   id?: string;
@@ -24,6 +27,44 @@ function revisionFromUrl(url: string) {
   const match = url.match(/\/compositions\/([^/]+)\/([^/]+)$/);
   expect(match).toBeTruthy();
   return { compositionId: match![1], revisionId: match![2] };
+}
+
+function isDesignTableEvaluation(
+  response: Response,
+  variableId: string,
+  sql: string,
+): boolean {
+  if (
+    !new URL(response.url()).pathname.endsWith("/compositions/evaluate") ||
+    response.request().method() !== "POST"
+  ) return false;
+  const body = response.request().postDataJSON() as {
+    target?: { kind?: string; yaml?: string };
+    requested_queries?: string[];
+  };
+  if (
+    body.target?.kind !== "draft" || !body.target.yaml ||
+    !body.requested_queries?.includes(variableId)
+  ) return false;
+  try {
+    const document = parseYaml(body.target.yaml) as {
+      spec?: {
+        variables?: Array<{ id?: string; query?: { sql?: string } }>;
+        components?: Array<{ kind?: string; variable?: string }>;
+      };
+    };
+    return document.spec?.variables?.some((variable) =>
+          variable.id === variableId &&
+          typeof variable.query?.sql === "string" &&
+          normalizeCompositionFormSeedSql(variable.query.sql) ===
+            normalizeCompositionFormSeedSql(sql)
+        ) === true &&
+      document.spec?.components?.some((component) =>
+          component.kind === "table" && component.variable === variableId
+        ) === true;
+  } catch {
+    return false;
+  }
 }
 
 test("Composition keeps a saved query executable after an unused Form field is added", async ({ browser, context, request }) => {
@@ -99,31 +140,21 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await palette.getByRole("button", { name: "Table", exact: true }).click();
     await page.getByLabel("Variable name", { exact: true }).fill(variableId);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    const variablesTab = page.getByRole("tab", {
-      name: "Variables",
-      exact: true,
-    });
-    await variablesTab.click();
-    await page.getByRole("button", { name: variableId, exact: true }).click();
     const originalSql = expectedCompositionFormSeedSql(
-      formBefore?.sql_relation ?? formName,
+      formName,
       formBefore?.fields,
     );
-    await page.getByRole("button", { name: "Form", exact: true }).click();
-    await page.getByRole("group", { name: "Available Forms", exact: true })
-      .getByRole("button", { name: formName, exact: true }).click();
-    await page.getByRole("textbox", { name: "SQL", exact: true })
-      .fill(originalSql);
+    await chooseCompositionFormSource(page, formName, originalSql);
     await checkCompositionQuery(page);
-    const initialQueryPreviewResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
-      response.request().method() === "POST"
+    const initialEvaluationResponse = page.waitForResponse((response) =>
+      isDesignTableEvaluation(response, variableId, originalSql)
     );
-    await page.getByRole("button", { name: "Run Query", exact: true }).click();
-    const initialQueryPreview = await (await initialQueryPreviewResponse)
+    await page.getByRole("button", { name: "Use", exact: true }).click();
+    const initialEvaluation = await (await initialEvaluationResponse)
       .json() as { ok?: boolean };
-    expect(initialQueryPreview.ok).toBe(true);
-    await page.getByRole("tab", { name: "Design", exact: true }).click();
+    expect(initialEvaluation.ok).toBe(true);
+    await expect(page.getByRole("tab", { name: "Design", exact: true }))
+      .toHaveAttribute("aria-selected", "true");
 
     const tableName = variableId;
     const initialTable = page.getByRole("table", { name: tableName });
@@ -156,6 +187,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
         variables?: Array<{
           id?: string;
           query?: { schema_fingerprint?: string; sql?: string };
+          returns?: { columns?: Array<{ name?: string }> };
         }>;
         components?: Array<{ kind?: string; variable?: string }>;
       };
@@ -163,12 +195,19 @@ test("Composition keeps a saved query executable after an unused Form field is a
     const originalQuery = originalDocument.spec?.variables?.find((variable) =>
       variable.id === variableId
     );
+    const originalResultColumns = originalQuery?.returns?.columns?.map((
+      column,
+    ) => column.name);
+    expect([...(originalResultColumns ?? [])].sort()).toEqual([
+      "Summary",
+      "Title",
+    ]);
     expect(originalQuery?.query?.schema_fingerprint)
       .toMatch(/^[0-9a-f]{64}$/);
     expect(
       normalizeCompositionFormSeedSql(originalQuery?.query?.sql ?? ""),
     ).toBe(expectedCompositionFormSeedSql(
-      formBefore?.sql_relation ?? formName,
+      formName,
       formBefore?.fields,
     ));
     const originalTable = originalDocument.spec?.components?.find(
@@ -264,8 +303,15 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await studioTabs.getByRole("tab", { name: "Variables", exact: true })
       .click();
     await page.getByRole("button", { name: variableId, exact: true }).click();
-    await page.getByRole("textbox", { name: "SQL", exact: true })
-      .fill(originalSql);
+    const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await expect.poll(async () => {
+      const actual = await editor.textContent() ?? "";
+      try {
+        return normalizeCompositionFormSeedSql(actual);
+      } catch {
+        return actual;
+      }
+    }).toBe(normalizeCompositionFormSeedSql(originalSql));
     await checkCompositionQuery(page);
     const currentSchemaPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&
@@ -296,13 +342,13 @@ test("Composition keeps a saved query executable after an unused Form field is a
     expect(currentSchemaQuery?.schema_fingerprint)
       .toBe(originalQuery?.query?.schema_fingerprint);
     expect(currentSchemaQuery?.returns?.columns?.map((column) => column.name))
-      .toEqual(["Title", "Summary"]);
+      .toEqual(originalResultColumns);
     expect(
       currentSchemaPreview.query_results?.[variableId]?.value?.columns?.map((
         column,
       ) => column.name),
     )
-      .toEqual(["Title", "Summary"]);
+      .toEqual(originalResultColumns);
     const authoringPreview = page.getByRole("table").first();
     await expect(authoringPreview.locator("thead")).toContainText("Summary");
     await expect(authoringPreview.locator("thead")).not.toContainText("Notes");
@@ -340,7 +386,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
     const renderedTableHeaders = (
       await newRuntimeTable.locator("thead th").allTextContents()
     ).map((header) => header.trim());
-    expect(renderedTableHeaders).toEqual(["Title", "Summary"]);
+    expect(renderedTableHeaders).toEqual(originalResultColumns);
     const originalRevisionAfterResponse = await request.get(
       originalRevisionPath,
     );

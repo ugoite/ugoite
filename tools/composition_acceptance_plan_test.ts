@@ -11,10 +11,23 @@ type Criterion = {
   manual_evidence_gaps?: string[];
 };
 
+type ReviewCriterion = {
+  id: string;
+  plan_items: string[];
+  maps_to_current: string[];
+  requirement: string;
+  selectors: Selector[];
+};
+
 type AcceptancePlan = {
   schema: string;
   source: string;
   criteria: Criterion[];
+  review_closure_2026_11_17: {
+    source: string;
+    note: string;
+    criteria: ReviewCriterion[];
+  };
 };
 
 const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
@@ -40,6 +53,24 @@ const EXPECTED_REQUIREMENTS = [
   "Authors edit Text in place with multiline and IME-safe keyboard behavior; readers preserve newlines and render displayable scalar values as escaped plain text.",
   "Saved Composition revisions recheck current Entry access after query results are staged and before results are returned.",
 ];
+const EXPECTED_REVIEW_IDS = Array.from(
+  { length: 12 },
+  (_, index) => `A${String(index + 1).padStart(2, "0")}`,
+);
+const EXPECTED_REVIEW_PLAN_ITEMS: Record<string, string[]> = {
+  A01: ["F01"],
+  A02: ["F02"],
+  A03: ["F03"],
+  A04: ["F04"],
+  A05: ["F05"],
+  A06: ["F06"],
+  A07: ["F07"],
+  A08: ["F09"],
+  A09: ["F08", "F09"],
+  A10: ["F09"],
+  A11: ["F09"],
+  A12: ["F08", "F09"],
+};
 
 Deno.test(
   "Composition acceptance plan maps current Text-first criteria to repository evidence",
@@ -59,6 +90,36 @@ Deno.test(
       plan.criteria.map(({ requirement }) => requirement),
       EXPECTED_REQUIREMENTS,
     );
+    assertEquals(
+      plan.review_closure_2026_11_17.source,
+      "Ugoite v0.2.2 — Additional Implementation Plan, 2026-11-17",
+    );
+    assertEquals(
+      plan.review_closure_2026_11_17.criteria.map(({ id }) => id),
+      EXPECTED_REVIEW_IDS,
+    );
+    for (const criterion of plan.review_closure_2026_11_17.criteria) {
+      assertEquals(
+        criterion.plan_items,
+        EXPECTED_REVIEW_PLAN_ITEMS[criterion.id],
+        `${criterion.id} maps its required implementation-plan items`,
+      );
+      assert(
+        criterion.requirement.length > 0,
+        `${criterion.id} needs a requirement`,
+      );
+      assert(criterion.selectors.length > 0, `${criterion.id} needs evidence`);
+      for (const selector of criterion.selectors) {
+        const source = await Deno.readTextFile(selector.path);
+        assert(source.length > 0, `${criterion.id}: ${selector.path}`);
+        if (selector.kind === "test") {
+          assert(
+            source.includes(selector.name),
+            `${criterion.id}: missing selector ${selector.name}`,
+          );
+        }
+      }
+    }
 
     for (
       const key of ["status", "runtime_evidence", "release_status"] as const

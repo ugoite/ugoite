@@ -128,6 +128,11 @@ vi.mock("~/components/SQLWorkspace", () => ({
       error?: string;
     };
     previewDisabled?: boolean;
+    hideRun?: boolean;
+    onAccept?: () => void;
+    acceptLabel?: string;
+    acceptDisabled?: boolean;
+    onCancel?: () => void;
     preview?: {
       status: string;
       isCurrent: boolean;
@@ -142,17 +147,28 @@ vi.mock("~/components/SQLWorkspace", () => ({
         readOnly={props.readOnly}
         onInput={(event) => props.onSqlChange?.(event.currentTarget.value)}
       />
-      <button
-        type="button"
-        disabled={props.previewDisabled || Boolean(
-          props.onCheck &&
-            (props.planner?.status !== "success" ||
-              !props.planner.isCurrent),
-        )}
-        onClick={() => props.onPreview?.()}
-      >
-        Run query
-      </button>
+      {!props.hideRun && (
+        <button
+          type="button"
+          disabled={props.previewDisabled || Boolean(
+            props.onCheck &&
+              (props.planner?.status !== "success" ||
+                !props.planner.isCurrent),
+          )}
+          onClick={() => props.onPreview?.()}
+        >
+          Run query
+        </button>
+      )}
+      {props.onAccept && (
+        <button
+          type="button"
+          disabled={props.acceptDisabled}
+          onClick={() => props.onAccept?.()}
+        >
+          {props.acceptLabel}
+        </button>
+      )}
       <span data-testid="query-preview-disabled">
         {props.previewDisabled ? "true" : "false"}
       </span>
@@ -276,15 +292,7 @@ const createTableQueryFromDesign = async (id: string) => {
   const name = screen.getByRole("textbox", { name: "Variable name" });
   fireEvent.input(name, { target: { value: id } });
   fireEvent.submit(name.closest("form")!);
-  await waitFor(() =>
-    expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    )
-  );
-  fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
-  fireEvent.click(await screen.findByRole("button", { name: id, exact: true }));
-  return screen.getByRole("textbox", { name: "SQL" });
+  return await screen.findByRole("textbox", { name: "SQL" });
 };
 
 const selectFormForQuery = async (name: string) => {
@@ -323,7 +331,14 @@ const checkQuery = async () => {
     )
   );
   expect(screen.getByTestId("query-plan-status")).toHaveTextContent("success");
-  expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled();
+  const useButton = screen.queryByRole("button", { name: "Use", exact: true });
+  if (useButton) {
+    expect(screen.queryByRole("button", { name: "Run query" }))
+      .not.toBeInTheDocument();
+    expect(useButton).toBeEnabled();
+  } else {
+    expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled();
+  }
 };
 
 let releasePendingFormReferences: ((references: string[]) => void) | undefined;
@@ -634,14 +649,32 @@ describe("CompositionStudio graph surface", () => {
         .closest("form")!,
     );
 
-    expect(await screen.findByRole("textbox", { name: "customer_id" }))
+    expect(await screen.findByRole("combobox", { name: "Type" }))
       .toBeVisible();
+    expect(screen.getByRole("tab", { name: "Variables" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByRole("textbox", { name: "customer_id" }))
+      .not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
+    const saveCall = screen.getByRole("button", { name: "Save" });
+    expect(saveCall).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
+      target: { value: "integer" },
+    });
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: "42" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Use" }))
+      .toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
     expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    const saveCall = screen.getByRole("button", { name: "Save" });
+    expect(await screen.findByRole("textbox", { name: "customer_id" }))
+      .toBeVisible();
     expect(saveCall).toBeEnabled();
     fireEvent.click(saveCall);
     await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
@@ -652,6 +685,8 @@ describe("CompositionStudio graph surface", () => {
     expect(spec.variables).toContainEqual(expect.objectContaining({
       id: "customer_id",
       kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      default: { kind: "integer", value: 42 },
     }));
     expect(spec.components).toContainEqual({
       id: "input_1",
@@ -1179,6 +1214,9 @@ describe("CompositionStudio graph surface", () => {
     expect(request.variables).toEqual({ limit: 7 });
     expect(integerVariableIds).toContain("limit");
     expect(request).not.toHaveProperty("component_values");
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(draft.variables.find((variable) => variable.id === "limit"))
+      .not.toHaveProperty("value");
   });
 
   it("requires a current Check and discards a delayed result after SQL changes", async () => {
@@ -1409,6 +1447,13 @@ describe("CompositionStudio graph surface", () => {
     const sql =
       'SELECT "amount" AS "Amount paid" FROM "Receipts" ORDER BY "_ugoite_updated_at" DESC, "_ugoite_id"';
     await waitFor(() => expect(editor).toHaveValue(sql));
+    fireEvent.click(screen.getByRole("button", { name: "Use", exact: true }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+    );
     const saveButton = screen.getByRole("button", {
       name: "Save",
       exact: true,

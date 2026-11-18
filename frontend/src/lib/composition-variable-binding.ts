@@ -142,6 +142,39 @@ export const compositionGraphAuthoringDocument = (
   name: draft.name.trim() ? draft.name : "Untitled Composition",
 });
 
+/**
+ * Query checks on a brand-new Composition need a structurally valid graph,
+ * even before the user places its first component. Keep this anchor confined
+ * to transient query planning; it is never written back to editor Work.
+ */
+export const compositionGraphQueryWorkbenchDocument = (
+  draft: CompositionGraphDraft,
+): CompositionGraphDocumentDraft => {
+  const document = compositionGraphAuthoringDocument(draft);
+  if (document.spec.components.length > 0) return document;
+
+  const anchorId = "query_workbench_anchor";
+  return {
+    ...document,
+    spec: {
+      ...document.spec,
+      components: [{
+        id: anchorId,
+        kind: "text",
+        content: "",
+        style: "body",
+      }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "query_workbench",
+          items: [{ kind: "component", component: anchorId }],
+        }],
+      },
+    },
+  };
+};
+
 /** Project a Rust-canonical graph document into editor Work, fail-closed. */
 export const compositionGraphDraftFromDocument = (
   value: unknown,

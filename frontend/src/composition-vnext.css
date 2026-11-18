@@ -121,6 +121,28 @@
   align-items: center;
   min-height: 44px;
 }
+.compositionSqlArgumentCreateMenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
+}
+.compositionSqlArgumentCreateMenu button {
+  min-height: 44px;
+  padding: var(--ui-spacing-xs) var(--ui-spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-1);
+  color: var(--ui-foreground);
+}
+.compositionSqlArgumentCreateMenu button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+.compositionGraphInputRemovalNotice {
+  flex-basis: 100%;
+  color: var(--ui-foreground-muted);
+  font-size: 0.875rem;
+}
 .compositionVariableEditorEmpty {
   min-height: 8rem;
 }

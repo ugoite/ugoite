@@ -192,6 +192,7 @@ describe("Composition inline SQL argument bindings", () => {
         name: "Create a variable for limit",
       }),
     );
+    fireEvent.click(await screen.findByRole("button", { name: "Value" }));
     const name = screen.getByRole("textbox", { name: "Variable name" });
     await waitFor(() => expect(name).toHaveValue("limit_2"));
     fireEvent.submit(name.closest("form")!);
@@ -209,6 +210,77 @@ describe("Composition inline SQL argument bindings", () => {
       expect(screen.getByRole("textbox", { name: "SQL" }))
         .toHaveFocus()
     );
+  });
+
+  it("cancels SQL marker Input creation without leaving its variable or binding", async () => {
+    const initial = makeDraft("SELECT {{limit}} AS value", false);
+    const draft = renderStudio(initial);
+    await openQuery();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Create a variable for limit",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Input" }));
+    const name = screen.getByRole("textbox", { name: "Variable name" });
+    await waitFor(() => expect(name).toHaveValue("limit"));
+    fireEvent.submit(name.closest("form")!);
+
+    await screen.findByRole("combobox", { name: "Type" });
+    expect(draft().components).toHaveLength(0);
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(draft().variables.map((node) => node.id))
+      .toEqual(["threshold", "caption", "rows"]));
+    expect(draft().components).toHaveLength(0);
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" }))
+        .toHaveFocus()
+    );
+  });
+
+  it("rolls back a marker Input and its pending Table query when both are canceled", async () => {
+    const draft = renderStudio(createCompositionGraphDraft("Report"));
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    const queryName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.input(queryName, { target: { value: "rows" } });
+    fireEvent.submit(queryName.closest("form")!);
+    const sql = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.input(sql, {
+      target: { textContent: "SELECT {{month}} AS value" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Create a variable for month",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Input" }));
+
+    const inputName = screen.getByRole("textbox", { name: "Variable name" });
+    fireEvent.submit(inputName.closest("form")!);
+    await screen.findByRole("combobox", { name: "Type" });
+    expect(draft().variables.map((node) => node.id)).toEqual(["rows", "month"]);
+    expect(draft().components).toHaveLength(0);
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(draft().variables.map((node) => node.id))
+      .toEqual(["rows"]));
+    expect(draft().variables.find((node) => node.id === "rows"))
+      .toMatchObject({ query: { arguments: [] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Design" }))
+      .toHaveAttribute("aria-selected", "true"));
+    expect(draft().variables).toEqual([]);
+    expect(draft().components).toEqual([]);
   });
 
   it("suggests a unique name for variables created from Design", async () => {
@@ -230,19 +302,30 @@ describe("Composition inline SQL argument bindings", () => {
     );
   });
 
-  it("adds and cancels a Design input in place with matching graph references", async () => {
+  it("edits a Design Input in Variables and commits placement only on Use", async () => {
     const draft = renderStudio(createCompositionGraphDraft("Report"));
 
     fireEvent.click(
       screen.getByRole("button", { name: "Input" }),
     );
+    expect(screen.getByRole("tab", { name: "Variables" }))
+      .toHaveAttribute("aria-selected", "true");
     const name = screen.getByRole("textbox", { name: "Variable name" });
     await waitFor(() => expect(name).toHaveValue("input"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    fireEvent.input(name, { target: { value: "abandoned_input" } });
+    fireEvent.submit(name.closest("form")!);
+    fireEvent.change(await screen.findByRole("combobox", { name: "Type" }), {
+      target: { value: "boolean" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(draft().variables).toHaveLength(0);
     expect(draft().components).toHaveLength(0);
+    expect(screen.getByRole("tab", { name: "Design" }))
+      .toHaveAttribute("aria-selected", "true");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Input" }))
+        .toHaveFocus()
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: "Input" }),
@@ -251,15 +334,20 @@ describe("Composition inline SQL argument bindings", () => {
     fireEvent.input(nextName, { target: { value: "customer_id" } });
     fireEvent.submit(nextName.closest("form")!);
 
-    await waitFor(() =>
-      expect(draft().components).toContainEqual(
-        expect.objectContaining({ kind: "input", variable: "customer_id" }),
-      )
-    );
+    const type = await screen.findByRole("combobox", { name: "Type" });
+    expect(draft().components).toHaveLength(0);
+    expect(screen.getByRole("tab", { name: "Design" })).toBeDisabled();
+    fireEvent.change(type, { target: { value: "boolean" } });
+    expect(screen.getByRole("button", { name: "Use" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+
+    await waitFor(() => expect(draft().components).toContainEqual(
+      expect.objectContaining({ kind: "input", variable: "customer_id" }),
+    ));
     expect(draft().variables).toContainEqual({
       id: "customer_id",
       kind: "input",
-      value_type: { scalar_type: "string", nullable: false },
+      value_type: { scalar_type: "boolean", nullable: false },
       required: true,
     });
     expect(screen.getByRole("tab", { name: "Design" }))

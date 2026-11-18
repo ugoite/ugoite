@@ -311,5 +311,144 @@
         }
       ]
     }
-  ]
+  ],
+  "review_closure_2026_11_17": {
+    "source": "Ugoite v0.2.2 — Additional Implementation Plan, 2026-11-17",
+    "note": "The nested A01–A12 identifiers are scoped to the 2026-11-17 closure plan; the current Text-first A01–A16 matrix above remains unchanged.",
+    "criteria": [
+      {
+        "id": "A01",
+        "plan_items": ["F01"],
+        "maps_to_current": ["A01", "A14"],
+        "requirement": "Composition SQL projection wildcards are rejected across Rust graph compilation, save, and adapters while standard SQL wildcard queries remain available.",
+        "selectors": [
+          { "path": "crates/ugoite-domain/src/sql_lint.rs", "kind": "test", "name": "composition_profile_rejects_only_projection_wildcards" },
+          { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "rejects_projection_wildcards_with_variable_identity_and_source_range" },
+          { "path": "crates/ugoite-server/src/lib.rs", "kind": "test", "name": "composition_save_rejects_projection_wildcard_from_non_browser_client" }
+        ]
+      },
+      {
+        "id": "A02",
+        "plan_items": ["F02"],
+        "maps_to_current": ["A14"],
+        "requirement": "Bare sql lint keeps its v0.2.1 JSON, syntax judgment, and exit status; structured diagnostics use explicit selection and remain offline.",
+        "selectors": [
+          { "path": "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs", "kind": "test", "name": "test_sql_lint_default_preserves_v021_stdout_and_success_status" },
+          { "path": "crates/ugoite-cli/src/commands/sql.rs", "kind": "test", "name": "sql_lint_accepts_source_file_and_profile_options" },
+          { "path": "crates/ugoite-wasm/src/lib.rs", "kind": "test", "name": "portable_sql_lint_matches_domain_profiles" }
+        ]
+      },
+      {
+        "id": "A03",
+        "plan_items": ["F03"],
+        "maps_to_current": ["A07", "A13"],
+        "requirement": "Lint is static, Check plans without row data, Run requires a current Check and revalidates authorization, and stale Check responses cannot become current.",
+        "selectors": [
+          { "path": "frontend/src/components/CompositionStudioSync.test.tsx", "kind": "test", "name": "requires a current Check and discards a delayed result after SQL changes" },
+          { "path": "frontend/src/components/CompositionVariableGraphWorkspace.test.tsx", "kind": "test", "name": "keeps SQL lint, parameter bindings, and execution errors local to the selected query" },
+          { "path": "crates/ugoite-server/src/lib.rs", "kind": "test", "name": "composition_save_rejects_projection_wildcard_from_non_browser_client" }
+        ]
+      },
+      {
+        "id": "A04",
+        "plan_items": ["F04"],
+        "maps_to_current": ["A05"],
+        "requirement": "SQL markers offer typed scalar variable completion and keep every committed parameter-to-variable binding explicit.",
+        "selectors": [
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "binds each Rust-parsed marker beside the text editor without structure dialogs" },
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "creates a unique suggested variable and binds it atomically from the SQL marker" },
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Input creation from Variables and SQL markers places one bound Input" }
+        ]
+      },
+      {
+        "id": "A05",
+        "plan_items": ["F05"],
+        "maps_to_current": ["A02", "A04", "A14"],
+        "requirement": "Retired SQL structure editing has no production UI path while shared SQL contracts, Form seeding, EntryBrowser, and published Saved SQL remain covered.",
+        "selectors": [
+          { "path": "tools/sql_feature_matrix_test.ts", "kind": "file" },
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Studio creates a Form-backed Table query from Design and reopens its result" },
+          { "path": "e2e/saved-sql-route.test.ts", "kind": "file" }
+        ]
+      },
+      {
+        "id": "A06",
+        "plan_items": ["F06"],
+        "maps_to_current": ["A11"],
+        "requirement": "A Table query stays in Variables through SQL editing and Check, then Use places or rebinds it at the original Design position; cancellation restores the prior draft.",
+        "selectors": [
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Studio creates a Form-backed Table query from Design and reopens its result" },
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Table query replacement uses Check and preserves the component position on cancel" }
+        ]
+      },
+      {
+        "id": "A07",
+        "plan_items": ["F07"],
+        "maps_to_current": ["A05", "A11"],
+        "requirement": "Design and SQL marker Input creation transition to the Variables name, type, required, and default editor. Use places the first component; SQL marker Use also stores its explicit binding and returns to SQL. Variables creation places immediately and stays in Variables. Cancel rolls back, and input values remain Work.",
+        "selectors": [
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Input creation from Variables and SQL markers places one bound Input" },
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "edits a Design Input in Variables and commits placement only on Use" },
+          { "path": "frontend/src/components/CompositionStudioSync.test.tsx", "kind": "test", "name": "passes the current typed Input Work snapshot to Run without saving it" },
+          { "path": "frontend/src/components/CompositionGraphArguments.test.tsx", "kind": "test", "name": "cancels SQL marker Input creation without leaving its variable or binding" }
+        ]
+      },
+      {
+        "id": "A08",
+        "plan_items": ["F09"],
+        "maps_to_current": ["A06", "A09", "A15"],
+        "requirement": "Text, Boolean, exact numeric, scalar cardinality, direct editing, and read-only Reader contracts remain intact.",
+        "selectors": [
+          { "path": "e2e/composition-scalar-state-journey.test.ts", "kind": "file" },
+          { "path": "frontend/src/components/CompositionGraphDesignCanvas.test.tsx", "kind": "test", "name": "preserves multiline Text through IME, Escape, and focus leaving the editor" },
+          { "path": "e2e/composition-golden-journey.test.ts", "kind": "test", "name": "Browser saves a Text tool once, reopens its exact revision from Home, and exposes a read-only reader" }
+        ]
+      },
+      {
+        "id": "A09",
+        "plan_items": ["F08", "F09"],
+        "maps_to_current": ["A13", "A14", "A16"],
+        "requirement": "Current save, receipt, conflict, exact-revision restore, raw old-shape reads, authorization, and history remain protected.",
+        "selectors": [
+          { "path": "e2e/composition-save-receipt.test.ts", "kind": "file" },
+          { "path": "e2e/composition-recovery-authorization.test.ts", "kind": "file" },
+          { "path": "crates/ugoite-iceberg/tests/test_older_cli_knowledge_preservation.rs", "kind": "file" }
+        ]
+      },
+      {
+        "id": "A10",
+        "plan_items": ["F09"],
+        "maps_to_current": ["A10", "A12"],
+        "requirement": "Automated 320/375/390px checks preserve 44px controls, focus, and local Table scrolling without page overflow; physical Safari, native zoom, and manual VoiceOver/NVDA are excluded.",
+        "selectors": [
+          { "path": "e2e/composition-table-mobile.test.ts", "kind": "test", "name": "Composition Table scrolls inside a narrow read-only reader" },
+          { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Studio modes and the Table picker remain keyboard accessible at narrow widths" }
+        ]
+      },
+      {
+        "id": "A11",
+        "plan_items": ["F09"],
+        "maps_to_current": ["A01", "A04", "A14"],
+        "requirement": "Native Rust, WASM, CLI, REST/OpenAPI, Saved SQL, older CLI Knowledge reads, Mitase, and changed-source TypeScript checks retain current parity.",
+        "selectors": [
+          { "path": "crates/ugoite-wasm/tests/composition_parity.ts", "kind": "file" },
+          { "path": "crates/ugoite-api-client/src/composition.rs", "kind": "file" },
+          { "path": "crates/ugoite-server/src/openapi.json", "kind": "file" },
+          { "path": "tools/verify_older_cli_knowledge_preservation.ts", "kind": "file" }
+        ]
+      },
+      {
+        "id": "A12",
+        "plan_items": ["F08", "F09"],
+        "maps_to_current": ["A13", "A14"],
+        "requirement": "The v0.2.1 supported compatibility contract, prerelease Composition rejection, raw history, Space 0.1, and unchanged version projections agree.",
+        "selectors": [
+          { "path": "docs/architecture/contracts/adr-027-text-first-composition.md", "kind": "file" },
+          { "path": "docs/architecture/contracts/composition.md", "kind": "file" },
+          { "path": "docs/architecture/release/release-contract.md", "kind": "file" },
+          { "path": "crates/ugoite-cli/src/commands/composition.rs", "kind": "test", "name": "lint_rejects_the_removed_prerelease_source_document" }
+        ]
+      }
+    ]
+  }
 }

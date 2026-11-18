@@ -3,8 +3,10 @@ title: Composition contract
 description: The portable typed graph and execution boundaries for Composition.
 ---
 
-**Status:** [ADR-027](./adr-027-text-first-composition.md) is the accepted
-Composition model; its implementation and focused verification are in progress.
+**Status:** [ADR-027](./adr-027-text-first-composition.md) is the accepted and
+implemented Composition model. The focused verification selectors and their
+evidence limits are tracked in
+[issue #4613](https://github.com/ugoite/ugoite/issues/4613).
 This document does not authorize release preparation, version changes, or
 publication.
 
@@ -105,21 +107,26 @@ SQL source, graph bindings, type, and local diagnostics without a separate
 arguments page. Lint, authorized schema check, and explicit execution remain
 distinct actions.
 
-If Design needs a missing Table or Input variable, successful creation in
-Variables returns to the pending placement. Cancellation or failure leaves no
-partial component. Reader uses the shared renderer without authoring modes,
+If Design needs a Table query, its name and SQL are edited in Variables. An
+authorized Check confirms the result schema; Use returns to the original
+Design position and places the Table without requiring a query run. Cancelling
+or failing leaves the prior component and draft intact. An Input requested
+from Design or a SQL marker uses the Variables name, type, required, and
+default editor before Use places its first component. SQL marker creation also
+commits its explicit binding. Creation from Variables places the component and
+stays in Variables. Reader uses the shared renderer without authoring modes,
 selection controls, or editing actions. UI layout, accessibility, focus, and
 responsive behavior follow the UI specifications and policies.
 
 ## Compatibility and recovery
 
-The replaced query/component shape has no compatibility reader and is
-scheduled for the next minor version under the repository's Knowledge
-compatibility rule. An unsupported historical Composition is not silently
-migrated or executed. Raw inspect, export, and history remain available through
-the general Entry history and recovery paths. Restore is supported when the
-source revision has the current Composition shape; the replaced shape cannot
-be restored as an executable Composition.
+The v0.2.1 released CLI, REST/OpenAPI, and release notes do not define a
+Composition surface. The replaced shape was saveable on prerelease `main`; its
+records remain raw Knowledge but are not executable or restorable as the current
+Composition. v0.2.2 closes this unreleased-format change as a compatible patch
+without migration or dual read. Raw inspect, exact reads, export, and history
+remain available. Restore succeeds for current-shape revisions and rejects the
+replaced shape.
 
 Published Saved SQL API and CLI operations, the `SQL` system Form, Space/Entry/
 Form 0.1 semantics, EntryBrowser/FormTable controls, CI lanes, and merge queue

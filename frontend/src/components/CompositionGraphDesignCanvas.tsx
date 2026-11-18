@@ -4,7 +4,6 @@ import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer"
 import { createCompositionDesignEvaluation } from "~/lib/composition-design-evaluation";
 import { UiIcon } from "~/components/UiIcon";
 import { CompositionVariableBindingPicker } from "~/components/CompositionVariableBindingPicker";
-import { CompositionVariableCreationForm } from "~/components/CompositionVariableCreationForm";
 import {
   appendCompositionGraphComponent,
   compositionNodeReturnsScalar,
@@ -22,12 +21,11 @@ export interface CompositionGraphDesignCanvasProps {
   previewBase?: { entryId: string; revisionId: string };
   previewGeneration?: number;
   onDraftChange: (draft: CompositionGraphDraft) => void;
-  pendingInputCreation?: boolean;
-  pendingInputSuggestedName?: string;
   onRequestCreateInput?: () => void;
-  onCommitCreateInput?: (name: string) => boolean;
-  onCancelCreateInput?: () => void;
-  onFocusCreatedInput?: () => void;
+  focusComponentId?: string;
+  focusComponentGeneration?: number;
+  focusTableButton?: number;
+  focusInputButton?: number;
   onRequestCreateTableQuery?: (componentId?: string) => void;
   onEditVariable?: (id: string) => void;
   onSaveSnapshotReady?: (
@@ -74,10 +72,57 @@ export function CompositionGraphDesignCanvas(
     string | null | undefined
   >();
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  const [inputRemovalNotice, setInputRemovalNotice] = createSignal(false);
   let addButton: HTMLButtonElement | undefined;
   let addInputButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
   const textUpdatesInProgress = new Set<string>();
+  let previousFocusComponentId: string | undefined;
+  let previousFocusComponentGeneration =
+    props.focusComponentGeneration ?? 0;
+  let previousFocusTableButton = props.focusTableButton ?? 0;
+  let previousFocusInputButton = props.focusInputButton ?? 0;
+  createEffect(() => {
+    selectedId();
+    setInputRemovalNotice(false);
+  });
+  createEffect(() => {
+    const id = props.focusComponentId;
+    const generation = props.focusComponentGeneration ?? 0;
+    if (
+      !id ||
+      (id === previousFocusComponentId &&
+        generation === previousFocusComponentGeneration)
+    ) return;
+    previousFocusComponentId = id;
+    previousFocusComponentGeneration = generation;
+    setSelectedId(id);
+    queueMicrotask(() => {
+      const component = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-component-id]"),
+      ).find((element) => element.dataset.componentId === id);
+      const focusTarget = component?.matches(
+        "[data-component-select='true']",
+      )
+        ? component
+        : component?.querySelector<HTMLElement>(
+          "[data-component-select='true']",
+        );
+      focusTarget?.focus();
+    });
+  });
+  createEffect(() => {
+    const generation = props.focusTableButton ?? 0;
+    if (generation === previousFocusTableButton) return;
+    previousFocusTableButton = generation;
+    queueMicrotask(() => addButton?.focus());
+  });
+  createEffect(() => {
+    const generation = props.focusInputButton ?? 0;
+    if (generation === previousFocusInputButton) return;
+    previousFocusInputButton = generation;
+    queueMicrotask(() => addInputButton?.focus());
+  });
 
   const focusComponent = (id: string) => {
     queueMicrotask(() => {
@@ -85,14 +130,14 @@ export function CompositionGraphDesignCanvas(
     });
   };
   const openTablePicker = (componentId?: string) => {
+    bindingOpener = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     const tables = props.draft.variables.filter(compositionNodeReturnsTable);
     if (tables.length === 0) {
       props.onRequestCreateTableQuery?.(componentId);
       return;
     }
-    bindingOpener = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
     setPickerComponentId(componentId ?? null);
   };
   const createTableQuery = () => {
@@ -247,6 +292,18 @@ export function CompositionGraphDesignCanvas(
   const removeSelected = () => {
     const id = selectedId();
     if (!id) return;
+    const selected = props.draft.components.find((component) =>
+      component.id === id
+    );
+    if (
+      selected?.kind === "input" &&
+      props.draft.components.filter((component) =>
+        component.kind === "input" && component.variable === selected.variable
+      ).length === 1
+    ) {
+      setInputRemovalNotice(true);
+      return;
+    }
     const ids = orderedIds();
     const index = ids.indexOf(id);
     const adjacent = ids[index + 1] ?? ids[index - 1];
@@ -314,6 +371,11 @@ export function CompositionGraphDesignCanvas(
         })}
         onClick={removeSelected}
       />
+      <Show when={inputRemovalNotice()}>
+        <span class="compositionGraphInputRemovalNotice" role="status">
+          {t("composition.studioCannotRemoveLastInput")}
+        </span>
+      </Show>
     </div>
   );
 
@@ -333,55 +395,39 @@ export function CompositionGraphDesignCanvas(
             {t("composition.studioTable")}
           </button>
           <Show
-            when={props.pendingInputCreation}
+            when={props.draft.variables.some((node) => node.kind === "input")}
             fallback={
-              <Show
-                when={props.draft.variables.some((node) => node.kind === "input")}
-                fallback={
-                  <button
-                    type="button"
-                    ref={(element) => addInputButton = element}
-                    onClick={() => props.onRequestCreateInput?.()}
-                  >
-                    <UiIcon name="canvas-input" />
-                    {t("composition.studioAddInput")}
-                  </button>
-                }
+              <button
+                type="button"
+                ref={(element) => addInputButton = element}
+                onClick={() => props.onRequestCreateInput?.()}
               >
-                <div class="compositionGraphInputChoice">
-                  <label>
-                    <UiIcon name="canvas-input" />
-                    <select
-                      aria-label={t("composition.studioAddInput")}
-                      value=""
-                      onChange={(event) => event.currentTarget.value && insertInput(event.currentTarget.value)}
-                    >
-                      <option value="">{t("composition.studioAddInput")}</option>
-                      <For each={props.draft.variables.filter((node) => node.kind === "input")}>
-                        {(node) => <option value={node.id}>{node.id}</option>}
-                      </For>
-                    </select>
-                  </label>
-                  <IconButton
-                    icon="plus"
-                    label={t("composition.studioCreateInput")}
-                    ref={(element) => addInputButton = element}
-                    onClick={() => props.onRequestCreateInput?.()}
-                  />
-                </div>
-              </Show>
+                <UiIcon name="canvas-input" />
+                {t("composition.studioAddInput")}
+              </button>
             }
           >
-            <CompositionVariableCreationForm
-              existingNames={props.draft.variables.map((node) => node.id)}
-              suggestedName={props.pendingInputSuggestedName}
-              onCreate={(name) => props.onCommitCreateInput?.(name) ?? false}
-              onCancel={() => {
-                props.onCancelCreateInput?.();
-                queueMicrotask(() => addInputButton?.focus());
-              }}
-              focusAfterCreate={() => props.onFocusCreatedInput?.()}
-            />
+            <div class="compositionGraphInputChoice">
+              <label>
+                <UiIcon name="canvas-input" />
+                <select
+                  aria-label={t("composition.studioAddInput")}
+                  value=""
+                  onChange={(event) => event.currentTarget.value && insertInput(event.currentTarget.value)}
+                >
+                  <option value="">{t("composition.studioAddInput")}</option>
+                  <For each={props.draft.variables.filter((node) => node.kind === "input")}>
+                    {(node) => <option value={node.id}>{node.id}</option>}
+                  </For>
+                </select>
+              </label>
+              <IconButton
+                icon="plus"
+                label={t("composition.studioCreateInput")}
+                ref={(element) => addInputButton = element}
+                onClick={() => props.onRequestCreateInput?.()}
+              />
+            </div>
           </Show>
           <button type="button" onClick={insertText}>
             <UiIcon name="canvas-text" />

@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-11-13"
+updated: "2026-11-17"
 page:
   id: space-composition-edit
   title: Edit tool
@@ -47,8 +47,8 @@ components:
         editor: text-first SQL Workspace with explicit SQL-parameter-to-variable bindings
       design:
         components: [text, table, input]
-        table_binding: select_table_query_variable_or_create_one_in_variables_and_return
-        input_binding: select_input_variable_or_create_one_and_place_it
+        table_binding: use_existing_table_variable_or_create_inline_sql_in_variables_check_schema_then_return_and_place_at_original_position
+        input_binding: place_existing_input_or_create_variable_and_input_component_atomically
         text_content: in_place_plain_template_using_rust_parsed_scalar_references
         text_style: [title, heading, body, caption]
         component_inspector: none
@@ -57,4 +57,4 @@ components:
         preview: explicit, using immutable evaluation snapshots and current authorization
         results: transient stateless work
         paging: bounded_server_owned_continuation
-      work: Draft, input values, previews, pages, results, and editor diagnostics are transient
+      work: Draft, pending Table query creation, input values, previews, pages, results, and editor diagnostics are transient; incomplete pending creation blocks save and cancel restores the prior draft
