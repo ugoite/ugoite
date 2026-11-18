@@ -139,7 +139,7 @@ describe("shared FieldInput family", () => {
       .not.toBeInTheDocument();
   });
 
-  it("renders booleans as a typed checkbox and keeps legacy text readable", () => {
+  it("renders booleans as a typed checkbox and keeps legacy text readable", async () => {
     const onChecked = vi.fn();
     render(() => (
       <>
@@ -160,7 +160,7 @@ describe("shared FieldInput family", () => {
       </>
     ));
 
-    const box = screen.getByLabelText("Done");
+    const box = await screen.findByRole("checkbox", { name: "Done" });
     expect(box).toHaveAttribute("type", "checkbox");
     expect(box).toBeChecked();
     fireEvent.click(box);
@@ -172,20 +172,36 @@ describe("shared FieldInput family", () => {
     expect(legacy).toHaveValue("maybe");
   });
 
-  it("renders an unparseable boolean draft as editable text", () => {
-    // Rust-owned validation must keep an unparseable legacy value visible
-    // instead of coercing it into a checkbox state.
+  it("uses Core to read stored list text and leaves numeric editing as raw text", async () => {
+    const onChange = vi.fn();
     render(() => (
-      <FieldInput
-        field={{ type: "boolean" }}
-        value="maybe"
-        onChange={vi.fn()}
-        fieldId="bool-late"
-      />
+      <>
+        <FieldInput
+          field={{ type: "list", items: { type: "boolean" } }}
+          value={"- [x] yes\n- no"}
+          onChange={vi.fn()}
+          fieldId="flags"
+          fieldName="Flags"
+        />
+        <FieldInput
+          field={{ type: "list", items: { type: "long" } }}
+          value={"- [x] 9007199254740993"}
+          onChange={onChange}
+          fieldId="numbers"
+          fieldName="Numbers"
+        />
+      </>
     ));
 
-    expect(screen.getByRole("textbox")).toHaveAttribute("type", "text");
-    expect(screen.getByRole("textbox")).toHaveValue("maybe");
+    const flags = await screen.findAllByRole("checkbox");
+    expect(flags).toHaveLength(2);
+    expect(flags[0]).toBeChecked();
+    expect(flags[1]).not.toBeChecked();
+
+    const number = await screen.findByDisplayValue("9007199254740993");
+    expect(number).toHaveAttribute("inputmode", "decimal");
+    fireEvent.input(number, { target: { value: "9007199254740995" } });
+    expect(onChange).toHaveBeenCalledWith(["9007199254740995"]);
   });
 
   it("renders dates with a date control", () => {

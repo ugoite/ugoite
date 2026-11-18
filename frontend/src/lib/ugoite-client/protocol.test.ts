@@ -1786,6 +1786,52 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     });
   });
 
+  it("preserves unsafe entry integers through get and unrelated update serialization", async () => {
+    const responseBody =
+      '{"id":"entry-1","form":"form-1","fields":{"count":9007199254740993,"counts":[9007199254740995,7],"objects":[{"count":9007199254740997}],"decimal":1.25,"exponent":1e20},"extra_attributes":{"count":9007199254740999}}';
+    server.use(
+      http.get(testApiUrl("/spaces/demo/entries/entry-1"), () =>
+        new Response(responseBody, {
+          headers: { "content-type": "application/json" },
+        })),
+    );
+    const entry = await protocolFetch<{
+      fields: Record<string, unknown>;
+      extra_attributes: Record<string, unknown>;
+    }>("entry.get", { space_id: "demo", entry_id: "entry-1" });
+    expect(entry.fields.count).toBe("9007199254740993");
+    expect(entry.fields.counts).toEqual(["9007199254740995", 7]);
+    expect(entry.fields.objects).toEqual([{ count: 9007199254740997 }]);
+    expect(entry.fields.decimal).toBe(1.25);
+    expect(entry.fields.exponent).toBe(1e20);
+    expect(entry.extra_attributes.count).toBe(9007199254740999);
+
+    const update = await prepareApiRequest("entry.update", {
+      space_id: "demo",
+      entry_id: "entry-1",
+    }, { fields: entry.fields });
+    expect(JSON.parse(update.body ?? "null").fields).toEqual({
+      count: "9007199254740993",
+      counts: ["9007199254740995", 7],
+      objects: [{ count: 9007199254740997 }],
+      decimal: 1.25,
+      exponent: 1e20,
+    });
+
+    server.use(
+      http.get(testApiUrl("/spaces/demo/entries/entry-empty"), () =>
+        new Response('{"id":"entry-empty"}', {
+          headers: { "content-type": "application/json" },
+        })),
+    );
+    await expect(
+      protocolFetch("entry.get", {
+        space_id: "demo",
+        entry_id: "entry-empty",
+      }),
+    ).resolves.toEqual({ id: "entry-empty" });
+  });
+
   it("prepares the portable offline SQL lint operation", async () => {
     const request = await prepareApiRequest(
       "sql.lint",

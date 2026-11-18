@@ -8,8 +8,8 @@
  *
  * This tool generates a projection from existing authorities and never acts
  * as one itself:
- * - Capability inventory: UGOITE_API_OPERATIONS (TypeScript) mirrored by
- *   SUPPORTED_OPERATIONS (Rust). Both must match exactly.
+ * - Capability inventory: the TypeScript projection generated from
+ *   ugoite-api-client's Rust operation registry.
  * - Outcome semantics: Mitase Requirement / Criterion (normative).
  * - Surface usage: Frontend (*-api.ts via protocolFetch), CLI remote
  *   (http::execute with a portable operation name), CLI core (UgoiteService
@@ -22,6 +22,8 @@
  * CI treats this report as informational: capability gaps must not fail
  * the build in 0.1.x. They become release blockers only via the C7 gate.
  */
+
+import { UGOITE_API_OPERATIONS } from "../frontend/src/lib/generated/operation-registry.ts";
 
 const ROOT = new URL("../", import.meta.url);
 
@@ -73,9 +75,6 @@ export interface CapabilityRow {
 export interface CapabilityReport {
   journey: string;
   inventorySize: number;
-  manifestsMatch: boolean;
-  rustOnly: string[];
-  tsOnly: string[];
   capabilities: CapabilityRow[];
 }
 
@@ -140,9 +139,6 @@ export interface PreflightReport {
   authority: "not-authority";
   evidence_limit: "static-evidence-not-executed-proof";
   inventorySize: number;
-  manifestsMatch: boolean;
-  rustOnly: string[];
-  tsOnly: string[];
   rows: PreflightRow[];
 }
 
@@ -624,6 +620,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
     ],
     artifact_paths: [
       "frontend/src/lib/ugoite-client/protocol.ts",
+      "frontend/src/lib/generated/operation-registry.ts",
       "crates/ugoite-api-client/src/lib.rs",
       "crates/ugoite-wasm/src/lib.rs",
       "crates/ugoite-cli/src/http.rs",
@@ -652,14 +649,14 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
     verification_claim_refs: [],
     test_selectors: [
       {
-        path: "tools/capability_report_test.ts",
+        path: "frontend/src/lib/ugoite-client/protocol.test.ts",
         selector:
-          "capability projection tracks the portable operation manifests",
+          "REQ-API-001: exposes the expected ABI version and operation manifest",
       },
     ],
     availability: "existing",
     reason:
-      "Manifest equality is a static registry fact. It does not prove per-operation reachability, E2E execution, or authorization effectiveness.",
+      "Browser operation names and the WASM operation inventory derive from the Rust registry. Per-operation reachability, E2E execution, and authorization have separate evidence.",
     follow_up_issue: null,
   },
 ];
@@ -784,28 +781,8 @@ export const SERVICE_METHOD_OPERATIONS: Record<string, string> = {
 
 const OPERATION_PATTERN = /"([a-z][a-z0-9_.]+)"/g;
 
-export function quotedOperations(block: string): string[] {
+function quotedOperations(block: string): string[] {
   return [...block.matchAll(OPERATION_PATTERN)].map((match) => match[1]);
-}
-
-export function rustManifestOperations(source: string): string[] {
-  const match = source.match(
-    /pub const SUPPORTED_OPERATIONS: &\[&str\] = &\[(.*?)\];/s,
-  );
-  if (!match) {
-    throw new Error("Rust SUPPORTED_OPERATIONS manifest was not found");
-  }
-  return quotedOperations(match[1]);
-}
-
-export function typescriptManifestOperations(source: string): string[] {
-  const match = source.match(
-    /export const UGOITE_API_OPERATIONS = \[(.*?)\] as const;/s,
-  );
-  if (!match) {
-    throw new Error("TypeScript UGOITE_API_OPERATIONS manifest was not found");
-  }
-  return quotedOperations(match[1]);
 }
 
 async function* walk(dir: URL): AsyncGenerator<string> {
@@ -865,8 +842,7 @@ export function classify(
   if (!sharedSemantics) {
     return {
       state: "semantic-drift",
-      note:
-        "Operation inventory or shared Rust encoding disagrees across adapters.",
+      note: "At least one operation is absent from the portable registry.",
     };
   }
   const missing = (Object.entries(operationsPresent) as Array<
@@ -895,30 +871,7 @@ export function classify(
 }
 
 export async function buildReport(): Promise<CapabilityReport> {
-  const rustSource = await readUnderRoot("crates/ugoite-api-client/src/lib.rs");
-  const tsSource = await readUnderRoot(
-    "frontend/src/lib/ugoite-client/protocol.ts",
-  );
-  const rustOperations = rustManifestOperations(rustSource);
-  const tsOperations = typescriptManifestOperations(tsSource);
-  const rustSet = new Set(rustOperations);
-  const tsSet = new Set(tsOperations);
-  const rustOnly = [...rustSet].filter((op) => !tsSet.has(op)).sort();
-  const tsOnly = [...tsSet].filter((op) => !rustSet.has(op)).sort();
-  const manifestsMatch = rustOnly.length === 0 && tsOnly.length === 0 &&
-    rustOperations.length === tsOperations.length &&
-    rustOperations.every((op, index) => op === tsOperations[index]);
-
-  const prepareSection = sectionSlice(
-    rustSource,
-    "pub fn prepare_request",
-    "pub fn decode_response",
-  );
-  const specSection = sectionSlice(
-    rustSource,
-    "fn operation_spec",
-    "fn required_string",
-  );
+  const operations = new Set<string>(UGOITE_API_OPERATIONS);
 
   // Frontend: quoted portable operations referenced under frontend/src/lib.
   const frontendOps = new Set<string>();
@@ -927,7 +880,7 @@ export async function buildReport(): Promise<CapabilityReport> {
     if (path.includes("/generated/")) continue;
     const content = await Deno.readTextFile(path);
     for (const op of quotedOperations(content)) {
-      if (rustSet.has(op)) frontendOps.add(op);
+      if (operations.has(op)) frontendOps.add(op);
     }
   }
 
@@ -946,7 +899,7 @@ export async function buildReport(): Promise<CapabilityReport> {
       const operation = match[0].includes("execute_form_upsert")
         ? "form.upsert"
         : quotedOperations(window).find((candidate) => candidate.includes("."));
-      if (operation && rustSet.has(operation)) cliRemoteOps.add(operation);
+      if (operation && operations.has(operation)) cliRemoteOps.add(operation);
     }
     for (const match of content.matchAll(/service\s*\.\s*([a-z_]+)/g)) {
       const operation = SERVICE_METHOD_OPERATIONS[match[1]];
@@ -973,11 +926,9 @@ export async function buildReport(): Promise<CapabilityReport> {
 
   const capabilities: CapabilityRow[] = [];
   for (const capability of JOURNEY_CAPABILITIES) {
-    const sharedSemantics = manifestsMatch &&
-      capability.operations.every((op) =>
-        prepareSection.includes(`"${op}" =>`) &&
-        specSection.includes(`"${op}" =>`)
-      );
+    const sharedSemantics = capability.operations.every((op) =>
+      operations.has(op)
+    );
     const frontend = capability.operations.every((op) => frontendOps.has(op));
     const cliCore = capability.operations.every((op) => cliCoreOps.has(op));
     const cliRemote = capability.operations.every((op) => cliRemoteOps.has(op));
@@ -1030,10 +981,7 @@ export async function buildReport(): Promise<CapabilityReport> {
 
   return {
     journey: JOURNEY_ID,
-    inventorySize: rustOperations.length,
-    manifestsMatch,
-    rustOnly,
-    tsOnly,
+    inventorySize: UGOITE_API_OPERATIONS.length,
     capabilities,
   };
 }
@@ -1141,19 +1089,6 @@ export function selectorLocated(source: string, selector: string): boolean {
 }
 
 export async function buildPreflightReport(): Promise<PreflightReport> {
-  const rustSource = await readUnderRoot("crates/ugoite-api-client/src/lib.rs");
-  const tsSource = await readUnderRoot(
-    "frontend/src/lib/ugoite-client/protocol.ts",
-  );
-  const rustOperations = rustManifestOperations(rustSource);
-  const tsOperations = typescriptManifestOperations(tsSource);
-  const rustSet = new Set(rustOperations);
-  const tsSet = new Set(tsOperations);
-  const rustOnly = [...new Set(rustSet)].filter((op) => !tsSet.has(op)).sort();
-  const tsOnly = [...new Set(tsSet)].filter((op) => !rustSet.has(op)).sort();
-  const manifestsMatch = rustOnly.length === 0 && tsOnly.length === 0 &&
-    rustOperations.length === tsOperations.length &&
-    rustOperations.every((op, index) => op === tsOperations[index]);
   const mitaseFiles = [
     ...await collectFiles("docs/mitase/requirements/", ".yaml"),
     ...await collectFiles("docs/mitase/features/", ".yaml"),
@@ -1167,9 +1102,9 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
   for (const seed of PREFLIGHT_ROWS) {
     const rowErrors: string[] = [];
     const operationNames = seed.id === "portable-frontend-protocol"
-      ? rustOperations
+      ? [...UGOITE_API_OPERATIONS]
       : seed.operations ?? [];
-    rowErrors.push(...validatePreflightSeedShape(seed, rustOperations));
+    rowErrors.push(...validatePreflightSeedShape(seed, UGOITE_API_OPERATIONS));
     if (
       seed.requirement_criterion_refs.some((ref) =>
         !resolveRequirementCriterionRef(ref, mitaseSources)
@@ -1275,37 +1210,20 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
     generated_projection: true,
     authority: "not-authority",
     evidence_limit: "static-evidence-not-executed-proof",
-    inventorySize: rustOperations.length,
-    manifestsMatch,
-    rustOnly,
-    tsOnly,
+    inventorySize: UGOITE_API_OPERATIONS.length,
     rows,
   };
-}
-
-function sectionSlice(source: string, start: string, end: string): string {
-  const startIndex = source.indexOf(start);
-  if (startIndex === -1) return "";
-  const rest = source.slice(startIndex + start.length);
-  const endIndex = rest.indexOf(end);
-  return endIndex === -1 ? rest : rest.slice(0, endIndex);
 }
 
 export function renderMarkdown(report: CapabilityReport): string {
   const lines: string[] = [
     `# Cross-surface capability projection (${report.journey})`,
     "",
-    "Generated projection. Not an authority: outcome semantics stay with",
-    "Mitase Requirement / Criterion, inventory with UGOITE_API_OPERATIONS.",
+    "Generated projection. Outcome semantics stay with Mitase Requirements",
+    "and Criteria. The inventory comes from the Rust operation registry.",
     "",
-    `- Inventory: ${report.inventorySize} operations, manifests match: ${
-      report.manifestsMatch ? "yes" : "NO"
-    }`,
+    `- Inventory: ${report.inventorySize} operations`,
   ];
-  if (!report.manifestsMatch) {
-    lines.push(`- Rust-only: ${report.rustOnly.join(", ") || "-"}`);
-    lines.push(`- TypeScript-only: ${report.tsOnly.join(", ") || "-"}`);
-  }
   lines.push(
     "",
     "| Capability | Frontend | CLI core | CLI remote | Shared semantics | Verification | State |",
@@ -1338,9 +1256,7 @@ export function renderPreflightMarkdown(report: PreflightReport): string {
     "Generated projection — not authority; static evidence, not executed proof.",
     "Outcome semantics remain in Mitase Requirements and Criteria.",
     "",
-    `- Portable operation inventory: ${report.inventorySize}; TS/Rust manifests match: ${
-      report.manifestsMatch ? "yes" : "NO"
-    }`,
+    `- Portable operation inventory: ${report.inventorySize}`,
     "",
     "| ID | Capability | Operations / resource | Availability | Evidence | Follow-up |",
     "| --- | --- | --- | --- | --- | --- |",

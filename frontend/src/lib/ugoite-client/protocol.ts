@@ -17,93 +17,12 @@ import {
   type MutationOutcome,
 } from "../mutation-outcome";
 
-export const UGOITE_API_OPERATIONS = [
-  "auth.get_config",
-  "auth.get_session",
-  "auth.audit",
-  "auth.clear_session",
-  "auth.accept_invitation",
-  "auth.list_sessions",
-  "auth.revoke_session",
-  "auth.step_up.start",
-  "auth.step_up.status",
-  "auth.step_up.approve",
-  "auth.recovery.owner_start",
-  "auth.recovery.owner_finish",
-  "preferences.get",
-  "preferences.patch",
-  "space.list",
-  "space.create",
-  "space.get",
-  "space.audit",
-  "space.health",
-  "change.list",
-  "change.page",
-  "change.query",
-  "change.inspect",
-  "change.affected.get",
-  "change.revert.preview",
-  "change.revert",
-  "run.inspect",
-  "run.undo.preview",
-  "run.undo",
-  "ugoite.apply",
-  "pin.list",
-  "pin.create",
-  "pin.delete",
-  "space.pin_diff",
-  "space.patch",
-  "space.test_connection",
-  "space.members.list",
-  "space.members.invite",
-  "space.members.update_role",
-  "space.members.revoke",
-  "space.recovery.force_reset",
-  "form.list_types",
-  "form.list",
-  "form.get",
-  "form.upsert",
-  "entry.list",
-  "entry.query",
-  "entry.query.count",
-  "entry.get",
-  "entry.create",
-  "entry.update",
-  "entry.delete",
-  "entry.history",
-  "entry.revision",
-  "entry.restore",
-  "composition.lint",
-  "composition.list",
-  "composition.get",
-  "composition.history",
-  "composition.snapshot_check",
-  "composition.preview",
-  "composition.evaluate",
-  "composition.save",
-  "composition.restore",
-  "sql.lint",
-  "sql.list",
-  "sql.get",
-  "sql.create",
-  "sql.update",
-  "sql.delete",
-  "sql.query",
-  "sql.query.plan",
-  "sql.query.count",
-  "agent.list",
-  "agent.create",
-  "agent.revoke",
-  "approval.issue",
-  "access.get",
-  "access.put",
-  "asset.upload",
-  "asset.read",
-  "asset.delete",
-  "asset.list",
-] as const;
+import type { UgoiteApiOperation } from "../generated/operation-registry";
 
-export type UgoiteApiOperation = (typeof UGOITE_API_OPERATIONS)[number];
+export {
+  UGOITE_API_OPERATIONS,
+  type UgoiteApiOperation,
+} from "../generated/operation-registry";
 
 type ProtocolHeader = {
   name: string;
@@ -276,7 +195,9 @@ const decodeTypedIntegerResponse = (
     return;
   }
   if (command.action !== "decode" || !isRecord(value)) return;
-  if (command.operation === "composition.evaluate") {
+  if (command.operation === "entry.get") {
+    decodeEntryFieldIntegers(value, source);
+  } else if (command.operation === "composition.evaluate") {
     decodeCompositionEvaluationIntegers(value, source);
   } else if (command.operation === "composition.lint") {
     if (isRecord(value.value)) {
@@ -284,6 +205,32 @@ const decodeTypedIntegerResponse = (
     }
   } else if (command.operation === "composition.preview") {
     decodeCompositionPreviewIntegerDefaults(value, source);
+  }
+};
+
+/** Preserve unsafe integer tokens in entry scalar fields and scalar lists. */
+const decodeEntryFieldIntegers = (
+  entry: Record<string, unknown>,
+  source: (parent: object, key: string) => string | undefined,
+): void => {
+  if (!isRecord(entry.fields)) return;
+  const decode = (parent: Record<string, unknown>, key: string): void => {
+    if (typeof parent[key] !== "number") return;
+    const token = source(parent, key);
+    if (!token || !/^-?(?:0|[1-9]\d*)$/.test(token)) return;
+    const number = parent[key] as number;
+    if (Number.isSafeInteger(number)) return;
+    parent[key] = exactIntegerSourceValue(parent, key, source);
+  };
+  for (const [key, field] of Object.entries(entry.fields)) {
+    if (Array.isArray(field)) {
+      field.forEach((_item, index) =>
+        decode(field as unknown as Record<string, unknown>, String(index))
+      );
+    } else {
+      // Scalars decode here; objects and structured values remain opaque.
+      decode(entry.fields, key);
+    }
   }
 };
 
@@ -1687,6 +1634,17 @@ export const encodeSpreadsheetCsv = async (
   rows: readonly (readonly string[])[],
 ): Promise<string> =>
   await invokeProtocol<string>(buildSpreadsheetCsvRequest(rows));
+
+/** Interpret a raw field value using the Core Entry coercion. */
+export const coerceEntryFieldValue = (
+  fieldType: string,
+  itemType: string | undefined,
+  value: unknown,
+): Promise<unknown> =>
+  invokeProtocol<unknown>({
+    action: "entry.coerce_field_value",
+    value: { field_type: fieldType, item_type: itemType, value },
+  });
 
 /** Validate a structured Entry draft with the shared Rust boundary (PR1/PR2). */
 export const validateEntryDraft = async (

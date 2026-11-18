@@ -996,14 +996,6 @@ describe("CreateEntryDialog", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Use "- item" or one value per line for list fields.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Use true/false, yes/no, on/off, or 1/0 for boolean fields.",
-      ),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText(
         "In form/chat mode, search the target form and choose a match. Ugoite still stores the stable entry_id underneath.",
       ),

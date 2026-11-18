@@ -3,7 +3,6 @@ export {
   FieldInput,
   type FieldInputProps,
   fieldValueToText,
-  resolveBooleanCheckbox,
   StructuredFieldInput,
 } from "~/components/fields/FieldInput";
 export {

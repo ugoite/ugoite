@@ -22,6 +22,7 @@ const testForm = (): Form => ({
     Due: { id: 103, type: "date", required: false },
     At: { id: 104, type: "timestamp", required: false },
     Tags: { id: 105, type: "list", required: false },
+    Counts: { id: 106, type: "list", required: false, items: { type: "long" } },
   },
 });
 
@@ -156,6 +157,9 @@ describe("entry-validation", () => {
       ["Due", "2026-13-40"],
       ["At", "not-a-timestamp"],
       ["Tags", 42],
+      ["Counts", ["1.25"]],
+      ["Counts", ["-9223372036854775809"]],
+      ["Counts", ["9007199254740993.0"]],
     ];
     for (const [field, value] of cases) {
       const result = await validateEntryDraftViaWasm(testForm(), {
@@ -174,9 +178,17 @@ describe("entry-validation", () => {
   it("accepts a valid draft through the shared boundary", async () => {
     const result = await validateEntryDraftViaWasm(testForm(), {
       tags: [],
-      fields: { Body: "hello", Done: "yes", Count: 3 },
+      fields: {
+        Body: "hello",
+        Done: "yes",
+        Count: 3,
+        Counts: ["1.0", "1e2", "0x10", "0b11", "0o11"],
+      },
     });
-    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({
+      ok: true,
+      normalized: { values: { 101: true, 106: [1, 100, 16, 3, 9] } },
+    });
   });
 });
 

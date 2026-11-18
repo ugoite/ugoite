@@ -4444,7 +4444,12 @@ mod tests {
 
     #[test]
     fn test_api_req_api_001_supported_operation_manifest_matches_prepare_and_decode_specs() {
+        let mut operations = std::collections::BTreeSet::new();
         for operation in SUPPORTED_OPERATIONS {
+            assert!(
+                operations.insert(operation),
+                "duplicate operation: {operation}"
+            );
             let spec = operation_spec(operation)
                 .unwrap_or_else(|| panic!("missing decoder metadata for {operation}"));
             let arguments = sample_arguments(operation);

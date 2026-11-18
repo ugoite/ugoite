@@ -5,13 +5,6 @@ import {
   isCanonicalAssetValue,
   isPlainNumberListField,
   isPlainStringListField,
-  normalizeBooleanListValue,
-  normalizeNumberListValue,
-  normalizeObjectListValue,
-  normalizeStringListValue,
-  parseBooleanAlias,
-  parseMarkdownStringList,
-  parseNumberItemText,
   readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
@@ -101,16 +94,7 @@ describe("draft-values", () => {
     expect(isCanonicalAssetValue("not-an-asset")).toBe(false);
   });
 
-  it("normalizes stored shapes into string-list editor values", () => {
-    // Markdown-list text (legacy presentation) parses like the shared
-    // Rust coercion: bullets/checkboxes stripped, empties skipped.
-    expect(parseMarkdownStringList("- alpha\n* beta\n+ [x] done\n\nbare"))
-      .toEqual(["alpha", "beta", "done", "bare"]);
-    expect(parseMarkdownStringList("-\n*  ")).toEqual([]);
-    // Typed arrays stay as-is; other shapes start empty.
-    expect(normalizeStringListValue(["a", 1, "b"])).toEqual(["a", "b"]);
-    expect(normalizeStringListValue("- a\n- b")).toEqual(["a", "b"]);
-    expect(normalizeStringListValue(undefined)).toEqual([]);
+  it("selects repeated editors for supported list item types", () => {
     expect(
       isPlainStringListField({ type: "list" }),
     ).toBe(true);
@@ -124,27 +108,6 @@ describe("draft-values", () => {
       }),
     ).toBe(false);
     expect(isPlainStringListField({ type: "object_list" })).toBe(false);
-  });
-
-  it("drops blank string-list items at the transport boundary", () => {
-    const transported = toTransportFields(typedForm(), {
-      Tags: ["alpha", "", "  ", "beta"],
-    });
-    expect(transported.Tags).toEqual(["alpha", "beta"]);
-  });
-
-  it("normalizes stored shapes into object-list editor values", () => {
-    expect(normalizeObjectListValue([{ step: "one" }, "nope", 3, null]))
-      .toEqual([{ step: "one" }]);
-    expect(normalizeObjectListValue('[{"step":"one"}, 42]')).toEqual([
-      { step: "one" },
-    ]);
-    expect(normalizeObjectListValue('"not-an-array"')).toEqual([]);
-    expect(normalizeObjectListValue("not-json")).toEqual([]);
-    expect(normalizeObjectListValue(undefined)).toEqual([]);
-  });
-
-  it("normalizes number and boolean list shapes", () => {
     expect(isPlainNumberListField({ type: "list" })).toBe(false);
     expect(
       isPlainNumberListField({ type: "list", items: { type: "integer" } }),
@@ -155,28 +118,9 @@ describe("draft-values", () => {
     expect(isBooleanListField({ type: "list", items: { type: "boolean" } }))
       .toBe(true);
     expect(isBooleanListField({ type: "list" })).toBe(false);
-    expect(normalizeNumberListValue([1, "x", "2.5"])).toEqual([1, "x", "2.5"]);
-    expect(normalizeNumberListValue("- 3\n* 4.5")).toEqual([3, 4.5]);
-    expect(normalizeNumberListValue(undefined)).toEqual([]);
-    expect(parseNumberItemText(" 12.5 ")).toBe(12.5);
-    expect(parseNumberItemText("")).toBe("");
-    expect(parseNumberItemText("12a")).toBe("12a");
-    expect(parseBooleanAlias("YES")).toBe(true);
-    expect(parseBooleanAlias("off")).toBe(false);
-    expect(parseBooleanAlias("maybe")).toBeUndefined();
-    expect(normalizeBooleanListValue([true, "no", 1])).toEqual([
-      true,
-      "no",
-      1,
-    ]);
-    expect(normalizeBooleanListValue("- yes\n- off\n- bogus")).toEqual([
-      true,
-      false,
-      "bogus",
-    ]);
   });
 
-  it("drops blank text items from number and boolean lists at transport", () => {
+  it("omits only unfilled scalar list rows from the transport draft", () => {
     const form: Form = {
       ...typedForm(),
       fields: {
@@ -186,11 +130,13 @@ describe("draft-values", () => {
       },
     };
     const transported = toTransportFields(form, {
-      Count: [1, "", "  ", 2],
+      Count: [1, "", "  ", "9007199254740993"],
       Flags: [true, ""],
+      Tags: ["alpha", "", "  ", "beta"],
     });
-    expect(transported.Count).toEqual([1, 2]);
+    expect(transported.Count).toEqual([1, "9007199254740993"]);
     expect(transported.Flags).toEqual([true]);
+    expect(transported.Tags).toEqual(["alpha", "beta"]);
   });
 
   it("parses legacy asset JSON strings only at the bridge, not in components", () => {    const transported = toTransportFields(typedForm(), {

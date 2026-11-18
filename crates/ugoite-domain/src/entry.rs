@@ -311,7 +311,7 @@ impl EntryRevision {
             for field in form
                 .fields
                 .iter()
-                .filter(|field| field.required && !field.deprecated)
+                .filter(|field| field.is_active_required())
             {
                 let missing = match self.values.get(&field.id) {
                     None | Some(FieldValue::Null) => true,

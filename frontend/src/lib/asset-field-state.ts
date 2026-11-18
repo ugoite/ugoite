@@ -111,8 +111,8 @@ export function createAssetFieldState(): AssetFieldState {
     // generation. Its callbacks are still fenced by isActive().
     uploadQueue = Promise.resolve();
     setPendingUploads([]);
-    setReadingIds(new Set());
-    setUnavailableIds(new Set());
+    setReadingIds(new Set<string>());
+    setUnavailableIds(new Set<string>());
     revokePreviewUrls();
     setPreviewUrls(new Map());
     setPreviewBlobs(new Map());

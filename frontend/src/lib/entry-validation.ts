@@ -1,6 +1,10 @@
 import { validateEntryDraft } from "~/lib/ugoite-client/protocol";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import type { Form, FormExtraAttributesPolicy } from "~/lib/types";
+import type { Form, FormExtraAttributesPolicy, FormField } from "~/lib/types";
+
+/** Required-field presentation for the shared Entry editors. */
+export const isActiveRequiredField = (field: FormField) =>
+  field.required && !field.deprecated;
 
 const EXTRA_ATTRIBUTES_POLICY_METADATA = "ugoite.extra_attributes_policy";
 
@@ -32,7 +36,7 @@ const requireFormId = (form: Form): string => {
 };
 
 const requireFieldId = (form: Form, name: string, id: number | undefined) => {
-  if (!Number.isInteger(id) || id < 100) {
+  if (typeof id !== "number" || !Number.isInteger(id) || id < 100) {
     throw formIdentityError(
       `Field '${name}' in Form '${form.name}' is missing its stable FieldId`,
       { form: form.name, field: name },

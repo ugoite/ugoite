@@ -7633,6 +7633,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "ugoite-api-client",
  "ugoite-core",
  "ugoite-domain",
  "ugoite-iceberg",

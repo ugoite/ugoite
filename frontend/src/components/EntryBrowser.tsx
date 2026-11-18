@@ -305,17 +305,17 @@ export function EntryBrowser(props: EntryBrowserProps) {
               {
                 mode: "columns" as const,
                 icon: "columns" as const,
-                key: "entryBrowser.columns",
+                key: "entryBrowser.columns" as const,
               },
               {
                 mode: "filter" as const,
                 icon: "filter" as const,
-                key: "entryBrowser.filter",
+                key: "entryBrowser.filter" as const,
               },
               {
                 mode: "sort" as const,
                 icon: "sort" as const,
-                key: "entryBrowser.sort",
+                key: "entryBrowser.sort" as const,
               },
             ]}
           >
