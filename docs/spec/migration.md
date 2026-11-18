@@ -3,6 +3,8 @@ title: "Migration status"
 description: Which specification domains are canonical in Mitase and which remain in docs/spec.
 ---
 
+Mitase owns migrated specifications. This page locates the active sources.
+
 ## Cross-surface preflight authority map
 
 The canonical requirement, feature, philosophy, and policy graph lives in
