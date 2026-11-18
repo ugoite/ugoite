@@ -54,13 +54,14 @@ function isDesignTableEvaluation(
       };
     };
     return document.spec?.variables?.some((variable) =>
-      variable.id === variableId &&
-      typeof variable.query?.sql === "string" &&
-      normalizeCompositionFormSeedSql(variable.query.sql) ===
-        normalizeCompositionFormSeedSql(sql)
-    ) === true && document.spec?.components?.some((component) =>
-      component.kind === "table" && component.variable === variableId
-    ) === true;
+          variable.id === variableId &&
+          typeof variable.query?.sql === "string" &&
+          normalizeCompositionFormSeedSql(variable.query.sql) ===
+            normalizeCompositionFormSeedSql(sql)
+        ) === true &&
+      document.spec?.components?.some((component) =>
+          component.kind === "table" && component.variable === variableId
+        ) === true;
   } catch {
     return false;
   }
@@ -186,6 +187,7 @@ test("Composition keeps a saved query executable after an unused Form field is a
         variables?: Array<{
           id?: string;
           query?: { schema_fingerprint?: string; sql?: string };
+          returns?: { columns?: Array<{ name?: string }> };
         }>;
         components?: Array<{ kind?: string; variable?: string }>;
       };
@@ -193,6 +195,13 @@ test("Composition keeps a saved query executable after an unused Form field is a
     const originalQuery = originalDocument.spec?.variables?.find((variable) =>
       variable.id === variableId
     );
+    const originalResultColumns = originalQuery?.returns?.columns?.map((
+      column,
+    ) => column.name);
+    expect([...(originalResultColumns ?? [])].sort()).toEqual([
+      "Summary",
+      "Title",
+    ]);
     expect(originalQuery?.query?.schema_fingerprint)
       .toMatch(/^[0-9a-f]{64}$/);
     expect(
@@ -333,13 +342,13 @@ test("Composition keeps a saved query executable after an unused Form field is a
     expect(currentSchemaQuery?.schema_fingerprint)
       .toBe(originalQuery?.query?.schema_fingerprint);
     expect(currentSchemaQuery?.returns?.columns?.map((column) => column.name))
-      .toEqual(["Title", "Summary"]);
+      .toEqual(originalResultColumns);
     expect(
       currentSchemaPreview.query_results?.[variableId]?.value?.columns?.map((
         column,
       ) => column.name),
     )
-      .toEqual(["Title", "Summary"]);
+      .toEqual(originalResultColumns);
     const authoringPreview = page.getByRole("table").first();
     await expect(authoringPreview.locator("thead")).toContainText("Summary");
     await expect(authoringPreview.locator("thead")).not.toContainText("Notes");
