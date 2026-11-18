@@ -942,7 +942,7 @@ async function assertAggregateWorkflow(
     sqlExportMeasure,
     [
       '--max-rows "$FIXTURE_ENTRY_COUNT"',
-      "--max-bytes 1024",
+      '--max-bytes "$MAX_BYTES"',
       "max-bytes would be exceeded",
       "A byte-limited export must not publish a partial destination",
       "A failed byte-limited export left a temporary output file",

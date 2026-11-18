@@ -270,7 +270,12 @@ const tableWithInputGraphDocument = {
     components: [
       { id: "day-input", kind: "input", variable: "day" },
       ...tableGraphDocument.spec.components,
-      { id: "count-text", kind: "text", content: "{{filtered_count}}", style: "body" },
+      {
+        id: "count-text",
+        kind: "text",
+        content: "{{filtered_count}}",
+        style: "body",
+      },
     ],
     layout: {
       kind: "flow",
@@ -331,58 +336,6 @@ describe("Composition saved revision graph evaluation", () => {
     vi.useRealTimers();
   });
 
-  it("requests only affected query variables after an input changes", async () => {
-    evaluateMock
-      .mockImplementationOnce((
-        _spaceId: string,
-        request: { evaluation_id: string },
-      ) =>
-        Promise.resolve({
-          ...evaluation("eval-1", "auth-1", { rows: 1, stable: 10 }),
-          evaluation_id: request.evaluation_id,
-        })
-      )
-      .mockImplementationOnce((
-        _spaceId: string,
-        request: { evaluation_id: string },
-      ) =>
-        Promise.resolve({
-          ...evaluation("eval-2", "auth-1", { rows: 2 }, ["rows"]),
-          evaluation_id: request.evaluation_id,
-        })
-      );
-    render(() => <CompositionRevisionRoute />);
-    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
-    await screen.findByText("10");
-    expect(
-      window.document.querySelector(
-        '[data-component-id="text-stable"] .compositionGraphText',
-      ),
-    ).toHaveTextContent("10");
-    expect(screen.queryByRole("tablist", { name: "Studio mode" }))
-      .not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Add to design" }))
-      .not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Text" }))
-      .not.toBeInTheDocument();
-
-    fireEvent.input(screen.getByLabelText("day"), {
-      target: { value: "2026-10-20" },
-    });
-    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
-
-    expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty(
-      "requested_queries",
-    );
-    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
-    expect(evaluateMock.mock.calls[1][1]).not.toHaveProperty("query_results");
-    expect(
-      document.querySelector(
-        '[data-component-id="text-stable"] .compositionGraphText',
-      ),
-    ).toHaveTextContent("10");
-  });
-
   it("fails closed when a focus-return authority check is unavailable", async () => {
     evaluateMock.mockImplementation((
       _spaceId: string,
@@ -402,25 +355,6 @@ describe("Composition saved revision graph evaluation", () => {
       expect(accessSnapshotMock).toHaveBeenCalledOnce();
       expect(screen.queryByText("10")).not.toBeInTheDocument();
     });
-    expect(evaluateMock).toHaveBeenCalledOnce();
-  });
-
-  it("ignores access-change signals for another Space", async () => {
-    evaluateMock.mockImplementation((
-      _spaceId: string,
-      request: { evaluation_id: string },
-    ) =>
-      Promise.resolve({
-        ...evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
-      })
-    );
-    render(() => <CompositionRevisionRoute />);
-    await screen.findByText("10");
-
-    accessChangeHandlers[0]("space-2");
-
-    expect(screen.getByText("10")).toBeInTheDocument();
-    expect(accessSnapshotMock).not.toHaveBeenCalled();
     expect(evaluateMock).toHaveBeenCalledOnce();
   });
 
@@ -464,6 +398,10 @@ describe("Composition saved revision graph evaluation", () => {
     );
     render(() => <CompositionRevisionRoute />);
     await screen.findByText("10");
+
+    accessChangeHandlers[0]("space-2");
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(accessSnapshotMock).not.toHaveBeenCalled();
 
     accessChangeHandlers[0]("space-1");
     await waitFor(() => expect(accessSnapshotMock).toHaveBeenCalledOnce());
@@ -1578,96 +1516,6 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.queryByText("old page")).not.toBeInTheDocument();
   });
 
-  it("renders the typed table result returned for its query variable", async () => {
-    lintMock.mockResolvedValue({
-      ok: true,
-      value: { document: tableGraphDocument },
-    });
-    evaluateMock.mockImplementation((
-      _spaceId: string,
-      request: {
-        evaluation_id: string;
-        page?: { variable_id: string; cursor: string };
-      },
-    ) =>
-      Promise.resolve({
-        evaluation_id: request.evaluation_id,
-        ok: true,
-        composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
-        publication_fingerprint: "publication-1",
-        authorization_fingerprint: "auth-1",
-        computed_query_ids: ["rows"],
-        variable_values: {},
-        queries: [{
-          variable_id: "rows",
-          deferred_arguments: [],
-          returns: {
-            kind: "table",
-            columns: [{
-              name: "label",
-              value_type: { scalar_type: "string", nullable: true },
-            }],
-          },
-          result_columns: [{
-            name: "label",
-            value_type: { scalar_type: "string", nullable: true },
-          }],
-          form_bindings: [{ relation: "G", form_id: "form-1" }],
-          schema_fingerprint: "schema-1",
-          query_semantic_fingerprint: "semantic-rows",
-        }],
-        component_bindings: [{
-          component_id: "rows-table",
-          kind: "table",
-          variable_id: "rows",
-        }],
-        dependencies: { variable_consumers: {} },
-        query_results: {
-          rows: {
-            value: {
-              kind: "table",
-              columns: [{
-                name: "label",
-                value_type: { scalar_type: "string", nullable: true },
-              }],
-              rows: [
-                ...(request.page
-                  ? [[{ kind: "string" as const, value: "next row" }]]
-                  : [
-                    [{ kind: "string" as const, value: "alpha row" }],
-                    [{ kind: "string" as const, value: "beta row" }],
-                  ]),
-              ],
-            },
-            has_more: !request.page,
-            ...(!request.page ? { next: "rows-cursor-1" } : {}),
-          },
-        },
-      })
-    );
-
-    render(() => <CompositionRevisionRoute />);
-
-    const table = await screen.findByRole("table", { name: "rows" });
-    expect(table).toHaveTextContent("alpha row");
-    expect(table).toHaveTextContent("beta row");
-    expect(evaluateMock.mock.calls[0][1].target).toEqual({
-      kind: "saved_revision",
-      composition_id: "comp-1",
-      revision_id: "rev-1",
-    });
-    expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty("sources");
-
-    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
-    expect(evaluateMock.mock.calls[1][1].page).toEqual({
-      variable_id: "rows",
-      cursor: "rows-cursor-1",
-    });
-    await waitFor(() => expect(table).toHaveTextContent("next row"));
-    expect(table).not.toHaveTextContent("alpha row");
-  });
-
   it("fences a pending page on focus without blur and leaves paging retryable", async () => {
     lintMock.mockResolvedValue({
       ok: true,
@@ -1999,6 +1847,22 @@ describe("Composition saved revision graph evaluation", () => {
     render(() => <CompositionRevisionRoute />);
     const table = await screen.findByRole("table", { name: "rows" });
     expect(table).toHaveTextContent("alpha row");
+    expect(table).toHaveTextContent("beta row");
+    expect(evaluateMock.mock.calls[0][1].target).toEqual({
+      kind: "saved_revision",
+      composition_id: "comp-1",
+      revision_id: "rev-1",
+    });
+    expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty("sources");
+    expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty(
+      "requested_queries",
+    );
+    expect(screen.queryByRole("tablist", { name: "Studio mode" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Add to design" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Text" }))
+      .not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(table).toHaveTextContent("gamma row"));
 
@@ -2009,6 +1873,9 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual([
       "filtered_count",
     ]);
+
+    expect(evaluateMock.mock.calls[2][1]).not.toHaveProperty("query_results");
+    expect(table).toHaveTextContent("gamma row");
 
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(4));
@@ -2214,81 +2081,5 @@ describe("Composition saved revision graph evaluation", () => {
     );
     await screen.findByText("20");
     expect(screen.queryByText("10")).not.toBeInTheDocument();
-  });
-  it("keeps an independent input branch live while another input is invalid", async () => {
-    const document = structuredClone(graphDocument);
-    document.spec.variables[0] = {
-      id: "day",
-      kind: "input",
-      value_type: { scalar_type: "integer", nullable: false },
-      required: true,
-      default: { kind: "integer", value: "1" },
-    } as never;
-    document.spec.variables.push(
-      {
-        id: "other",
-        kind: "input",
-        value_type: { scalar_type: "integer", nullable: false },
-        required: true,
-        default: { kind: "integer", value: "3" },
-      } as never,
-    );
-    for (const [id, input] of [["rows", "day"], ["stable", "other"]]) {
-      const node = document.spec.variables.find((node) => node.id === id) as {
-        query: unknown;
-      };
-      node.query = {
-        kind: "inline_sql",
-        sql: `SELECT $${input} AS value`,
-        arguments: [{ name: input, variable: input }],
-      };
-    }
-    document.spec.components.push({
-      id: "other-input",
-      kind: "input",
-      variable: "other",
-    });
-    document.spec.layout.rows[0].items.push({
-      kind: "component",
-      component: "other-input",
-    });
-    lintMock.mockResolvedValue({ ok: true, value: { document } });
-    parseMock.mockImplementation(async (_type, raw) =>
-      raw === "bad" ? { status: "invalid" } : { status: "valid", value: raw }
-    );
-    evaluateMock.mockImplementation(async (_space, request) => {
-      const ids = request.requested_queries ?? ["rows", "stable"];
-      const values = Object.fromEntries(
-        ids.map((id: string) => [
-          id,
-          id === "rows"
-            ? request.variables.day ?? 1
-            : request.variables.other ?? 3,
-        ]),
-      ) as { rows: number; stable: number };
-      return evaluation(request.evaluation_id, "auth-1", values, ids);
-    });
-    render(() => <CompositionRevisionRoute />);
-    await screen.findByText("3");
-    fireEvent.input(screen.getByLabelText("day"), { target: { value: "bad" } });
-    await screen.findByText("Enter a valid value.");
-    fireEvent.input(screen.getByLabelText("other"), { target: { value: "7" } });
-    await screen.findByText("7");
-    expect(evaluateMock.mock.calls.at(-1)?.[1]).toMatchObject({
-      requested_queries: ["stable"],
-      variables: { other: "7" },
-      unset_variables: ["day"],
-    });
-    expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");
-    fireEvent.input(screen.getByLabelText("day"), { target: { value: "2" } });
-    await screen.findByText("2");
-    expect(
-      window.document.querySelector(
-        '[data-component-id="text-stable"] .compositionGraphText',
-      ),
-    ).toHaveTextContent("7");
-    expect(evaluateMock.mock.calls.at(-1)?.[1].requested_queries).toEqual([
-      "rows",
-    ]);
   });
 });

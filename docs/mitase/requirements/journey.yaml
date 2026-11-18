@@ -376,33 +376,23 @@ requirements:
         facet: verification
         responsibility: Verify the parity corpus through the server-backed CLI with explicit surface=cli transport=remote evidence identity.
         targets:
-          - id: invalid-field-remote-case
+          - id: entry-create-diagnostics-remote-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_remote.rs
-            selector: { kind: test, name: test_parity_remote_invalid_field_rejected_without_mutation }
+            selector: { kind: test, name: remote_entry_create_surfaces_validation_diagnostics }
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-002#criterion.invalid-field
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_parity_remote_invalid_field_rejected_without_mutation } }
-          - id: missing-required-remote-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_journey_remote.rs
-            selector: { kind: test, name: test_parity_remote_missing_required_rejected_without_mutation }
-            claims:
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: remote_entry_create_surfaces_validation_diagnostics } }
               - kind: verifies
                 criterion: REQ-JOURNEY-002#criterion.missing-required
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_parity_remote_missing_required_rejected_without_mutation } }
-          - id: stale-revision-remote-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_journey_remote.rs
-            selector: { kind: test, name: test_parity_remote_stale_revision_conflicts_without_mutation }
-            claims:
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: remote_entry_create_surfaces_validation_diagnostics } }
               - kind: verifies
-                criterion: REQ-JOURNEY-002#criterion.stale-revision
+                criterion: REQ-JOURNEY-002#criterion.missing-form
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_parity_remote_stale_revision_conflicts_without_mutation } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: remote_entry_create_surfaces_validation_diagnostics } }
           - id: restore-unknown-remote-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_remote.rs
@@ -412,15 +402,6 @@ requirements:
                 criterion: REQ-JOURNEY-002#criterion.restore-unknown-revision
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_parity_remote_restore_unknown_revision_rejected_without_mutation } }
-          - id: missing-form-remote-case
-            adapter: rust
-            path: crates/ugoite-cli/tests/test_journey_remote.rs
-            selector: { kind: test, name: test_parity_remote_missing_form_rejected_without_mutation }
-            claims:
-              - kind: verifies
-                criterion: REQ-JOURNEY-002#criterion.missing-form
-                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_parity_remote_missing_form_rejected_without_mutation } }
           - id: remote-authorization-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_remote.rs

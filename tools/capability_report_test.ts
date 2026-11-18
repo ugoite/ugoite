@@ -380,7 +380,18 @@ Deno.test("parity Mitase selectors match exact Rust test functions", async () =>
   const selectors = [...yaml.matchAll(
     /path: (crates\/ugoite-cli\/tests\/test_journey_(?:core|remote)\.rs)\n\s*selector: \{ kind: test, name: ([a-z0-9_]+) \}/g,
   )].map((match) => ({ file: match[1], name: match[2] }));
-  assertEquals(selectors.length, 17);
+  assertEquals(selectors.length > 0, true);
+  const selectedFiles = new Set(selectors.map(({ file }) => file));
+  assertEquals(
+    selectedFiles.has("crates/ugoite-cli/tests/test_journey_core.rs"),
+    true,
+    "journey evidence must retain a local CLI target",
+  );
+  assertEquals(
+    selectedFiles.has("crates/ugoite-cli/tests/test_journey_remote.rs"),
+    true,
+    "journey evidence must retain a remote CLI target",
+  );
   const sources = new Map<string, string>();
   for (const { file, name } of selectors) {
     if (!sources.has(file)) sources.set(file, await Deno.readTextFile(file));

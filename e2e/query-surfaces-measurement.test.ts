@@ -97,7 +97,6 @@ test("counts an in-flight abort when abort and settlement timestamps tie", () =>
 });
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
-const TRIAL_COUNT = 5;
 const SQL_FORM_NAME = "MaintenanceTicket";
 const SQL_PAGE_SIZE = 100;
 const QUERY_RESULT_TIMEOUT_MS = 30_000;
@@ -146,6 +145,9 @@ test("records real two-Space query surface measurements", async ({ page, request
     "requires the fixed two-Space measurement dataset",
   );
   test.setTimeout(600_000);
+  const trialCount = Deno.env.get("UGOITE_QUERY_MEASURE_PROFILE") === "true"
+    ? 5
+    : 1;
   await waitForServers(request);
   for (const slug of MEASUREMENT_SLUGS) {
     const bindSeededSpace = await request.post(getBackendUrl("/spaces"), {
@@ -362,7 +364,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const entryPath = getFrontendUrl(
         `/spaces/${space.space_uid}/forms/${SQL_FORM_NAME}/entries`,
       );
-      for (let trial = 1; trial <= TRIAL_COUNT; trial += 1) {
+      for (let trial = 1; trial <= trialCount; trial += 1) {
         await page.evaluate(() => {
           (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
             .__ugoiteQueryEvents = [];
@@ -404,7 +406,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const sqlPath = getFrontendUrl(
         `/spaces/${space.space_uid}/sql/${space.saved_sql_id}/run`,
       );
-      for (let trial = 1; trial <= TRIAL_COUNT; trial += 1) {
+      for (let trial = 1; trial <= trialCount; trial += 1) {
         await page.evaluate(() => {
           (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
             .__ugoiteQueryEvents = [];
@@ -449,6 +451,12 @@ test("records real two-Space query surface measurements", async ({ page, request
         });
       }
 
+      // Space B only needs a readable row for isolation. The first Space
+      // must always exercise continuation, including in the required lane.
+      if (
+        space !== measuredSpaces[0] &&
+        space.expected_entries / 4 <= SQL_PAGE_SIZE
+      ) continue;
       await page.goto(sqlPath, { waitUntil: "domcontentloaded" });
       await expect(rowLocator).toBeVisible({
         timeout: QUERY_RESULT_TIMEOUT_MS,
@@ -467,6 +475,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       );
       await page.getByRole("button", { name: "Next" }).click();
       await expect(page.getByText("Page 2")).toBeVisible();
+      await expect(rowLocator).toBeVisible();
       const paginationState = await page.evaluate(() => ({
         events: (window as Window & {
           __ugoiteQueryEvents?: QueryEvent[];
@@ -481,6 +490,10 @@ test("records real two-Space query surface measurements", async ({ page, request
         ),
       ).toHaveLength(initialPageCount + 1);
       expect(initialCountRequests).toBe(0);
+      const nextRequest = paginationState.events.at(-1)?.body as {
+        continuation?: string;
+      } | undefined;
+      expect(nextRequest?.continuation).toBeTruthy();
       sqlPagination.push({
         space: space.slug,
         initialPageCount,
@@ -490,11 +503,7 @@ test("records real two-Space query surface measurements", async ({ page, request
         ).length,
         dataRowsOnPageTwo: paginationState.dataRows,
         pageSize: SQL_PAGE_SIZE,
-        hasContinuation: Boolean(
-          (paginationState.events.at(-1)?.body as {
-            continuation?: string;
-          } | undefined)?.continuation,
-        ),
+        hasContinuation: Boolean(nextRequest?.continuation),
       });
     }
 

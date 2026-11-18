@@ -24,9 +24,11 @@ async function main(): Promise<void> {
   const mode = args.shift();
   if (mode !== "query" && mode !== "export") {
     throw new Error(
-      "usage: cp1_profile.ts <query|export> --output PATH --root PATH --started-ms MS --exit-code CODE",
+      "usage: cp1_profile.ts <query|export> [--measurement] --output PATH --root PATH --started-ms MS --exit-code CODE",
     );
   }
+  const measurement = args[0] === "--measurement";
+  if (measurement) args.shift();
 
   const options = new Map<string, string>();
   const seeds: SeedInput[] = [];
@@ -42,7 +44,10 @@ async function main(): Promise<void> {
         );
       }
       seeds.push({
-        fixture: cp1FixtureBySlug(slug),
+        fixture: cp1FixtureBySlug(
+          slug,
+          measurement ? "measurement" : "acceptance",
+        ),
         profilePath,
         resourcePath,
       });

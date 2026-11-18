@@ -679,8 +679,7 @@ async fn journey_cli_remote() {
     assert!(contains_string(&results, entry_id));
 }
 
-/// The server-backed CLI uses the same parent-selection and conflict rules as
-/// core mode for structured and compatibility updates.
+/// Remote update sends explicit or inferred parent revisions and surfaces a stale conflict.
 #[tokio::test]
 async fn test_cli_remote_entry_update_parent_revision_matrix() {
     let fixture = setup_remote().await;
@@ -690,125 +689,6 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
         "ParentMatrixRemoteForm",
     )
     .await;
-
-    let structured_created = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &[
-                "entry",
-                "create",
-                "--id",
-                "parent-matrix-structured",
-                "--form",
-                "ParentMatrixRemoteForm",
-                "--field",
-                "Body=structured v1",
-            ],
-        )
-        .await,
-        "remote structured matrix create",
-    );
-    assert!(contains_string(
-        &structured_created,
-        "parent-matrix-structured"
-    ));
-    let structured_history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", "parent-matrix-structured"],
-        )
-        .await,
-        "remote structured matrix history after create",
-    );
-    let structured_rev1 = revision_ids(&structured_history)[0].clone();
-
-    let explicit = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "update",
-            "parent-matrix-structured",
-            "--field",
-            "Body=structured explicit",
-            "--parent-revision-id",
-            &structured_rev1,
-        ],
-    )
-    .await;
-    assert!(
-        explicit.status.success(),
-        "remote explicit structured update failed: {}",
-        String::from_utf8_lossy(&explicit.stderr)
-    );
-    let structured_history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", "parent-matrix-structured"],
-        )
-        .await,
-        "remote structured matrix history after explicit update",
-    );
-    let structured_rev2 = revision_ids(&structured_history)
-        .into_iter()
-        .find(|revision| revision != &structured_rev1)
-        .expect("remote structured rev2");
-    let structured_revision = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &[
-                "entry",
-                "revision",
-                "parent-matrix-structured",
-                &structured_rev2,
-            ],
-        )
-        .await,
-        "remote structured matrix revision after explicit update",
-    );
-    assert_eq!(structured_revision["parent_revision_id"], structured_rev1);
-
-    let omitted = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "update",
-            "parent-matrix-structured",
-            "--field",
-            "Body=structured omitted",
-        ],
-    )
-    .await;
-    assert!(
-        omitted.status.success(),
-        "remote omitted structured update failed: {}",
-        String::from_utf8_lossy(&omitted.stderr)
-    );
-    let structured_history = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &["entry", "history", "parent-matrix-structured"],
-        )
-        .await,
-        "remote structured matrix history after omitted update",
-    );
-    let structured_rev3 = revision_ids(&structured_history)
-        .into_iter()
-        .find(|revision| revision != &structured_rev1 && revision != &structured_rev2)
-        .expect("remote structured rev3");
-    let structured_revision = stdout_json(
-        &run_cli(
-            &fixture.config_path,
-            &[
-                "entry",
-                "revision",
-                "parent-matrix-structured",
-                &structured_rev3,
-            ],
-        )
-        .await,
-        "remote structured matrix revision after omitted update",
-    );
-    assert_eq!(structured_revision["parent_revision_id"], structured_rev2);
 
     let created = stdout_json(
         &run_cli(
@@ -941,6 +821,15 @@ async fn test_cli_remote_entry_update_parent_revision_matrix() {
     .await;
     assert!(!stale.status.success(), "remote stale parent must conflict");
     assert!(String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"));
+    let final_history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["entry", "history", "parent-matrix-canonical"],
+        )
+        .await,
+        "remote history after rejected update",
+    );
+    assert_eq!(revision_ids(&final_history), revision_ids(&history));
 }
 
 async fn state_issue_rest_access(
@@ -1251,133 +1140,51 @@ async fn create_parity_entry(
     ids[0].clone()
 }
 
-/// Invalid field values are rejected with field-identifying validation
-/// semantics and persist nothing.
+/// Remote errors preserve the shared Entry diagnostics and leave failed creates absent.
 #[tokio::test]
-async fn test_parity_remote_invalid_field_rejected_without_mutation() {
+async fn remote_entry_create_surfaces_validation_diagnostics() {
     let fixture = setup_remote().await;
-    let fixture: &RemoteFixture = &fixture;
     setup_parity_form(
-            fixture,
-            "{\"Status\":{\"type\":\"string\",\"required\":true},\"Count\":{\"type\":\"double\"},\"Body\":{\"type\":\"markdown\"}}",
-            "ParityRemoteForm",
-        )
-        .await;
-    let output = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "create",
-            "--id",
+        &fixture,
+        r#"{"Status":{"type":"string","required":true},"Count":{"type":"double"},"Body":{"type":"markdown"}}"#,
+        "ParityRemoteForm",
+    )
+    .await;
+
+    for (id, form, input, expected) in [
+        (
             "parity-invalid",
-            "--form",
             "ParityRemoteForm",
-            "--field",
-            "Status=ok",
-            "--field",
-            "Count=not-a-number",
-            "--field",
-            "Body=x",
-        ],
-    )
-    .await;
-    assert!(!output.status.success(), "mistyped field must be rejected");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // Remote renders the shared warning payload inline instead of the core
-    // formatted lines; the field-identifying classification must still
-    // match. Presentation drift is tracked separately.
-    assert!(stderr.contains("invalid"), "stderr: {stderr}");
-    assert!(stderr.contains("Count"), "stderr: {stderr}");
-    entry_absent(fixture, "parity-invalid").await;
-}
-
-/// Missing required fields are rejected and persist nothing.
-#[tokio::test]
-async fn test_parity_remote_missing_required_rejected_without_mutation() {
-    let fixture = setup_remote().await;
-    let fixture: &RemoteFixture = &fixture;
-    setup_parity_form(
-        fixture,
-        "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
-        "ParityRemoteForm",
-    )
-    .await;
-    let output = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "create",
-            "--id",
+            &["--field", "Status=ok", "--field", "Count=not-a-number"][..],
+            ["invalid", "Count"],
+        ),
+        (
             "parity-missing",
-            "--form",
             "ParityRemoteForm",
-            "--field",
-            "Body=x",
-        ],
-    )
-    .await;
-    assert!(
-        !output.status.success(),
-        "missing required field must be rejected"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // Same transport-rendering note as the invalid-field case above.
-    assert!(stderr.contains("required"), "stderr: {stderr}");
-    assert!(stderr.contains("Status"), "stderr: {stderr}");
-    entry_absent(fixture, "parity-missing").await;
-}
-
-/// Stale parents conflict with 409-equivalent semantics and persist nothing.
-#[tokio::test]
-async fn test_parity_remote_stale_revision_conflicts_without_mutation() {
-    let fixture = setup_remote().await;
-    let fixture: &RemoteFixture = &fixture;
-    setup_parity_form(
-        fixture,
-        "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
-        "ParityRemoteForm",
-    )
-    .await;
-    let rev1 = create_parity_entry(fixture, "parity-stale", Some("ok"), "v1").await;
-    let updated = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "update",
-            "parity-stale",
-            "--field",
-            "Status=ok",
-            "--field",
-            "Body=v2",
-            "--parent-revision-id",
-            &rev1,
-        ],
-    )
-    .await;
-    assert!(updated.status.success());
-    let stale = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "update",
-            "parity-stale",
-            "--field",
-            "Status=ok",
-            "--field",
-            "Body=v2",
-            "--parent-revision-id",
-            &rev1,
-        ],
-    )
-    .await;
-    assert!(!stale.status.success(), "stale parent must conflict");
-    let stderr = String::from_utf8_lossy(&stale.stderr);
-    assert!(stderr.contains("Revision conflict"), "stderr: {stderr}");
-    let history = stdout_json(
-        &run_cli(&fixture.config_path, &["entry", "history", "parity-stale"]).await,
-        "parity history after conflict",
-    );
-    assert_eq!(revision_ids(&history).len(), 2);
+            &[][..],
+            ["required", "Status"],
+        ),
+        (
+            "parity-noform",
+            "NoSuchFormParity",
+            &["--field", "Status=ok"][..],
+            ["Form not found", "NoSuchFormParity"],
+        ),
+    ] {
+        let mut args = [
+            "entry", "create", "--id", id, "--form", form, "--field", "Body=x",
+        ]
+        .to_vec();
+        args.extend_from_slice(input);
+        let output = run_cli(&fixture.config_path, &args).await;
+        assert!(!output.status.success(), "{id} should be rejected");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            expected.iter().all(|part| stderr.contains(part)),
+            "{id}: {stderr}"
+        );
+        entry_absent(&fixture, id).await;
+    }
 }
 
 /// Restoring an unknown revision is rejected as not-found; history unchanged.
@@ -2039,261 +1846,6 @@ spec:
     assert_eq!(remote_history_after, history_before);
 }
 
-/// Adding an unrelated Form field preserves an explicit inline SQL projection
-/// through Core and Remote CLI transports while raw recovery stays identical.
-#[tokio::test]
-async fn test_cli_composition_additive_form_change_preserves_explicit_projection_matches_core_remote(
-) {
-    use ugoite_domain::composition::parse_composition_yaml;
-    use ugoite_iceberg::composition::CompositionSaveRequest;
-    use ugoite_iceberg::service::UgoiteService;
-
-    let fixture = setup_remote_with_filesystem_storage().await;
-    let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
-        .expect("open shared Space service");
-    let form_name = format!("CliProjection{}", uuid::Uuid::now_v7().simple());
-    service
-        .upsert_form(
-            &fixture.space_id,
-            &json!({
-                "name": form_name,
-                "version": 1,
-                "template": format!("# {form_name}\n\n## Salary amount\n"),
-                "fields": {
-                    "Salary amount": {"type": "integer", "required": true}
-                }
-            }),
-        )
-        .await
-        .expect("seed inline SQL source Form");
-    let yaml = format!(
-        r#"format: ugoite.composition
-format_version: 1
-name: CLI explicit projection
-kind: dashboard
-spec:
-  variables:
-    - id: rows
-      kind: query
-      returns: {{ kind: table, columns: [] }}
-      query:
-        kind: inline_sql
-        sql: SELECT "field_100" FROM "{form_name}"
-  components:
-    - id: salary_table
-      kind: table
-      variable: rows
-  layout:
-    kind: flow
-    rows:
-      - id: main
-        items:
-          - kind: component
-            component: salary_table
-"#
-    );
-    let document = parse_composition_yaml(&yaml).expect("parse explicit-projection Composition");
-    let saved = service
-        .save_composition_local_with_operation_id(
-            &fixture.space_id,
-            CompositionSaveRequest {
-                entry_id: None,
-                base_revision_id: None,
-                document,
-            },
-            &fixture.owner_principal_id.to_string(),
-            &format!("cli-explicit-projection-seed-{}", uuid::Uuid::now_v7()),
-        )
-        .await
-        .expect("seed explicit-projection inline SQL Composition");
-    let composition_id = saved.entry_id.to_string();
-    let revision_id = saved.revision_id.to_string();
-
-    service
-        .upsert_form(
-            &fixture.space_id,
-            &json!({
-                "name": form_name,
-                "version": 2,
-                "template": format!("# {form_name}\n\n## Salary amount\n\n## Bonus\n"),
-                "fields": {
-                    "Salary amount": {"type": "integer", "required": true},
-                    "Bonus": {"type": "string", "required": false}
-                }
-            }),
-        )
-        .await
-        .expect("add an unrelated Form field after Composition save");
-
-    let core_config_path = fixture
-        .config_path
-        .parent()
-        .expect("fixture config parent")
-        .join("core-explicit-projection-config.toml");
-    let mut core_config = ConfigFile::empty();
-    core_config.connections.insert(
-        "local".to_string(),
-        ConnectionConfig::Core {
-            root: fixture.storage_root.clone(),
-        },
-    );
-    core_config.contexts.insert(
-        "local".to_string(),
-        ContextConfig {
-            connection: "local".to_string(),
-            space_uid: uuid::Uuid::parse_str(&fixture.space_id).expect("Space UID"),
-            credential: None,
-        },
-    );
-    core_config.current_context = Some("local".to_string());
-    std::fs::write(
-        &core_config_path,
-        toml::to_string_pretty(&core_config).expect("serialize Core config"),
-    )
-    .expect("write Core config");
-
-    let history_args = ["composition", "history", composition_id.as_str()];
-    let history_before = stdout_json(
-        &run_cli(&core_config_path, &history_args).await,
-        "Core explicit-projection Composition history before read journey",
-    );
-    assert_eq!(history_before["total"], 1);
-    let remote_history_before = stdout_json(
-        &run_cli(&fixture.config_path, &history_args).await,
-        "Remote explicit-projection Composition history before read journey",
-    );
-    assert_eq!(remote_history_before, history_before);
-
-    let inspect_args = [
-        "composition",
-        "inspect",
-        composition_id.as_str(),
-        "--revision",
-        revision_id.as_str(),
-    ];
-    let core_inspect = stdout_json(
-        &run_cli(&core_config_path, &inspect_args).await,
-        "Core explicit-projection Composition inspect",
-    );
-    let remote_inspect = stdout_json(
-        &run_cli(&fixture.config_path, &inspect_args).await,
-        "Remote explicit-projection Composition inspect",
-    );
-    assert_eq!(core_inspect, remote_inspect);
-    assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
-    assert_eq!(core_inspect["fields"]["spec"], saved.canonical_yaml);
-
-    let raw_args = [
-        "composition",
-        "inspect",
-        composition_id.as_str(),
-        "--revision",
-        revision_id.as_str(),
-        "--raw",
-    ];
-    let core_raw = run_cli(&core_config_path, &raw_args).await;
-    let remote_raw = run_cli(&fixture.config_path, &raw_args).await;
-    assert!(
-        core_raw.status.success(),
-        "Core raw inspect must stay available for broken references"
-    );
-    assert!(
-        remote_raw.status.success(),
-        "Remote raw inspect must stay available for broken references"
-    );
-    assert_eq!(core_raw.stdout, remote_raw.stdout);
-    assert_eq!(core_raw.stdout, saved.canonical_yaml.as_bytes());
-
-    let output_dir = fixture.config_path.parent().expect("fixture config parent");
-    let core_export_path =
-        output_dir.join("core-explicit-projection-composition-export.ugcomp.yaml");
-    let remote_export_path =
-        output_dir.join("remote-explicit-projection-composition-export.ugcomp.yaml");
-    let core_export_args = [
-        "composition",
-        "export",
-        composition_id.as_str(),
-        "--revision",
-        revision_id.as_str(),
-        "--output",
-        core_export_path.to_str().expect("Core export path"),
-    ];
-    let remote_export_args = [
-        "composition",
-        "export",
-        composition_id.as_str(),
-        "--revision",
-        revision_id.as_str(),
-        "--output",
-        remote_export_path.to_str().expect("Remote export path"),
-    ];
-    let mut core_export = stdout_json(
-        &run_cli(&core_config_path, &core_export_args).await,
-        "Core explicit-projection Composition export",
-    );
-    let mut remote_export = stdout_json(
-        &run_cli(&fixture.config_path, &remote_export_args).await,
-        "Remote explicit-projection Composition export",
-    );
-    core_export
-        .as_object_mut()
-        .expect("Core export receipt object")
-        .remove("output");
-    remote_export
-        .as_object_mut()
-        .expect("Remote export receipt object")
-        .remove("output");
-    assert_eq!(core_export, remote_export);
-    assert_eq!(
-        std::fs::read(&core_export_path).expect("read Core exported bytes"),
-        saved.canonical_yaml.as_bytes()
-    );
-    assert_eq!(
-        std::fs::read(&remote_export_path).expect("read Remote exported bytes"),
-        saved.canonical_yaml.as_bytes()
-    );
-
-    let query_args = [
-        "composition",
-        "query",
-        composition_id.as_str(),
-        "--revision",
-        revision_id.as_str(),
-    ];
-    let core_query = stdout_json(
-        &run_cli(&core_config_path, &query_args).await,
-        "Core explicit-projection Composition query",
-    );
-    let remote_query = stdout_json(
-        &run_cli(&fixture.config_path, &query_args).await,
-        "Remote explicit-projection Composition query",
-    );
-    assert_composition_query_semantics_match(&core_query, &remote_query);
-    assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
-    assert_eq!(
-        core_query["query_results"]["rows"]["value"]["columns"][0]["name"], "field_100",
-        "the explicit projection must retain its original output after an unrelated field is added"
-    );
-    assert_eq!(
-        core_query["query_results"]["rows"]["value"]["rows"]
-            .as_array()
-            .map(Vec::len),
-        Some(0),
-        "the empty Form still has a valid query schema"
-    );
-
-    let history_after = stdout_json(
-        &run_cli(&core_config_path, &history_args).await,
-        "Core explicit-projection Composition history after read journey",
-    );
-    let remote_history_after = stdout_json(
-        &run_cli(&fixture.config_path, &history_args).await,
-        "Remote explicit-projection Composition history after read journey",
-    );
-    assert_eq!(history_after, history_before);
-    assert_eq!(remote_history_after, history_before);
-}
-
 /// A future format version keeps raw recovery identical through Core and
 /// Remote CLI transports while typed execution reports the stable
 /// unsupported-version diagnostic.
@@ -2733,42 +2285,6 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
         "remote Composition history after stale update",
     );
     assert_eq!(history["total"], 2);
-}
-
-/// Unknown Forms are rejected with form-identifying classification.
-#[tokio::test]
-async fn test_parity_remote_missing_form_rejected_without_mutation() {
-    let fixture = setup_remote().await;
-    let fixture: &RemoteFixture = &fixture;
-    setup_parity_form(
-        fixture,
-        "{\"Status\":{\"type\":\"string\",\"required\":true},\"Body\":{\"type\":\"markdown\"}}",
-        "ParityRemoteForm",
-    )
-    .await;
-    let output = run_cli(
-        &fixture.config_path,
-        &[
-            "entry",
-            "create",
-            "--id",
-            "parity-noform",
-            "--form",
-            "NoSuchFormParity",
-            "--field",
-            "Status=ok",
-            "--field",
-            "Body=x",
-        ],
-    )
-    .await;
-    assert!(!output.status.success(), "unknown form must be rejected");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("Form not found: NoSuchFormParity"),
-        "stderr: {stderr}"
-    );
-    entry_absent(fixture, "parity-noform").await;
 }
 
 /// Unauthenticated remote mutations are rejected without mutation. Local

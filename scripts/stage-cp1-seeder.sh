@@ -33,7 +33,8 @@ fi
 STAGE_DIR="$ROOT_DIR/target/cp1-fixtures/seeder"
 rm -rf "$STAGE_DIR"
 mkdir -p -m 700 "$STAGE_DIR"
-cp "$SEEDER" "$STAGE_DIR/xtask"
+# Only the staged verifier drops debug sections. The local build stays intact.
+strip -S -o "$STAGE_DIR/xtask" "$SEEDER"
 cp "$SEEDER.source-sha" "$STAGE_DIR/xtask.source-sha"
 chmod 755 "$STAGE_DIR/xtask"
 chmod 644 "$STAGE_DIR/xtask.source-sha"

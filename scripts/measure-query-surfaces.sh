@@ -11,7 +11,6 @@ PROFILE_REPORT="$PROFILE_DIR/query-${PROFILE_RUN_ID}.json"
 WASM_BUILD_RESOURCE="$PROFILE_DIR/query-wasm-build-${PROFILE_RUN_ID}.time.txt"
 SERVER_BUILD_RESOURCE="$PROFILE_DIR/query-server-build-${PROFILE_RUN_ID}.time.txt"
 QUERY_E2E_RESOURCE="$PROFILE_DIR/query-playwright-${PROFILE_RUN_ID}.time.txt"
-QUERY_FIXTURE_ROWS="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" query)"
 declare -a QUERY_FIXTURE_SLUGS=()
 declare -a QUERY_FIXTURE_SCENARIOS=()
 declare -a QUERY_FIXTURE_SEEDS=()
@@ -22,6 +21,12 @@ FIXTURE_BUNDLE_DIR="${UGOITE_CP1_FIXTURE_BUNDLE_DIR:-}"
 if [[ -n "$FIXTURE_BUNDLE_DIR" && "$FIXTURE_BUNDLE_DIR" != /* ]]; then
   FIXTURE_BUNDLE_DIR="$ROOT_DIR/$FIXTURE_BUNDLE_DIR"
 fi
+FIXTURE_MODE_ARGS=()
+if [[ -z "$FIXTURE_BUNDLE_DIR" ]]; then
+  FIXTURE_MODE_ARGS=(--measurement)
+  export UGOITE_QUERY_MEASURE_PROFILE=true
+fi
+QUERY_FIXTURE_ROWS="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" query "${FIXTURE_MODE_ARGS[@]}")"
 while IFS=$'\t' read -r fixture_slug scenario seed entry_count owner_display_name; do
   [[ -n "$fixture_slug" ]] || continue
   if ! [[ "$seed" =~ ^[0-9]+$ && "$entry_count" =~ ^[0-9]+$ ]]; then
@@ -81,7 +86,7 @@ cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
   set +e
-  deno run -A "$ROOT_DIR/tools/cp1_profile.ts" query \
+  deno run -A "$ROOT_DIR/tools/cp1_profile.ts" query "${FIXTURE_MODE_ARGS[@]}" \
     --output "$PROFILE_REPORT" \
     --root "$MEASURE_ROOT" \
     --started-ms "$PROFILE_STARTED_MS" \
