@@ -39,7 +39,7 @@ const MAX_SQL_DOCUMENT_NODE_EDIT_REQUEST_BYTES: usize = MAX_SQL_DOCUMENT_EDIT_RE
 const MAX_SQL_DOCUMENT_SEMANTIC_EDIT_REQUEST_BYTES: usize = MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES;
 const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
-const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
+const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft", "entry.coerce_field_value"];
 
 struct BoundedJsonWriter {
     bytes: Vec<u8>,
@@ -1146,7 +1146,36 @@ fn entry_error_envelope(error: serde_json::Value) -> String {
     envelope.to_string()
 }
 
+#[derive(serde::Deserialize)]
+struct EntryFieldValueInput {
+    field_type: ugoite_domain::form::FieldType,
+    item_type: Option<ugoite_domain::form::FieldType>,
+    value: serde_json::Value,
+}
+
+fn coerce_entry_field_value(
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, serde_json::Value> {
+    let invalid_input = |message: String| {
+        serde_json::json!({
+            "kind": "entry_validation",
+            "code": "INVALID_INPUT",
+            "message": message,
+        })
+    };
+    let input: EntryFieldValueInput =
+        serde_json::from_value(payload).map_err(|error| invalid_input(error.to_string()))?;
+    let value = ugoite_core::entry::coerce_field_value(
+        &input.value,
+        &input.field_type,
+        input.item_type.as_ref(),
+    )
+    .map_err(invalid_input)?;
+    serde_json::to_value(value).map_err(|error| invalid_input(error.to_string()))
+}
+
 /// Portable Entry authoring boundary (read-only, no Storage).
+/// - `entry.coerce_field_value` decodes a field for display through the Core.
 ///
 /// - `entry.validate_draft` validates `{form, draft}` with the same
 ///   `preview_structured_draft` implementation used natively, preserving
@@ -1163,6 +1192,7 @@ fn invoke_entry(request: serde_json::Value) -> String {
         .unwrap_or(serde_json::Value::Null);
     let result = (|| -> Result<serde_json::Value, serde_json::Value> {
         match action.as_str() {
+            "entry.coerce_field_value" => coerce_entry_field_value(payload),
             "entry.validate_draft" => {
                 let form: ugoite_domain::form::FormDefinition = serde_json::from_value(
                     payload

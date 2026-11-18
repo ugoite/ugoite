@@ -6,6 +6,7 @@ import type {
   EntryRevisionContent,
   EntryUpdatePayload,
   Form,
+  StructuredEntryFields,
 } from "./types";
 import type {
   EntryCount,
@@ -15,7 +16,6 @@ import type {
 } from "./entry-query";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
 import { buildStructuredEntryFields } from "./entry-input";
-import type { DraftFields } from "./draft-values";
 import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Entry;
@@ -149,7 +149,7 @@ export const entryApi = {
   async createFromWebform(
     spaceId: string,
     formDef: Form,
-    fieldValues: DraftFields,
+    fieldValues: StructuredEntryFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     const fields = buildStructuredEntryFields(formDef, fieldValues);
@@ -163,7 +163,7 @@ export const entryApi = {
   async createFromChat(
     spaceId: string,
     formDef: Form,
-    answers: DraftFields,
+    answers: StructuredEntryFields,
     id?: string,
   ): Promise<{ id: string; revision_id: string }> {
     // Chat answers ride the same structured path as webforms (no Markdown

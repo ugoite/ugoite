@@ -1,4 +1,11 @@
-import { createEffect, createSignal, createUniqueId, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  createUniqueId,
+  Show,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { ListEditor } from "~/components/ListEditor";
 import { ObjectListEditor } from "~/components/ObjectListEditor";
@@ -11,13 +18,11 @@ import {
 } from "~/components/fields/row-reference";
 import {
   draftValueToDisplayString,
-  normalizeBooleanListValue,
-  normalizeNumberListValue,
-  normalizeObjectListValue,
-  normalizeStringListValue,
-  parseBooleanAlias,
-  parseNumberItemText,
+  isBooleanListField,
+  isPlainNumberListField,
+  isPlainStringListField,
 } from "~/lib/draft-values";
+import { coerceEntryFieldValue } from "~/lib/ugoite-client/protocol";
 import { t } from "~/lib/i18n";
 import { renderMarkdownPreview } from "~/lib/markdown";
 import type { Form } from "~/lib/types";
@@ -70,26 +75,44 @@ const isListRowReferenceField = (field: FieldDefinitionLike) =>
 export const fieldValueToText = (value: unknown): string =>
   typeof value === "string" ? value : draftValueToDisplayString(value);
 
-/**
- * Resolve a boolean-looking value to a checkbox state. Returns null for
- * legacy text Rust would reject (e.g. "maybe") so callers keep the raw
- * text control instead of destroying the stored value.
- */
-export const resolveBooleanCheckbox = (value: unknown): boolean | null => {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") {
-    if (value === 1) return true;
-    if (value === 0) return false;
-    return null;
-  }
-  if (value === null || value === undefined) return false;
-  if (typeof value === "string") {
-    if (value.trim() === "") return false;
-    const alias = parseBooleanAlias(value);
-    return alias ?? null;
-  }
-  return null;
-};
+const isBoolean = (value: unknown): value is boolean =>
+  typeof value === "boolean";
+const isString = (value: unknown): value is string => typeof value === "string";
+const isNumberInput = (value: unknown): value is number | string =>
+  typeof value === "number" || isString(value);
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isArrayOf = <T,>(
+  value: unknown,
+  isItem: (item: unknown) => item is T,
+): value is T[] => Array.isArray(value) && value.every(isItem);
+
+/** Decode stored text only when it does not already fit the control. */
+function createEditorValue<T>(
+  props: FieldInputProps,
+  accepts: (value: unknown) => value is T,
+  itemType?: string,
+) {
+  const controlValue = createMemo(() => {
+    const value = props.value;
+    if (value == null || (isString(value) && value.trim() === "")) return null;
+    return accepts(value) ? value : undefined;
+  });
+  const [parsed] = createResource(
+    () => controlValue() === undefined ? { value: props.value } : false,
+    ({ value }) =>
+      coerceEntryFieldValue(props.field.type, itemType, value).catch(() =>
+        undefined
+      ),
+  );
+  return createMemo((): T | null | undefined => {
+    const value = controlValue();
+    if (value !== undefined || parsed.loading) return value;
+    const decoded = parsed();
+    return accepts(decoded) || decoded === null ? decoded : undefined;
+  });
+}
 
 function MarkdownFieldPreview(props: { value: string }) {
   const [open, setOpen] = createSignal(false);
@@ -329,144 +352,138 @@ const supportsDatetimeLocalValue = (value: string): boolean => {
     parsed.getSeconds() === Number(match[6] ?? "00");
 };
 
-function StringListRows(props: FieldInputProps & { fieldName: string }) {
-  const readItems = () => normalizeStringListValue(props.value as never);
+function UnparsedFieldInput(props: FieldInputProps) {
   return (
-    <ListEditor
-      values={readItems()}
+    <ScalarTextInput
+      fieldId={props.fieldId}
+      type="text"
+      value={fieldValueToText(props.value)}
+      invalid={props.invalid}
+      describedBy={props.describedBy}
+      placeholder={props.placeholder}
+      multiline={props.multiline ?? false}
+      markdownPreview={props.field.type === "markdown"}
       onChange={props.onChange}
-      createItem={() => ""}
-      addLabel={t("entryDetail.listAddItem")}
-      renderItem={(item, index, helpers) => (
-        <div class="flex items-center gap-2">
-          <input
-            id={index() === 0 ? props.fieldId : `${props.fieldId}-${index()}`}
-            class="ui-input"
-            value={item()}
-            aria-label={t("entryDetail.listItemLabel", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            aria-invalid={props.invalid ? "true" : undefined}
-            aria-describedby={props.invalid ? props.describedBy : undefined}
-            placeholder={t("entryDetail.fieldPlaceholder")}
-            onInput={(event) =>
-              props.onChange(
-                readItems().map((entry, position) =>
-                  position === index() ? event.currentTarget.value : entry
-                ),
-              )}
-          />
-          <button
-            type="button"
-            class="ui-button ui-button-secondary ui-button-sm text-sm"
-            aria-label={t("entryDetail.listRemoveItem", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            onClick={helpers.remove}
-          >
-            {t("common.remove")}
-          </button>
-        </div>
-      )}
     />
   );
 }
 
-function NumberListRows(props: FieldInputProps & { fieldName: string }) {
-  const readItems = () => normalizeNumberListValue(props.value as never);
+function TextListRows(
+  props: FieldInputProps & { fieldName: string; numeric: boolean },
+) {
+  // Decode legacy Markdown into text rows. Numeric items stay as entered until
+  // the save boundary, so partial text and exact integers do not round-trip
+  // through JavaScript Number.
+  const value = createEditorValue(
+    props,
+    (value): value is (string | number)[] =>
+      isArrayOf(value, props.numeric ? isNumberInput : isString),
+  );
+  const readItems = () => value() ?? [];
   return (
-    <ListEditor
-      values={readItems()}
-      onChange={props.onChange}
-      createItem={() => ""}
-      addLabel={t("entryDetail.listAddItem")}
-      renderItem={(item, index, helpers) => (
-        <div class="flex items-center gap-2">
-          <input
-            id={index() === 0 ? props.fieldId : `${props.fieldId}-${index()}`}
-            class="ui-input"
-            value={String(item())}
-            aria-label={t("entryDetail.listItemLabel", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            aria-invalid={props.invalid ? "true" : undefined}
-            aria-describedby={props.invalid ? props.describedBy : undefined}
-            placeholder={t("entryDetail.fieldPlaceholder")}
-            inputmode="decimal"
-            onInput={(event) =>
-              props.onChange(
-                readItems().map((entry, position) =>
-                  position === index()
-                    ? parseNumberItemText(event.currentTarget.value)
-                    : entry
-                ),
-              )}
-          />
-          <button
-            type="button"
-            class="ui-button ui-button-secondary ui-button-sm text-sm"
-            aria-label={t("entryDetail.listRemoveItem", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            onClick={helpers.remove}
-          >
-            {t("common.remove")}
-          </button>
-        </div>
-      )}
-    />
+    <Show
+      when={value() !== undefined}
+      fallback={<UnparsedFieldInput {...props} multiline />}
+    >
+      <ListEditor
+        values={readItems()}
+        onChange={props.onChange}
+        createItem={() => ""}
+        addLabel={t("entryDetail.listAddItem")}
+        renderItem={(item, index, helpers) => (
+          <div class="flex items-center gap-2">
+            <input
+              id={index() === 0 ? props.fieldId : `${props.fieldId}-${index()}`}
+              class="ui-input"
+              value={String(item())}
+              aria-label={t("entryDetail.listItemLabel", {
+                field: props.fieldName,
+                index: index() + 1,
+              })}
+              aria-invalid={props.invalid ? "true" : undefined}
+              aria-describedby={props.invalid ? props.describedBy : undefined}
+              placeholder={t("entryDetail.fieldPlaceholder")}
+              inputmode={props.numeric ? "decimal" : undefined}
+              onInput={(event) =>
+                props.onChange(
+                  readItems().map((entry, position) =>
+                    position === index() ? event.currentTarget.value : entry
+                  ),
+                )}
+            />
+            <button
+              type="button"
+              class="ui-button ui-button-secondary ui-button-sm text-sm"
+              aria-label={t("entryDetail.listRemoveItem", {
+                field: props.fieldName,
+                index: index() + 1,
+              })}
+              onClick={helpers.remove}
+            >
+              {t("common.remove")}
+            </button>
+          </div>
+        )}
+      />
+    </Show>
   );
 }
 
 function BooleanListRows(props: FieldInputProps & { fieldName: string }) {
-  const readItems = () => normalizeBooleanListValue(props.value as never);
+  const value = createEditorValue(
+    props,
+    (value): value is (boolean | null)[] =>
+      isArrayOf(
+        value,
+        (item): item is boolean | null => item === null || isBoolean(item),
+      ),
+    "boolean",
+  );
+  const readItems = () => value() ?? [];
   return (
-    <ListEditor
-      values={readItems()}
-      onChange={props.onChange}
-      createItem={() => false as never}
-      addLabel={t("entryDetail.listAddItem")}
-      renderItem={(item, index, helpers) => (
-        <div class="flex items-center gap-2">
-          <input
-            id={index() === 0 ? props.fieldId : `${props.fieldId}-${index()}`}
-            type="checkbox"
-            checked={typeof item() === "boolean"
-              ? (item() as boolean)
-              : parseBooleanAlias(
-                typeof item() === "string" ? (item() as string) : "",
-              ) === true}
-            aria-label={t("entryDetail.listItemLabel", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            aria-invalid={props.invalid ? "true" : undefined}
-            aria-describedby={props.invalid ? props.describedBy : undefined}
-            onChange={(event) =>
-              props.onChange(
-                readItems().map((entry, position) =>
-                  position === index() ? event.currentTarget.checked : entry
-                ),
-              )}
-          />
-          <button
-            type="button"
-            class="ui-button ui-button-secondary ui-button-sm text-sm"
-            aria-label={t("entryDetail.listRemoveItem", {
-              field: props.fieldName,
-              index: index() + 1,
-            })}
-            onClick={helpers.remove}
-          >
-            {t("common.remove")}
-          </button>
-        </div>
-      )}
-    />
+    <Show
+      when={value() !== undefined}
+      fallback={<UnparsedFieldInput {...props} multiline />}
+    >
+      <ListEditor
+        values={readItems()}
+        onChange={props.onChange}
+        createItem={() => false}
+        addLabel={t("entryDetail.listAddItem")}
+        renderItem={(item, index, helpers) => (
+          <div class="flex items-center gap-2">
+            <input
+              id={index() === 0 ? props.fieldId : `${props.fieldId}-${index()}`}
+              type="checkbox"
+              checked={item() === true}
+              aria-label={t("entryDetail.listItemLabel", {
+                field: props.fieldName,
+                index: index() + 1,
+              })}
+              aria-invalid={props.invalid ? "true" : undefined}
+              aria-describedby={props.invalid ? props.describedBy : undefined}
+              onChange={(event) =>
+                props.onChange(
+                  readItems().map((entry, position) =>
+                    position === index() ? event.currentTarget.checked : entry
+                  ),
+                )}
+            />
+            <button
+              type="button"
+              class="ui-button ui-button-secondary ui-button-sm text-sm"
+              aria-label={t("entryDetail.listRemoveItem", {
+                field: props.fieldName,
+                index: index() + 1,
+              })}
+              onClick={helpers.remove}
+            >
+              {t("common.remove")}
+            </button>
+          </div>
+        )}
+      />
+    </Show>
   );
 }
 
@@ -569,67 +586,55 @@ export function FieldInput(props: FieldInputProps) {
         />
       );
     }
-  } else if (props.field.type === "list" && !props.field.items) {
-    return <StringListRows {...props} fieldName={labelName()} />;
   } else if (
-    props.field.type === "list" &&
-    props.field.items?.type === "string"
+    isPlainStringListField(props.field) || isPlainNumberListField(props.field)
   ) {
-    return <StringListRows {...props} fieldName={labelName()} />;
-  } else if (
-    props.field.type === "list" &&
-    ["integer", "long", "float", "double"].includes(
-      props.field.items?.type ?? "",
-    )
-  ) {
-    return <NumberListRows {...props} fieldName={labelName()} />;
-  } else if (
-    props.field.type === "list" && props.field.items?.type === "boolean"
-  ) {
+    return (
+      <TextListRows
+        {...props}
+        fieldName={labelName()}
+        numeric={isPlainNumberListField(props.field)}
+      />
+    );
+  } else if (isBooleanListField(props.field)) {
     return <BooleanListRows {...props} fieldName={labelName()} />;
   }
 
   if (props.field.type === "object_list") {
+    const value = createEditorValue(
+      props,
+      (value): value is Record<string, unknown>[] => isArrayOf(value, isObject),
+    );
     return (
-      <ObjectListEditor
-        fieldName={labelName()}
-        values={normalizeObjectListValue(props.value as never)}
-        onChange={props.onChange}
-        invalid={props.invalid ?? false}
-        describedBy={props.invalid ? props.describedBy : undefined}
-      />
+      <Show
+        when={value() !== undefined}
+        fallback={<UnparsedFieldInput {...props} multiline />}
+      >
+        <ObjectListEditor
+          fieldName={labelName()}
+          values={value() ?? []}
+          onChange={props.onChange}
+          invalid={props.invalid ?? false}
+          describedBy={props.invalid ? props.describedBy : undefined}
+        />
+      </Show>
     );
   }
 
   if (props.field.type === "boolean") {
-    // Control kind follows the value so legacy text Rust would reject stays
-    // readable: parseable values (including empty) get the typed checkbox,
-    // unparseable legacy text keeps a text control. The switch is reactive
-    // because drafts can arrive after mount (undefined first, value later).
-    const useText = () => resolveBooleanCheckbox(props.value) === null;
+    const value = createEditorValue(props, isBoolean);
     return (
       <Show
-        when={useText()}
-        fallback={
-          <input
-            id={props.fieldId}
-            type="checkbox"
-            checked={resolveBooleanCheckbox(props.value) ?? false}
-            aria-invalid={props.invalid ? "true" : undefined}
-            aria-describedby={props.invalid ? props.describedBy : undefined}
-            onChange={(event) => props.onChange(event.currentTarget.checked)}
-          />
-        }
+        when={value() !== undefined}
+        fallback={<UnparsedFieldInput {...props} />}
       >
-        <ScalarTextInput
-          fieldId={props.fieldId}
-          type="text"
-          value={fieldValueToText(props.value)}
-          invalid={props.invalid}
-          describedBy={props.describedBy}
-          placeholder={props.placeholder}
-          multiline={false}
-          onChange={props.onChange}
+        <input
+          id={props.fieldId}
+          type="checkbox"
+          checked={value() === true}
+          aria-invalid={props.invalid ? "true" : undefined}
+          aria-describedby={props.invalid ? props.describedBy : undefined}
+          onChange={(event) => props.onChange(event.currentTarget.checked)}
         />
       </Show>
     );
@@ -754,19 +759,7 @@ export function FieldInput(props: FieldInputProps) {
     );
   }
 
-  return (
-    <ScalarTextInput
-      fieldId={props.fieldId}
-      type="text"
-      value={fieldValueToText(props.value)}
-      invalid={props.invalid}
-      describedBy={props.describedBy}
-      placeholder={props.placeholder}
-      multiline={props.multiline ?? false}
-      markdownPreview={props.field.type === "markdown"}
-      onChange={props.onChange}
-    />
-  );
+  return <UnparsedFieldInput {...props} />;
 }
 
 /** Alias kept for the dialog/editor call sites migrating to one family. */

@@ -1607,6 +1607,17 @@ export const encodeSpreadsheetCsv = async (
 ): Promise<string> =>
   await invokeProtocol<string>(buildSpreadsheetCsvRequest(rows));
 
+/** Interpret a raw field value using the Core Entry coercion. */
+export const coerceEntryFieldValue = (
+  fieldType: string,
+  itemType: string | undefined,
+  value: unknown,
+): Promise<unknown> =>
+  invokeProtocol<unknown>({
+    action: "entry.coerce_field_value",
+    value: { field_type: fieldType, item_type: itemType, value },
+  });
+
 /** Validate a structured Entry draft with the shared Rust boundary (PR1/PR2). */
 export const validateEntryDraft = async (
   form: unknown,

@@ -108,6 +108,12 @@ pub struct FormField {
     pub deprecated: bool,
 }
 
+impl FormField {
+    pub fn is_active_required(&self) -> bool {
+        self.required && !self.deprecated
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ListItemDefinition {
     #[serde(rename = "type")]

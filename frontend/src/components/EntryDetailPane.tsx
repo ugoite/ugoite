@@ -29,16 +29,16 @@ import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceFormEntriesPath, spaceFormsPath } from "~/lib/space-path";
 import {
-  type DraftFields,
-  type DraftValue,
   draftValueToDisplayString,
-  readAssetReferences,
   toTransportFields,
 } from "~/lib/draft-values";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import { validateEntryDraftViaWasm } from "~/lib/entry-validation";
-import type { Entry, Form, FormField } from "~/lib/types";
+import {
+  isActiveRequiredField,
+  validateEntryDraftViaWasm,
+} from "~/lib/entry-validation";
+import type { Entry, Form, FormField, StructuredEntryFields } from "~/lib/types";
 import { isAssetReferenceListField } from "~/lib/asset-reference";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
@@ -59,13 +59,6 @@ export interface EntryDetailPaneProps {
   onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
-
-const BOOLEAN_VALUE_REGEX = /^(true|false|yes|no|on|off|1|0)$/i;
-// Presentation hint only. The shared Rust boundary owns boolean coercion;
-// this regex never decides saveability.
-
-const isActiveRequiredField = (field: FormField) =>
-  field.required && !field.deprecated;
 
 function parseEntryValidationError(error: unknown) {
   if (!(error instanceof UgoiteApiError)) return null;
@@ -111,100 +104,6 @@ function parseEntryValidationError(error: unknown) {
   return null;
 }
 
-function isMissingRequiredValue(fieldDef: FormField, content: string) {
-  const value = content.trim();
-  if (!value) return true;
-
-  if (fieldDef.type === "object_list") {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return Array.isArray(parsed) && parsed.length === 0;
-    } catch {
-      return false;
-    }
-  }
-
-  if (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef)) {
-    const hasValue = value.split(/\r?\n/).some((line) => {
-      const item = line.trim().replace(
-        /^(?:[-*+](?:\s+\[[ xX]\])?\s*)/,
-        "",
-      );
-      return item.length > 0;
-    });
-    return !hasValue;
-  }
-
-  if (isAssetReferenceListField(fieldDef)) {
-    const result = readAssetReferences(value, true);
-    return result.issue !== "invalid" && result.references.length === 0;
-  }
-
-  return false;
-}
-
-function buildEditorGuidance(form: Form | null, fields: DraftFields) {
-  // Presentation hints only. Saveability and canonical errors come from the
-  // shared Rust boundary (`entry.validate_draft` + server mutation). When a
-  // hint conflicts with Rust, the Rust result wins.
-  if (!form) {
-    return {
-      missingRequired: [] as string[],
-      unknownSections: [] as string[],
-      typeIssues: [] as string[],
-    };
-  }
-
-  /* v8 ignore start */
-  const formFields = Object.entries(form.fields || {});
-  /* v8 ignore stop */
-
-  const missingRequired = formFields
-    .filter(([fieldName, fieldDef]) => {
-      if (!isActiveRequiredField(fieldDef)) return false;
-      return isMissingRequiredValue(
-        fieldDef,
-        draftValueToDisplayString(fields[fieldName]),
-      );
-    })
-    .map(([fieldName]) => fieldName);
-
-  const typeIssues: string[] = [];
-  for (const [fieldName, fieldDef] of formFields) {
-    const value = draftValueToDisplayString(fields[fieldName]).trim();
-    if (!value) continue;
-    /* v8 ignore start */
-    if (fieldDef.type === "boolean" && !BOOLEAN_VALUE_REGEX.test(value)) {
-      typeIssues.push(`${fieldName}: ${t("entryGuidance.booleanValue")}`);
-    }
-    if (
-      fieldDef.type === "list" &&
-      !value.includes("\n") &&
-      !value.startsWith("-") &&
-      value.includes(",")
-    ) {
-      typeIssues.push(`${fieldName}: ${t("entryGuidance.listValue")}`);
-    }
-    if (
-      fieldDef.type === "asset_reference" &&
-      readAssetReferences(value, false).issue === "invalid"
-    ) {
-      typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
-    }
-    if (isAssetReferenceListField(fieldDef)) {
-      const result = readAssetReferences(value, true);
-      if (result.issue === "invalid") {
-        typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
-      } else if (result.issue === "duplicate") {
-        typeIssues.push(`${fieldName}: ${t("assetField.error.duplicate")}`);
-      }
-    }
-    /* v8 ignore stop */
-  }
-
-  return { missingRequired, unknownSections: [], typeIssues };
-}
-
 class EntryLoadTimeoutError extends Error {
   constructor() {
     super("entry load timed out");
@@ -234,7 +133,7 @@ async function fetchWithTimeout<T>(
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
   // Structured draft is the only mutation authority in this pane.
-  const [draftFields, setDraftFields] = createSignal<DraftFields>({});
+  const [draftFields, setDraftFields] = createSignal<StructuredEntryFields>({});
   const [draftTags, setDraftTags] = createSignal<string[]>([]);
   const [isDirty, setIsDirty] = createSignal(false);
   const [isSaving, setIsSaving] = createSignal(false);
@@ -487,10 +386,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       : spaceFormsPath(props.spaceId());
   });
 
-  const editorGuidance = createMemo(() =>
-    buildEditorGuidance(currentForm(), draftFields())
-  );
-
   const requiredFieldErrorId = (fieldId: string) => `${fieldId}-required`;
 
   const focusFirstMissingRequiredField = () => {
@@ -526,11 +421,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const persistedFieldValue = (fieldName: string) =>
     entry()?.fields?.[fieldName] ?? "";
-
-  const fieldIssue = (fieldName: string) =>
-    editorGuidance().typeIssues.find((issue) =>
-      issue.startsWith(`${fieldName}:`)
-    );
 
   // Shared EntryFields descriptors: all Form fields share one
   // spacing contract. Structure only, memoized per form so row identities
@@ -569,7 +459,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       ? draftSession.restore(loadedEntry.form ?? "")
       : undefined;
     const draft = saved ? { fields: saved.fields } : {
-      fields: (loadedEntry.fields ?? {}) as DraftFields,
+      fields: loadedEntry.fields ?? {},
     };
     const tags = saved?.tags ?? loadedEntry.tags ?? [];
     setLastLoadedEntryId(entryId);
@@ -704,7 +594,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
 
     // Saveability is decided by the shared Rust boundary. TypeScript hints
-    // (required guidance, boolean/list formatting) never block a save.
+    // such as required-field indicators never block a save.
     // Lock before async validation so rapid saves still yield one revision.
     setIsSaving(true);
     clearSaveNotice();
@@ -1254,7 +1144,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 role="alert"
               >
                 <Show when={serverRevisionId()} fallback={conflictMessage()}>
-                  {() => (
+                  {(_revision) => (
                     <div class="ui-stack-sm">
                       <p class="font-semibold">
                         {t("entryDetail.conflictHeading")}
@@ -1339,9 +1229,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 ).map((name) => ({ name }))}
                                 getValue={(name) =>
                                   draftValueToDisplayString(
-                                    ((latest()?.fields ?? {})[
-                                      name
-                                    ]) as DraftValue,
+                                    latest()?.fields?.[name],
                                   )}
                               />
                             </section>
@@ -1397,38 +1285,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                           );
                         }}
                         belowField={(below) => (
-                          <>
-                            <Show
-                              when={!invalidFields().includes(below.name) &&
-                                editorGuidance().missingRequired.includes(
-                                  below.name,
-                                )}
-                            >
-                              <p class="text-xs ui-muted">
-                                {t("entryDetail.requiredMessage")}
-                              </p>
-                            </Show>
-                            <Show
-                              when={invalidFields().includes(below.name)}
-                            >
-                              <p
-                                class="text-xs ui-text-danger"
-                                role="alert"
-                              >
-                                {validationError()?.items.find((item) =>
-                                  item.startsWith(`${below.name}:`) ||
-                                  item.includes(below.name)
-                                ) ?? t("entryDetail.requiredMessage")}
-                              </p>
-                            </Show>
-                            <Show when={fieldIssue(below.name)}>
-                              {(issue) => (
-                                <p class="text-xs ui-muted">
-                                  {issue()}
-                                </p>
-                              )}
-                            </Show>
-                          </>
+                          <Show when={invalidFields().includes(below.name)}>
+                            <p class="text-xs ui-text-danger" role="alert">
+                              {validationError()?.items.find((item) =>
+                                item.startsWith(`${below.name}:`) ||
+                                item.includes(below.name)
+                              ) ?? t("entryDetail.requiredMessage")}
+                            </p>
+                          </Show>
                         )}
                       />
 

@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ugoite_domain::entry::FieldValue;
-use ugoite_domain::form::{FieldType, FormDefinition, ListItemDefinition};
+use ugoite_domain::form::{FieldType, FormDefinition};
 use ugoite_domain::id::FieldId;
 
 use crate::error::{AppError, ErrorCode};
@@ -144,7 +144,7 @@ pub fn normalize_and_validate_draft(
     for field in &form.fields {
         let raw = draft.fields.get(&field.name);
         let Some(raw) = raw else {
-            if field.required && !field.deprecated {
+            if field.is_active_required() {
                 let (expected_type, expected_format) =
                     expected_field_contract(field.field_type.as_str());
                 warnings.push(ValidationWarning {
@@ -164,7 +164,7 @@ pub fn normalize_and_validate_draft(
         // An explicitly empty string never satisfies a required field. This
         // matches the long-standing Markdown compatibility behavior where an
         // empty `## Section` means "not provided".
-        if field.required && !field.deprecated && raw.as_str().is_some_and(|text| text.is_empty()) {
+        if field.is_active_required() && raw.as_str().is_some_and(|text| text.is_empty()) {
             let (expected_type, expected_format) =
                 expected_field_contract(field.field_type.as_str());
             warnings.push(ValidationWarning {
@@ -180,8 +180,12 @@ pub fn normalize_and_validate_draft(
             });
             continue;
         }
-        match coerce_value(raw, &field.field_type, field.list_item.as_ref()) {
-            Ok(FieldValue::Null) if field.required && !field.deprecated => {
+        match coerce_field_value(
+            raw,
+            &field.field_type,
+            field.list_item.as_ref().map(|item| &item.field_type),
+        ) {
+            Ok(FieldValue::Null) if field.is_active_required() => {
                 let (expected_type, expected_format) =
                     expected_field_contract(field.field_type.as_str());
                 // Null never satisfies required, except for an empty list
@@ -228,8 +232,7 @@ pub fn normalize_and_validate_draft(
                     continue;
                 }
                 // A required empty list is missing per domain semantics.
-                if field.required
-                    && !field.deprecated
+                if field.is_active_required()
                     && matches!(&value, FieldValue::List(items) if items.is_empty())
                 {
                     let (expected_type, expected_format) =
@@ -331,13 +334,17 @@ pub fn stored_fields_to_values(
         let Some(value) = object.get(&field.name) else {
             continue;
         };
-        let value =
-            coerce_value(value, &field.field_type, field.list_item.as_ref()).map_err(|reason| {
-                AppError::invalid_input(
-                    ErrorCode::InvalidInput,
-                    format!("Field '{}': {reason}", field.name),
-                )
-            })?;
+        let value = coerce_field_value(
+            value,
+            &field.field_type,
+            field.list_item.as_ref().map(|item| &item.field_type),
+        )
+        .map_err(|reason| {
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!("Field '{}': {reason}", field.name),
+            )
+        })?;
         values.insert(field.id, value);
     }
     Ok(values)
@@ -581,7 +588,7 @@ fn normalize_binary(value: &str) -> Option<String> {
 fn parse_markdown_list(value: &str) -> Vec<Value> {
     // Markdown list syntax only, matching the existing 0.1 compatibility
     // path. JSON arrays arrive typed; JSON strings are handled per field type
-    // in `coerce_value` (asset-reference lists accept an encoded array).
+    // in `coerce_field_value` (asset-reference lists accept an encoded array).
     let mut items = Vec::new();
     for line in value.lines() {
         let line = line.trim();
@@ -633,14 +640,65 @@ fn json_to_untyped_field_value(value: &Value) -> Result<FieldValue, String> {
     }
 }
 
+/// Keep finite numeric spellings accepted by the repeated number controls
+/// before validation moved to Core. Exact integer text uses the normal
+/// coercion first, without passing through a floating-point representation.
+fn coerce_list_item(value: &Value, item_type: &FieldType) -> Result<FieldValue, String> {
+    let result = coerce_field_value(value, item_type, None);
+    if result.is_ok()
+        || !matches!(
+            item_type,
+            FieldType::Integer | FieldType::Long | FieldType::Float | FieldType::Double
+        )
+    {
+        return result;
+    }
+    let Some(number) = value
+        .as_str()
+        .map(str::trim)
+        .and_then(parse_numeric_list_alias)
+    else {
+        return result;
+    };
+    // Aliases use a floating-point parser. Only the existing plain-integer
+    // path is exact across the full i64 range.
+    const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+    match item_type {
+        FieldType::Float | FieldType::Double => Ok(FieldValue::Number(number)),
+        _ if number.fract() == 0.0 && number.abs() <= MAX_SAFE_INTEGER => {
+            coerce_field_value(&Value::from(number as i64), item_type, None)
+        }
+        _ => result,
+    }
+}
+
+fn parse_numeric_list_alias(text: &str) -> Option<f64> {
+    let radix = match text.as_bytes() {
+        [b'0', b'x' | b'X', ..] => 16,
+        [b'0', b'o' | b'O', ..] => 8,
+        [b'0', b'b' | b'B', ..] => 2,
+        _ => return text.parse::<f64>().ok().filter(|number| number.is_finite()),
+    };
+    let digits = &text[2..];
+    if digits.is_empty() {
+        return None;
+    }
+    digits
+        .chars()
+        .try_fold(0.0, |number, digit| {
+            Some(number * f64::from(radix) + f64::from(digit.to_digit(radix)?))
+        })
+        .filter(|number| number.is_finite())
+}
+
 /// Convert one transport JSON value to its canonical domain value.
 ///
 /// Markdown sections arrive as strings; structured payloads arrive typed.
 /// Both use this exact function so legacy and structured creates agree.
-fn coerce_value(
+pub fn coerce_field_value(
     value: &Value,
     field_type: &FieldType,
-    list_item: Option<&ListItemDefinition>,
+    item_type: Option<&FieldType>,
 ) -> Result<FieldValue, String> {
     if value.is_null() {
         return Ok(FieldValue::Null);
@@ -788,16 +846,14 @@ fn coerce_value(
                 .map_err(|_| "invalid asset reference value".to_string())
         }
         FieldType::List => {
-            let is_asset_list = list_item
-                .as_ref()
-                .is_some_and(|item| item.field_type == FieldType::AssetReference);
+            let item_type = item_type.unwrap_or(&FieldType::String);
             let items: Vec<Value> = match value {
                 Value::Array(items) => items.clone(),
                 Value::String(raw) => {
                     // Match the existing 0.1 path: asset-reference lists
                     // accept an encoded JSON array string, while plain lists
                     // use Markdown list syntax.
-                    if is_asset_list {
+                    if *item_type == FieldType::AssetReference {
                         if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(raw.trim()) {
                             items
                         } else {
@@ -809,12 +865,9 @@ fn coerce_value(
                 }
                 _ => return Err("typed list field must be an array".to_string()),
             };
-            let item_type = list_item
-                .map(|item| &item.field_type)
-                .unwrap_or(&FieldType::String);
             items
                 .iter()
-                .map(|item| coerce_value(item, item_type, None))
+                .map(|item| coerce_list_item(item, item_type))
                 .collect::<Result<Vec<_>, _>>()
                 .map(FieldValue::List)
         }

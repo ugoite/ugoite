@@ -8,13 +8,14 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { isActiveRequiredField } from "~/lib/entry-validation";
 import { type EntryInputMode } from "~/lib/entry-input";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { FieldInput, fieldValueToText } from "~/components/fields";
 import { FormTargetSelect } from "~/components/FormTargetSelect";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
-import type { Form, FormCreatePayload } from "~/lib/types";
+import type { Form, FormCreatePayload, StructuredEntryFields } from "~/lib/types";
 import {
   isReservedMetadataColumn,
   RESERVED_METADATA_COLUMNS,
@@ -73,9 +74,6 @@ const formatDatetimeLocal = (date: Date) => {
 const isLongTextField = (name: string, def: Form["fields"][string]) =>
   def.type === "markdown" || name.toLowerCase() === "sql";
 
-const isActiveRequiredField = (def: Form["fields"][string]) =>
-  def.required && !def.deprecated;
-
 const createFieldInputId = (prefix: string, name: string, index: number) => {
   const normalized = name
     .trim()
@@ -103,10 +101,7 @@ const buildInputModeHints = (mode: EntryInputMode): string[] => {
 const appendInputTypeHints = (
   hints: string[],
   types: Set<string>,
-  mode: EntryInputMode,
 ): string[] => {
-  if (types.has("list")) hints.push(t("entryGuidance.listValue"));
-  if (types.has("boolean")) hints.push(t("entryGuidance.booleanValue"));
   if (types.has("row_reference")) {
     hints.push(t("entryGuidance.rowReference"));
   }
@@ -231,7 +226,7 @@ export interface CreateEntryDialogProps {
   onClose: () => void;
   onSubmit: (
     formName: string,
-    requiredValues: Record<string, string>,
+    requiredValues: StructuredEntryFields,
     inputMode?: EntryInputMode,
   ) => Promise<void> | void;
 }
@@ -310,7 +305,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     return appendInputTypeHints(
       buildInputModeHints(inputMode()),
       types,
-      inputMode(),
     );
   });
 
@@ -779,8 +773,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                 <div class="mt-3 flex flex-wrap gap-2">
                   <For each={chatFields()}>
                     {([name, def], index) => {
-                      const answered = () =>
-                        !!(fieldValues()[name] || "").trim();
+                      const answered = () => fieldText(name).trim() !== "";
                       const current = () => index() === chatStep();
                       return (
                         <button
