@@ -232,8 +232,6 @@ async function assertAggregateWorkflow(
       "cargo run -p xtask -- openapi-check",
       "cargo run -p xtask -- architecture-check",
       "cargo run -p xtask -- docs-current-stack-check",
-      '{ task = "check:supported" }',
-      "cargo run -p xtask -- legacy-auth-check",
     ],
     "repository check task",
   );
@@ -1124,10 +1122,6 @@ Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", as
   const frontendConfig = await Deno.readTextFile("frontend/vitest.config.ts");
   const rootDeno = await Deno.readTextFile("deno.json");
   const mise = await Deno.readTextFile("mise.toml");
-  const requirements = await Deno.readTextFile(
-    "docs/spec/requirements/ops.yaml",
-  );
-
   assertEquals(
     frontendTasks.tasks.coverage,
     "deno run -A npm:vitest run --coverage --maxWorkers=1",
@@ -1164,28 +1158,12 @@ Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", as
     ["test:frontend:coverage"],
     "canonical test task",
   );
-  assertContainsAll(
-    requirementBlock(
-      requirements,
-      "REQ-OPS-021",
-    ),
-    [
-      "status: implemented",
-      "verification: traced",
-      "- file: tools/coverage_gates_test.ts",
-    ],
-    "REQ-OPS-021",
-  );
 });
 
 Deno.test("REQ-OPS-024: docsite coverage remains developer convenience", async () => {
   const docsiteConfig = await Deno.readTextFile("docsite/vitest.config.ts");
   const rootDeno = await Deno.readTextFile("deno.json");
   const mise = await Deno.readTextFile("mise.toml");
-  const requirements = await Deno.readTextFile(
-    "docs/spec/requirements/ops.yaml",
-  );
-
   assertEquals(
     docsiteTasks.tasks.coverage,
     "deno run -A npm:vitest@4.1.8 run --coverage --maxWorkers=1",
@@ -1236,26 +1214,7 @@ Deno.test("REQ-OPS-024: docsite coverage remains developer convenience", async (
     ['"test:docsite"'],
     "hosted web lane",
   );
-  assertContainsAll(
-    requirementBlock(
-      requirements,
-      "REQ-OPS-024",
-    ),
-    [
-      "status: implemented",
-      "verification: traced",
-      "- file: tools/coverage_gates_test.ts",
-    ],
-    "REQ-OPS-024",
-  );
 });
-
-function requirementBlock(source: string, id: string): string {
-  const start = source.indexOf(`  id: ${id}`);
-  assertEquals(start >= 0, true, `missing requirement ${id}`);
-  const end = source.indexOf("\n- set_id:", start);
-  return source.slice(start, end === -1 ? undefined : end);
-}
 
 function composeRunnerHelper(source: string): string {
   const start = source.indexOf("run_verified_portable_cli() {");

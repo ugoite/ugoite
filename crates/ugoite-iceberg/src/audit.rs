@@ -924,7 +924,7 @@ pub async fn append_audit_event(
 ///
 /// Pending event markers are written before the chain update and committed
 /// after it, preserving the single-event crash-recovery protocol.
-#[allow(dead_code)] // Generic batches remain strict; reconciliation has a dedicated chain-authoritative path.
+#[cfg(test)]
 pub(crate) async fn append_audit_events(
     op: &Operator,
     space_id: &str,

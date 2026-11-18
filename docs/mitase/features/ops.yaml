@@ -72,21 +72,21 @@ features:
             claims:
               - kind: documents
                 anchor: REQ-OPS-004#criterion.milestone-status
-          - id: taxonomy-registry
-            adapter: declared
-            path: docs/spec/features/features.yaml
-            selector: { kind: file }
-            claims:
-              - kind: documents
-                anchor: REQ-OPS-003#criterion.taxonomy-integrity
       - id: registries
         role: implementation
         facet: documentation
         responsibility: Keep the registry artifacts that the current taxonomy-integrity test parses as exact implementation targets. The test proves link resolution for the current registry corpus; it does not make later unmigrated domains canonical.
         targets:
-          - id: taxonomy-registry
+          - id: remaining-operations-requirements
             adapter: declared
-            path: docs/spec/features/features.yaml
+            path: docs/spec/requirements/ops.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
+          - id: remaining-security-requirements
+            adapter: declared
+            path: docs/spec/requirements/security.yaml
             selector: { kind: file }
             claims:
               - kind: satisfies

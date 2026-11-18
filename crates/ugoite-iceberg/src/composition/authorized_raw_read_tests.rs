@@ -11,9 +11,6 @@ use ugoite_domain::identity::{
 };
 use uuid::Uuid;
 
-const REMOVED_SOURCE_GRAMMAR: &str =
-    include_str!("../../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
-
 #[cfg(debug_assertions)]
 #[path = "process_conflict_tests.rs"]
 mod process_conflict_tests;
@@ -526,10 +523,6 @@ fn raw_composition_revision(args: RawCompositionRevisionArgs<'_>) -> anyhow::Res
 
 #[tokio::test]
 async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> anyhow::Result<()> {
-    assert_eq!(
-        ugoite_domain::composition::parse_composition_yaml(REMOVED_SOURCE_GRAMMAR),
-        Err(ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition)
-    );
     let service = UgoiteService::new(format!("memory://composition-raw-{}", Uuid::now_v7()))?;
     let owner = Uuid::from_u128(3_428_003);
     let space_id = service
@@ -612,6 +605,7 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
     assert_eq!(local_raw.fields["spec"], json!("not: [valid YAML"));
     assert_eq!(local_raw.revision.revision_id, raw.revision.revision_id);
 
+    let invalid_spec = "format: ugoite.composition\nformat_version: 1\nspec: {}\n";
     let second_revision_id = Uuid::now_v7();
     let second_change_id = Uuid::now_v7().to_string();
     let second_revision = raw_composition_revision(RawCompositionRevisionArgs {
@@ -629,7 +623,7 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
         tags: vec!["updated".to_string()],
         name: "Updated tool",
         format_version: 1,
-        spec: REMOVED_SOURCE_GRAMMAR,
+        spec: invalid_spec,
     })?;
     let second_change = ChangeCommand {
         change_id: second_change_id,
@@ -676,7 +670,7 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
     let latest = service
         .get_composition_raw_authorized_for_principals(&space_id, "composition-document", &[owner])
         .await?;
-    assert_eq!(latest.fields["spec"], json!(REMOVED_SOURCE_GRAMMAR));
+    assert_eq!(latest.fields["spec"], json!(invalid_spec));
     assert_ne!(latest.revision.revision_id, exact.revision.revision_id);
     let local_exact = service
         .get_composition_raw_revision_local(&space_id, "composition-document", &first_revision_id)
@@ -737,7 +731,7 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
     );
     assert_eq!(
         local_second_page.revisions[0].fields["spec"],
-        json!(REMOVED_SOURCE_GRAMMAR)
+        json!(invalid_spec)
     );
     Ok(())
 }

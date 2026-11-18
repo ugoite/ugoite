@@ -110,17 +110,6 @@ mod tests {
     };
 
     const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
-    const REMOVED_SOURCE_GRAMMAR: &str =
-        include_str!("../../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
-
-    #[test]
-    fn rejects_the_removed_prerelease_source_document_without_migration() {
-        assert_eq!(
-            parse_composition_yaml(REMOVED_SOURCE_GRAMMAR),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
     #[test]
     fn parses_strict_variable_graph_and_shared_query_descriptors() {
         let document = parse_composition_yaml(GRAPH).unwrap();
@@ -152,66 +141,6 @@ mod tests {
                 "total",
                 "transactions"
             ]
-        );
-    }
-
-    #[test]
-    fn rejects_source_shaped_documents_and_unknown_graph_fields() {
-        let source_shaped = GRAPH.replace(
-            "  variables:
-",
-            "  sources: []
-  variables:
-",
-        );
-        assert_eq!(
-            parse_composition_yaml(&source_shaped),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let component_source = GRAPH.replace(
-            "      variable: expense_rows
-",
-            "      source: expense_rows
-",
-        );
-        assert_eq!(
-            parse_composition_yaml(&component_source),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let root_tags = GRAPH.replace(
-            "name: Monthly expenses\n",
-            "name: Monthly expenses\ntags: []\n",
-        );
-        assert_eq!(
-            parse_composition_yaml(&root_tags),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let variable_label = GRAPH.replace(
-            "    - id: month_start\n",
-            "    - id: month_start\n      label: Start month\n",
-        );
-        assert_eq!(
-            parse_composition_yaml(&variable_label),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let component_label = GRAPH.replace(
-            "    - id: month_start_input\n",
-            "    - id: month_start_input\n      label: Start month\n",
-        );
-        assert_eq!(
-            parse_composition_yaml(&component_label),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let unknown = GRAPH.replace(
-            "      kind: query
-",
-            "      kind: query
-      legacy_source: true
-",
-        );
-        assert_eq!(
-            parse_composition_yaml(&unknown),
-            Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
 

@@ -96,45 +96,6 @@ const typedCompositionDocument = {
   },
 };
 
-const prereleaseSourceShapedCompositionDocument = {
-  format: "ugoite.composition",
-  format_version: 1,
-  kind: "dashboard",
-  name: "Monthly expenses",
-  spec: {
-    variables: [{
-      id: "month_start",
-      type: "date",
-      required: true,
-      default: "2026-10-01",
-    }],
-    sources: [{
-      id: "sql_results",
-      kind: "saved_sql",
-      entry_id: "00000000-0000-7000-8000-000000000020",
-      revision_id: "00000000-0000-7000-8000-000000000021",
-      expected_result: [{ name: "amount", type: "json" }],
-      schema_fingerprint:
-        "ed3bd3fbcd9aa04517ff6d9dbb8a7a6de4eede34a704908debdea72b5c0b1ec5",
-      variables: { month_start: { variable: "month_start" } },
-    }],
-    components: [
-      { id: "month_start_input", kind: "input", variable: "month_start" },
-      { id: "results_table", kind: "table", source: "sql_results" },
-    ],
-    layout: {
-      kind: "flow",
-      rows: [{
-        id: "main",
-        items: [
-          { kind: "component", component: "month_start_input" },
-          { kind: "component", component: "results_table" },
-        ],
-      }],
-    },
-  },
-};
-
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -273,10 +234,10 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(canonical.canonical_yaml).toContain("value: 9223372036854775807");
   });
 
-  it("rejects prerelease source-shaped Composition documents", async () => {
+  it("returns the Rust diagnostic for invalid Composition documents", async () => {
     await expect(
       canonicalizeCompositionDocument(
-        prereleaseSourceShapedCompositionDocument,
+        { ...typedCompositionDocument, unknown: true },
       ),
     ).rejects.toMatchObject({
       kind: "composition_diagnostic",

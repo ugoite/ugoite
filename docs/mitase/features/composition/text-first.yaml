@@ -24,7 +24,6 @@ features:
               - { kind: documents, anchor: REQ-COMP-010#criterion.exact-scalar-query-contract }
               - { kind: documents, anchor: REQ-COMP-010#criterion.current-shape-save-validation }
               - { kind: documents, anchor: REQ-COMP-010#criterion.append-only-save-history }
-              - { kind: documents, anchor: REQ-COMP-010#criterion.replaced-shape-is-not-executable }
               - { kind: documents, anchor: REQ-COMP-010#criterion.raw-history-remains-readable }
               - { kind: documents, anchor: REQ-FE-082#criterion.inline-template-parameters }
               - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-projectable-columns }
@@ -50,7 +49,6 @@ features:
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
-              - { kind: satisfies, criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable }
           - id: inline-query-graph
             adapter: rust
             path: crates/ugoite-domain/src/composition/variable_graph.rs
@@ -250,19 +248,15 @@ features:
         facet: verification
         responsibility: Verify strict graph rejection, Rust template semantics, scalar result validation, current Form authority, append-only revisions, adapter parity, and the browser's two-mode Text-first workflow.
         targets:
-          - id: old-shape-and-component-validation
+          - id: strict-document-fields
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: test, name: tests::replaced_composition_shape_is_rejected_without_hidden_fields }
+            selector: { kind: test, name: tests::schema_rejects_unknown_fields }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-010#criterion.inline-sql-typed-graph
                 covers: [FEAT-COMP-010#binding.core/target.composition-document]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
-              - kind: verifies
-                criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable
-                covers: [FEAT-COMP-010#binding.core/target.composition-document]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::schema_rejects_unknown_fields } }
           - id: saved-sql-variant-rejected
             adapter: rust
             path: crates/ugoite-domain/src/composition/variable_graph.rs
@@ -552,15 +546,6 @@ features:
                 criterion: REQ-COMP-010#criterion.append-only-save-history
                 covers: [FEAT-COMP-010#binding.service/target.append-only-save]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: composition_save_route_concurrent_same_key_returns_one_publication_and_receipt } }
-          - id: cli-rejects-old-graph
-            adapter: rust
-            path: crates/ugoite-cli/src/commands/composition.rs
-            selector: { kind: test, name: tests::lint_rejects_the_removed_prerelease_source_document }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-010#criterion.replaced-shape-is-not-executable
-                covers: [FEAT-COMP-010#binding.core/target.composition-document]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_rejects_the_removed_prerelease_source_document } }
           - id: cli-response-projection
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs

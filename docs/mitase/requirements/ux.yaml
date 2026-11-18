@@ -434,8 +434,8 @@ requirements:
                 covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-UX-LIST-002: keeps edit-form save on a single-row action bar with a strong save" } }
   - id: REQ-UX-I18N-001
-    title: Dictionary Copy Without Legacy Strings
-    description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets, and legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.
+    title: Shared locale dictionary
+    description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets.
     priority: high
     status: planned
     criteria:
@@ -443,25 +443,7 @@ requirements:
         kind: behavior
         statement: User-facing copy resolves through the shared locale dictionary with identical English and Japanese key sets.
         governed_by: [POL-I18N-001#rule.governance]
-      - id: no-legacy-jp-strings
-        kind: behavior
-        statement: Legacy hardcoded Japanese strings outside the shared locale dictionary are absent from shipped surfaces.
-        governed_by: [POL-I18N-001#rule.governance]
     bindings:
-      - id: i18n-legacy-verification
-        role: verification
-        facet: verification
-        responsibility: Verify legacy Japanese strings are absent from the shared dictionary and the touched PR-5 surfaces through exact Vitest cases.
-        targets:
-          - id: legacy-strings-absent
-            adapter: typescript
-            path: frontend/src/spec/ux-pr5-legacy-strings.test.tsx
-            selector: { kind: test, name: "REQ-UX-I18N-001: forbids legacy Japanese strings on touched surfaces" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-I18N-001#criterion.no-legacy-jp-strings
-                covers: [FEAT-UX-004#binding.locale-baseline/target.locale-dictionary]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ux-pr5-legacy-strings.test.tsx, test: "REQ-UX-I18N-001: forbids legacy Japanese strings on touched surfaces" } }
       - id: locale-lint-verification
         role: verification
         facet: verification

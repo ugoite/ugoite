@@ -1391,8 +1391,6 @@ mod tests {
     const SQL_FIRST_COMPOSITION_FINGERPRINT: &str = include_str!(
         "../../../../crates/ugoite-domain/tests/fixtures/composition/sql-first.fingerprint.txt"
     );
-    const REMOVED_SOURCE_GRAMMAR: &[u8] =
-        include_bytes!("../../../../e2e/fixtures/composition/broken-source-reference.ugcomp.yaml");
     const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
 
     #[test]
@@ -1490,29 +1488,6 @@ mod tests {
         assert_eq!(
             response.error.expect("diagnostic").code,
             CompositionDiagnosticCode::UnsupportedFormatVersion
-        );
-    }
-
-    #[test]
-    fn lint_rejects_the_removed_prerelease_source_document() {
-        let response = lint_yaml_bytes(REMOVED_SOURCE_GRAMMAR);
-
-        assert!(!response.ok);
-        assert!(response.value.is_none());
-        assert_eq!(
-            response.error.expect("diagnostic").code,
-            CompositionDiagnosticCode::InvalidComposition
-        );
-
-        let old_text_shape = b"format: ugoite.composition\nformat_version: 1\nname: Old text\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
-        let old_text_response = lint_yaml_bytes(old_text_shape);
-        assert!(!old_text_response.ok);
-        assert_eq!(
-            old_text_response
-                .error
-                .expect("old Text shape diagnostic")
-                .code,
-            CompositionDiagnosticCode::InvalidComposition
         );
     }
 

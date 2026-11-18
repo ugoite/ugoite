@@ -35,6 +35,12 @@ Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as t
 
 ## Specification contract
 
+- Preserve published Knowledge, stable contracts, and recovery. Remove obsolete
+  unreleased internal formats without adding migration or compatibility readers.
+- Keep each semantic rule in its owning layer. Use Git history for superseded
+  specifications and choose the smallest test layer and fixture that prove the
+  current invariant.
+
 - Preserve source meaning when migrating Requirements. Missing or ambiguous
   evidence becomes an unverified Criterion or an explicit evidence gap; it
   must not be represented by narrowing the Requirement. Policy levels are

@@ -682,8 +682,6 @@ pub(crate) fn verify_revision_integrity(
         extra_attributes = state.extra_attributes.clone();
     }
     if let Some(state) = &row.state {
-        let mut state = state.clone();
-        apply_sql_name_compat(&mut state);
         if let (Some(fields), Some(state_fields)) =
             (fields.as_object_mut(), state.fields.as_object())
         {
@@ -851,28 +849,6 @@ fn derive_form_bindings(
     Ok(result)
 }
 
-/// Storage-compatibility boundary: folds the legacy physical
-/// `saved_query_name` carrier (decoded as `legacy_saved_query_name`) into
-/// the in-memory `fields["name"]` for old Saved SQL rows that predate the
-/// canonical SQL Form name field. New rows always carry an empty legacy
-/// value; product logic below must never reference the legacy carrier.
-fn apply_sql_name_compat(row: &mut entry::EntryRow) {
-    let has_name = row
-        .fields
-        .get("name")
-        .and_then(|value| value.as_str())
-        .is_some_and(|name| !name.trim().is_empty());
-    if has_name || row.legacy_saved_query_name.trim().is_empty() {
-        return;
-    }
-    if let Some(fields) = row.fields.as_object_mut() {
-        fields.insert(
-            "name".to_string(),
-            Value::String(row.legacy_saved_query_name.clone()),
-        );
-    }
-}
-
 fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
     let fields = row
         .fields
@@ -942,11 +918,10 @@ pub async fn list_sql(op: &Operator, ws_path: &str, entry_scope: EntryScope) -> 
     )
     .await?;
     let mut entries = Vec::new();
-    for mut row in rows {
+    for row in rows {
         if row.deleted {
             continue;
         }
-        apply_sql_name_compat(&mut row);
         entries.push(sql_entry_from_row(&row)?);
     }
     Ok(entries)
@@ -956,11 +931,10 @@ pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value
     if !sql_form_exists_read_only(op, ws_path).await? {
         return Err(sql_entry_not_found(sql_id));
     }
-    let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
+    let row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(sql_entry_not_found(sql_id));
     }
-    apply_sql_name_compat(&mut row);
     sql_entry_from_row(&row)
 }
 
@@ -1181,9 +1155,6 @@ pub(crate) async fn create_sql_with_bindings<I: IntegrityProvider>(
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
-        // Canonical SQL Form `fields["name"]` is the single authority; the
-        // legacy carrier is always empty for new rows.
-        legacy_saved_query_name: String::new(),
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         created_at: timestamp,
@@ -1354,9 +1325,6 @@ pub(crate) async fn update_sql_with_bindings<I: IntegrityProvider>(
     row.updated_at = timestamp;
     row.fields = Value::Object(fields);
     row.extra_attributes = extra_attributes;
-    // The legacy carrier is never authority and never written; clear it
-    // defensively so updated rows cannot carry a stale value forward.
-    row.legacy_saved_query_name = String::new();
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
@@ -1786,10 +1754,9 @@ mod name_field_tests {
         assert!(validate_sql_metadata(&invalid).is_err());
     }
 
-    fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {
+    fn sql_row(fields: Value) -> entry::EntryRow {
         entry::EntryRow {
-            entry_id: "sql-legacy".to_string(),
-            legacy_saved_query_name: name.to_string(),
+            entry_id: "sql-example".to_string(),
             form: SQL_FORM_NAME.to_string(),
             tags: Vec::new(),
             created_at: 1.0,
@@ -1909,7 +1876,6 @@ mod name_field_tests {
         row.extra_attributes["metadata"] = serde_json::json!(payload.metadata);
         let state = entry::EntryRow {
             entry_id: row.entry_id.clone(),
-            legacy_saved_query_name: String::new(),
             form: SQL_FORM_NAME.into(),
             tags: Vec::new(),
             created_at: row.timestamp,
@@ -2003,7 +1969,7 @@ mod name_field_tests {
         verify_revision_integrity(&revision, &provider)
             .expect("sidecar defaults are part of the verified Saved SQL payload");
 
-        let mut row = row_with_saved_query_name("", fields);
+        let mut row = sql_row(fields);
         row.extra_attributes = extra_attributes;
         assert_eq!(
             sql_entry_from_row(&row).unwrap()["variables"],
@@ -2014,22 +1980,12 @@ mod name_field_tests {
 
     #[test]
     fn name_read_uses_field_then_null() {
-        let entry = sql_entry_from_row(&row_with_saved_query_name(
-            "Saved Query Name",
-            sql_fields(Some("Field Name")),
-        ))
-        .expect("field name must win");
-        assert_eq!(entry["name"], Value::String("Field Name".to_string()));
+        let entry = sql_entry_from_row(&sql_row(sql_fields(Some("Field Name"))))
+            .expect("named Saved SQL is readable");
+        assert_eq!(entry["name"], "Field Name");
 
-        let entry = sql_entry_from_row(&row_with_saved_query_name(
-            "Saved Query Name",
-            sql_fields(None),
-        ))
-        .expect("legacy carrier must be ignored by product logic");
-        assert!(entry["name"].is_null());
-
-        let entry = sql_entry_from_row(&row_with_saved_query_name("", sql_fields(None)))
-            .expect("nameless records stay valid");
+        let entry =
+            sql_entry_from_row(&sql_row(sql_fields(None))).expect("nameless Saved SQL is readable");
         assert!(entry["name"].is_null());
     }
 }

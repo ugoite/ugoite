@@ -102,7 +102,7 @@ change decision.
 
 ## Verification obligations
 
-1. Native Rust and WASM agree on canonicalization, rejected old variants, and
+1. Native Rust and WASM agree on canonicalization, validation diagnostics, and
    ordered Text template parts.
 2. Core, REST, CLI, and Browser use the same graph bindings and server-derived
    schema; no adapter reimplements SQL parsing or query execution.

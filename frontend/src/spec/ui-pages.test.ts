@@ -562,7 +562,7 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-COMP-009: keeps paging request-owned by the query variable", () => {
+  it("REQ-COMP-010: keeps paging request-owned by the query variable", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
@@ -619,7 +619,7 @@ describe("UI spec YAML registry", () => {
       });
   });
 
-  it("REQ-COMP-009: keeps Composition variable definitions in Knowledge and values in transient Work", () => {
+  it("REQ-COMP-010: keeps Composition variable definitions in Knowledge and values in transient Work", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );

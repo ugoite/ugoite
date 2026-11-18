@@ -7,8 +7,7 @@ uses the strict typed graph and SQL contract in
 [ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md),
 [REQ-COMP-010](../../../mitase/requirements/composition/text-first-graph.yaml),
 and [REQ-FE-083](../../../mitase/requirements/frontend/composition-text-first.yaml).
-SQL template normalization and optional Form seeds remain in REQ-FE-082. The
-prior Composition UI criteria remain historical in REQ-FE-079.
+SQL template normalization and optional Form seeds remain in REQ-FE-082.
 
 ## Modes and variables
 

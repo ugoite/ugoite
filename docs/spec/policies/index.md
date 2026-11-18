@@ -2,42 +2,5 @@
 title: 'Policy Traceability'
 ---
 
-Ugoite's governance stack is organized as:
-
-1. **Philosophy** answers _why_ the product is built this way.
-2. **Policies** answer _how_ those ideas become engineering constraints.
-3. **Requirements, specifications, and features** answer _what_ concrete
-   behavior must exist in the product.
-
-The Foundation and Policy domains migrated into Mitase are represented in the
-schema-native graph under `docs/mitase`, which is their canonical semantic
-authority. This directory remains migration evidence for those domains; its
-downstream links remain here until the referenced domains are migrated, but
-they do not override the canonical graph or form a second authority. Changed-
-ownership enforcement remains staged until it can be scoped safely to the
-migrated slice. No second migration manifest or authority is created.
-
-Each legacy entry in `policies.yaml` is intended to be readable from those three
-angles:
-
-- `linked_philosophies` shows which foundational beliefs the policy realizes.
-- `description` explains the operational rule or constraint in more detail.
-- `linked_requirements` shows which requirement categories are governed.
-- `linked_specifications` points to the canonical design references for that
-  policy.
-
-The registries preserve traceability from philosophies to policies, requirements,
-and implementation references. `docs/spec/features/features.yaml` and the
-requirement categories declared in `linked_requirements` must stay aligned; CI
-checks source and test references rather than relying on a second rendered model.
-
-When updating the governance taxonomy:
-
-- update philosophy and policy links together so the relationship stays
-  bidirectional
-- keep policy descriptions specific enough to explain why the rule exists
-- preserve traceability from philosophy to policy to requirement/specification
-  so drift remains visible in CI
-- update the canonical Mitase policy graph for the migrated slice; keep legacy
-  records as migration evidence only, and do not treat migration bookkeeping as
-  a second policy source
+The [Mitase policies](https://github.com/ugoite/ugoite/tree/main/docs/mitase/policies)
+connect Ugoite's philosophy to enforceable constraints and evidence.

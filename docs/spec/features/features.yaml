@@ -1,9 +1,0 @@
-version: '0.2'
-updated: '2026-06-23'
-conventions:
-  canonical_path: Backend HTTP path in the checked-in OpenAPI snapshot.
-  implementation_status:
-  - implemented
-  - contracted_unavailable
-  source_of_truth: crates/ugoite-server/src/lib.rs and server-generated /openapi.json
-files: []

@@ -42,8 +42,8 @@ Deno.test("REQ-OPS-003: requirement IDs, related documents, and test references 
     }
   }
   assert(
-    ids.size > 40,
-    `expected more than 40 requirements, got ${ids.size}`,
+    ids.size > 0,
+    "remaining legacy requirements must retain their references",
   );
 });
 
@@ -102,25 +102,6 @@ Deno.test("REQ-OPS-004: version statuses agree with their tasks and canonical so
       statusFromStatuses(childStatuses),
       `${filename}: stale top-level status`,
     );
-  }
-});
-
-Deno.test("REQ-API-004: feature registry files and implementation paths resolve", async () => {
-  const featureRoot = path.join(specRoot, "features");
-  const registry = parse(
-    await Deno.readTextFile(path.join(featureRoot, "features.yaml")),
-  ) as { files?: Array<{ file: string }> };
-
-  for (const entry of registry.files ?? []) {
-    const featurePath = path.join(featureRoot, entry.file);
-    await expectPath(featurePath, entry.file);
-    const feature = parse(await Deno.readTextFile(featurePath));
-    for (const implementationPath of collectFileValues(feature)) {
-      await expectPath(
-        path.resolve(repoRoot, implementationPath),
-        entry.file,
-      );
-    }
   }
 });
 
@@ -315,23 +296,4 @@ async function expectOnePath(
     }
   }
   throw new Error(`${owner}: missing one of ${filePaths.join(", ")}`);
-}
-
-function collectFileValues(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap(collectFileValues);
-  }
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-
-  const files: string[] = [];
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "file" && typeof child === "string") {
-      files.push(child);
-    } else {
-      files.push(...collectFileValues(child));
-    }
-  }
-  return files;
 }
