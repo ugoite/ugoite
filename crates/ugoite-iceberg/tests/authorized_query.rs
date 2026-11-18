@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
-use arrow_array::{BooleanArray, Float64Array, Int64Array, ListArray, StringArray};
+use arrow_array::{BooleanArray, Int64Array, ListArray, StringArray};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
