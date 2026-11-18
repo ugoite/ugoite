@@ -195,7 +195,9 @@ const decodeTypedIntegerResponse = (
     return;
   }
   if (command.action !== "decode" || !isRecord(value)) return;
-  if (command.operation === "composition.evaluate") {
+  if (command.operation === "entry.get") {
+    decodeEntryFieldIntegers(value, source);
+  } else if (command.operation === "composition.evaluate") {
     decodeCompositionEvaluationIntegers(value, source);
   } else if (command.operation === "composition.lint") {
     if (isRecord(value.value)) {
@@ -203,6 +205,34 @@ const decodeTypedIntegerResponse = (
     }
   } else if (command.operation === "composition.preview") {
     decodeCompositionPreviewIntegerDefaults(value, source);
+  }
+};
+
+/** Preserve unsafe integer tokens in entry scalar fields and scalar lists. */
+const decodeEntryFieldIntegers = (
+  entry: Record<string, unknown>,
+  source: (parent: object, key: string) => string | undefined,
+): void => {
+  if (!isRecord(entry.fields)) return;
+  const decode = (parent: Record<string, unknown>, key: string): void => {
+    if (typeof parent[key] !== "number") return;
+    const token = source(parent, key);
+    if (!token || !/^-?(?:0|[1-9]\d*)$/.test(token)) return;
+    const number = parent[key] as number;
+    if (Number.isSafeInteger(number)) return;
+    parent[key] = exactIntegerSourceValue(parent, key, source);
+  };
+  for (const [key, field] of Object.entries(entry.fields)) {
+    if (Array.isArray(field)) {
+      field.forEach((_item, index) =>
+        decode(field as unknown as Record<string, unknown>, String(index))
+      );
+    } else if (isRecord(field)) {
+      // ObjectList and structured values remain opaque.
+      continue;
+    } else {
+      decode(entry.fields, key);
+    }
   }
 };
 
