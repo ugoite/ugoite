@@ -1817,6 +1817,19 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
       decimal: 1.25,
       exponent: 1e20,
     });
+
+    server.use(
+      http.get(testApiUrl("/spaces/demo/entries/entry-empty"), () =>
+        new Response('{"id":"entry-empty"}', {
+          headers: { "content-type": "application/json" },
+        })),
+    );
+    await expect(
+      protocolFetch("entry.get", {
+        space_id: "demo",
+        entry_id: "entry-empty",
+      }),
+    ).resolves.toEqual({ id: "entry-empty" });
   });
 
   it("prepares the portable offline SQL lint operation", async () => {

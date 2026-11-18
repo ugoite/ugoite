@@ -227,10 +227,8 @@ const decodeEntryFieldIntegers = (
       field.forEach((_item, index) =>
         decode(field as unknown as Record<string, unknown>, String(index))
       );
-    } else if (isRecord(field)) {
-      // ObjectList and structured values remain opaque.
-      continue;
     } else {
+      // Scalars decode here; objects and structured values remain opaque.
       decode(entry.fields, key);
     }
   }
