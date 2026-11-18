@@ -3,6 +3,7 @@ import {
   affectedCompositionQueries,
   changedCompositionQueryIds,
   mergeCompositionEvaluation,
+  unavailableCompositionQueryIds,
 } from "./composition-evaluation";
 import type { CompositionEvaluationResponse } from "./composition-api";
 import {
@@ -147,6 +148,34 @@ describe("Composition graph evaluation reuse", () => {
         new Set(["day"]),
       ),
     ).toEqual(["rows", "count"]);
+  });
+
+  it("blocks unavailable inputs and their dependent queries only", () => {
+    const valueType = { scalar_type: "integer" as const, nullable: false };
+    const dependentQuery = (id: string, variable: string) => ({
+      id,
+      kind: "query" as const,
+      returns: { kind: "scalar" as const, value_type: valueType },
+      query: {
+        kind: "inline_sql" as const,
+        sql: "SELECT $value",
+        arguments: [{ name: "value", variable }],
+      },
+    });
+    const draft = graph([
+      { id: "day", kind: "input", required: true, value_type: valueType },
+      { id: "other", kind: "input", required: true, value_type: valueType },
+      dependentQuery("rows", "day"),
+      dependentQuery("count", "rows"),
+      dependentQuery("independent", "other"),
+    ]);
+
+    expect(unavailableCompositionQueryIds(
+      draft,
+      { day: "invalid" },
+      { other: "7" },
+      new Set(["day"]),
+    )).toEqual(["rows", "count"]);
   });
 
   it("keeps unaffected query values only inside the same authority snapshot", () => {

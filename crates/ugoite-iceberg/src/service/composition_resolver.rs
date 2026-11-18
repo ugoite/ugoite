@@ -1685,18 +1685,37 @@ mod graph_metadata_tests {
     }
 
     #[test]
-    fn query_argument_sql_type_is_derived_from_graph_scalar_type() {
+    fn planning_uses_supported_graph_argument_types() {
+        let arguments = [ugoite_domain::composition::VariableGraphArgumentBinding {
+            name: "threshold".to_owned(),
+            variable: "limit".to_owned(),
+        }];
+        let input = |scalar_type| VariableGraphNode {
+            id: "limit".to_owned(),
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type,
+                    nullable: false,
+                },
+                required: true,
+                default: None,
+            },
+        };
         assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::String),
-            "string"
+            query_parameter_types(&arguments, &[input(VariableGraphScalarType::Integer)])
+                .expect("integer argument is supported"),
+            BTreeMap::from([("threshold".to_owned(), "integer".to_owned())])
         );
-        assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::Integer),
-            "integer"
-        );
-        assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::Decimal),
-            "decimal"
-        );
+        for scalar_type in [
+            VariableGraphScalarType::Decimal,
+            VariableGraphScalarType::Json,
+        ] {
+            let error = query_parameter_types(&arguments, &[input(scalar_type)])
+                .expect_err("the SQL planner cannot bind this graph argument");
+            assert_eq!(
+                error.downcast_ref::<AppError>().map(AppError::code),
+                Some(ErrorCode::InvalidInput)
+            );
+        }
     }
 }

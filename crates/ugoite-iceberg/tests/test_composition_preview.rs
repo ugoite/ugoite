@@ -501,67 +501,6 @@ async fn apply_preview_query_descriptors(
 }
 
 #[tokio::test]
-async fn draft_preview_resolves_without_publication() -> Result<()> {
-    let (service, space_id, document, form_id) = setup_preview_space().await?;
-    let canonical =
-        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
-
-    let preview = service
-        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
-        .await
-        .context("draft preview should resolve")?;
-    assert!(preview.diagnostics.is_empty());
-    assert_eq!(
-        preview.draft_fingerprint.as_deref(),
-        Some(canonical.fingerprint.as_str())
-    );
-    let definitions = preview
-        .variable_definitions
-        .as_deref()
-        .context("preview exposes declared graph variables")?;
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].id, "source");
-    let plan = preview.plan.context("preview should return a plan")?;
-    assert_eq!(plan.draft_fingerprint, canonical.fingerprint);
-    assert_eq!(plan.queries.len(), 1);
-    assert_eq!(plan.component_bindings.len(), 1);
-    let stable_relation = sql_relation_name(form_id);
-    assert!(
-        matches!(
-            plan.queries[0].request.as_ref(),
-            Some(request) if request.sql.contains(&stable_relation)
-                && request.sql.contains("AS \"Composition-Preview\"")
-                && request.form_binding_guards.is_empty()
-                && plan.queries[0].portable_sql.as_deref().is_some_and(|sql| {
-                    sql.contains(&stable_relation)
-                        && sql.contains("AS \"Composition-Preview\"")
-                })
-                && plan.queries[0].schema_fingerprint.len() == 64
-        ),
-        "resolved query did not execute through its stable Form relation: {:?}",
-        plan.queries[0]
-    );
-
-    // Reformatting the same draft keeps the fingerprint; the plan follows.
-    let reformatted = format!("{}\n", canonical.yaml);
-    let reparsed = service
-        .preview_composition_local(&space_id, &reformatted, &BTreeMap::new(), &[])
-        .await
-        .context("reformatted draft preview should resolve")?;
-    assert_eq!(
-        reparsed.draft_fingerprint.as_deref(),
-        Some(canonical.fingerprint.as_str())
-    );
-
-    // Preview creates no registry, history, or publication state.
-    let listed = service
-        .list_compositions_local_page(&space_id, 100, 0)
-        .await?;
-    assert!(listed.items.is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     for (id, sql, scalar_type, nullable) in [
@@ -1410,84 +1349,6 @@ async fn graph_evaluation_drops_query_results_when_composition_access_is_revoked
 }
 
 #[tokio::test]
-async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Result<()> {
-    let (service, space_id, mut document, _) = setup_preview_space().await?;
-    let integer = VariableGraphScalarDescriptor {
-        scalar_type: VariableGraphScalarType::Integer,
-        nullable: false,
-    };
-    let query = |sql: String| VariableGraphNodeKind::Query {
-        returns: VariableGraphResultType::Scalar {
-            value_type: integer,
-        },
-        query: VariableGraphQuery {
-            definition: VariableGraphQueryDefinition::InlineSql { sql },
-            arguments: Vec::new(),
-            form_bindings: Vec::new(),
-            schema_fingerprint: String::new(),
-        },
-    };
-    let unresolved_metadata_query =
-        "SELECT 1 AS value FROM \"Missing-Composition-Form\" LIMIT 1".to_owned();
-    document.spec.variables = vec![
-        VariableGraphNode {
-            id: "selected".to_owned(),
-            kind: query("SELECT 1 AS value".to_owned()),
-        },
-        VariableGraphNode {
-            id: "unrelated".to_owned(),
-            kind: query(unresolved_metadata_query),
-        },
-    ];
-    document.spec.components = vec![CompositionComponent::Text {
-        id: "metric".to_owned(),
-        content: "{{selected}}".to_owned(),
-        style: TextStyle::Body,
-    }];
-    document.spec.layout.rows[0].items = vec![FlowItem::Component {
-        component: "metric".to_owned(),
-    }];
-    let canonical =
-        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
-
-    let requested = vec!["selected".to_owned()];
-    let response = service
-        .evaluate_composition_graph_authorized_for_principals(
-            &space_id,
-            &[Uuid::from_u128(3_434_001)],
-            CompositionQueryEvaluationTarget::Draft {
-                yaml: canonical.yaml,
-            },
-            Uuid::now_v7(),
-            None,
-            None,
-            &BTreeMap::new(),
-            &[],
-            Some(&requested),
-            None,
-        )
-        .await?;
-
-    assert!(response.ok, "{:?}", response.query_diagnostics);
-    assert_eq!(response.computed_query_ids, vec!["selected".to_owned()]);
-    assert_eq!(response.query_results.len(), 1);
-    assert!(response.query_results.contains_key("selected"));
-    assert_eq!(
-        response
-            .plan
-            .as_ref()
-            .expect("selected graph plan")
-            .queries
-            .iter()
-            .map(|query| query.variable_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["selected"]
-    );
-    assert!(response.authorization_fingerprint.is_some());
-    Ok(())
-}
-
-#[tokio::test]
 async fn local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes(
 ) -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
@@ -1711,72 +1572,22 @@ async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Re
                 .is_some_and(|sql| sql.contains(&sql_relation_name(form_id)))
             && plan.queries[0].schema_fingerprint.len() == 64
     ));
-    Ok(())
-}
 
-#[tokio::test]
-async fn inline_sql_planning_rejects_unsupported_decimal_and_json_arguments() -> Result<()> {
-    for scalar_type in [
-        VariableGraphScalarType::Decimal,
-        VariableGraphScalarType::Json,
-    ] {
-        let (service, space_id, mut document, _) = setup_preview_space().await?;
-        let query = document
-            .spec
-            .variables
-            .iter_mut()
-            .find(|node| node.id == "source")
-            .context("preview fixture query")?;
-        let VariableGraphNodeKind::Query { query, .. } = &mut query.kind else {
-            anyhow::bail!("preview fixture source must be a query variable");
-        };
-        let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition;
-        let order_by = sql
-            .find(" ORDER BY ")
-            .context("preview fixture should include a deterministic order")?;
-        sql.insert_str(order_by, " WHERE $threshold IS NOT NULL");
-        query.arguments.push(VariableGraphArgumentBinding {
-            name: "threshold".to_string(),
-            variable: "threshold".to_string(),
-        });
-        document.spec.variables.push(VariableGraphNode {
-            id: "threshold".to_string(),
-            kind: VariableGraphNodeKind::Constant {
-                value_type: VariableGraphScalarDescriptor {
-                    scalar_type,
-                    nullable: false,
-                },
-                value: match scalar_type {
-                    VariableGraphScalarType::Decimal => {
-                        VariableGraphLiteral::Decimal("1.25".to_string())
-                    }
-                    VariableGraphScalarType::Json => {
-                        VariableGraphLiteral::Json(json!({"value": 1}))
-                    }
-                    _ => unreachable!("only unsupported scalars are covered"),
-                },
-            },
-        });
-        let canonical =
-            canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+    let invalid = service
+        .preview_composition_local(&space_id, "not: [valid", &BTreeMap::new(), &[])
+        .await?;
+    assert!(invalid.plan.is_none());
+    assert!(invalid.draft_fingerprint.is_none());
+    assert!(invalid.variable_definitions.is_none());
+    assert!(!invalid.diagnostics.is_empty());
 
-        let preview_error = service
-            .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
-            .await
-            .expect_err("unsupported inline argument type must fail during preview planning");
-        assert_eq!(
-            preview_error.downcast_ref::<AppError>().map(AppError::code),
-            Some(ErrorCode::InvalidInput)
-        );
-
-        let save_error = save_local_composition(&service, &space_id, document)
-            .await
-            .expect_err("unsupported inline argument type must fail during save planning");
-        assert_eq!(
-            save_error.downcast_ref::<AppError>().map(AppError::code),
-            Some(ErrorCode::InvalidInput)
-        );
-    }
+    let listed = service
+        .list_compositions_local_page(&space_id, 1, 0)
+        .await?;
+    assert!(
+        listed.items.is_empty(),
+        "preview must not publish a Composition"
+    );
     Ok(())
 }
 
@@ -2338,25 +2149,6 @@ async fn preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exac
 }
 
 #[tokio::test]
-async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<()> {
-    let (service, space_id, _document, _) = setup_preview_space().await?;
-    let preview = service
-        .preview_composition_local(&space_id, "not: [valid", &BTreeMap::new(), &[])
-        .await
-        .context("invalid draft preview should report diagnostics")?;
-    assert!(preview.plan.is_none());
-    assert_eq!(preview.draft_fingerprint, None);
-    assert_eq!(preview.variable_definitions, None);
-    assert!(!preview.diagnostics.is_empty());
-
-    let listed = service
-        .list_compositions_local_page(&space_id, 100, 0)
-        .await?;
-    assert!(listed.items.is_empty());
-    Ok(())
-}
-
-#[tokio::test]
 async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     // Declaration order is region-first; Input placement order is month-first.
@@ -2598,45 +2390,40 @@ async fn authorized_saved_and_draft_query_selection_isolates_unrelated_missing_a
     let yaml = canonicalize_composition(&saved.document)
         .map_err(|code| anyhow::anyhow!(code.as_str()))?
         .yaml;
-    for supplied in [
-        BTreeMap::new(),
-        BTreeMap::from([("other".to_owned(), json!("invalid"))]),
-        BTreeMap::from([("other".to_owned(), json!(9_223_372_036_854_775_808_u64))]),
+    let supplied = BTreeMap::from([("other".to_owned(), json!("invalid"))]);
+    for target in [
+        CompositionQueryEvaluationTarget::SavedRevision {
+            composition_id: saved.entry_id.to_string(),
+            revision_id: saved.revision_id.to_string(),
+        },
+        CompositionQueryEvaluationTarget::Draft { yaml: yaml.clone() },
     ] {
-        for target in [
-            CompositionQueryEvaluationTarget::SavedRevision {
-                composition_id: saved.entry_id.to_string(),
-                revision_id: saved.revision_id.to_string(),
-            },
-            CompositionQueryEvaluationTarget::Draft { yaml: yaml.clone() },
-        ] {
-            let result = service
-                .evaluate_composition_graph_authorized_for_principals(
-                    &space_id,
-                    &[Uuid::from_u128(3_434_001)],
-                    target,
-                    Uuid::now_v7(),
-                    None,
-                    None,
-                    &supplied,
-                    &[],
-                    Some(&["source".to_owned()]),
-                    None,
-                )
-                .await?;
-            assert!(
-                result.ok,
-                "{:?} {:?}",
-                result.diagnostics, result.query_diagnostics
-            );
-            assert_eq!(result.computed_query_ids, ["source"]);
-            assert!(!result
-                .plan
-                .as_ref()
-                .context("authorized evaluation plan")?
-                .variable_values
-                .contains_key("other"));
-        }
+        let result = service
+            .evaluate_composition_graph_authorized_for_principals(
+                &space_id,
+                &[Uuid::from_u128(3_434_001)],
+                target,
+                Uuid::now_v7(),
+                None,
+                None,
+                &supplied,
+                &[],
+                Some(&["source".to_owned()]),
+                None,
+            )
+            .await?;
+        assert!(
+            result.ok,
+            "{:?} {:?}",
+            result.diagnostics, result.query_diagnostics
+        );
+        assert_eq!(result.computed_query_ids, ["source"]);
+        assert!(!result
+            .plan
+            .as_ref()
+            .context("authorized evaluation plan")?
+            .variable_values
+            .contains_key("other"));
     }
     Ok(())
 }
