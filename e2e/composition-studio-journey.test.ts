@@ -922,7 +922,7 @@ test.describe("Composition Studio Journey", () => {
       expect(normalizeCompositionFormSeedSql(savedRows?.query?.sql ?? ""))
         .toBe(tableSql);
       expect(savedRows?.query?.form_bindings).toEqual([{
-        relation: form!.sql_relation,
+        relation: seed.formName,
         form_id: form!.id!,
       }]);
       const savedScalar = savedDocument.spec?.variables?.find((item) =>

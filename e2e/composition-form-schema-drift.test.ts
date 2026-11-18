@@ -294,8 +294,15 @@ test("Composition keeps a saved query executable after an unused Form field is a
     await studioTabs.getByRole("tab", { name: "Variables", exact: true })
       .click();
     await page.getByRole("button", { name: variableId, exact: true }).click();
-    await page.getByRole("textbox", { name: "SQL", exact: true })
-      .fill(originalSql);
+    const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await expect.poll(async () => {
+      const actual = await editor.textContent() ?? "";
+      try {
+        return normalizeCompositionFormSeedSql(actual);
+      } catch {
+        return actual;
+      }
+    }).toBe(normalizeCompositionFormSeedSql(originalSql));
     await checkCompositionQuery(page);
     const currentSchemaPreviewResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith("/compositions/evaluate") &&

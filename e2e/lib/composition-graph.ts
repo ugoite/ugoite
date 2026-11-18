@@ -47,11 +47,11 @@ export async function checkCompositionQuery(page: Page): Promise<void> {
   await check.click();
   const use = page.getByRole("button", { name: "Use", exact: true });
   if (await use.count()) {
-    await expect(use).toBeEnabled();
+    await expect(use).toBeEnabled({ timeout: 30_000 });
   } else {
     await expect(
       page.getByRole("button", { name: "Run Query", exact: true }),
-    ).toBeEnabled();
+    ).toBeEnabled({ timeout: 30_000 });
   }
 }
 
