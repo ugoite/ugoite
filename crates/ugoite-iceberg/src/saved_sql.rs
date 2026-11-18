@@ -681,14 +681,13 @@ pub(crate) fn verify_revision_integrity(
         fields = state.fields.clone();
         extra_attributes = state.extra_attributes.clone();
     }
-    if let Some(state) = &row.state {
-        if let (Some(fields), Some(state_fields)) =
-            (fields.as_object_mut(), state.fields.as_object())
-        {
-            if let Some(name) = state_fields.get("name") {
-                fields.entry("name").or_insert_with(|| name.clone());
-            }
-        }
+    if let (Some(fields), Some(name)) = (
+        fields.as_object_mut(),
+        row.state
+            .as_ref()
+            .and_then(|state| state.fields.get("name")),
+    ) {
+        fields.entry("name").or_insert_with(|| name.clone());
     }
 
     let name = fields

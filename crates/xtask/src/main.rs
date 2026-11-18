@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, path::Path};
 use ugoite_core::error::{AppError, ErrorKind};
 use ugoite_domain::identity::{PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_iceberg::authorization::Authorizer;
