@@ -538,16 +538,11 @@ run = [
   { task = "test:composition-entry-acl" },
   "cargo nextest run -p ugoite-cli --lib --locked -E 'test(local_graph_evaluation_uses_the_portable_response_shape)'",
   "cargo nextest run -p ugoite-cli --test test_journey_remote --locked -E 'test(test_cli_composition_inspect_query_export_match_core_remote)'",
-  { task = "test:composition-acceptance-plan" },
 ]
 
 [tasks."test:composition-entry-acl"]
 description = "Verify Composition and Form ACL revocation before the final graph authorization check"
 run = "cargo nextest run -p ugoite-iceberg --test test_composition_preview --locked -E 'test(graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check) | test(graph_evaluation_drops_query_results_when_composition_access_is_revoked_before_final_check)'"
-
-[tasks."test:composition-acceptance-plan"]
-description = "Verify the Composition acceptance matrix points to current repository evidence"
-run = "deno test --allow-read tools/composition_acceptance_plan_test.ts"
 
 [tasks."test:composition:domain"]
 description = "Run the typed Composition domain contract tests"

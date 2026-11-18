@@ -571,21 +571,6 @@ pub async fn repair_space(
     ensure_starter_form_authorized(op, directory_id).await
 }
 
-/// Restores a legacy slug-addressed scaffold without publishing the starter
-/// Form. The caller is responsible for establishing the authorization lease
-/// before completing the bootstrap.
-// Claim-recovery service wiring lands in a follow-up slice; the completed
-// repair path above is the only caller until then.
-#[allow(dead_code)]
-pub(crate) async fn repair_space_scaffold(
-    op: &Operator,
-    directory_id: &str,
-    slug: &str,
-    root_path: &str,
-) -> Result<()> {
-    repair_space_objects(op, directory_id, slug, root_path).await
-}
-
 async fn repair_space_objects(
     op: &Operator,
     directory_id: &str,

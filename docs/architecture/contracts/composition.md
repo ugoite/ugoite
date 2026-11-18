@@ -3,19 +3,11 @@ title: Composition contract
 description: The portable typed graph and execution boundaries for Composition.
 ---
 
-**Status:** [ADR-027](./adr-027-text-first-composition.md) is the accepted and
-implemented Composition model. The focused verification selectors and their
-evidence limits are tracked in
-[issue #4613](https://github.com/ugoite/ugoite/issues/4613).
-This document does not authorize release preparation, version changes, or
-publication.
-
-[ADR-025](./adr-025-composition-query-variable-graph.md) records retained graph,
-authorization, transient-result, and history decisions. [ADR-026](./adr-026-composition-exact-integers-and-table-view.md)
-continues to govern exact integer handling; its Table presentation decision is
-superseded by ADR-027. [ADR-019](./decisions.md) continues to govern flow
-layout, exactly-once component placement, and presentation order. REST behavior
-is implemented by `ugoite-server` and `/openapi.json` is its contract source.
+[ADR-027](adr-027-text-first-composition.md) records the accepted
+Text-first design. Current requirements and verification bindings are tracked
+in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
+REST behavior is implemented by `ugoite-server` and `/openapi.json` defines
+its contract.
 
 ## Canonical document
 
@@ -51,6 +43,12 @@ Stored SQL retains its authored Form names and bindings. Evaluation and its
 Count request use the same resolver-produced SQL with stable Form relation IDs,
 so a rename or same-name replacement cannot retarget a saved query; current
 Publication and ACL checks still apply to that Form ID.
+
+Composition integer tokens use ASCII `[+-]?[0-9]+` with at most 64 bytes,
+within the signed 64-bit range. Leading zeros are accepted. YAML and the
+evaluation protocol carry integers as numbers. The Browser preserves exact
+numeric tokens for known integer fields and rejects numbers whose exact value
+cannot be preserved. Opaque JSON retains its own semantics.
 
 ## Components and Text
 
@@ -97,6 +95,17 @@ recomputed. Generation and snapshot checks discard stale responses. Results
 are checked against their declared descriptors before rendering, and are never
 persisted as Knowledge or materialized in a hidden table. Paging, continuation,
 cancellation, and resource limits remain server-owned.
+
+An explicitly selected query requires only inputs consumed by its dependency
+closure. Results, pages, and cursors are published together after the closure
+passes validation. A full evaluation still validates all its inputs.
+
+The saved-revision Reader retains transient results while it holds a current
+server-issued authority snapshot lease of at most 30 seconds. Returning to
+the page requires a fresh check before cached results are shown. A changed
+authorization or Publication fingerprint clears retained results. An expired
+or unavailable check fails closed. The lease bounds detection for the active,
+connected Reader and does not push revocation notifications.
 
 ## Studio and Reader
 
