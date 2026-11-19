@@ -23,6 +23,9 @@ normative security contract includes:
   secret-free Node audit event. Neither factor works alone.
 - Initial setup uses an expiring one-use setup secret stored only as a hash and
   establishes the administrator's initial Passkey and browser session.
+- The setup UI presents the one-time recovery codes and requires a second
+  Passkey registration before continuing; its canonical Criterion is
+  [REQ-SEC-005 setup strengthening](../../mitase/requirements/security/passkey-bootstrap.yaml).
 - Invitations and membership changes are one-use/concurrency-safe where
   required, and effective ACLs are applied before protected data is disclosed.
 - Authenticated MCP requests use the same identity and ACL boundary as REST;
@@ -30,8 +33,10 @@ normative security contract includes:
 
 The following additional boundaries and controls apply to v0.1:
 
-- OIDC authorization-code + PKCE identity linking keyed by issuer and subject
-  remains future/reference design.
+- Invitation-gated OIDC authorization-code + PKCE login and account linking are
+  supported. Issuer and subject identify an external account; email or profile
+  claims do not link accounts or update account data. The current boundary is
+  specified in [REQ-SEC-016](../../mitase/requirements/security/oidc.yaml).
 - TOTP remains a recovery-only factor and is not a normal login method. Recovery
   Code plaintext is never persistent and is only returned after successful
   credential replacement. Start does not consume a code; failed attempts use
