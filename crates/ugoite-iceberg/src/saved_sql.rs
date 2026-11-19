@@ -1445,6 +1445,7 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
 mod name_field_tests {
     use super::*;
     use crate::integrity::FakeIntegrityProvider;
+    use serde_json::json;
 
     #[test]
     fn saved_sql_variable_defaults_preserve_only_typed_scalars() {
