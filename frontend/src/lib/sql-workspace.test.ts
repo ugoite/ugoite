@@ -16,6 +16,7 @@ vi.mock("~/lib/ugoite-client", () => ({
 }));
 
 import {
+  createSqlEditorSession,
   createSqlWorkspaceController,
   normalizeSqlWorkspaceVariables,
 } from "./sql-workspace";
@@ -405,9 +406,30 @@ describe("SQL workspace planning", () => {
 });
 
 describe("Saved SQL workspace editing", () => {
+  it("fences stale route operations while keeping independent operations current", () => {
+    const session = createSqlEditorSession();
+    session.activate("space-a/new");
+
+    const normalization = session.begin("normalize");
+    const guardPrune = session.begin("form-guards");
+    expect(session.isCurrent(normalization)).toBe(true);
+    expect(session.isCurrent(guardPrune)).toBe(true);
+
+    const newerNormalization = session.begin("normalize");
+    expect(session.isCurrent(normalization)).toBe(false);
+    expect(session.isCurrent(newerNormalization)).toBe(true);
+    expect(session.isCurrent(guardPrune)).toBe(true);
+
+    session.activate("space-a/sql-1");
+    expect(session.isCurrent(newerNormalization)).toBe(false);
+    expect(session.isCurrent(guardPrune)).toBe(false);
+    const deletion = session.begin("delete");
+    expect(session.isCurrent(deletion)).toBe(true);
+  });
+
   it("keeps declared variable metadata while normalizing the edited SQL", async () => {
     const result = await normalizeSqlWorkspaceVariables(
-      "SELECT * FROM orders WHERE id = :order_id",
+      "SELECT * FROM orders WHERE id = $order_id",
       [{
         name: "order_id",
         type: "integer",
@@ -416,7 +438,7 @@ describe("Saved SQL workspace editing", () => {
       }],
     );
 
-    expect(result.sql).toBe("SELECT * FROM orders WHERE id = :order_id");
+    expect(result.sql).toBe("SELECT * FROM orders WHERE id = $order_id");
     expect(result.variables).toEqual([{
       name: "order_id",
       type: "integer",

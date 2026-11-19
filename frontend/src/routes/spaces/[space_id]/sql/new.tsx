@@ -22,7 +22,10 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
-import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import {
+  createSqlEditorSession,
+  createSqlWorkspaceController,
+} from "~/lib/sql-workspace";
 import {
   replaceSqlFormBindingGuard,
   retainReferencedSqlFormBindingGuards,
@@ -34,6 +37,10 @@ export default function SpaceQueryCreateRoute() {
   const params = useParams<{ space_id: string }>();
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
+  const editorSession = createSqlEditorSession();
+  const routeIdentity = () => JSON.stringify([spaceId(), "create"]);
+  editorSession.activate(routeIdentity());
+  createEffect(() => editorSession.activate(routeIdentity()));
   const [queryName, setQueryName] = createSignal("");
   const [sqlInput, setSqlInput] = createSignal("SELECT 1");
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
@@ -73,17 +80,15 @@ export default function SpaceQueryCreateRoute() {
       required: variable.default === undefined,
     }));
   });
-  let normalizationGeneration = 0;
-  let formGuardGeneration = 0;
   createEffect(() => {
     const sql = sqlInput().trim();
     const existing = argumentDefinitions();
-    const generation = ++normalizationGeneration;
+    const operation = editorSession.begin("normalize");
     setNormalizationPending(true);
     setNormalizedSql("");
     setUndeclaredArgument(null);
     void normalizeSqlVariables(sql, existing).then((normalized) => {
-      if (generation !== normalizationGeneration) return;
+      if (!editorSession.isCurrent(operation)) return;
       setNormalizedSql(normalized.sql);
       const declared = new Set(existing.map((variable) => variable.name));
       setSqlVariables(
@@ -94,11 +99,11 @@ export default function SpaceQueryCreateRoute() {
           ?.name ?? null,
       );
     }).catch((error) => {
-      if (generation !== normalizationGeneration) return;
+      if (!editorSession.isCurrent(operation)) return;
       setNormalizedSql("");
       setSqlVariables([]);
     }).finally(() => {
-      if (generation === normalizationGeneration) {
+      if (editorSession.isCurrent(operation)) {
         setNormalizationPending(false);
       }
     });
@@ -136,14 +141,18 @@ export default function SpaceQueryCreateRoute() {
 
   const updateArgument = async (oldName: string, variable: SqlVariable) => {
     if (oldName !== variable.name) {
+      editorSession.activate(routeIdentity());
       const source = sqlInput();
+      const operation = editorSession.begin("rename");
       try {
         const document = await renameSqlDocumentParameter(
           (await normalizeSqlVariables(source)).sql,
           oldName,
           variable.name,
         );
-        if (sqlInput() !== source) return false;
+        if (!editorSession.isCurrent(operation) || sqlInput() !== source) {
+          return false;
+        }
         setSqlInput(document.source);
       } catch {
         return false;
@@ -175,14 +184,15 @@ export default function SpaceQueryCreateRoute() {
   };
 
   const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
-    const generation = ++formGuardGeneration;
+    editorSession.activate(routeIdentity());
+    const operation = editorSession.begin("form-guards");
     setFormGuardPruningPending(true);
     const current = formBindingGuards();
     const pruning = selected
       ? replaceSqlFormBindingGuard(sql, current, selected)
       : retainReferencedSqlFormBindingGuards(sql, current);
     void pruning.then((retained) => {
-      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormBindingGuards(retained);
       setFormGuardPruningPending(false);
     });
@@ -206,6 +216,8 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSave = async () => {
     if (isSaving()) return;
+    editorSession.activate(routeIdentity());
+    const operation = editorSession.begin("save");
     setError(null);
     const name = queryName().trim();
     const sql = sqlInput().trim();
@@ -222,9 +234,12 @@ export default function SpaceQueryCreateRoute() {
     try {
       normalized = await normalizeSqlVariables(sql, argumentDefinitions());
     } catch (err) {
-      setError(formatUserFacingError(err, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setError(formatUserFacingError(err, "sqlPage.failedSave"));
+      }
       return;
     }
+    if (!editorSession.isCurrent(operation)) return;
     const referenced = new Set(
       normalized.variables.map((variable) => variable.name),
     );
@@ -261,10 +276,10 @@ export default function SpaceQueryCreateRoute() {
     const currentPlan = workspace.plan();
     if (
       JSON.stringify({
-        sql: sqlInput(),
-        arguments: argumentDefinitions(),
-        defaults: defaultDrafts(),
-      }) !== saveIdentity ||
+          sql: sqlInput(),
+          arguments: argumentDefinitions(),
+          defaults: defaultDrafts(),
+        }) !== saveIdentity ||
       currentPlan.status !== "success" ||
       !currentPlan.isCurrent
     ) {
@@ -288,9 +303,13 @@ export default function SpaceQueryCreateRoute() {
         sql: normalized.sql,
         variables: variablesWithDefaults.variables,
       });
-      navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
+      if (editorSession.isCurrent(operation)) {
+        navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
+      }
     } catch (err) {
-      setError(formatUserFacingError(err, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setError(formatUserFacingError(err, "sqlPage.failedSave"));
+      }
     } finally {
       setIsSaving(false);
     }
@@ -369,7 +388,9 @@ export default function SpaceQueryCreateRoute() {
             disabled={isSaving()}
             onAdd={(variable) => {
               if (
-                argumentDefinitions().some((item) => item.name === variable.name)
+                argumentDefinitions().some((item) =>
+                  item.name === variable.name
+                )
               ) return false;
               setArgumentDefinitions((current) => [...current, variable]);
             }}

@@ -22,6 +22,7 @@ import {
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
 import {
+  createSqlEditorSession,
   createSqlWorkspaceController,
   normalizeSqlWorkspaceVariables,
 } from "~/lib/sql-workspace";
@@ -68,6 +69,10 @@ export default function SpaceSqlDetailRoute() {
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const sqlId = () => params.sql_id;
+  const editorSession = createSqlEditorSession();
+  const routeIdentity = () => JSON.stringify([spaceId(), sqlId()]);
+  editorSession.activate(routeIdentity());
+  createEffect(() => editorSession.activate(routeIdentity()));
 
   const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
   const [forms] = createResource(async () => formApi.list(spaceId()));
@@ -100,7 +105,6 @@ export default function SpaceSqlDetailRoute() {
   const [busy, setBusy] = createSignal<"save" | "delete" | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
-  let normalizationGeneration = 0;
 
   createEffect(() => {
     const current = entry();
@@ -120,12 +124,12 @@ export default function SpaceSqlDetailRoute() {
   createEffect(() => {
     const source = sqlInput();
     const existing = savedVariables();
-    const generation = ++normalizationGeneration;
+    const operation = editorSession.begin("normalize");
     setNormalizationPending(true);
     setNormalized({ sql: "", variables: [] });
     setUndeclaredArgument(null);
     void normalizeSqlWorkspaceVariables(source, existing).then((result) => {
-      if (generation !== normalizationGeneration) return;
+      if (!editorSession.isCurrent(operation)) return;
       setNormalized({ sql: result.sql, variables: result.variables });
       const declared = new Set(existing.map((variable) => variable.name));
       setUndeclaredArgument(
@@ -133,11 +137,11 @@ export default function SpaceSqlDetailRoute() {
           ?.name ?? null,
       );
     }).catch(() => {
-      if (generation === normalizationGeneration) {
+      if (editorSession.isCurrent(operation)) {
         setNormalized({ sql: "", variables: [] });
       }
     }).finally(() => {
-      if (generation === normalizationGeneration) {
+      if (editorSession.isCurrent(operation)) {
         setNormalizationPending(false);
       }
     });
@@ -184,16 +188,15 @@ export default function SpaceSqlDetailRoute() {
     }));
   });
   const variableCount = createMemo(() => normalized().variables.length);
-  let formGuardGeneration = 0;
   const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
-    const generation = ++formGuardGeneration;
+    const operation = editorSession.begin("form-guards");
     setFormGuardPruningPending(true);
     const current = formBindingGuards();
     const pruning = selected
       ? replaceSqlFormBindingGuard(sql, current, selected)
       : retainReferencedSqlFormBindingGuards(sql, current);
     void pruning.then((retained) => {
-      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormBindingGuards(retained);
       setFormGuardPruningPending(false);
     });
@@ -206,14 +209,18 @@ export default function SpaceSqlDetailRoute() {
   };
   const updateArgument = async (oldName: string, variable: SqlVariable) => {
     if (oldName !== variable.name) {
+      editorSession.activate(routeIdentity());
       const source = sqlInput();
+      const operation = editorSession.begin("rename");
       try {
         const document = await renameSqlDocumentParameter(
           (await normalizeSqlVariables(source)).sql,
           oldName,
           variable.name,
         );
-        if (sqlInput() !== source) return false;
+        if (!editorSession.isCurrent(operation) || sqlInput() !== source) {
+          return false;
+        }
         setSqlInput(document.source);
       } catch {
         return false;
@@ -310,6 +317,8 @@ export default function SpaceSqlDetailRoute() {
   const handleSave = async () => {
     const current = entry();
     if (!current || busy() !== null) return;
+    editorSession.activate(routeIdentity());
+    const operation = editorSession.begin("save");
     setActionError(null);
     const saveIdentity = JSON.stringify({
       sql: sqlInput(),
@@ -324,9 +333,12 @@ export default function SpaceSqlDetailRoute() {
         savedVariables(),
       );
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      }
       return;
     }
+    if (!editorSession.isCurrent(operation)) return;
     const sql = normalizedQuery.sql.trim();
     if (!sql) {
       setActionError(t("sqlPage.sqlRequired"));
@@ -383,6 +395,7 @@ export default function SpaceSqlDetailRoute() {
         variables: nextVariables.variables,
         parent_revision_id: nextRevisionId,
       });
+      if (!editorSession.isCurrent(operation)) return;
       setQueryName(name ?? "");
       setSqlInput(sql);
       setSavedName(name ?? "");
@@ -392,7 +405,9 @@ export default function SpaceSqlDetailRoute() {
       setDefaultDrafts({});
       setRevisionId(result.revisionId);
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      }
     } finally {
       setBusy(null);
     }
@@ -412,14 +427,22 @@ export default function SpaceSqlDetailRoute() {
 
   const handleDelete = async () => {
     if (busy() !== null) return;
+    editorSession.activate(routeIdentity());
+    const operation = editorSession.begin("delete");
     setActionError(null);
     setBusy("delete");
     try {
       await sqlApi.delete(spaceId(), sqlId());
+      if (!editorSession.isCurrent(operation)) {
+        setBusy(null);
+        return;
+      }
       setDeleteConfirmOpen(false);
       navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedDelete"));
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedDelete"));
+      }
       setBusy(null);
     }
   };

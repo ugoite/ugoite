@@ -22,6 +22,45 @@ export type SqlWorkspaceVariableDefinition = SQLWorkspaceVariable & {
   description?: string;
 };
 
+export type SqlEditorOperation =
+  | "normalize"
+  | "form-guards"
+  | "rename"
+  | "save"
+  | "delete";
+
+export interface SqlEditorOperationToken {
+  operation: SqlEditorOperation;
+  generation: number;
+  routeGeneration: number;
+}
+
+/** Fence asynchronous edits and mutations to the route visit that started them. */
+export function createSqlEditorSession() {
+  let routeIdentity = "";
+  let routeGeneration = 0;
+  const generations = new Map<SqlEditorOperation, number>();
+
+  const activate = (nextIdentity: string) => {
+    if (nextIdentity === routeIdentity) return;
+    routeIdentity = nextIdentity;
+    routeGeneration += 1;
+    generations.clear();
+  };
+
+  const begin = (operation: SqlEditorOperation): SqlEditorOperationToken => {
+    const generation = (generations.get(operation) ?? 0) + 1;
+    generations.set(operation, generation);
+    return { operation, generation, routeGeneration };
+  };
+
+  const isCurrent = (token: SqlEditorOperationToken): boolean =>
+    token.routeGeneration === routeGeneration &&
+    generations.get(token.operation) === token.generation;
+
+  return { activate, begin, isCurrent };
+}
+
 /**
  * Normalize editable SQL while keeping the saved definition for placeholders
  * that remain in the query. Saved SQL owns variable type/default metadata;
