@@ -237,7 +237,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       id={renameId}
                       class="ui-input"
                       type="text"
-                      autoComplete="off"
+                      autocomplete="off"
                       spellcheck={false}
                       value={draftName(variable)}
                       aria-invalid={Boolean(renameError()) || undefined}
@@ -402,7 +402,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
             id={`${props.idPrefix}-argument-name`}
             class="ui-input"
             type="text"
-            autoComplete="off"
+            autocomplete="off"
             spellcheck={false}
             value={newName()}
             aria-invalid={Boolean(newNameError()) || undefined}

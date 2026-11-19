@@ -383,7 +383,7 @@ export interface SqlQueryRequest {
   execution_id?: string;
   saved_sql?: { id: string; revision_id: string };
   binding_base?: { id: string; revision_id: string };
-  form_binding_guards?: SqlFormBinding[];
+  form_binding_guards?: SqlFormBindingGuard[];
 }
 
 /** A page returned by the stateless SQL read surface. */
@@ -427,7 +427,7 @@ export interface SqlQueryCountRequest {
   parameter_types?: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
   binding_base?: { id: string; revision_id: string };
-  form_binding_guards?: SqlFormBinding[];
+  form_binding_guards?: SqlFormBindingGuard[];
   /** Opaque server-issued Composition evaluation snapshot. */
   composition_count_snapshot?: string;
 }
@@ -439,7 +439,7 @@ export interface SqlQueryPlanRequest {
   parameter_types: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
   binding_base?: { id: string; revision_id: string };
-  form_binding_guards?: SqlFormBinding[];
+  form_binding_guards?: SqlFormBindingGuard[];
 }
 
 /** Planned, server-owned portable output schema. */
@@ -467,6 +467,12 @@ export interface SqlMetadata {
 export interface SqlFormBinding {
   name: string;
   formId: string;
+}
+
+/** Wire shape for a request guard that pins SQL resolution to one Form. */
+export interface SqlFormBindingGuard {
+  name: string;
+  form_id: string;
 }
 
 /** API error response */
