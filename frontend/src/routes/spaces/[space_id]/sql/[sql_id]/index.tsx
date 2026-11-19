@@ -21,7 +21,10 @@ import {
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
-import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import {
+  createSqlWorkspaceController,
+  normalizeSqlWorkspaceVariables,
+} from "~/lib/sql-workspace";
 import {
   replaceSqlFormBindingGuard,
   retainReferencedSqlFormBindingGuards,
@@ -121,7 +124,7 @@ export default function SpaceSqlDetailRoute() {
     setNormalizationPending(true);
     setNormalized({ sql: "", variables: [] });
     setUndeclaredArgument(null);
-    void normalizeSqlVariables(source, existing).then((result) => {
+    void normalizeSqlWorkspaceVariables(source, existing).then((result) => {
       if (generation !== normalizationGeneration) return;
       setNormalized({ sql: result.sql, variables: result.variables });
       const declared = new Set(existing.map((variable) => variable.name));

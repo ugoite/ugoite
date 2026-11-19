@@ -30,7 +30,7 @@ export type SqlWorkspaceVariableDefinition = SQLWorkspaceVariable & {
 export async function normalizeSqlWorkspaceVariables(
   sql: string,
   existing: readonly SqlVariable[] = [],
-): Promise<{ sql: string; variables: SqlWorkspaceVariableDefinition[] }> {
+): Promise<{ sql: string; variables: SqlVariable[] }> {
   const normalized = await normalizeSqlVariables(sql, [...existing]);
   const existingByName = new Map(existing.map((variable) => [
     variable.name,

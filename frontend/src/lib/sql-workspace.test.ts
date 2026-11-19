@@ -15,7 +15,10 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
 }));
 
-import { createSqlWorkspaceController } from "./sql-workspace";
+import {
+  createSqlWorkspaceController,
+  normalizeSqlWorkspaceVariables,
+} from "./sql-workspace";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -398,5 +401,27 @@ describe("SQL workspace planning", () => {
     );
     expect(planMock.mock.calls[0][2].aborted).toBe(true);
     disposeRoot();
+  });
+});
+
+describe("Saved SQL workspace editing", () => {
+  it("keeps declared variable metadata while normalizing the edited SQL", async () => {
+    const result = await normalizeSqlWorkspaceVariables(
+      "SELECT * FROM orders WHERE id = :order_id",
+      [{
+        name: "order_id",
+        type: "integer",
+        description: "The order to inspect",
+        default: 42,
+      }],
+    );
+
+    expect(result.sql).toBe("SELECT * FROM orders WHERE id = :order_id");
+    expect(result.variables).toEqual([{
+      name: "order_id",
+      type: "integer",
+      description: "The order to inspect",
+      default: 42,
+    }]);
   });
 });
