@@ -354,16 +354,16 @@ requirements:
           - id: detail-summary
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders editable text and variable navigation" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.detail-summary
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders editable text and variable navigation" } }
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders editable text and variable navigation" } }
           - id: form-binding-identifiers
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx

@@ -147,7 +147,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .not.toBeInTheDocument();
   });
 
-  it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
+  it("REQ-FE-062: saved SQL detail renders editable text and variable navigation", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Recent Search",
