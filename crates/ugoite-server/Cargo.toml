@@ -43,3 +43,4 @@ tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
 tokio = { version = "1.52", features = ["net", "io-util"] }
 ugoite-iceberg = { path = "../ugoite-iceberg", features = ["test-support"] }
+ugoite-identity = { path = "../ugoite-identity", features = ["test-support"] }
