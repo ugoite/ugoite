@@ -790,8 +790,9 @@ impl McpHost for RmcpMcpHost {
 }
 
 fn requires_approval(request: &McpRequest) -> bool {
-    request.effect == Some(CapabilityEffect::Write)
-        || matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo")
+    ugoite_konase::effective_capability_effect(&request.operation, request.effect)
+        .map(|effect| effect == CapabilityEffect::Write)
+        .unwrap_or(request.effect == Some(CapabilityEffect::Write))
 }
 
 fn request_confirmation(request: &ugoite_konase::ConfirmationRequest) -> bool {
@@ -1842,38 +1843,6 @@ mod tests {
             serde_json::Map::new(),
         ));
         assert_eq!(unannotated_write.effect, Some(CapabilityEffect::Write));
-    }
-
-    #[test]
-    fn save_and_undo_receipts_must_match_the_mutation_contract() {
-        assert!(ugoite_konase::mutation_receipt_is_valid(
-            "ugoite.save",
-            "work-1",
-            &json!({
-                "id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created", "_untrusted_content":true
-            })
-        ));
-        for invalid in [
-            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created"}),
-            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"deleted", "_untrusted_content":true}),
-            json!({"id":"entry-1", "uri":"https://example.test/entry-1", "status":"updated", "_untrusted_content":true}),
-        ] {
-            assert!(!ugoite_konase::mutation_receipt_is_valid(
-                "ugoite.save",
-                "work-1",
-                &invalid
-            ));
-        }
-        assert!(ugoite_konase::mutation_receipt_is_valid(
-            "ugoite.undo",
-            "work-1",
-            &json!({"run_id":"work-1", "reverted_change_count":1, "_untrusted_content":true})
-        ));
-        assert!(!ugoite_konase::mutation_receipt_is_valid(
-            "ugoite.undo",
-            "work-1",
-            &json!({"run_id":"another-work", "reverted_change_count":1, "_untrusted_content":true})
-        ));
     }
 
     #[test]

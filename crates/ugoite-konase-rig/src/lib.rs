@@ -457,15 +457,16 @@ impl AgentRuntime for RigAgentRuntime {
 fn effective_effect(
     request: &McpRequest,
 ) -> Result<ugoite_konase::CapabilityEffect, AgentRuntimeError> {
-    ugoite_konase::effective_capability_effect(&request.operation, request.effect)
-        .map_err(|message| {
+    ugoite_konase::effective_capability_effect(&request.operation, request.effect).map_err(
+        |message| {
             let kind = if request.effect == Some(ugoite_konase::CapabilityEffect::Write) {
                 "unsupported_write"
             } else {
                 "unknown_effect"
             };
             AgentRuntimeError::new(kind, message)
-        })
+        },
+    )
 }
 
 fn message_text(message: &Message) -> String {

@@ -100,6 +100,31 @@ fn is_composition_save_prepare(request: &serde_json::Value) -> bool {
         && request.get("operation").and_then(serde_json::Value::as_str) == Some("composition.save")
 }
 
+#[derive(serde::Deserialize)]
+struct KonaseWritePreviewRequest {
+    request_id: String,
+    work_id: String,
+    space_id: String,
+    operation: String,
+    #[serde(default)]
+    arguments: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+struct KonaseReceiptValidationRequest {
+    operation: String,
+    work_id: String,
+    #[serde(default)]
+    receipt: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct KonaseEffectRequest {
+    operation: String,
+    #[serde(default)]
+    declared_effect: Option<ugoite_konase::CapabilityEffect>,
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
         // Bound JSON decoding before inspecting the action. Only documented
@@ -241,70 +266,36 @@ fn invoke_konase(request: serde_json::Value) -> String {
                 Ok(context)
             }
             "konase.preview_write" => {
-                let request_id = payload
-                    .get("request_id")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "request_id is required".to_string())?;
-                let work_id = payload
-                    .get("work_id")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "work_id is required".to_string())?;
-                let space_id = payload
-                    .get("space_id")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "space_id is required".to_string())?;
-                let operation = payload
-                    .get("operation")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "operation is required".to_string())?;
-                let arguments = payload
-                    .get("arguments")
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({}));
-                let arguments =
-                    serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(arguments)
-                        .map_err(|_| "arguments must be an object".to_string())?;
-                serde_json::to_value(
-                    ugoite_konase::write_preview(
-                        request_id, work_id, space_id, operation, &arguments,
-                    )
-                    .map_err(|message| message)?,
-                )
-                .map_err(|error| error.to_string())
+                let input = serde_json::from_value::<KonaseWritePreviewRequest>(payload)
+                    .map_err(|_| "Konase write preview request is invalid".to_string())?;
+                let preview = ugoite_konase::write_preview(
+                    &input.request_id,
+                    &input.work_id,
+                    &input.space_id,
+                    &input.operation,
+                    &input.arguments,
+                )?;
+                serde_json::to_value(preview).map_err(|error| error.to_string())
             }
             "konase.validate_mutation_receipt" => {
-                let operation = payload
-                    .get("operation")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "operation is required".to_string())?;
-                let work_id = payload
-                    .get("work_id")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "work_id is required".to_string())?;
-                let receipt = payload
-                    .get("receipt")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null);
+                let input = serde_json::from_value::<KonaseReceiptValidationRequest>(payload)
+                    .map_err(|_| "Konase receipt validation request is invalid".to_string())?;
                 Ok(serde_json::Value::Bool(
-                    ugoite_konase::mutation_receipt_is_valid(operation, work_id, &receipt),
+                    ugoite_konase::mutation_receipt_is_valid(
+                        &input.operation,
+                        &input.work_id,
+                        &input.receipt,
+                    ),
                 ))
             }
             "konase.resolve_effect" => {
-                let operation = payload
-                    .get("operation")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "operation is required".to_string())?;
-                let declared = payload
-                    .get("declared_effect")
-                    .cloned()
-                    .map(serde_json::from_value::<ugoite_konase::CapabilityEffect>)
-                    .transpose()
-                    .map_err(|_| "declared_effect is invalid".to_string())?;
-                serde_json::to_value(
-                    ugoite_konase::effective_capability_effect(operation, declared)
-                        .map_err(|message| message)?,
-                )
-                .map_err(|error| error.to_string())
+                let input = serde_json::from_value::<KonaseEffectRequest>(payload)
+                    .map_err(|_| "Konase effect request is invalid".to_string())?;
+                let effect = ugoite_konase::effective_capability_effect(
+                    &input.operation,
+                    input.declared_effect,
+                )?;
+                serde_json::to_value(effect).map_err(|error| error.to_string())
             }
             _ => Err(format!("unsupported Konase action: {action}")),
         }

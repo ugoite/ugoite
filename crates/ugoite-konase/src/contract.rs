@@ -32,12 +32,15 @@ pub fn effective_capability_effect(
 ) -> Result<CapabilityEffect, String> {
     match operation {
         "ugoite.save" | "ugoite.undo" => Ok(CapabilityEffect::Write),
-        "ugoite.search" | "resources/read" if declared == Some(CapabilityEffect::Read) => {
-            Ok(CapabilityEffect::Read)
-        }
-        "ugoite.search" | "resources/read" => Err(format!(
-            "capability {operation} has no trusted read-only effect metadata"
-        )),
+        "ugoite.search" | "resources/read" => match declared {
+            Some(CapabilityEffect::Read) => Ok(CapabilityEffect::Read),
+            Some(CapabilityEffect::Write) => {
+                Err(format!("listed {operation} capability is not read-only"))
+            }
+            None => Err(format!(
+                "capability {operation} has no trusted read-only effect metadata"
+            )),
+        },
         _ => Err(format!("unsupported Konase capability {operation}")),
     }
 }
