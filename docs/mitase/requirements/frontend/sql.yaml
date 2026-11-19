@@ -441,145 +441,6 @@ requirements:
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062 @smoke: complex authorized SQL stays text-first and runs with Form guards" } }
 
-  - id: REQ-FE-080
-    title: Shared SQL Workspace
-    description: >-
-      Historical contract retained with its original criteria. Saved SQL
-      authoring has moved to direct text editing under REQ-FE-081, so criteria
-      that depended on its retired syntax-construction controls remain explicit
-      evidence gaps rather than narrowed claims. Composition query-variable
-      authoring has moved from this historical contract to the current
-      text-first controls in REQ-FE-083; this requirement remains deprecated.
-    priority: high
-    status: deprecated
-    criteria:
-      - id: shared-editor-and-preview
-        kind: behavior
-        statement: >-
-          New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use
-          one shared SQL Workspace for typed variables, structured query
-          operations, direct SQL editing, preview, and paged native results.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: workspace-presentation-api
-        kind: behavior
-        statement: >-
-          The reusable Workspace is a controlled presentation component. It
-          accepts SQL, schema, diagnostics, preview results, and explicit action
-          callbacks from its owner without implementing persistence or query
-          transport itself.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: adapter-owned-persistence-and-execution
-        kind: behavior
-        statement: >-
-          The owning route or Composition source adapter supplies SQL state,
-          schema, transient parameter values, query preview, count, and page
-          continuation. It owns persistence and execution; the shared Workspace
-          presents those capabilities without creating another SQL authority.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: transient-typed-parameters
-        kind: behavior
-        statement: >-
-          The shared Workspace presents declared typed parameters using their
-          transient Work values or declared defaults. Unset values remain
-          unset instead of being coerced or silently replaced by a default, and
-          the Workspace does not persist parameter values.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: adapter-supplied-structured-actions
-        kind: behavior
-        statement: >-
-          The Workspace renders only structured action capabilities supplied by
-          its owner and dispatches explicit callbacks. Activating a control does
-          not silently rewrite the SQL text.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: safe-structured-operations
-        kind: behavior
-        statement: >-
-          Structured SQL operations are enabled only for syntax that the shared
-          parser/capability model can safely round-trip. Directly edited SQL
-          remains authoritative; unsupported syntax stays editable in the code
-          editor and a structured rewrite requires explicit diff confirmation.
-          SQL analysis can use trusted metadata for reserved Forms already
-          referenced by directly authored SQL. The Form relation chooser
-          applies the same user-creatable Form eligibility rule as entry
-          creation.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: task-oriented-result-fields
-        kind: behavior
-        statement: >-
-          Shared SQL Columns presents ordered result fields and authorized
-          human field labels directly, without requiring statement or syntax
-          node selection. Users can add, remove and move supported fields and
-          use guarded Undo and Redo. Complex or ambiguous
-          edits remain available through an explicit advanced action without
-          silently replacing source. Pending operations cannot cross host
-          identity, and field controls retain focus during a reorder.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: complete-wildcard-output-schema
-        kind: behavior
-        statement: >-
-          Structured wildcard expansion uses complete output column names and
-          order from current authorized planning for that exact projection,
-          rather than reconstructing outputs from a partial Form context.
-          Ambiguous projection scope, unavailable or duplicate names, and
-          stale SQL, host or parameter snapshots leave source unchanged in
-          both primary and advanced editors. Planning does not execute rows.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: human-form-name-binding
-        kind: behavior
-        statement: >-
-          Form selection authors SQL with the quoted human Form name and carries
-          its immutable Form ID as a compare-only guard through plan, page,
-          count, preview, and save. Rust resolves the name against the current
-          readable Form snapshot and rejects a guard mismatch. Unguarded
-          first-use human names remain valid; unchanged exact-base bindings stay
-          pinned, and a different guard rebinds only when it matches the
-          currently readable Form. Saved SQL exact revisions use their stored
-          bindings and reject draft guards.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: explicit-preview-count-and-paging
-        kind: behavior
-        statement: >-
-          The Workspace makes preview and total counting explicit actions and
-          delegates page continuation to its owner. It presents loading,
-          failure, empty, and typed result states without retaining a stale
-          result as the current preview. The owner explicitly marks a result
-          current only while it matches the SQL and transient parameter values
-          used to run it; results without that confirmation stay hidden.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: current-plan-run-state
-        kind: behavior
-        statement: >-
-          When a Workspace owner supplies planner state, Run Query is enabled
-          only for a current successful plan. Pending, rejected, and stale
-          planner states disable it and expose a concise accessible reason.
-          Once SQL no longer matches the current result, Count rows and page
-          continuation are unavailable until a current preview exists. A host
-          that owns planning through another workflow may omit planner state
-          and continues to control Run Query through its own preview callback
-          and disabled state.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: editor-accessibility-and-wrapping
-        kind: quality
-        statement: >-
-          The shared SQL editor exposes an accessible name and wraps long lines
-          in the Workspace while preserving the SQL editor's existing default
-          behavior for other consumers.
-        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
-      - id: mobile-sql-editor-and-results
-        kind: quality
-        statement: >-
-          SQL inputs use at least 16px text at narrow widths, only result tables
-          scroll horizontally, icon-only actions have accessible names and
-          at least 44px targets. Primary actions remain reachable without
-          wrapped or horizontal page overflow.
-        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
-      - id: workspace-control-size-rules
-        kind: quality
-        statement: >-
-          Shared Workspace SQL and variable inputs use at least 16px text, and
-          primary, paging, and icon-only actions use at least 44px targets.
-        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
-
   - id: REQ-FE-081
     title: Text-first SQL authoring
     description: >-
@@ -670,6 +531,16 @@ requirements:
           and continues to control Run Query through its own preview callback
           and disabled state.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: complete-wildcard-output-schema
+        kind: behavior
+        statement: >-
+          Structured wildcard expansion uses complete output column names and
+          order from current authorized planning for that exact projection,
+          rather than reconstructing outputs from a partial Form context.
+          Ambiguous projection scope, unavailable or duplicate names, and
+          stale SQL, host or parameter snapshots leave source unchanged in
+          both primary and advanced editors. Planning does not execute rows.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: editor-accessibility-and-wrapping
         kind: quality
         statement: >-
@@ -703,42 +574,42 @@ requirements:
           - id: shared-workspace-contract
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" }
+            selector: { kind: test, name: "REQ-FE-081: keeps SQL editing controlled and passes the accessible name" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-081#criterion.shared-text-authoring
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: keeps SQL editing controlled and passes the accessible name" } }
               - kind: verifies
                 criterion: REQ-FE-081#criterion.workspace-presentation-api
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: keeps SQL editing controlled and passes the accessible name" } }
               - kind: verifies
                 criterion: REQ-FE-081#criterion.adapter-owned-persistence-and-execution
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: keeps SQL editing controlled and passes the accessible name" } }
               - kind: verifies
                 criterion: REQ-FE-081#criterion.editor-accessibility-and-wrapping
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: keeps SQL editing controlled and passes the accessible name" } }
           - id: transient-parameters
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: presents variable defaults and forwards raw transient values" }
+            selector: { kind: test, name: "REQ-FE-081: presents variable defaults and forwards raw transient values" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-081#criterion.transient-typed-parameters
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents variable defaults and forwards raw transient values" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: presents variable defaults and forwards raw transient values" } }
           - id: explicit-preview-and-paging
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: keeps count explicit and delegates result paging" }
+            selector: { kind: test, name: "REQ-FE-081: keeps count explicit and delegates result paging" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-081#criterion.explicit-preview-count-and-paging
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps count explicit and delegates result paging" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: keeps count explicit and delegates result paging" } }
           - id: current-plan-run-state
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
@@ -748,21 +619,30 @@ requirements:
                 criterion: REQ-FE-081#criterion.current-plan-run-state
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "keeps Run Query disabled until the supplied plan is current and successful" } }
+          - id: authorized-wildcard-schema
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: replans wildcard output against current authorization and rejects stale parameter snapshots }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-081#criterion.complete-wildcard-output-schema
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: replans wildcard output against current authorization and rejects stale parameter snapshots } }
           - id: workspace-control-sizes
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: uses 16px inputs and 44px action targets" }
+            selector: { kind: test, name: "REQ-FE-081: uses 16px inputs and 44px action targets" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-081#criterion.mobile-sql-editor-and-results
                 covers:
                   - FEAT-FE-008#binding.frontend/target.sql-workspace-layout
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: uses 16px inputs and 44px action targets" } }
               - kind: verifies
                 criterion: REQ-FE-081#criterion.workspace-control-size-rules
                 covers:
                   - FEAT-FE-008#binding.frontend/target.sql-workspace-layout
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-081: uses 16px inputs and 44px action targets" } }
           - id: form-binding-service-guard
             adapter: rust
             path: crates/ugoite-iceberg/src/service/sql_execution.rs

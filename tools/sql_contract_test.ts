@@ -57,12 +57,10 @@ Deno.test("retired SQL structure UI has no production source or import", async (
 });
 
 Deno.test("published SQL Document native and WASM contracts remain wired", async () => {
-  const [domain, wasm, protocol, fixtures, mise] = await Promise.all([
+  const [domain, wasm, protocol] = await Promise.all([
     read("crates/ugoite-domain/src/sql_document.rs"),
     read("crates/ugoite-wasm/src/lib.rs"),
     read("frontend/src/lib/ugoite-client/protocol.ts"),
-    read("crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts"),
-    read("mise.toml"),
   ]);
   for (
     const symbol of [
@@ -81,8 +79,6 @@ Deno.test("published SQL Document native and WASM contracts remain wired", async
     assertEquals(wasm.includes(`\"${action}\"`), true, action);
     assertEquals(protocol.includes(`\"${action}\"`), true, action);
   }
-  assertEquals(fixtures.includes("sql_document"), true);
-  assertEquals(mise.includes("check:wasm:sql-structure-fixtures"), true);
   assertEquals(
     domain.includes(
       "lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission",
@@ -98,13 +94,11 @@ Deno.test("published SQL Document native and WASM contracts remain wired", async
 });
 
 Deno.test("shared parser parity corpus remains a backend parser contract", async () => {
-  const [fixture, domain, runtime, historical] = await Promise.all([
+  const [fixture, domain, runtime] = await Promise.all([
     read("shared/sql/sql-document-parser-parity.json").then(JSON.parse),
     read("crates/ugoite-domain/src/sql_document.rs"),
     read("crates/ugoite-iceberg/src/sql_parser.rs"),
-    read("shared/sql/ugoite-sql-rules.json").then(JSON.parse),
   ]);
-  assertEquals(historical.feature_matrix.status, "historical");
   assertEquals(fixture.cases.length >= 13, true);
   assertEquals(
     domain.includes(
