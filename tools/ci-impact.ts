@@ -18,6 +18,7 @@ export type ImpactReport = {
   candidateLanes: string[];
   executionMode: "selective-pr" | "all-lanes";
   jobsSkipped: boolean;
+  runOlderCliPreservation: boolean;
 };
 
 const ALL_LANES = [
@@ -35,6 +36,23 @@ const ALL_LANES = [
 const ZERO_SHA = /^0{40}$/;
 const SHA = /^[0-9a-f]{40}$/i;
 const MAX_DIFF_FILES = 100;
+
+const OLDER_CLI_PRESERVATION_PATHS = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "crates/ugoite-core/",
+  "crates/ugoite-domain/",
+  "crates/ugoite-iceberg/",
+  "crates/ugoite-storage/",
+];
+
+function affectsOlderCliPreservation(path: string): boolean {
+  return OLDER_CLI_PRESERVATION_PATHS.some((sensitivePath) =>
+    sensitivePath.endsWith("/")
+      ? path.startsWith(sensitivePath)
+      : path === sensitivePath
+  );
+}
 
 export function classifyPaths(paths: string[]): ImpactCategories {
   const categories: ImpactCategories = {
@@ -199,6 +217,9 @@ export function makeImpactReport(input: {
 
   const plannedLanes = [...candidateLanes];
   const jobsSkipped = plannedLanes.length < ALL_LANES.length;
+  const canSkipOlderCliPreservation = event === "pull_request" &&
+    scope === "scoped" && paths !== undefined &&
+    !paths.some(affectsOlderCliPreservation);
 
   return {
     schemaVersion: 1,
@@ -212,6 +233,7 @@ export function makeImpactReport(input: {
     candidateLanes: plannedLanes.sort(),
     executionMode: jobsSkipped ? "selective-pr" : "all-lanes",
     jobsSkipped,
+    runOlderCliPreservation: !canSkipOlderCliPreservation,
   };
 }
 
@@ -286,6 +308,9 @@ function markdown(report: ImpactReport): string {
     `- Execution: **${report.executionMode}**; jobs skipped: **${
       report.jobsSkipped ? "yes" : "no"
     }**`,
+    `- Older-CLI Knowledge preservation: **${
+      report.runOlderCliPreservation ? "run" : "skip"
+    }**`,
   ].join("\n");
 }
 
@@ -332,7 +357,7 @@ export async function runImpactCli(args = Deno.args): Promise<ImpactReport> {
             report.candidateLanes.includes(lane)
           }`
         ).join("\n")
-      }\nreport_json=${json}\n`,
+      }\nplan_older_cli_knowledge_preservation=${report.runOlderCliPreservation}\nreport_json=${json}\n`,
       { append: true },
     );
   }
