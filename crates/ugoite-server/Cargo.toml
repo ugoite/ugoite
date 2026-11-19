@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-test-support = []
+test-support = ["ugoite-identity/test-support"]
 
 [dependencies]
 anyhow.workspace = true
@@ -44,3 +44,11 @@ tempfile = "3"
 tokio = { version = "1.52", features = ["net", "io-util"] }
 ugoite-iceberg = { path = "../ugoite-iceberg", features = ["test-support"] }
 ugoite-identity = { path = "../ugoite-identity", features = ["test-support"] }
+
+[[test]]
+name = "api_contract"
+required-features = ["test-support"]
+
+[[test]]
+name = "portable_space_onboarding"
+required-features = ["test-support"]
