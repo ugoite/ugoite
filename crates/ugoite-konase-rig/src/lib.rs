@@ -50,6 +50,7 @@ struct QueuedToolCall {
 pub struct RigAgentRuntime {
     run: Option<AgentRun>,
     job_id: Option<String>,
+    work_id: Option<String>,
     tools: Vec<ModelTool>,
     pending: Option<PendingStep>,
     queued_tools: VecDeque<QueuedToolCall>,
@@ -72,9 +73,16 @@ impl RigAgentRuntime {
             .ok_or_else(|| Self::error("inactive", "Rig runtime has no active Job"))
     }
 
+    fn active_work_id(&self) -> Result<&str, AgentRuntimeError> {
+        self.work_id
+            .as_deref()
+            .ok_or_else(|| Self::error("inactive", "Rig runtime has no active Work"))
+    }
+
     fn clear(&mut self) {
         self.run = None;
         self.job_id = None;
+        self.work_id = None;
         self.tools.clear();
         self.pending = None;
         self.queued_tools.clear();
@@ -105,7 +113,33 @@ impl RigAgentRuntime {
                     return Ok(AgentAction::CallMcp(request));
                 }
                 ugoite_konase::CapabilityEffect::Write => {
-                    let reason = write_summary(&request)?;
+                    let preview = ugoite_konase::write_preview(
+                        &request.request_id,
+                        self.active_work_id()?,
+                        "authorized-space",
+                        &request.operation,
+                        &request.arguments.clone().into_iter().collect(),
+                    )
+                    .map_err(|message| AgentRuntimeError::new("invalid_write_preview", message))?;
+                    let reason = if preview.action == "undo" {
+                        preview.summary
+                    } else {
+                        format!(
+                            "{} in the authorized Space; Form {}{}. {}",
+                            if preview.action == "update" {
+                                "Update"
+                            } else {
+                                "Create"
+                            },
+                            preview.form.as_deref().unwrap_or("from the existing Entry"),
+                            preview
+                                .entry_id_label
+                                .as_deref()
+                                .map(|id| format!("; Entry {id}"))
+                                .unwrap_or_default(),
+                            preview.summary
+                        )
+                    };
                     self.pending = Some(PendingStep::Confirmation {
                         request: request.clone(),
                         call_id: call.call_id,
@@ -398,6 +432,7 @@ impl AgentRuntime for RigAgentRuntime {
         let prompt = format!("Job goal: {}\nContext: {prompt}", job.goal);
         self.run = Some(AgentRun::new(Message::user(prompt)).max_turns(MAX_TURNS));
         self.job_id = Some(job.id);
+        self.work_id = Some(job.work_id);
         self.tools = tools;
         self.pending = None;
         self.queued_tools.clear();
@@ -422,156 +457,15 @@ impl AgentRuntime for RigAgentRuntime {
 fn effective_effect(
     request: &McpRequest,
 ) -> Result<ugoite_konase::CapabilityEffect, AgentRuntimeError> {
-    use ugoite_konase::CapabilityEffect::{Read, Write};
-    match request.operation.as_str() {
-        "ugoite.save" | "ugoite.undo" => Ok(Write),
-        _ => match request.effect {
-            Some(Read) => Ok(Read),
-            Some(Write) => Err(AgentRuntimeError::new(
-                "unsupported_write",
-                format!(
-                    "write capability {} cannot be safely previewed",
-                    request.operation
-                ),
-            )),
-            None => Err(AgentRuntimeError::new(
-                "unknown_effect",
-                format!(
-                    "capability {} has no trusted effect metadata",
-                    request.operation
-                ),
-            )),
-        },
-    }
-}
-
-fn write_summary(request: &McpRequest) -> Result<String, AgentRuntimeError> {
-    const MAX_SUMMARY_CHARS: usize = 1200;
-    if request.operation == "ugoite.undo" {
-        return Ok("Undo all changes made by this Konase Work in the authorized Space.".into());
-    }
-    if request.operation != "ugoite.save" {
-        return Err(AgentRuntimeError::new(
-            "unsupported_write",
-            "write preview is unavailable",
-        ));
-    }
-    let id = request
-        .arguments
-        .get("id")
-        .and_then(serde_json::Value::as_str);
-    let form = request
-        .arguments
-        .get("form")
-        .and_then(serde_json::Value::as_str);
-    let fields = request
-        .arguments
-        .get("fields")
-        .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| {
-            AgentRuntimeError::new("invalid_write_preview", "save fields must be an object")
-        })?;
-    if id.is_some_and(str::is_empty) || form.is_some_and(str::is_empty) {
-        return Err(AgentRuntimeError::new(
-            "invalid_write_preview",
-            "save target contains an empty identifier",
-        ));
-    }
-    if id.is_none() && form.is_none() {
-        return Err(AgentRuntimeError::new(
-            "invalid_write_preview",
-            "new save has no Form target",
-        ));
-    }
-    let mut parts = vec![format!(
-        "{} in the authorized Space; Form {}{}.",
-        if id.is_some() { "Update" } else { "Create" },
-        form.map(safe_preview_label)
-            .as_deref()
-            .unwrap_or("from the existing Entry"),
-        id.map(|value| format!("; Entry {}", safe_preview_label(value)))
-            .unwrap_or_default()
-    )];
-    let field_summary = fields
-        .iter()
-        .map(|(name, value)| {
-            if is_sensitive_field(name) {
-                format!("{}: [hidden]", safe_preview_label(name))
+    ugoite_konase::effective_capability_effect(&request.operation, request.effect)
+        .map_err(|message| {
+            let kind = if request.effect == Some(ugoite_konase::CapabilityEffect::Write) {
+                "unsupported_write"
             } else {
-                format!("{}: {}", safe_preview_label(name), value_summary(value))
-            }
+                "unknown_effect"
+            };
+            AgentRuntimeError::new(kind, message)
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    parts.push(format!(
-        "Fields ({}): {field_summary}.",
-        if id.is_some() {
-            "replace the complete structured field map"
-        } else {
-            "new Entry values"
-        }
-    ));
-    if let Some(tags) = request
-        .arguments
-        .get("tags")
-        .and_then(serde_json::Value::as_array)
-    {
-        if !tags.is_empty() {
-            parts.push(format!("Tags: {} tag(s).", tags.len()));
-        }
-    }
-    if let Some(extra) = request
-        .arguments
-        .get("extra_attributes")
-        .and_then(serde_json::Value::as_object)
-    {
-        if !extra.is_empty() {
-            parts.push("Extra attributes: present.".into());
-        }
-    }
-    let summary = parts.join(" ");
-    if summary.chars().count() <= MAX_SUMMARY_CHARS {
-        return Ok(summary);
-    }
-    let mut clipped = summary
-        .chars()
-        .take(MAX_SUMMARY_CHARS - 20)
-        .collect::<String>();
-    clipped.push_str("… [omitted]");
-    Ok(clipped)
-}
-
-fn safe_preview_label(value: &str) -> String {
-    value
-        .chars()
-        .take(96)
-        .map(|ch| if ch.is_control() { ' ' } else { ch })
-        .collect()
-}
-
-fn is_sensitive_field(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    [
-        "api_key",
-        "api key",
-        "token",
-        "credential",
-        "password",
-        "secret",
-    ]
-    .iter()
-    .any(|needle| name.contains(needle))
-}
-
-fn value_summary(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => "empty".into(),
-        serde_json::Value::Bool(_) => "boolean".into(),
-        serde_json::Value::Number(_) => "number".into(),
-        serde_json::Value::String(value) => format!("text ({} chars)", value.chars().count()),
-        serde_json::Value::Array(values) => format!("list ({} items)", values.len()),
-        serde_json::Value::Object(values) => format!("object ({} fields)", values.len()),
-    }
 }
 
 fn message_text(message: &Message) -> String {

@@ -240,6 +240,72 @@ fn invoke_konase(request: serde_json::Value) -> String {
                 ensure_json_size(&context, ugoite_konase::MAX_STATE_JSON_BYTES)?;
                 Ok(context)
             }
+            "konase.preview_write" => {
+                let request_id = payload
+                    .get("request_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "request_id is required".to_string())?;
+                let work_id = payload
+                    .get("work_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "work_id is required".to_string())?;
+                let space_id = payload
+                    .get("space_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "space_id is required".to_string())?;
+                let operation = payload
+                    .get("operation")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "operation is required".to_string())?;
+                let arguments = payload
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let arguments =
+                    serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(arguments)
+                        .map_err(|_| "arguments must be an object".to_string())?;
+                serde_json::to_value(
+                    ugoite_konase::write_preview(
+                        request_id, work_id, space_id, operation, &arguments,
+                    )
+                    .map_err(|message| message)?,
+                )
+                .map_err(|error| error.to_string())
+            }
+            "konase.validate_mutation_receipt" => {
+                let operation = payload
+                    .get("operation")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "operation is required".to_string())?;
+                let work_id = payload
+                    .get("work_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "work_id is required".to_string())?;
+                let receipt = payload
+                    .get("receipt")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                Ok(serde_json::Value::Bool(
+                    ugoite_konase::mutation_receipt_is_valid(operation, work_id, &receipt),
+                ))
+            }
+            "konase.resolve_effect" => {
+                let operation = payload
+                    .get("operation")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "operation is required".to_string())?;
+                let declared = payload
+                    .get("declared_effect")
+                    .cloned()
+                    .map(serde_json::from_value::<ugoite_konase::CapabilityEffect>)
+                    .transpose()
+                    .map_err(|_| "declared_effect is invalid".to_string())?;
+                serde_json::to_value(
+                    ugoite_konase::effective_capability_effect(operation, declared)
+                        .map_err(|message| message)?,
+                )
+                .map_err(|error| error.to_string())
+            }
             _ => Err(format!("unsupported Konase action: {action}")),
         }
     })();
@@ -1325,6 +1391,50 @@ mod abi {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
+
+    #[test]
+    fn konase_shared_write_contract_is_exposed_through_wasm() {
+        let preview = serde_json::json!({
+            "action": "konase.preview_write",
+            "value": {
+                "request_id": "request-1",
+                "work_id": "work-1",
+                "space_id": "space-1",
+                "operation": "ugoite.save",
+                "arguments": {"form": "Profile", "fields": {"password": "secret", "Body": "private"}}
+            }
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&preview.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["action"], "create");
+        assert!(response["value"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("password: [hidden]"));
+        assert!(!response["value"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("private"));
+
+        let effect = serde_json::json!({
+            "action": "konase.resolve_effect",
+            "value": {"operation": "ugoite.save", "declared_effect": "read"}
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&effect.to_string())).unwrap();
+        assert_eq!(response["value"], "write");
+
+        let receipt = serde_json::json!({
+            "action": "konase.validate_mutation_receipt",
+            "value": {"operation": "ugoite.save", "work_id": "work-1", "receipt": {
+                "id": "entry-1", "uri": "ugoite://entry/entry-1", "status": "created", "_untrusted_content": true
+            }}
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&receipt.to_string())).unwrap();
+        assert_eq!(response["value"], true);
+    }
 
     const SQL_FIRST_COMPOSITION: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");

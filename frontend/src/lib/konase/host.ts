@@ -462,7 +462,7 @@ export class KonaseHost {
     }
     let result: McpResult;
     try {
-      result = validateMutationResult(request, workId, rawResult);
+      result = await validateMutationResult(request, workId, rawResult);
     } catch {
       throw new KonaseMutationUnconfirmedError("receipt_invalid");
     }
@@ -550,7 +550,7 @@ export class KonaseHost {
         try {
           const response = await this.model.callModel(modelRequest);
           this.assertCurrent(generation);
-          action = runtime.resumeModel(response);
+          action = await runtime.resumeModel(response);
         } catch (cause) {
           if (this.isCurrent(generation)) {
             await this.hostFailed(
@@ -569,7 +569,7 @@ export class KonaseHost {
         let receiptValidationStarted = false;
         let receiptValidated = false;
         try {
-          runtime.authorizeDispatch(
+          await runtime.authorizeDispatch(
             mcpRequest,
             workId,
             this.spaceId,
@@ -582,7 +582,7 @@ export class KonaseHost {
           dispatchStarted = true;
           const rawResult = await this.mcp.callMcp(mcpRequest, workId);
           receiptValidationStarted = true;
-          const mcpResult = validateMutationResult(
+          const mcpResult = await validateMutationResult(
             mcpRequest,
             workId,
             rawResult,
@@ -940,7 +940,7 @@ class BrowserAgentRuntime {
     );
   }
 
-  resumeModel(result: ModelResult): AgentAction {
+  async resumeModel(result: ModelResult): Promise<AgentAction> {
     const pending = this.pending;
     if (
       !pending || pending.kind !== "model" ||
@@ -978,7 +978,10 @@ class BrowserAgentRuntime {
     if (!capability) {
       throw new Error(`Model requested unlisted MCP capability ${call.name}`);
     }
-    const effect = effectiveEffect(call.name, capability.effect);
+    const effect = await invokeKonase<CapabilityEffect>("konase.resolve_effect", {
+      operation: call.name,
+      declared_effect: capability.effect,
+    });
     const request: McpRequest = freezeRequest({
       request_id: requestId,
       server: "ugoite",
@@ -987,7 +990,7 @@ class BrowserAgentRuntime {
       effect,
     });
     if (effect === "write") {
-      const preview = createWritePreview(request, this.workId, this.spaceId);
+      const preview = await createWritePreview(request, this.workId, this.spaceId);
       this.pending = {
         kind: "confirmation",
         requestId,
@@ -1046,13 +1049,16 @@ class BrowserAgentRuntime {
     return { kind: "call_mcp", request: pending.request };
   }
 
-  authorizeDispatch(
+  async authorizeDispatch(
     request: McpRequest,
     workId: string,
     spaceId: string,
     generation: number,
-  ): void {
-    const expectedEffect = effectiveEffect(request.operation, request.effect);
+  ): Promise<void> {
+    const expectedEffect = await invokeKonase<CapabilityEffect>(
+      "konase.resolve_effect",
+      { operation: request.operation, declared_effect: request.effect },
+    );
     if (expectedEffect === "write") {
       const approved = this.approvedDispatch;
       if (
@@ -1190,93 +1196,18 @@ function validateSelectedResourceResult(
 
 const newId = (): string => globalThis.crypto.randomUUID();
 
-function effectiveEffect(
-  name: string,
-  declared: CapabilityEffect | undefined,
-): CapabilityEffect {
-  switch (name) {
-    case "resources/read":
-      return "read";
-    case "ugoite.search":
-      if (declared === "read") return "read";
-      throw new Error(
-        declared === "write"
-          ? "The listed search capability is not read-only"
-          : "The listed search capability has no trusted effect metadata",
-      );
-    case "ugoite.save":
-    case "ugoite.undo":
-      return "write";
-    default:
-      throw new Error(`Model requested unlisted MCP capability ${name}`);
-  }
-}
-
-function createWritePreview(
+async function createWritePreview(
   request: McpRequest,
   workId: string,
   spaceId: string,
-): WritePreview {
-  if (request.operation === "ugoite.undo") {
-    return {
-      requestId: request.request_id,
-      workId,
-      spaceId: safePreviewLabel(spaceId),
-      operation: "ugoite.undo",
-      action: "undo",
-      summary: "Undo the changes saved during this work.",
-    };
-  }
-  const id = request.arguments.id;
-  const form = request.arguments.form;
-  const fields = request.arguments.fields;
-  if (
-    (id !== undefined && (typeof id !== "string" || !id.trim())) ||
-    (form !== undefined && (typeof form !== "string" || !form.trim())) ||
-    !isRecord(fields)
-  ) {
-    throw new Error("MCP save arguments cannot be safely previewed");
-  }
-  const entryId = typeof id === "string" ? id : undefined;
-  const formName = typeof form === "string" ? form : undefined;
-  if (!entryId && !formName) {
-    throw new Error("New MCP save has no Form target");
-  }
-  const fieldSummary = Object.entries(fields).map(([name, value]) =>
-    `${safePreviewLabel(name)}: ${
-      isSensitiveField(name) ? "[hidden]" : valueSummary(value)
-    }`
-  ).join(", ");
-  const summaryParts = [
-    `Fields (${
-      entryId ? "replace the complete structured field map" : "new Entry values"
-    }): ${fieldSummary}.`,
-  ];
-  if (Array.isArray(request.arguments.tags) && request.arguments.tags.length) {
-    summaryParts.push(`Tags: ${request.arguments.tags.length} tag(s).`);
-  }
-  if (
-    isRecord(request.arguments.extra_attributes) &&
-    Object.keys(request.arguments.extra_attributes).length
-  ) {
-    summaryParts.push("Extra attributes: present.");
-  }
-  let summary = summaryParts.join(" ");
-  const summaryCharacters = [...summary];
-  if (summaryCharacters.length > 1_200) {
-    summary = `${summaryCharacters.slice(0, 1_189).join("")}… [omitted]`;
-  }
-  return {
-    requestId: request.request_id,
-    workId,
-    spaceId,
-    operation: "ugoite.save",
-    action: entryId ? "update" : "create",
-    form: formName ? safePreviewLabel(formName) : undefined,
-    entryId,
-    entryIdLabel: entryId ? safePreviewLabel(entryId) : undefined,
-    summary,
-  };
+): Promise<WritePreview> {
+  return await invokeKonase<WritePreview>("konase.preview_write", {
+    request_id: request.request_id,
+    work_id: workId,
+    space_id: spaceId,
+    operation: request.operation,
+    arguments: request.arguments,
+  });
 }
 
 function freezeRequest(request: McpRequest): McpRequest {
@@ -1291,37 +1222,17 @@ function freezeNested(value: unknown): void {
   Object.freeze(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function safePreviewLabel(value: string): string {
   const characters = [...value];
   const shortened = characters.length > 96;
-  return characters.slice(0, shortened ? 84 : 96).map((character) =>
-    isControlCharacter(character) ? " " : character
-  ).join("") + (shortened ? "… [omitted]" : "");
-}
-
-function isControlCharacter(character: string): boolean {
-  const code = character.codePointAt(0) ?? 0;
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
-}
-
-function isSensitiveField(name: string): boolean {
-  const normalized = name.toLowerCase();
-  return ["api_key", "api key", "token", "credential", "password", "secret"]
-    .some((needle) => normalized.includes(needle));
-}
-
-function valueSummary(value: unknown): string {
-  if (value === null) return "empty";
-  if (typeof value === "string") return `text (${[...value].length} chars)`;
-  if (typeof value === "boolean") return "boolean";
-  if (typeof value === "number") return "number";
-  if (Array.isArray(value)) return `list (${value.length} items)`;
-  if (isRecord(value)) return `object (${Object.keys(value).length} fields)`;
-  return "value";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return characters.slice(0, shortened ? 84 : 96).map((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? " " : character;
+  }).join("") + (shortened ? "… [omitted]" : "");
 }
 
 export type {

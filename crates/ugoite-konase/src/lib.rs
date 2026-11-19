@@ -7,6 +7,7 @@
 
 mod agent_runtime;
 mod context;
+mod contract;
 mod engine;
 
 pub(crate) use context::{has_projection_compaction_marker, normalize_selected_resource_contents};
@@ -19,6 +20,9 @@ pub use context::{
     ContextBuildRequest, ContextBuilder, ContextLimits, ResourceAdmission, ResourceAdmissionReason,
     ResourceAdmissionStatus, MAX_CONTEXT_CAPABILITY_JSON_BYTES, MAX_CONTEXT_JSON_BYTES,
     MAX_SELECTED_RESOURCES,
+};
+pub use contract::{
+    effective_capability_effect, mutation_receipt_is_valid, write_preview, WritePreview,
 };
 pub use engine::{
     normalize_state, step, AgentProgress, Capability, CapabilityEffect, ConfirmationRequest,

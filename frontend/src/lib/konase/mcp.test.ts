@@ -324,9 +324,9 @@ describe("BrowserMcpHost", () => {
     ]);
   });
 
-  it("rejects malformed successful mutation receipts", () => {
+  it("rejects malformed successful mutation receipts", async () => {
     const request = mcpRequest("save-1", "ugoite.save", { fields: {} });
-    expect(() =>
+    await expect(
       validateMutationResult(request, "work-1", {
         request_id: "save-1",
         operation: "ugoite.save",
@@ -334,6 +334,6 @@ describe("BrowserMcpHost", () => {
         resources: [],
         resource_contents: [],
       })
-    ).toThrow(/receipt/);
+    ).rejects.toThrow(/receipt/);
   });
 });
