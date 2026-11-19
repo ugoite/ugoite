@@ -311,20 +311,15 @@ requirements:
     title: Saved SQL Detail Route Actions
     description: >-
       The saved SQL detail route loads and presents the saved query text and
-      metadata, then exposes an inline stateless variable-free result flow or
-      the variable-input flow. The original shared-workspace-actions criterion
-      is preserved verbatim as an evidence gap after the syntax-construction
-      actions were retired; current direct editing is specified by REQ-FE-081.
+      metadata, supports revision-aware direct text edits for user queries,
+      and exposes either inline stateless results or the variable-input flow.
+      Text-first authoring is specified by REQ-FE-081.
     priority: medium
     status: implemented
     criteria:
       - id: detail-summary
         kind: behavior
         statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
-        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
-      - id: shared-workspace-actions
-        kind: behavior
-        statement: The saved SQL detail route presents the shared SQL Workspace's Form, Columns, Filter, Sort, Structure, and Arguments actions for an authorized Form-bound query; opening and closing these actions leaves the query text unchanged.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: form-binding-identifiers
         kind: behavior
@@ -354,7 +349,7 @@ requirements:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, shared workspace actions, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, revision-aware text saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
