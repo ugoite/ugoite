@@ -526,16 +526,6 @@ requirements:
           and continues to control Run Query through its own preview callback
           and disabled state.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: complete-wildcard-output-schema
-        kind: behavior
-        statement: >-
-          Structured wildcard expansion uses complete output column names and
-          order from current authorized planning for that exact projection,
-          rather than reconstructing outputs from a partial Form context.
-          Ambiguous projection scope, unavailable or duplicate names, and
-          stale SQL, host or parameter snapshots leave source unchanged in
-          both primary and advanced editors. Planning does not execute rows.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: editor-accessibility-and-wrapping
         kind: quality
         statement: >-
@@ -614,15 +604,6 @@ requirements:
                 criterion: REQ-FE-081#criterion.current-plan-run-state
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "keeps Run Query disabled until the supplied plan is current and successful" } }
-          - id: authorized-wildcard-schema
-            adapter: typescript
-            path: frontend/src/lib/sql-workspace.test.ts
-            selector: { kind: test, name: replans wildcard output against current authorization and rejects stale parameter snapshots }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-081#criterion.complete-wildcard-output-schema
-                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: replans wildcard output against current authorization and rejects stale parameter snapshots } }
           - id: workspace-control-sizes
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
