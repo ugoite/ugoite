@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import selectedContextFixture from "../../../../crates/ugoite-konase/fixtures/selected-context.json";
 import {
   type Capability,
@@ -9,6 +9,33 @@ import {
 } from "./host";
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 import type { ModelHost, ModelRequest, ModelResult } from "./model";
+
+const protocolTestHooks = vi.hoisted(() => ({
+  resolveEffect: undefined as
+    | undefined
+    | ((value: unknown) => Promise<unknown> | undefined),
+}));
+
+vi.mock("../ugoite-client/protocol", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../ugoite-client/protocol")
+  >();
+  return {
+    ...actual,
+    invokeKonase: <T>(
+      action: Parameters<typeof actual.invokeKonase>[0],
+      value?: unknown,
+    ) => {
+      if (
+        action === "konase.resolve_effect" && protocolTestHooks.resolveEffect
+      ) {
+        const deferred = protocolTestHooks.resolveEffect(value);
+        if (deferred) return deferred as Promise<T>;
+      }
+      return actual.invokeKonase<T>(action, value);
+    },
+  };
+});
 
 class ScriptedModel implements ModelHost {
   readonly requests: ModelRequest[] = [];
@@ -733,6 +760,56 @@ describe("Konase browser host", () => {
     await expect(turnPromise).rejects.toThrow();
     expect(host.resolveConfirmation(preview.requestId, true)).toBe(false);
     expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("does not dispatch an approved write when disposal races WASM effect authorization", async () => {
+    let finishAuthorization!: (effect: unknown) => void;
+    let markAuthorizationStarted!: () => void;
+    const authorizationStarted = new Promise<void>((resolve) => {
+      markAuthorizationStarted = resolve;
+    });
+    const authorization = new Promise<unknown>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let effectCalls = 0;
+    protocolTestHooks.resolveEffect = () => {
+      effectCalls += 1;
+      if (effectCalls !== 2) return undefined;
+      markAuthorizationStarted();
+      return authorization;
+    };
+
+    try {
+      const model = new ScriptedModel([{
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      }]);
+      const mcp = new ScriptedMcp();
+      let host!: KonaseHost;
+      host = new KonaseHost({
+        model,
+        mcp,
+        spaceId: "space-a",
+        onConfirmationRequired: (preview) => {
+          host.resolveConfirmation(preview.requestId, true);
+        },
+      });
+      const turn = host.submit("Save the note");
+
+      await authorizationStarted;
+      host.dispose();
+      finishAuthorization("write");
+
+      await expect(turn).rejects.toThrow(/no longer active/);
+      expect(effectCalls).toBe(2);
+      expect(mcp.calls).toHaveLength(0);
+    } finally {
+      protocolTestHooks.resolveEffect = undefined;
+    }
   });
 
   it("fails closed for an unlisted model-requested capability", async () => {

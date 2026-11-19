@@ -551,6 +551,7 @@ export class KonaseHost {
           const response = await this.model.callModel(modelRequest);
           this.assertCurrent(generation);
           action = await runtime.resumeModel(response);
+          this.assertCurrent(generation);
         } catch (cause) {
           if (this.isCurrent(generation)) {
             await this.hostFailed(
@@ -575,6 +576,7 @@ export class KonaseHost {
             this.spaceId,
             generation,
           );
+          this.assertCurrent(generation);
           this.emitProgress({
             kind: "mcp",
             operation: mcpRequest.operation,
@@ -978,10 +980,13 @@ class BrowserAgentRuntime {
     if (!capability) {
       throw new Error(`Model requested unlisted MCP capability ${call.name}`);
     }
-    const effect = await invokeKonase<CapabilityEffect>("konase.resolve_effect", {
-      operation: call.name,
-      declared_effect: capability.effect,
-    });
+    const effect = await invokeKonase<CapabilityEffect>(
+      "konase.resolve_effect",
+      {
+        operation: call.name,
+        declared_effect: capability.effect,
+      },
+    );
     const request: McpRequest = freezeRequest({
       request_id: requestId,
       server: "ugoite",
@@ -990,7 +995,11 @@ class BrowserAgentRuntime {
       effect,
     });
     if (effect === "write") {
-      const preview = await createWritePreview(request, this.workId, this.spaceId);
+      const preview = await createWritePreview(
+        request,
+        this.workId,
+        this.spaceId,
+      );
       this.pending = {
         kind: "confirmation",
         requestId,
