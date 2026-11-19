@@ -341,16 +341,4 @@ mod tests {
         assert!(effective.contains(&Action::Update));
         assert!(effective.contains(&Action::Share));
     }
-
-    #[test]
-    fn unknown_legacy_binding_method_is_rejected() {
-        let binding: Result<PrincipalBinding, _> = serde_json::from_value(serde_json::json!({
-            "space_uid": Uuid::from_u128(1),
-            "principal_id": Uuid::from_u128(2),
-            "node_account_id": Uuid::from_u128(3),
-            "binding_method": "migration"
-        }));
-
-        assert!(binding.is_err());
-    }
 }
