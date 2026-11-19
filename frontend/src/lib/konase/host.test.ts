@@ -812,6 +812,37 @@ describe("Konase browser host", () => {
     }
   });
 
+  it("does not dispatch a write if its progress listener disposes the Host", async () => {
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{
+        id: "save-call",
+        name: "ugoite.save",
+        arguments: { form: "Note", fields: { title: "x" } },
+      }],
+    }]);
+    const mcp = new ScriptedMcp();
+    let host!: KonaseHost;
+    host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        host.resolveConfirmation(preview.requestId, true);
+      },
+      onProgress: (progress) => {
+        if (progress.kind === "mcp" && progress.operation === "ugoite.save") {
+          host.dispose();
+        }
+      },
+    });
+
+    await expect(host.submit("Save the note")).rejects.toThrow(
+      /no longer active/,
+    );
+    expect(mcp.calls).toHaveLength(0);
+  });
+
   it("fails closed for an unlisted model-requested capability", async () => {
     const model = new ScriptedModel([{
       request_id: "",

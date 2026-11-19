@@ -581,6 +581,7 @@ export class KonaseHost {
             kind: "mcp",
             operation: mcpRequest.operation,
           });
+          this.assertCurrent(generation);
           dispatchStarted = true;
           const rawResult = await this.mcp.callMcp(mcpRequest, workId);
           receiptValidationStarted = true;
