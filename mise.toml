@@ -520,8 +520,7 @@ run = "deno task e2e:asset-owned"
 [tasks."test:smoke"]
 description = "Run focused Rust smoke tests with nextest and Cargo doctests"
 run = [
-  "cargo nextest run -p ugoite-domain -p ugoite-iceberg -p ugoite-core --locked",
-  "cargo nextest run -p ugoite-server --features test-support --locked",
+  "cargo nextest run -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --features ugoite-server/test-support --locked",
   "cargo test --doc -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
   { task = "test:frontend" },
 ]
