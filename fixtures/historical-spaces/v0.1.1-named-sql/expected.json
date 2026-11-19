@@ -1,0 +1,17 @@
+{
+  "space_id": "01a1f1f2-b716-7ab2-a6b0-3d33023f64f9",
+  "slug": "fixture",
+  "space_name": "fixture",
+  "saved_sql_id": "01a1f1f2-cb10-71d1-bade-11b25570f825",
+  "name": "Audit Named Query",
+  "current_revision_id": "103557f5-3925-40b5-ab58-854057d0ea09",
+  "previous_revision_id": "17dfdfd8-2b16-4986-a077-842aacf10a73",
+  "sql": "SELECT $label AS answer, 2 AS source",
+  "variables": [
+    {
+      "description": "optional label",
+      "name": "label",
+      "type": "string"
+    }
+  ]
+}

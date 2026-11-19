@@ -1,0 +1,12 @@
+{
+  "created_at": 1795060578.079,
+  "hmac_key": "dEg5t0oPyiVx2Gap89FFSyUun+bILGWZsuvnDsYCUIw=",
+  "hmac_key_id": "v011-named-sql-fixture",
+  "id": "01a1f1f2-b716-7ab2-a6b0-3d33023f64f9",
+  "last_rotation": "2026-11-19T03:56:18.079543973+00:00",
+  "name": "fixture",
+  "slug": "fixture",
+  "space_id": "01a1f1f2-b716-7ab2-a6b0-3d33023f64f9",
+  "space_uid": "01a1f1f2-b716-7ab2-a6b0-3d33023f64f9",
+  "space_version": "0.1"
+}

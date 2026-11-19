@@ -653,6 +653,37 @@ fn sql_integrity_payload(
     }
 }
 
+fn saved_sql_name(
+    fields: &Value,
+    kind: &SqlKind,
+    metadata: Option<&SqlMetadata>,
+    legacy_title: Option<&Value>,
+) -> Option<String> {
+    let field_name = fields
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty());
+    if let Some(name) = field_name {
+        return Some(name.to_owned());
+    }
+
+    // v0.1.1 persisted a named Saved SQL label in the shared Entry title
+    // column because its reserved SQL Form had no `name` field. Generated
+    // untitled and search-history entries also have display titles, so only
+    // recover the title for a user query that is not marked untitled.
+    if !matches!(kind, SqlKind::UserQuery)
+        || metadata
+            .and_then(|metadata| metadata.generated_name.as_ref())
+            .is_some()
+    {
+        return None;
+    }
+    legacy_title
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+}
+
 /// Recomputes the content integrity stored on one Saved SQL history row.
 /// Saved SQL has its own canonical payload and must not be checked as
 /// Markdown-backed Entry content.
@@ -690,11 +721,6 @@ pub(crate) fn verify_revision_integrity(
         fields.entry("name").or_insert_with(|| name.clone());
     }
 
-    let name = fields
-        .get("name")
-        .and_then(Value::as_str)
-        .filter(|name| !name.trim().is_empty())
-        .map(str::to_owned);
     let sql = fields
         .get("sql")
         .and_then(Value::as_str)
@@ -718,6 +744,12 @@ pub(crate) fn verify_revision_integrity(
         .map(serde_json::from_value::<SqlMetadata>)
         .transpose()
         .context("SQL metadata is invalid")?;
+    let legacy_title = row.extra_attributes.get("ugoite_entry_title").or_else(|| {
+        row.state
+            .as_ref()
+            .and_then(|state| state.legacy_columns.get("ugoite_entry_title"))
+    });
+    let name = saved_sql_name(&fields, &kind, metadata.as_ref(), legacy_title);
     let payload = SqlPayload {
         name,
         kind,
@@ -879,13 +911,16 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
                 .context("SQL row metadata is invalid")?,
         )
     };
-    // Canonical SQL Form `fields["name"]` is the single authority. Older
-    // nameless records remain valid.
-    let name = fields
-        .get("name")
-        .and_then(|value| value.as_str())
-        .filter(|name| !name.trim().is_empty())
-        .map(str::to_owned);
+    // The canonical field is authoritative; named v0.1.1 records recover
+    // their display name from the legacy shared Entry title column.
+    let name = saved_sql_name(
+        &row.fields,
+        &kind,
+        metadata.as_ref(),
+        row.extra_attributes
+            .get("ugoite_entry_title")
+            .or_else(|| row.legacy_columns.get("ugoite_entry_title")),
+    );
 
     Ok(serde_json::json!({
         "id": row.entry_id,
@@ -1986,5 +2021,39 @@ mod name_field_tests {
         let entry =
             sql_entry_from_row(&sql_row(sql_fields(None))).expect("nameless Saved SQL is readable");
         assert!(entry["name"].is_null());
+    }
+
+    #[test]
+    fn legacy_title_is_a_name_only_for_named_user_queries() {
+        let title = Value::String("Released Query".to_string());
+        assert_eq!(
+            saved_sql_name(&json!({}), &SqlKind::UserQuery, None, Some(&title),),
+            Some("Released Query".to_string())
+        );
+        assert_eq!(
+            saved_sql_name(
+                &json!({"name": "Current Name"}),
+                &SqlKind::UserQuery,
+                None,
+                Some(&title),
+            ),
+            Some("Current Name".to_string())
+        );
+
+        let generated_metadata: SqlMetadata =
+            serde_json::from_value(json!({"generatedName": "untitled"})).unwrap();
+        assert_eq!(
+            saved_sql_name(
+                &json!({}),
+                &SqlKind::UserQuery,
+                Some(&generated_metadata),
+                Some(&title),
+            ),
+            None
+        );
+        assert_eq!(
+            saved_sql_name(&json!({}), &SqlKind::SearchHistory, None, Some(&title)),
+            None
+        );
     }
 }
