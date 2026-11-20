@@ -1014,7 +1014,7 @@ fn resolve_parts(
                     }
                 ) {
                     return Err(vec![CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::MetricResultNotScalar,
+                        CompositionDiagnosticCode::VariableTypeMismatch,
                         variable,
                     )]);
                 }
@@ -1172,6 +1172,71 @@ mod tests {
         .expect("table semantic fingerprint");
 
         assert_ne!(scalar_fingerprint, table_fingerprint);
+    }
+
+    #[test]
+    fn table_component_binding_to_scalar_query_has_variable_type_diagnostic() {
+        let descriptor = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let spec = CompositionSpec {
+            variables: vec![VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Scalar {
+                        value_type: descriptor,
+                    },
+                    query: ugoite_domain::composition::VariableGraphQuery {
+                        definition: VariableGraphQueryDefinition::InlineSql {
+                            sql: "SELECT 1 AS value".to_owned(),
+                        },
+                        arguments: Vec::new(),
+                        form_bindings: Vec::new(),
+                        schema_fingerprint: String::new(),
+                    },
+                },
+            }],
+            components: vec![CompositionComponent::Table {
+                id: "table".to_owned(),
+                variable: "value".to_owned(),
+            }],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "row".to_owned(),
+                    items: vec![FlowItem::Component {
+                        component: "table".to_owned(),
+                    }],
+                }],
+            },
+        };
+        let metadata = InlineSqlQueryMetadata {
+            bound_sql: "SELECT 1 AS value".to_owned(),
+            form_bindings: Vec::new(),
+            parameter_names: BTreeSet::new(),
+            result_columns: vec![VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type: descriptor,
+            }],
+            schema_fingerprint: "a".repeat(64),
+        };
+        let error = resolve_composition_preview(
+            Uuid::nil(),
+            &spec,
+            &BTreeMap::new(),
+            &[CurrentQueryDescriptor::InlineSql {
+                variable_id: "value",
+                metadata: Some(&metadata),
+            }],
+            "draft".to_owned(),
+        )
+        .expect_err("a scalar query cannot back a Table component");
+
+        assert_eq!(
+            error[0].code,
+            CompositionDiagnosticCode::VariableTypeMismatch
+        );
     }
 
     #[test]

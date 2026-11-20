@@ -16152,10 +16152,6 @@ spec:
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
             DomainCode::QuerySchemaChanged,
-            DomainCode::MetricResultNotScalar,
-            DomainCode::MetricResultTypeMismatch,
-            DomainCode::MetricScalarNoRows,
-            DomainCode::MetricScalarMultipleRows,
         ];
         for domain in domain_codes {
             let api = api_composition_diagnostic_code(domain)
@@ -16186,36 +16182,19 @@ spec:
                 "removed diagnostic {removed} must stay out of the portable API"
             );
         }
-        let metric_codes = [
-            (
-                ApiCompositionDiagnosticCode::MetricResultNotScalar,
-                "metric_result_not_scalar",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricResultTypeMismatch,
-                "metric_result_type_mismatch",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricScalarNoRows,
-                "metric_scalar_no_rows",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricScalarMultipleRows,
-                "metric_scalar_multiple_rows",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricResultColumnMissing,
-                "metric_result_column_missing",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricResultColumnAmbiguous,
-                "metric_result_column_ambiguous",
-            ),
-        ];
-        for &(api, expected) in &metric_codes {
-            assert_eq!(api.as_str(), expected);
-            assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
-            assert_eq!(serde_json::to_value(api)?, json!(expected));
+        for removed in [
+            "metric_result_not_scalar",
+            "metric_result_type_mismatch",
+            "metric_scalar_no_rows",
+            "metric_scalar_multiple_rows",
+            "metric_result_column_missing",
+            "metric_result_column_ambiguous",
+        ] {
+            assert_eq!(
+                ApiCompositionDiagnosticCode::from_code(removed),
+                None,
+                "obsolete metric diagnostic {removed} must stay out of the portable API"
+            );
         }
         let openapi = openapi_snapshot();
         let openapi_codes = openapi["components"]["schemas"]["CompositionDiagnosticCode"]["enum"]
