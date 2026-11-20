@@ -98,27 +98,53 @@ async fn setup_sql_space_with_form_name(
     ]
     .into_iter()
     .enumerate()
-    .map(|(index, (entry_id, status, priority))| entry::RevisionRow {
-        revision_id: uuid::Uuid::now_v7().to_string(),
-        change_id: change_id.clone(),
-        entry_id: entry_id.to_string(),
-        parent_revision_id: None,
-        timestamp: Utc::now().timestamp_micros() as f64 / 1_000_000.0 + index as f64,
-        author: "owner".to_string(),
-        updated_by: "owner".to_string(),
-        deleted_by: None,
-        fields: json!({"Status": status, "Priority": priority}),
-        extra_attributes: json!({}),
-        markdown_checksum: String::new(),
-        integrity: IntegrityPayload::default(),
-        restored_from: None,
-        form_version,
-        state: None,
-        entry_version: 1,
-        operation: "upsert".into(),
-        source_kind: "api".into(),
-        source_id: None,
-        extension_metadata: json!({}),
+    .map(|(index, (entry_id, status, priority))| {
+        let revision_id = uuid::Uuid::now_v7().to_string();
+        let timestamp = Utc::now().timestamp_micros() as f64 / 1_000_000.0 + index as f64;
+        let fields = json!({"Status": status, "Priority": priority});
+        let extra_attributes = json!({});
+        let integrity = IntegrityPayload::default();
+        let author = "owner".to_string();
+        entry::RevisionRow {
+            revision_id: revision_id.clone(),
+            change_id: change_id.clone(),
+            entry_id: entry_id.to_string(),
+            parent_revision_id: None,
+            timestamp,
+            author: author.clone(),
+            updated_by: author.clone(),
+            deleted_by: None,
+            fields: fields.clone(),
+            extra_attributes: extra_attributes.clone(),
+            markdown_checksum: String::new(),
+            integrity: integrity.clone(),
+            restored_from: None,
+            form_version,
+            state: Some(entry::EntryRow {
+                entry_id: entry_id.to_string(),
+                form: form_name.to_string(),
+                tags: Vec::new(),
+                created_at: timestamp,
+                updated_at: timestamp,
+                fields,
+                extra_attributes,
+                revision_id,
+                parent_revision_id: None,
+                integrity,
+                deleted: false,
+                deleted_at: None,
+                author: author.clone(),
+                updated_by: author,
+                deleted_by: None,
+                entry_version: 1,
+                legacy_columns: BTreeMap::new(),
+            }),
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "api".into(),
+            source_id: None,
+            extension_metadata: json!({}),
+        }
     })
     .collect::<Vec<_>>();
     entry::append_revision_batch_for_form(
