@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { canonicalizeCompositionDocument } from "./ugoite-client";
 import {
   appendCompositionGraphComponent,
-  compositionBindingDiagnostics,
   compositionGraphDocumentDraft,
   compositionGraphAuthoringDocument,
   compositionGraphQueryWorkbenchDocument,
@@ -275,21 +274,5 @@ describe("Composition graph authoring model", () => {
       kind: "input",
       variable: "report_day",
     });
-  });
-
-  it("keeps structural diagnostics for missing variables and unplaced components", () => {
-    const draft: CompositionGraphDraft = {
-      ...createCompositionGraphDraft("Report"),
-      variables: [rows],
-      components: [
-        { id: "table_1", kind: "table", variable: "missing" },
-        { id: "text_1", kind: "text", content: "unplaced", style: "body" },
-      ],
-    };
-
-    expect(compositionBindingDiagnostics(draft)).toEqual([
-      "unplaced_component",
-      "missing_variable",
-    ]);
   });
 });

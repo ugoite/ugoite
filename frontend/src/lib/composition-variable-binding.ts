@@ -393,14 +393,6 @@ export const setCompositionComponentVariable = (
   };
 };
 
-export const sameResolvedQueryMeaning = (
-  left: CompositionVariableNode,
-  right: CompositionVariableNode,
-): boolean =>
-  left.kind === "query" && right.kind === "query" &&
-  JSON.stringify(left.returns) === JSON.stringify(right.returns) &&
-  JSON.stringify(left.query) === JSON.stringify(right.query);
-
 /** Rename graph identity and every explicit query/input/table reference. */
 export const renameCompositionVariable = (
   draft: CompositionGraphDraft,
@@ -435,40 +427,4 @@ export const renameCompositionVariable = (
         : component
     ),
   };
-};
-
-/** Strict UI-side validation for the reference shape; Core remains authoritative. */
-export const compositionBindingDiagnostics = (
-  draft: CompositionGraphDraft,
-): string[] => {
-  const diagnostics: string[] = [];
-  const nodes = new Map(draft.variables.map((node) => [node.id, node]));
-  const components = new Map(
-    draft.components.map((component) => [component.id, component]),
-  );
-  const ids = draft.layout.rows.flatMap((row) =>
-    row.items.map((item) => item.component)
-  );
-  if (new Set(ids).size !== ids.length) {
-    diagnostics.push("duplicate_layout_component");
-  }
-  for (const id of ids) {
-    if (!components.has(id)) diagnostics.push("unknown_layout_component");
-  }
-  for (const component of draft.components) {
-    if (!ids.includes(component.id)) diagnostics.push("unplaced_component");
-    if (component.kind === "text") continue;
-    const node = nodes.get(component.variable);
-    if (!node) {
-      diagnostics.push("missing_variable");
-      continue;
-    }
-    if (component.kind === "table" && !compositionNodeReturnsTable(node)) {
-      diagnostics.push("variable_type_mismatch");
-    }
-    if (component.kind === "input" && node.kind !== "input") {
-      diagnostics.push("variable_type_mismatch");
-    }
-  }
-  return [...new Set(diagnostics)];
 };
