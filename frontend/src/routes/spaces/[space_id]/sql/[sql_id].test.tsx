@@ -254,7 +254,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       expect(screen.getByTestId("workspace-preview-disabled"))
         .toHaveTextContent("false")
     );
-    expect(sqlPlan).toHaveBeenCalled();
+    await waitFor(() => expect(sqlPlan).toHaveBeenCalled());
   });
 
   it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
