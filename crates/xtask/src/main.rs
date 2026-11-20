@@ -1,9 +1,8 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 #[cfg(test)]
 use serde_json::json;
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::{env, fs, path::Path};
 #[cfg(feature = "space-tools")]
 mod space;
