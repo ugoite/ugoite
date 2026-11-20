@@ -7515,6 +7515,7 @@ impl UgoiteService {
             )
             .into());
         }
+        let effective_parameter_types = prepared.parameter_types.clone();
         let (sql_fingerprint, parameter_fingerprint) =
             sql_execution::page_continuation_fingerprints(&request, &prepared)?;
         let authorization_fingerprint = sql_query_authorization_fingerprint(state, principal_ids)?;
