@@ -17,6 +17,7 @@ import {
 } from "~/test/mocks/handlers";
 import type { Space, SqlFormBinding } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
+import * as formBindingGuards from "~/lib/form-binding-guards";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const { navigateMock, routeParams, formGuardRequestMock } = vi.hoisted(() => ({
@@ -29,6 +30,8 @@ const { navigateMock, routeParams, formGuardRequestMock } = vi.hoisted(() => ({
   formGuardRequestMock: vi.fn(),
 }));
 const entryRelation = "form_00000000000000000000000000000001";
+const retainReferencedSqlFormBindingGuards =
+  formBindingGuards.retainReferencedSqlFormBindingGuards;
 
 vi.mock("@solidjs/router", async () => {
   const { createSignal } = await import("solid-js");
@@ -64,23 +67,6 @@ vi.mock("@solidjs/router", async () => {
     ),
     useNavigate: () => navigateMock,
     useParams: () => reactiveParams,
-  };
-});
-
-vi.mock("~/lib/form-binding-guards", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("~/lib/form-binding-guards")
-  >();
-  return {
-    ...actual,
-    retainReferencedSqlFormBindingGuards: (
-      ...args: Parameters<
-        typeof actual.retainReferencedSqlFormBindingGuards
-      >
-    ) => {
-      const result = formGuardRequestMock(...args);
-      return result ?? actual.retainReferencedSqlFormBindingGuards(...args);
-    },
   };
 });
 
@@ -162,6 +148,13 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     navigateMock.mockReset();
     routeParams.set?.({ space_id: "default", sql_id: "saved-query" });
     formGuardRequestMock.mockReset();
+    vi.spyOn(
+      formBindingGuards,
+      "retainReferencedSqlFormBindingGuards",
+    ).mockImplementation((...args) => {
+      const result = formGuardRequestMock(...args);
+      return result ?? retainReferencedSqlFormBindingGuards(...args);
+    });
     resetMockData();
     seedSpace(testSpace);
   });
