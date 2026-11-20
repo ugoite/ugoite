@@ -8,10 +8,10 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg,
-    FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Ident, LimitClause,
-    ObjectName, ObjectNamePart, OrderByKind, OrderBySort, Query, Select, SelectItem, SetExpr,
-    Spanned, Statement, Subscript, TableFactor, Value, ValueWithSpan, Visit, Visitor,
+    AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArguments,
+    GroupByExpr, GroupByWithModifier, Ident, LimitClause, ObjectName, ObjectNamePart, OrderByKind,
+    OrderBySort, Query, Select, SelectItem, SetExpr, Spanned, Statement, Subscript, TableFactor,
+    Value, ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 27;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 29;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -30,8 +30,7 @@ pub const MAX_SQL_DOCUMENT_EDITS: usize = 256;
 /// Bound on syntax tokens processed into an editable SQL tree.
 pub const MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS: usize = 65_536;
 
-/// Keep the source parser aligned with the bounded DataFusion SQL parser used
-/// by the executor, including the 32-level boolean tree editor contract.
+/// Keep the source parser bounded while collecting editor syntax nodes.
 pub(crate) const SQL_DOCUMENT_PARSER_RECURSION_LIMIT: usize = 256;
 
 pub(crate) fn parse_generic_sql_statements(source: &str) -> Result<Vec<Statement>, ParserError> {
@@ -291,16 +290,6 @@ pub struct SqlDocumentIdentifier {
     pub quote_style: Option<char>,
 }
 
-/// A SQL column reference constructed from typed identifier parts.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SqlDocumentColumnReference {
-    /// Optional relation or table alias qualifier.
-    pub qualifier: Option<SqlDocumentIdentifier>,
-    /// Selected column name.
-    pub column: SqlDocumentIdentifier,
-}
-
 /// One bounded collection access suffix constructed by the SQL Document editor.
 /// The index is one-based SQL syntax and is kept as decimal text so the
 /// browser never rounds it through JavaScript numbers.
@@ -437,15 +426,6 @@ pub enum SqlDocumentNodeData {
         has_over: bool,
         /// Whether the argument list contains modifiers such as ORDER BY or LIMIT.
         has_argument_clauses: bool,
-        /// Whether the shared SQL aggregate registry permits replacing an
-        /// existing argument on this exact call shape.
-        can_replace_argument: bool,
-        /// Whether the shared SQL aggregate registry permits adding an argument
-        /// to this exact call shape.
-        can_add_argument: bool,
-        /// Whether the shared SQL aggregate registry permits removing the final
-        /// argument from this exact call shape.
-        can_remove_argument: bool,
     },
     /// A CASE expression's branch structure.
     Case {
@@ -623,76 +603,6 @@ pub struct SqlDocument {
     pub tokens: Vec<SqlDocumentToken>,
     /// Query syntax nodes with source ranges and parent links.
     pub nodes: Vec<SqlDocumentNode>,
-    /// Rust-derived condition editor projection for each SELECT scope.
-    pub conditions: Vec<SqlDocumentConditionScope>,
-}
-
-/// Read-only condition projection derived from the parser tree; SQL remains authoritative.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SqlDocumentConditionScope {
-    pub query_node_id: u32,
-    /// The SELECT WHERE scope or aggregate FILTER scope represented here.
-    pub kind: SqlDocumentConditionScopeKind,
-    /// Parser node identifying the editable scope (SELECT or aggregate).
-    pub scope_node_id: u32,
-    pub where_clause_node_id: Option<u32>,
-    pub expression: Option<SqlDocumentConditionNode>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SqlDocumentConditionScopeKind {
-    Where,
-    AggregateFilter,
-}
-
-/// A supported condition or an exact-source advanced predicate leaf.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SqlDocumentConditionNode {
-    Group {
-        node_id: u32,
-        operator: SqlDocumentConditionGroupOperator,
-        children: Vec<SqlDocumentConditionNode>,
-    },
-    Comparison {
-        node_id: u32,
-        column_node_id: u32,
-        column: SqlDocumentColumnReference,
-        operator: SqlDocumentFilterOperator,
-        value: Option<SqlDocumentSemanticLiteral>,
-    },
-    Advanced {
-        node_id: u32,
-        sql: String,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SqlDocumentConditionGroupOperator {
-    And,
-    Or,
-}
-
-/// Typed condition supplied to SQL Document semantic edit operations.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SqlDocumentFilterCondition {
-    Group {
-        operator: SqlDocumentConditionGroupOperator,
-        children: Vec<SqlDocumentFilterCondition>,
-    },
-    Comparison {
-        column: SqlDocumentColumnReference,
-        operator: SqlDocumentFilterOperator,
-        value: Option<SqlDocumentSemanticLiteral>,
-    },
-    CopyNode {
-        node_id: u32,
-        expected_kind: SqlDocumentNodeKind,
-    },
 }
 
 impl SqlDocument {
@@ -778,54 +688,6 @@ pub enum SqlDocumentGroupByMode {
     Rollup,
     Cube,
     GroupingSets,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SqlDocumentFilterOperator {
-    Eq,
-    NotEq,
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-    Like,
-    NotLike,
-    IsNull,
-    IsNotNull,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SqlDocumentTypedLiteralType {
-    Date,
-    Timestamp,
-    Interval,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SqlDocumentSemanticLiteral {
-    Number {
-        value: String,
-    },
-    String {
-        value: String,
-    },
-    Boolean {
-        value: bool,
-    },
-    Null,
-    NamedParameter {
-        name: String,
-    },
-    TypedString {
-        data_type: SqlDocumentTypedLiteralType,
-        value: String,
-    },
-    HexString {
-        value: String,
-    },
 }
 
 /// A parser-safe relation supplied by the Saved SQL Form picker.
@@ -1525,71 +1387,6 @@ fn sql_template_parameter_name(source: &str, start: usize, end: usize) -> Option
     Some(&contents[name_start..name_end])
 }
 
-fn is_expression_node_kind(kind: SqlDocumentNodeKind) -> bool {
-    matches!(
-        kind,
-        SqlDocumentNodeKind::IdentifierExpression
-            | SqlDocumentNodeKind::CompoundIdentifierExpression
-            | SqlDocumentNodeKind::Value
-            | SqlDocumentNodeKind::LiteralExpression
-            | SqlDocumentNodeKind::BinaryExpression
-            | SqlDocumentNodeKind::UnaryExpression
-            | SqlDocumentNodeKind::FunctionExpression
-            | SqlDocumentNodeKind::CaseExpression
-            | SqlDocumentNodeKind::CastExpression
-            | SqlDocumentNodeKind::SubqueryExpression
-            | SqlDocumentNodeKind::PredicateExpression
-            | SqlDocumentNodeKind::NestedExpression
-            | SqlDocumentNodeKind::OtherExpression
-    )
-}
-
-fn valid_sql_number_literal(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.is_empty() || !bytes.is_ascii() {
-        return false;
-    }
-
-    let mut index = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
-    if index == bytes.len() {
-        return false;
-    }
-    let integer_start = index;
-    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
-        index += 1;
-    }
-    let has_integer_digits = index > integer_start;
-
-    let mut has_fraction_digits = false;
-    if bytes.get(index) == Some(&b'.') {
-        index += 1;
-        let fraction_start = index;
-        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
-            index += 1;
-        }
-        has_fraction_digits = index > fraction_start;
-    }
-    if !has_integer_digits && !has_fraction_digits {
-        return false;
-    }
-
-    if matches!(bytes.get(index), Some(b'e' | b'E')) {
-        index += 1;
-        if matches!(bytes.get(index), Some(b'+' | b'-')) {
-            index += 1;
-        }
-        let exponent_start = index;
-        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
-            index += 1;
-        }
-        if index == exponent_start {
-            return false;
-        }
-    }
-
-    index == bytes.len()
-}
-
 /// Rename every exact named `$old_name` placeholder token in a SQL source.
 ///
 /// Names are supplied without the `$` prefix. Replacements are limited to
@@ -1676,7 +1473,6 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
         diagnostics: Vec::new(),
         tokens: Vec::new(),
         nodes: Vec::new(),
-        conditions: Vec::new(),
     };
 
     if source.len() > MAX_SQL_DOCUMENT_BYTES {
@@ -1772,7 +1568,6 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
         },
     }
 
-    document.conditions = derive_sql_document_conditions(&document);
     document
 }
 
@@ -1888,290 +1683,6 @@ pub fn normalize_sql_template(source: &str) -> SqlTemplateNormalization {
         parameters,
         replacements,
         error,
-    }
-}
-
-fn derive_sql_document_conditions(document: &SqlDocument) -> Vec<SqlDocumentConditionScope> {
-    document
-        .nodes
-        .iter()
-        .filter(|node| node.kind == SqlDocumentNodeKind::Select)
-        .map(|select| {
-            let clause = document.nodes.iter().find(|node| {
-                node.parent == Some(select.id) && node.kind == SqlDocumentNodeKind::WhereClause
-            });
-            let expression = clause
-                .and_then(|clause| {
-                    document.nodes.iter().find(|node| {
-                        node.parent == Some(clause.id) && is_expression_node_kind(node.kind)
-                    })
-                })
-                .and_then(|root| condition_node_from_document(document, root));
-            SqlDocumentConditionScope {
-                query_node_id: select.id,
-                kind: SqlDocumentConditionScopeKind::Where,
-                scope_node_id: select.id,
-                where_clause_node_id: clause.map(|clause| clause.id),
-                expression,
-            }
-        })
-        .chain(document.nodes.iter().filter_map(|function| {
-            if function.kind != SqlDocumentNodeKind::FunctionExpression {
-                return None;
-            }
-            let is_registered_aggregate = match &function.semantic {
-                Some(SqlDocumentNodeData::Function {
-                    name,
-                    argument_count: Some(argument_count),
-                    has_filter: true,
-                    has_over: false,
-                    has_argument_clauses: false,
-                    ..
-                }) if *argument_count > 0 && name.len() == 1 => name.last().is_some_and(|part| {
-                    crate::sql_functions::user_sql_aggregate(&part.value).is_some()
-                }),
-                _ => false,
-            };
-            if !is_registered_aggregate {
-                return None;
-            }
-            let clause = document.nodes.iter().find(|candidate| {
-                candidate.parent == Some(function.id)
-                    && candidate.kind == SqlDocumentNodeKind::WhereClause
-            })?;
-            let root = document.nodes.iter().find(|candidate| {
-                candidate.parent == Some(clause.id) && is_expression_node_kind(candidate.kind)
-            })?;
-            let mut ancestor = function.id;
-            let select_id = loop {
-                let current = document.nodes.get(ancestor as usize)?;
-                if current.id != ancestor {
-                    return None;
-                }
-                if current.kind == SqlDocumentNodeKind::Select {
-                    break ancestor;
-                }
-                ancestor = current.parent?;
-            };
-            Some(SqlDocumentConditionScope {
-                query_node_id: select_id,
-                kind: SqlDocumentConditionScopeKind::AggregateFilter,
-                scope_node_id: function.id,
-                where_clause_node_id: Some(clause.id),
-                expression: condition_node_from_document(document, root),
-            })
-        }))
-        .collect()
-}
-
-fn condition_node_from_document(
-    document: &SqlDocument,
-    node: &SqlDocumentNode,
-) -> Option<SqlDocumentConditionNode> {
-    condition_node_from_document_at_depth(document, node, 0)
-}
-
-fn condition_node_from_document_at_depth(
-    document: &SqlDocument,
-    node: &SqlDocumentNode,
-    depth: usize,
-) -> Option<SqlDocumentConditionNode> {
-    let raw = || {
-        node.range
-            .and_then(|range| document.source_slice(range))
-            .map(str::to_owned)
-            .unwrap_or_default()
-    };
-    let children: Vec<_> = document
-        .nodes
-        .iter()
-        .filter(|candidate| {
-            candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
-        })
-        .collect();
-    if depth >= 32 {
-        return Some(SqlDocumentConditionNode::Advanced {
-            node_id: node.id,
-            sql: raw(),
-        });
-    }
-    if node.kind == SqlDocumentNodeKind::NestedExpression {
-        if let [child] = children.as_slice() {
-            if let Some(condition) =
-                condition_node_from_document_at_depth(document, child, depth + 1)
-            {
-                return Some(condition);
-            }
-        }
-    }
-    if let Some(SqlDocumentNodeData::Predicate { operator, negated }) = node.semantic.as_ref() {
-        if operator == "is_null" {
-            if let [column_node] = children.as_slice() {
-                if let Some(column) = column_reference_from_node(column_node) {
-                    return Some(SqlDocumentConditionNode::Comparison {
-                        node_id: node.id,
-                        column_node_id: column_node.id,
-                        column,
-                        operator: if *negated {
-                            SqlDocumentFilterOperator::IsNotNull
-                        } else {
-                            SqlDocumentFilterOperator::IsNull
-                        },
-                        value: None,
-                    });
-                }
-            }
-        }
-    }
-    if let Some(SqlDocumentNodeData::BinaryOperator { operator }) = node.semantic.as_ref() {
-        if operator.eq_ignore_ascii_case("AND") || operator.eq_ignore_ascii_case("OR") {
-            let group_operator = if operator.eq_ignore_ascii_case("AND") {
-                SqlDocumentConditionGroupOperator::And
-            } else {
-                SqlDocumentConditionGroupOperator::Or
-            };
-            let mut condition_children = Vec::new();
-            for child in children.iter().copied() {
-                let Some(condition) =
-                    condition_node_from_document_at_depth(document, child, depth + 1)
-                else {
-                    continue;
-                };
-                match condition {
-                    SqlDocumentConditionNode::Group {
-                        operator: child_operator,
-                        children,
-                        ..
-                    } if child.kind == SqlDocumentNodeKind::BinaryExpression
-                        && child_operator == group_operator =>
-                    {
-                        condition_children.extend(children);
-                    }
-                    _ => condition_children.push(condition),
-                }
-            }
-            if condition_children.len() >= 2 {
-                return Some(SqlDocumentConditionNode::Group {
-                    node_id: node.id,
-                    operator: group_operator,
-                    children: condition_children,
-                });
-            }
-        }
-        let filter_operator = match operator.as_str() {
-            "=" => Some(SqlDocumentFilterOperator::Eq),
-            "<>" | "!=" => Some(SqlDocumentFilterOperator::NotEq),
-            "<" => Some(SqlDocumentFilterOperator::Lt),
-            "<=" => Some(SqlDocumentFilterOperator::Lte),
-            ">" => Some(SqlDocumentFilterOperator::Gt),
-            ">=" => Some(SqlDocumentFilterOperator::Gte),
-            "LIKE" => Some(SqlDocumentFilterOperator::Like),
-            "NOT LIKE" => Some(SqlDocumentFilterOperator::NotLike),
-            _ => None,
-        };
-        if let (Some(operator), [column_node, value_node]) = (filter_operator, children.as_slice())
-        {
-            if let (Some(column), Some(value)) = (
-                column_reference_from_node(column_node),
-                literal_from_node(document, value_node),
-            ) {
-                return Some(SqlDocumentConditionNode::Comparison {
-                    node_id: node.id,
-                    column_node_id: column_node.id,
-                    column,
-                    operator,
-                    value: Some(value),
-                });
-            }
-        }
-    }
-    Some(SqlDocumentConditionNode::Advanced {
-        node_id: node.id,
-        sql: raw(),
-    })
-}
-
-fn column_reference_from_node(node: &SqlDocumentNode) -> Option<SqlDocumentColumnReference> {
-    match node.semantic.as_ref()? {
-        SqlDocumentNodeData::Identifier { value, quote_style } => {
-            Some(SqlDocumentColumnReference {
-                qualifier: None,
-                column: SqlDocumentIdentifier {
-                    value: value.clone(),
-                    quote_style: *quote_style,
-                },
-            })
-        }
-        SqlDocumentNodeData::CompoundIdentifier { parts } if parts.len() == 2 => {
-            Some(SqlDocumentColumnReference {
-                qualifier: Some(parts[0].clone()),
-                column: parts[1].clone(),
-            })
-        }
-        _ => None,
-    }
-}
-
-fn literal_from_node(
-    document: &SqlDocument,
-    node: &SqlDocumentNode,
-) -> Option<SqlDocumentSemanticLiteral> {
-    if let Some(SqlDocumentNodeData::UnaryOperator { operator }) = node.semantic.as_ref() {
-        if !matches!(operator.as_str(), "+" | "-") {
-            return None;
-        }
-        let operand = document.nodes.iter().find(|candidate| {
-            candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
-        })?;
-        let SqlDocumentSemanticLiteral::Number { value } = literal_from_node(document, operand)?
-        else {
-            return None;
-        };
-        let value = format!("{operator}{value}");
-        return valid_sql_number_literal(&value)
-            .then_some(SqlDocumentSemanticLiteral::Number { value });
-    }
-    match node.semantic.as_ref()? {
-        SqlDocumentNodeData::Literal {
-            literal_kind: SqlDocumentLiteralKind::Number,
-            raw: Some(value),
-        } if valid_sql_number_literal(value) => Some(SqlDocumentSemanticLiteral::Number {
-            value: value.clone(),
-        }),
-        SqlDocumentNodeData::Literal {
-            literal_kind: SqlDocumentLiteralKind::String,
-            raw: Some(value),
-        } => Some(SqlDocumentSemanticLiteral::String {
-            value: parse_sql_string_value(value)?,
-        }),
-        SqlDocumentNodeData::Literal {
-            literal_kind: SqlDocumentLiteralKind::Boolean,
-            raw: Some(value),
-        } => Some(SqlDocumentSemanticLiteral::Boolean {
-            value: value.eq_ignore_ascii_case("true"),
-        }),
-        SqlDocumentNodeData::Literal {
-            literal_kind: SqlDocumentLiteralKind::Null,
-            ..
-        } => Some(SqlDocumentSemanticLiteral::Null),
-        SqlDocumentNodeData::Literal {
-            literal_kind: SqlDocumentLiteralKind::Placeholder,
-            raw: Some(value),
-        } if value.starts_with('$') && valid_sql_parameter_name(&value[1..]) => {
-            Some(SqlDocumentSemanticLiteral::NamedParameter {
-                name: value[1..].to_owned(),
-            })
-        }
-        _ => None,
-    }
-}
-
-fn parse_sql_string_value(source: &str) -> Option<String> {
-    let trimmed = source.trim();
-    if trimmed.len() >= 2 && trimmed.starts_with('\'') && trimmed.ends_with('\'') {
-        Some(trimmed[1..trimmed.len() - 1].replace("''", "'"))
-    } else {
-        None
     }
 }
 
@@ -4685,20 +4196,6 @@ fn literal_kind(value: &Value) -> SqlDocumentLiteralKind {
     }
 }
 
-fn function_argument_is_wildcard(argument: &FunctionArg) -> bool {
-    let expression = match argument {
-        FunctionArg::Named { arg, .. } | FunctionArg::ExprNamed { arg, .. } => arg,
-        FunctionArg::Unnamed(arg) => arg,
-    };
-    match expression {
-        FunctionArgExpr::Wildcard
-        | FunctionArgExpr::QualifiedWildcard(_)
-        | FunctionArgExpr::WildcardWithOptions(_) => true,
-        FunctionArgExpr::Expr(Expr::Wildcard(_) | Expr::QualifiedWildcard(_, _)) => true,
-        FunctionArgExpr::Expr(_) => false,
-    }
-}
-
 fn expression_data(
     expression: &Expr,
     source: &str,
@@ -4802,49 +4299,6 @@ fn expression_data(
                 &function.args,
                 FunctionArguments::List(arguments) if !arguments.clauses.is_empty()
             );
-            let has_wildcard_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if arguments.args.iter().any(function_argument_is_wildcard)
-            );
-            let aggregate = function
-                .name
-                .0
-                .last()
-                .and_then(|part| match part {
-                    ObjectNamePart::Identifier(identifier) => {
-                        crate::sql_functions::user_sql_aggregate(&identifier.value)
-                    }
-                    ObjectNamePart::Function(_) => None,
-                });
-            let can_replace_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !arguments.args.is_empty()
-                        && aggregate.is_some()
-            );
-            let can_add_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !has_wildcard_argument
-                        && !matches!(arguments.duplicate_treatment, Some(DuplicateTreatment::Distinct))
-                        && aggregate.is_some_and(|descriptor| descriptor.arity.accepts(arguments.args.len() + 1))
-            );
-            let can_remove_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !arguments.args.is_empty()
-                        && aggregate.is_some_and(|descriptor| descriptor.arity.accepts(arguments.args.len() - 1))
-            );
             Some(SqlDocumentNodeData::Function {
                 name: object_name_parts(&function.name),
                 argument_count,
@@ -4852,9 +4306,6 @@ fn expression_data(
                 has_filter,
                 has_over,
                 has_argument_clauses,
-                can_replace_argument,
-                can_add_argument,
-                can_remove_argument,
             })
         }
         Expr::Case {
@@ -5684,9 +5135,6 @@ mod tests {
                 has_filter: false,
                 has_over: false,
                 has_argument_clauses: false,
-                can_replace_argument: true,
-                can_add_argument: false,
-                can_remove_argument: true,
             } if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("COUNT")))
         ));
         assert!(has_semantic(

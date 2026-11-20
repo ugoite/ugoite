@@ -478,33 +478,8 @@ export type SqlDocumentIdentifier = {
   quote_style: string | null;
 };
 
-export type SqlDocumentColumnReference = {
-  qualifier?: SqlDocumentIdentifier | null;
-  column: SqlDocumentIdentifier;
-};
-
 export type SqlDocumentOrderDirection = "asc" | "desc";
 export type SqlDocumentNullsOrder = "first" | "last";
-export type SqlDocumentFilterOperator =
-  | "eq"
-  | "not_eq"
-  | "lt"
-  | "lte"
-  | "gt"
-  | "gte"
-  | "like"
-  | "not_like"
-  | "is_null"
-  | "is_not_null"
-  | "is_true"
-  | "is_false"
-  | "is_unknown"
-  | "is_distinct_from"
-  | "is_not_distinct_from"
-  | "ilike"
-  | "not_ilike"
-  | "similar_to"
-  | "not_similar_to";
 
 export type SqlDocumentLiteralKind =
   | "number"
@@ -555,9 +530,6 @@ export type SqlDocumentNodeData =
     has_filter: boolean;
     has_over: boolean;
     has_argument_clauses: boolean;
-    can_replace_argument: boolean;
-    can_add_argument: boolean;
-    can_remove_argument: boolean;
   }
   | {
     kind: "case";
@@ -635,33 +607,6 @@ export type SqlDocument = {
   diagnostics: SqlDocumentDiagnostic[];
   tokens: SqlDocumentToken[];
   nodes: SqlDocumentNode[];
-  /** Rust-derived editing projection. SQL source remains authoritative. */
-  conditions: SqlDocumentConditionScope[];
-};
-
-export type SqlDocumentConditionGroupOperator = "and" | "or";
-export type SqlDocumentConditionNode =
-  | {
-    kind: "group";
-    node_id: number;
-    operator: SqlDocumentConditionGroupOperator;
-    children: SqlDocumentConditionNode[];
-  }
-  | {
-    kind: "comparison";
-    node_id: number;
-    column_node_id: number;
-    column: SqlDocumentColumnReference;
-    operator: SqlDocumentFilterOperator;
-    value: SqlDocumentSemanticLiteral | null;
-  }
-  | { kind: "advanced"; node_id: number; sql: string };
-export type SqlDocumentConditionScope = {
-  query_node_id: number;
-  kind: "where" | "aggregate_filter";
-  scope_node_id: number;
-  where_clause_node_id: number | null;
-  expression: SqlDocumentConditionNode | null;
 };
 
 export type SqlDocumentEdit = {
@@ -679,19 +624,6 @@ export type SqlDocumentSemanticIdentifier = {
   value: string;
   quote_style: string | null;
 };
-
-export type SqlDocumentSemanticLiteral =
-  | { kind: "number"; value: string }
-  | { kind: "string"; value: string }
-  | { kind: "boolean"; value: boolean }
-  | { kind: "null" }
-  | { kind: "named_parameter"; name: string }
-  | {
-    kind: "typed_string";
-    data_type: "date" | "timestamp" | "interval";
-    value: string;
-  }
-  | { kind: "hex_string"; value: string };
 
 export type SqlDocumentSemanticBinaryOperator =
   | "and"
