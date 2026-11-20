@@ -254,7 +254,6 @@ inventory:
         - tools/release_verify_test.ts
         - tools/workspace_test.ts
         - crates/ugoite-wasm/tests/composition_parity.ts
-        - crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
         - frontend/src/lib/composition-draft.ts

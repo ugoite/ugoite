@@ -1512,32 +1512,6 @@ export const compositionFormQuerySql = async (
     value: { relation, columns, aggregate: aggregate ?? null },
   });
 
-export type SqlStructureColumnType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp"
-  | "decimal"
-  | "json"
-  | "other";
-
-export type SqlStructureVariableType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp";
-
-export type SqlStructureContext = {
-  relation: string;
-  columns: { name: string; type: SqlStructureColumnType }[];
-  variables?: { name: string; type: SqlStructureVariableType }[];
-  stable_key?: string[];
-};
-
 export type VariableGraphInputValueByType = {
   string: string;
   boolean: boolean;

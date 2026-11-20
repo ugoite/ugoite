@@ -3,10 +3,10 @@ import { t } from "~/lib/i18n";
 import { parseSqlVariableDefault, sqlVariableDefaultDraft } from "~/lib/sql";
 import type { SqlVariableDefaultDraft } from "~/lib/sql";
 import type { SqlVariable } from "~/lib/types";
-import type { SqlStructureVariableType } from "~/lib/ugoite-client";
+type SqlVariableType = "string" | "boolean" | "integer" | "float" | "date" | "timestamp";
 import { IconButton } from "./IconButton";
 
-const variableTypes: readonly SqlStructureVariableType[] = [
+const variableTypes: readonly SqlVariableType[] = [
   "string",
   "boolean",
   "integer",
@@ -33,7 +33,7 @@ interface Props {
 
 export function SqlArgumentDefinitionsEditor(props: Props) {
   const [newName, setNewName] = createSignal("");
-  const [newType, setNewType] = createSignal<SqlStructureVariableType>(
+  const [newType, setNewType] = createSignal<SqlVariableType>(
     "string",
   );
   const [renameDrafts, setRenameDrafts] = createSignal<Record<string, string>>(
@@ -139,7 +139,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
   const changeType = async (variable: SqlVariable, type: string) => {
     if (
       props.disabled || pendingName() ||
-      !variableTypes.includes(type as SqlStructureVariableType)
+      !variableTypes.includes(type as SqlVariableType)
     ) return;
     const ownedFocus = editorRoot?.contains(document.activeElement) ?? false;
     setPendingName(variable.name);
@@ -220,7 +220,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
               return undefined;
             };
             const typeOptions = () =>
-              variableTypes.includes(variable.type as SqlStructureVariableType)
+              variableTypes.includes(variable.type as SqlVariableType)
                 ? variableTypes
                 : [variable.type, ...variableTypes];
 
@@ -237,7 +237,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       id={renameId}
                       class="ui-input"
                       type="text"
-                      autoComplete="off"
+                      autocomplete="off"
                       spellcheck={false}
                       value={draftName(variable)}
                       aria-invalid={Boolean(renameError()) || undefined}
@@ -271,7 +271,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       value={variable.type}
                       disabled={props.disabled || pendingName() !== undefined ||
                         !variableTypes.includes(
-                          variable.type as SqlStructureVariableType,
+                          variable.type as SqlVariableType,
                         )}
                       onChange={(event) =>
                         changeType(variable, event.currentTarget.value)}
@@ -294,7 +294,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                         disabled={props.disabled ||
                           pendingName() !== undefined ||
                           !variableTypes.includes(
-                            variable.type as SqlStructureVariableType,
+                            variable.type as SqlVariableType,
                           )}
                         onChange={(event) => {
                           const enabled = event.currentTarget.checked;
@@ -327,7 +327,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                           disabled={props.disabled ||
                             pendingName() !== undefined || !draft().enabled ||
                             !variableTypes.includes(
-                              variable.type as SqlStructureVariableType,
+                              variable.type as SqlVariableType,
                             )}
                           value={draft().raw}
                           onInput={(event) =>
@@ -402,7 +402,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
             id={`${props.idPrefix}-argument-name`}
             class="ui-input"
             type="text"
-            autoComplete="off"
+            autocomplete="off"
             spellcheck={false}
             value={newName()}
             aria-invalid={Boolean(newNameError()) || undefined}
@@ -418,7 +418,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
             value={newType()}
             disabled={props.disabled || pendingName() !== undefined}
             onChange={(event) =>
-              setNewType(event.currentTarget.value as SqlStructureVariableType)}
+              setNewType(event.currentTarget.value as SqlVariableType)}
           >
             <For each={variableTypes}>
               {(type) => <option value={type}>{type}</option>}

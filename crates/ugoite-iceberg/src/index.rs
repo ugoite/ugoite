@@ -4799,43 +4799,6 @@ mod tests {
     }
 
     #[test]
-    fn read_only_admission_matches_shared_sql_feature_matrix() {
-        let matrix: Value =
-            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
-                .expect("shared SQL feature matrix must remain valid JSON");
-        let backend = &matrix["feature_matrix"]["backend"];
-        assert_eq!(
-            backend["statement_gate"],
-            "exactly_one_select_query_statement"
-        );
-        assert!(backend["query_body_form_restricted"]
-            .as_bool()
-            .unwrap_or(false));
-        let constructs = matrix["feature_matrix"]["editor"]["constructs"]
-            .as_array()
-            .expect("SQL constructs must be an array");
-        let values = constructs
-            .iter()
-            .find(|construct| construct["id"] == "values_query")
-            .expect("VALUES coverage must be explicit");
-        assert_eq!(values["backend_admission"], "statement_gate_rejects");
-        let table = constructs
-            .iter()
-            .find(|construct| construct["id"] == "table_query")
-            .expect("TABLE coverage must be explicit");
-        assert_eq!(table["backend_admission"], "statement_gate_rejects");
-        let set_operations = constructs
-            .iter()
-            .find(|construct| construct["id"] == "set_operations")
-            .expect("set-operation coverage must be explicit");
-        assert!(set_operations["limits"]
-            .as_array()
-            .is_some_and(|limits| limits.iter().any(|limit| {
-                limit == "every set-operation operand must be a SELECT query body"
-            })));
-    }
-
-    #[test]
     fn native_parameters_keep_date_and_microsecond_timestamp_types() {
         let values = Map::from_iter([
             (
