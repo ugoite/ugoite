@@ -43,6 +43,7 @@ jobs:
       plan_artifacts: ${{ steps.plan.outputs.plan_artifacts }}
       plan_docsite_nav: ${{ steps.plan.outputs.plan_docsite_nav }}
       plan_cp1_acceptance: ${{ steps.plan.outputs.plan_cp1_acceptance }}
+      plan_older_cli_knowledge_preservation: ${{ steps.plan.outputs.plan_older_cli_knowledge_preservation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,6 +138,9 @@ jobs:
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"
+      CI_IMPACT_EVENT: ${{ github.event_name }}
+      CI_IMPACT_SCOPE: ${{ needs.impact.outputs.plan_scope }}
+      CI_IMPACT_RUN_OLDER_CLI: ${{ needs.impact.outputs.plan_older_cli_knowledge_preservation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

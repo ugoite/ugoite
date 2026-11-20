@@ -478,7 +478,6 @@ inventory:
         - docs/architecture/security/overview.md
         - docs/architecture/security/sandbox.md
         - docs/architecture/security/dependency-audit.md
-        - docs/architecture/security/authentication-overview.yaml
         - docs/spec/stories/core.yaml
         - docs/spec/stories/advanced.yaml
         - docs/spec/stories/experimental.yaml

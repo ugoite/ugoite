@@ -212,271 +212,50 @@ Rust owns parsing, validation, canonicalization, and fingerprints for the
 portable Composition document. The [original prerelease grammar](https://github.com/ugoite/ugoite/blob/6bcb5426b937f7981fca1fb97ae70c035651da89/docs/architecture/contracts/decisions.md#adr-017--composition-semantics-use-a-restricted-yaml-contract)
 was superseded. See [ADR-027](adr-027-text-first-composition.md) for the current decision.
 
-## ADR-018 — Composition Studio preview and typed SQL result schema
+## ADR-018 — Composition preview and typed SQL result schema
 
-**Historical ruling for the v0.2.2 Composition Studio uplift; superseded for
-Composition grammar by ADR-024 before release.** This ruling authorized
-additive extensions over the grammar recorded in the
-[prerelease contract](https://github.com/ugoite/ugoite/blob/6bcb5426b937f7981fca1fb97ae70c035651da89/docs/architecture/testing/history/composition-prereplacement-contract.md):
+**Historical decision record; Composition grammar was superseded by ADR-024.**
+Composition preview remains a side-effect-free authoring path. SQL query pages
+carry the server-owned typed `result_schema`; its current column types, value
+encoding, and failure rules are defined in [SQL features](../../spec/features/sql.md)
+and the corresponding Mitase requirements. This ADR is not a second SQL schema
+specification.
 
-1. `composition.preview`: a side-effect-free authoring adapter that parses a
-   candidate document, applies current source authorization, resolves through
-   the shared Core resolver, and executes only the existing `entry.query` and
-   `sql.query` operations. It creates no registry, history, or publication
-   state; it stores no fingerprints; it changes no query grammar. It requires
-   current ACL exactly like saved-revision resolution.
-2. `sql.query` `result_schema`: a response extension carrying the
-   server-owned portable logical column types (`string`,
-   `boolean`, `integer`, `float`, `date`, `timestamp`, `decimal`, `json`)
-   mapped from DataFusion/Arrow output in Rust. Request shapes, column names,
-   and row/object structure stay unchanged. Top-level Decimal cells change
-   from JSON numbers to exact decimal strings, retaining their planned scale;
-   this intentional value-type change prevents precision loss. Consumers can
-   branch on `result_schema` for typed handling. Nested values represented as
-   `json` do not gain a recursive decimal type contract. The Browser performs
-   no type inference and keeps no type mapping. Null and empty results retain
-   their planned types; duplicate or ambiguous columns fail closed.
-3. The five enabled SQL aggregates retain their existing result types, but
-   `SUM` and `AVG` accumulate integer and decimal values with checked wide
-   state. Overflow, unsupported input types, and non-finite floating
-   aggregate outputs fail with stable SQL aggregate error codes and safe
-   messages; no partial aggregate value is returned. `DISTINCT` remains
-   supported for `SUM` and `AVG`; the checked accumulators merge their exact
-   distinct input state without using DataFusion's wrapping built-ins. Window
-   functions are excluded from this policy.
+## ADR-019 — Composition layout v1
 
-Document grammar, storage layout, mutation operations, query grammar, the
-existing `source` plus `value_field` exact-scalar semantics, generic write
-guard, idempotency semantics, raw recovery, downgrade compatibility, and the
-`string` spec carrier are unchanged. The additive typed Metric `definition`
-grammar is representable and canonicalizable, but its query execution is not
-part of this ruling. The operation inventory and freeze tests are updated in
-the same change that introduces `composition.preview`.
+**Superseded by ADR-024 before release.** The prerelease `sections` layout and
+its interaction rules are historical. The current Composition document and
+layout contract is [ADR-027](adr-027-text-first-composition.md).
 
-## ADR-019 — Composition layout v1 ruling (sections to layout AST)
+## ADR-020 — Bounded Composition scalar reads
 
-**Historical ruling for the v0.2.2 Composition Studio redesign; superseded by
-ADR-024 before release.** The semantic
-vocabulary `parameters` / `sources` / `components` is shared with the future
-v0.3 Dashboard / Application / Presentation / Master grammar and is kept.
-The pre-release `sections` array is removed and replaced by a first-class
-`layout` AST for `kind: dashboard`:
-
-```yaml
-layout:
-  kind: flow
-  rows:
-    - id: controls
-      items:
-        - kind: parameter
-          parameter: month
-    - id: summary
-      items:
-        - kind: component
-          component: total
-```
-
-Rules recorded here, implemented starting with the domain reset that follows
-this ruling:
-
-1. `format_version` stays `1`; no migration reader is built for the
-   pre-release `sections` grammar.
-   The separately added typed Metric `definition` shape is additive. Existing
-   `source` plus `value_field` documents remain readable with unchanged
-   semantics in the current v0.x series; their retirement is a next-minor
-   change and does not use an implicit migration.
-2. Components are `text` / `metric` / `table` only. `text` carries a fixed
-   `style` enum (`title`, `heading`, `body`, `caption`); no Markdown, HTML,
-   CSS, or handlers. Parameters are never duplicated as components; a layout
-   item of `kind: parameter` places the semantic parameter as a control.
-3. Every component is referenced exactly once from the layout; empty layouts,
-   empty rows, duplicate row IDs, unknown references, duplicate placements,
-   unreferenced components, and dangling parameter controls are
-   `invalid_composition`.
-4. Pixel coordinates, CSS classes, DOM paths, and canvas state are never
-   Knowledge; row/item order is the only placement contract. Desktop renders
-   row items inline, mobile wraps/stacks them.
-5. Studio save requires at least one layout item; a source-only document
-   cannot be saved from the Browser Studio.
-6. Studio IA is `Design` (finished-Tool look, edit affordances only) /
-   `Data` (per-source EntryQuery / exact Saved SQL viewers) / `Inspector`
-   (selected block only), plus desktop-only `Split`. Studio and Use surfaces
-   share one renderer.
-
-The current flow-layout contract is in [Composition](composition.md#components-and-text). Stop conditions in this ruling
-included canvas coordinates in Knowledge, split
-Design/Use semantics, parameter duplication into a UI-only type, Saved SQL
-latest-fallback, Browser aggregation or type inference, `text` runtime
-extension, or a permanent `sections` compatibility layer.
-
-## ADR-020 — Bounded Composition Metric query operation
-
-**Status: Superseded in part by ADR-022 before Metric release.** The portable
-operation boundary, exact Saved SQL revision, current authorization, bounded
-result consumption, and fail-closed scalar cardinality remain. The
-EntryQuery-aggregate and Metric-specific execution clauses below are historical.
-
-**Accepted ruling for the v0.2.2 Metric execution work.** Add one
-transport-neutral `composition.metric.query` operation instead of routing a
-Metric through `sql.query` pages or adding a caller-controlled limit mode to
-the existing SQL operation.
-
-The request identifies either an exact stored Composition revision or an
-unsaved YAML draft, one component ID, and its parameter values. The server
-resolves that target through the shared Core resolver and current
-authorization, then executes only the already-bound source for that metric.
-For a Saved SQL `sql_scalar` definition the source must be the exact Saved SQL
-revision recorded by the Composition. Execution uses the existing authorized
-read-only query planner, current Form scopes, and one fixed publication
-checkpoint, and materializes at most two result rows. Two rows prove the
-result is not scalar; the operation does not add `LIMIT 1`, wrap the SQL in a
-count, fetch a continuation, or infer a value from a table page. A table
-sharing the source continues to use `sql.query` independently.
-
-The response reports one typed value or stable Composition diagnostics. A
-present JSON `null` is a successful scalar result. A Saved SQL scalar that
-returns zero rows produces `metric_scalar_no_rows`; one that returns multiple
-rows produces `metric_scalar_multiple_rows`. Neither case selects a prefix
-value.
-Typed EntryQuery aggregates retain their aggregate empty-set behavior. Transport
-adapters do not expose backend SQL text, storage paths, or source identifiers
-in metric diagnostics. The
-operation is additive: the existing `composition.resolve`,
-`composition.preview`, and `sql.query` contracts keep their meanings and
-remain available.
-
-CLI, Browser, Native, and WASM adapters share the request and response
-vocabulary and Core evaluation rules. Local CLI execution uses the same
-bounded service probe without requiring a server. Browser execution sends
-current parameters and exact revision identity for each query; metric values
-are query results, not stored Composition authority.
+**Historical implementation decision; retained read invariants are current.**
+Composition scalar reads use the ordinary authorized SQL execution path with the
+exact Saved SQL revision selected by the Composition. The adapter consumes at
+most two rows to establish whether the result contains exactly one row; it
+never adds `LIMIT 1`, selects a prefix row, or materializes a full result merely
+to test scalar cardinality. Current Composition execution semantics are in
+[Composition](composition.md), and SQL revision semantics are in
+[SQL Form name resolution](sql-form-name-resolution.md).
 
 ## ADR-021 — Typed-only Composition Metrics
 
-**Status: Superseded by ADR-022 before Metric release.** This records the
-previous accepted design; its `aggregate` and `sql_scalar` union is not a
-compatibility contract and will be removed without a reader or migration.
+**Superseded by ADR-022 before Metric release.** The prerelease `definition`,
+`aggregate`, and `sql_scalar` Metric shapes are not a compatibility contract.
+The current grammar is defined by [ADR-027](adr-027-text-first-composition.md);
+no legacy reader or migration was required for these unreleased shapes.
 
-Composition Metrics use the required typed `definition` shape:
-EntryQuery aggregates bind stable `FieldId`s through the source schema, and
-Saved SQL scalar metrics bind an exact output column on an exact saved
-revision. The former `source` plus `value_field` shape is rejected; no legacy
-reader or migration is provided. Metric evaluation uses the bounded
-Composition Metric query operation: aggregates use the authorized full
-matching set, and Saved SQL metrics use a bounded scalar probe. The shared
-Domain layer validates returned scalar values, not query pages. The
-prereplacement Composition contract and Mitase bindings described this
-behavior; they are historical evidence and do not define replacement v1.
+## ADR-022 — Composition uses Saved SQL results
 
-This accepted next-minor contract ruling retires the earlier compatibility
-statements in ADR-017 through ADR-019. It does not authorize release or change
-unrelated Composition persistence and query contracts.
-
-## ADR-022 — Composition Metrics present Saved SQL results
-
-**Historical prereplacement decision; ADR-024 supersedes its Composition source
-grammar before release.** The Saved SQL scalar Metric rule is retained. Saved
-SQL, general SQL execution, Space Knowledge, and `sql.query.count` retain their
-separate contracts; `entry.query` remains a general API while Composition stops
-using its EntryQuery source path.
-
-### Decision
-
-1. A Metric is a scalar-result presentation component. Its binding names one
-   Composition `saved_sql` source and one output column. The serialized Metric
-   component carries `source` and `column` directly alongside its optional
-   label and presentation settings; it has no nested definition discriminator.
-   Label, unit, and fraction digits affect presentation only. It stores no
-   aggregate operation, `FieldId`, calculation DSL, or alternate execution
-   mode. `CompositionMetricDefinition` and EntryQuery-backed Metric resolution
-   are removed; every Metric has one SQL-source shape.
-2. A `saved_sql` source pins the Saved SQL Entry and exact revision and binds
-   the existing SQL parameters. It is independent of display components and
-   may be shared by multiple Metrics and Tables. Future Text variables and
-   Charts may use the same source/result contract; they are outside this work.
-3. SQL owns every calculation. COUNT, SUM, AVG, MIN, MAX, and future
-   expressions are ordinary Saved SQL subject to the existing read-only
-   grammar, current ACL, exact revision, parameter typing, typed result schema,
-   numeric precision, and execution/resource limits. Metric adds no execution
-   engine, client-side aggregation, SQL rewrite, or implicit `LIMIT 1`.
-4. A Form-assisted flow may generate SQL for common operations, but it saves
-   that query through the normal Saved SQL contract and binds the exact
-   resulting revision as a Composition source. It stores no Metric-only
-   operation, `FieldId`, hidden query setting, or separate aggregate authority.
-5. Metric evaluation uses the common authorized SQL result path. A thin
-   `composition.metric.query` adapter may select the source and column, consume
-   at most two rows, and validate exactly one row with a displayable scalar
-   column. Zero rows, multiple rows, one-row NULL, numeric zero, denied or
-   unavailable source, and incompatible type remain distinct from one another
-   and from query failures. A successful result payload carries only component
-   identity, result type, and value; failures retain the `ok`/diagnostics
-   envelope. The adapter never selects a prefix row or changes SQL. Table
-   continues through the existing paged SQL path against the same
-   source/result contract.
-6. No compatibility reader or migration is required for pre-release Metric
-   shapes, including the former `source` + `value_field` form, `aggregate`, or
-   the `aggregate`/`sql_scalar` definition union. The Composition document
-   format remains version 1 because it has not shipped; its released v1 grammar
-   adopts the direct `source`/`column` shape, and pre-release documents are not
-   promised to remain readable. Unrelated Composition persistence/history,
-   Saved SQL, Space Knowledge, EntryQuery Table support, SQL operations, and
-   `sql.query.count` remain.
-
-### Data flow
-
-```mermaid
-flowchart LR
-  A[Form-assisted SQL authoring] -->|ordinary Saved SQL| B[Saved SQL Entry + exact revision]
-  C[Existing Saved SQL] --> B
-  B --> D[Shared Composition saved_sql source + parameters]
-  D --> E[Core resolver + current ACL]
-  E --> F[Read-only SQL planner + limits + typed result]
-  F --> G[Common SQL result]
-  G --> H[Table: paged rows and columns]
-  G --> I[Metric adapter: one row + selected scalar column]
-  G -. future .-> J[Text variables / Chart data]
-```
-
-The source/result contract is shared; components do not implement query
-semantics. Metric uses bounded row consumption while Table keeps its page
-contract. Source sharing does not imply that a Table page determines a Metric
-value or require a result cache. The common SQL execution contract owns
-read-only planning, exact-revision lookup, current authorization, typed result
-metadata, and resource bounds. Its result is the ordered output schema and
-rows produced by ordinary Saved SQL. A Metric adapter may request a bounded
-two-row probe from this same execution path to prove scalar cardinality; it
-only selects and validates the declared column. It does not introduce another
-SQL engine, aggregation semantics, or a Metric-specific source authority.
-Future Text and Chart consumers can use the same Saved SQL source and result
-contract without depending on `composition.metric.query`.
-
-### Impact map and order
-
-- **Domain / YAML / Native / WASM:** remove the aggregate definition, its
-  `FieldId`/operation validation, capability request, and aggregate-only
-  fixtures. Keep the Saved SQL source/revision/parameters, scalar validation,
-  and EntryQuery Table fields and operations.
-- **Core / API / server / CLI:** bind Metric only to authorized exact-revision
-  Saved SQL results; retain `composition.metric.query` only as the scalar
-  adapter if useful. Remove aggregate operation/source-kind fields from the
-  Metric result, Metric aggregate execution, and aggregate capability paths.
-  Preserve `sql.query`, `sql.query.count`, local Core and remote meaning.
-- **Browser / Studio:** remove direct Form aggregate Metric authoring. A Form
-  helper creates an ordinary Saved SQL query; Metric and Table select its
-  source and output columns. Keep presentation-only settings and opaque-ID
-  hiding.
-- **Specs / fixtures / E2E / CI:** update the Composition contract, Mitase,
-  page specs, acceptance plan, canonical fixtures, and journeys. Cover shared
-  one-row/multi-column sources, exact revisions, ACL, parameters, NULL/zero/
-  zero-row/multi-row, precision, update and pagination independence, and
-  bounded errors. Keep SQL aggregate engine tests, EntryQuery Table tests, and
-  `entry.query.count` tests.
-
-Implementation is split into dependent Domain/Core/portable-operation,
-Studio/Browser, and acceptance/spec slices. Each slice gets focused validation
-and required CI before a dependent slice builds on it. SQL aggregate behavior
-is tested at the SQL layer; Metric tests prove selection and presentation only.
-
+**Historical design ruling; its shared SQL boundary remains active.** SQL owns
+calculation semantics. Composition binds ordinary Saved SQL by Entry and exact
+revision, rechecks current authorization, and consumes the typed SQL result
+through the bounded scalar contract. Composition adds no query engine,
+aggregation authority, SQL rewrite, or implicit `LIMIT 1`. Current execution
+and variable semantics are specified in [Composition](composition.md),
+[SQL features](../../spec/features/sql.md), and the corresponding Mitase
+requirements. Earlier Metric source/component proposals in this ADR are
+historical and do not define the current Composition grammar.
 
 ## ADR-023 — Composition typed reactive variables
 

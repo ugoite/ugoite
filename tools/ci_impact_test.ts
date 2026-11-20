@@ -155,8 +155,79 @@ Deno.test("main pushes retain every lane and merge groups remain unconditional",
     "web",
   ]);
   assertEquals(push.jobsSkipped, false);
+  assertEquals(push.runOlderCliPreservation, true);
   const mergeGroup = makeImpactReport({ event: "merge_group" });
   assertEquals(mergeGroup.candidateLanes, push.candidateLanes);
+  assertEquals(mergeGroup.runOlderCliPreservation, true);
+  assertEquals(
+    makeImpactReport({ event: "local" }).runOlderCliPreservation,
+    true,
+    "local execution must run the preservation check by default",
+  );
+  assertEquals(
+    makeImpactReport({ event: "workflow_dispatch" }).runOlderCliPreservation,
+    true,
+    "manual release workflows must not skip the preservation check",
+  );
+});
+
+Deno.test("older-CLI preservation skips only clearly unrelated scoped PRs", () => {
+  for (
+    const path of [
+      "docs/use/search.mdx",
+      "frontend/src/routes/settings.tsx",
+      "crates/ugoite-identity/src/node_identity.rs",
+      "crates/ugoite-server/src/lib.rs",
+      "crates/ugoite-cli/src/commands/auth.rs",
+    ]
+  ) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [path],
+    });
+    assertEquals(report.scope, "scoped", path);
+    assertEquals(report.runOlderCliPreservation, false, path);
+  }
+
+  for (
+    const path of [
+      "Cargo.toml",
+      "Cargo.lock",
+      "crates/ugoite-core/src/composition.rs",
+      "crates/ugoite-domain/src/composition/yaml.rs",
+      "crates/ugoite-iceberg/src/service.rs",
+      "crates/ugoite-iceberg/tests/test_older_cli_knowledge_preservation.rs",
+      "crates/ugoite-storage/src/lib.rs",
+    ]
+  ) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [path],
+    });
+    assertEquals(report.scope, "scoped", path);
+    assertEquals(report.runOlderCliPreservation, true, path);
+  }
+
+  assertEquals(
+    makeImpactReport({ event: "pull_request", baseSha, headSha })
+      .runOlderCliPreservation,
+    true,
+    "unknown paths must fail closed",
+  );
+  assertEquals(
+    makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      diffError: "git failed",
+    }).runOlderCliPreservation,
+    true,
+    "uncertain diffs must fail closed",
+  );
 });
 
 Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan all", () => {

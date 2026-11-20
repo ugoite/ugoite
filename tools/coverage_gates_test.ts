@@ -165,6 +165,8 @@ async function assertAggregateWorkflow(
   const repoCheck = taskBlock(mise, "check:repo");
   const canonicalCheck = taskBlock(mise, "check");
   const canonicalTest = taskBlock(mise, "test");
+  const rustTest = taskBlock(mise, "test:rust");
+  const rustTestCore = taskBlock(mise, "test:rust:core");
   const rustCheckLane = taskBlock(mise, "ci:lane:rust-check");
   const rustTestLane = taskBlock(mise, "ci:lane:rust-test");
   const webLane = taskBlock(mise, "ci:lane:web");
@@ -253,6 +255,22 @@ async function assertAggregateWorkflow(
       "test:docsite",
     ],
     "canonical test task",
+  );
+  assertContainsAll(
+    rustTest,
+    [
+      '{ task = "test:rust:core" }',
+      '{ task = "test:older-cli-knowledge-preservation" }',
+    ],
+    "canonical Rust test task preserves older-CLI compatibility by default",
+  );
+  assertContainsAll(
+    rustTestCore,
+    [
+      "cargo nextest run --workspace --locked",
+      "cargo test --workspace --doc --locked",
+    ],
+    "Rust core test task",
   );
   assertEquals(
     canonicalTest.includes("test:frontend:after-wasm"),
@@ -366,7 +384,10 @@ async function assertAggregateWorkflow(
 
   const hostedLaneExpectations: [string, string[]][] = [
     ["rust-check", ["lint:rust", "check:rust", "check:repo"]],
-    ["rust-test", ["test:rust"]],
+    ["rust-test", [
+      "test:rust:core",
+      "bash scripts/run-older-cli-preservation-if-needed.sh",
+    ]],
     [
       "web",
       [
@@ -659,6 +680,7 @@ async function assertAggregateWorkflow(
     impactJob,
     [
       "name: ci-impact-plan",
+      "plan_older_cli_knowledge_preservation:",
       "fetch-depth: 0",
       "CI_IMPACT_EVENT: ${{ github.event_name }}",
       "github.event.pull_request.base.sha || github.event.before",
@@ -667,6 +689,31 @@ async function assertAggregateWorkflow(
       "run: mise run ci:impact",
     ],
     "impact plan lane",
+  );
+  assertContainsAll(
+    rustTestJob,
+    [
+      "CI_IMPACT_EVENT: ${{ github.event_name }}",
+      "CI_IMPACT_SCOPE: ${{ needs.impact.outputs.plan_scope }}",
+      "CI_IMPACT_RUN_OLDER_CLI: ${{ needs.impact.outputs.plan_older_cli_knowledge_preservation }}",
+    ],
+    "Rust test lane receives the conservative older-CLI plan",
+  );
+  const olderCliSkipScript = await Deno.readTextFile(
+    "scripts/run-older-cli-preservation-if-needed.sh",
+  );
+  assertContainsAll(
+    olderCliSkipScript,
+    [
+      "CI_IMPACT_EVENT:-",
+      '"pull_request"',
+      "CI_IMPACT_SCOPE:-",
+      '"scoped"',
+      "CI_IMPACT_RUN_OLDER_CLI:-",
+      '"false"',
+      "mise run test:older-cli-knowledge-preservation",
+    ],
+    "older-CLI preservation skip guard",
   );
   assertContainsAll(
     docsiteNavJob,

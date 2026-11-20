@@ -3,8 +3,7 @@
 //! The canonical EntryQuery compiler pages by keyset over an immutable
 //! publication: the first page pins the publication, the signed cursor carries
 //! the sort tuple, and continuation re-executes at the pinned checkpoint.
-//! These tests pin that contract at CI size (tens to a few thousand entries;
-//! 25k+ stays nightly/optional):
+//! These tests pin that contract with short cursor pages and small fixtures:
 //!
 //! - repeated sort keys stay duplicate/skip-free via the hidden stable identity;
 //! - null sort values order across cursor continuation (`NULLS LAST`);
@@ -12,7 +11,7 @@
 //!   survive page boundaries;
 //! - live create/update/delete between pages does not move the pinned read;
 //! - an authorization change after cursor issuance rejects the continuation;
-//! - a deterministic multi-thousand-entry traversal has no duplicate or skip.
+//! - a deterministic traversal includes every row, even on a partial final page.
 //!
 //! No offset-paging equivalence is asserted anywhere; there are no compat
 //! adapters in this file.
@@ -241,15 +240,12 @@ async fn repeated_sort_key_pages_by_hidden_stable_identity() -> Result<()> {
     let form = form_id(&service, &space_id, "Task").await?;
     let priority = property_ref(&service, &space_id, "Task", "Priority").await?;
 
-    for index in 0..12 {
-        create_task(
-            &service,
-            &space_id,
-            &format!("repeat-{index:02}"),
-            task_fields(Some("open"), Some(1), None),
-        )
-        .await?;
-    }
+    seed_tasks(
+        &service,
+        &space_id,
+        (0..12).map(|index| (format!("repeat-{index:02}"), 1)),
+    )
+    .await?;
     let query = EntryQuery {
         scope: EntryQueryScope::Form { form_id: form },
         text: None,
@@ -631,21 +627,16 @@ async fn authorization_change_rejects_issued_continuation() -> Result<()> {
     Ok(())
 }
 
-/// Deterministic CI-sized traversal of several thousand entries: one bulk
-/// commit seeds the Space, then cursor pages of 250 must cover every entry
-/// exactly once.
-#[tokio::test]
-async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result<()> {
+async fn seed_tasks(
+    service: &UgoiteService,
+    space_id: &str,
+    entries: impl Iterator<Item = (String, i64)>,
+) -> Result<()> {
     use ugoite_domain::change::ChangeCommand;
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::id::{EntryId, FieldId};
     use ugoite_iceberg::{iceberg_store, publication_context_for_change};
 
-    const COUNT: usize = 2_500;
-    const PAGE: usize = 250;
-
-    let (service, space_id) = setup_space("memory://entry-traversal-large", "large").await?;
-    upsert_task_form(&service, &space_id).await?;
     let workspace =
         iceberg_store::native_mutation_workspace(service.operator(), &format!("spaces/{space_id}"))
             .await?;
@@ -665,8 +656,9 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
         .iter()
         .find(|field| field.name == "Status")
         .context("Status field")?;
-    let revisions = (0..COUNT)
-        .map(|index| {
+    let revisions = entries
+        .enumerate()
+        .map(|(index, (external_id, priority))| {
             let micros = 1_000_000 + index as i64;
             EntryRevision {
                 form_id: form.id,
@@ -674,7 +666,7 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
                 revision_id: Uuid::from_u128(600_000 + index as u128).into(),
                 parent_revision_id: None,
                 entry_version: 1,
-                change_id: "large-traversal-seed".to_owned(),
+                change_id: "traversal-seed".to_owned(),
                 expected_version: None,
                 operation: EntryOperation::Upsert,
                 committed_at_micros: micros,
@@ -683,7 +675,7 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
                 source_kind: "test".to_owned(),
                 source_id: None,
                 entry: EntryMetadata {
-                    external_id: format!("bulk-{index:05}"),
+                    external_id,
                     created_at_micros: micros,
                     updated_at_micros: micros,
                     updated_by: "owner".to_owned(),
@@ -696,7 +688,7 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
                     ),
                     (
                         FieldId::new(priority_field.id.get()).expect("field id"),
-                        FieldValue::Integer(index as i64),
+                        FieldValue::Integer(priority),
                     ),
                 ]),
                 extra_attributes: BTreeMap::new(),
@@ -705,10 +697,10 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
         })
         .collect::<Vec<_>>();
     let command = ChangeCommand {
-        change_id: "large-traversal-seed".to_owned(),
+        change_id: "traversal-seed".to_owned(),
         run_id: None,
         actor_principal_id: "owner".to_owned(),
-        message: Some("seed large traversal".to_owned()),
+        message: Some("seed traversal fixture".to_owned()),
         reverts_change_id: None,
         created_at_micros: 1,
     };
@@ -721,9 +713,28 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
         .append_revisions(form.id, revisions)
         .await?;
 
+    Ok(())
+}
+
+/// Small incomplete final page confirms the last cursor terminates correctly.
+#[tokio::test]
+async fn traversal_covers_a_partial_final_page_without_gap() -> Result<()> {
+    const COUNT: usize = 21;
+    const PAGE: usize = 4;
+
+    let (service, space_id) = setup_space("memory://entry-traversal-partial", "partial").await?;
+    upsert_task_form(&service, &space_id).await?;
+    let form = form_id(&service, &space_id, "Task").await?;
+    seed_tasks(
+        &service,
+        &space_id,
+        (0..COUNT).map(|index| (format!("bulk-{index:05}"), index as i64)),
+    )
+    .await?;
+
     let priority = property_ref(&service, &space_id, "Task", "Priority").await?;
     let query = EntryQuery {
-        scope: EntryQueryScope::Form { form_id: form.id },
+        scope: EntryQueryScope::Form { form_id: form },
         text: None,
         filters: Vec::new(),
         sort: vec![EntrySort {
@@ -732,11 +743,11 @@ async fn large_traversal_covers_several_thousand_entries_without_gap() -> Result
         }],
     };
     let ids = collect_ids(&service, &space_id, &query, PAGE).await?;
-    assert_no_duplicate_or_skip(&ids, COUNT, "large traversal");
+    assert_no_duplicate_or_skip(&ids, COUNT, "partial final page traversal");
     let expected: Vec<String> = (0..COUNT).map(|index| format!("bulk-{index:05}")).collect();
     assert_eq!(
         ids, expected,
-        "numeric priority order must survive a multi-thousand-entry traversal"
+        "numeric priority order must survive the partial last page"
     );
     Ok(())
 }

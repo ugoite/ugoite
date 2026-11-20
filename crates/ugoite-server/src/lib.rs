@@ -811,6 +811,7 @@ impl AppState {
         })
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn new_for_tests(root_uri: impl Into<String>) -> anyhow::Result<Self> {
         let service = UgoiteService::new(root_uri.into())?;

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: ugoite
-description: Unsupported placeholder for a future single-image Ugoite Helm chart
+description: Ugoite single-image Helm chart; Kubernetes production support is not established
 type: application
 version: 0.2.1
 appVersion: "0.2.1"
