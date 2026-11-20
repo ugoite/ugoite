@@ -56,14 +56,14 @@ When a REST route changes:
 1. update the Rust router and handler;
 2. update `ugoite-api-client` when the operation is portable;
 3. update adapter and frontend tests;
-4. run `cargo run -p xtask -- openapi-generate`;
+4. run `cargo run -p xtask --no-default-features -- openapi-generate`;
 5. update the relevant `docs/mitase` requirement/feature graph and human
    documentation;
 6. run `mise run check`.
 
 The server-provided `crates/ugoite-server/src/openapi.json`, served at
 `/openapi.json`, is authoritative. Never hand-edit generated frontend metadata;
-regenerate it with `cargo run -p xtask -- openapi-generate`.
+regenerate it with `cargo run -p xtask --no-default-features -- openapi-generate`.
 
 ## Requirements and tests
 

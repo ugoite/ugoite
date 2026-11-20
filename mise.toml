@@ -304,12 +304,12 @@ run = "deno run -A tools/check_frontend_changed_types.ts"
 [tasks."check:repo"]
 description = "Validate repository architecture and maintained contracts"
 run = [
-  "cargo run -p xtask -- openapi-check",
-  "cargo run -p xtask -- operation-registry-check",
-  "cargo run -p xtask -- architecture-check",
-  "cargo run -p xtask -- space-compat-check",
-  "cargo run -p xtask -- release-authority-check",
-  "cargo run -p xtask -- docs-current-stack-check",
+  "cargo run -p xtask --no-default-features -- openapi-check",
+  "cargo run -p xtask --no-default-features -- operation-registry-check",
+  "cargo run -p xtask --no-default-features -- architecture-check",
+  "cargo run -p xtask --no-default-features -- space-compat-check",
+  "cargo run -p xtask --no-default-features -- release-authority-check",
+  "cargo run -p xtask --no-default-features -- docs-current-stack-check",
   { task = "mitase:check" },
   { task = "mitase:quality-gate" },
 ]
@@ -334,7 +334,7 @@ run = [
 
 [tasks."openapi:generate"]
 description = "Regenerate frontend metadata from the authoritative Server OpenAPI document"
-run = "cargo run -p xtask -- openapi-generate"
+run = "cargo run -p xtask --no-default-features -- openapi-generate"
 
 [tasks."test:s3-storage"]
 description = "Run the S3 publication and Space recovery proof against a configured deployment backend"
