@@ -491,6 +491,18 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
     for reference in &references {
         asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     }
+    for reference in &references {
+        let error = asset::read_asset(&op, ws_path, &reference.asset_id)
+            .await
+            .expect_err("logically deleted Assets must not be readable");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("deleted Asset read keeps its typed error")
+                .code(),
+            ErrorCode::AssetNotFound
+        );
+    }
     let final_bytes = store.read_exact_head().await?.expect("space Head").bytes;
     let final_head: serde_json::Value = serde_json::from_slice(&final_bytes)?;
     let initial_keys = initial_head
@@ -520,6 +532,19 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
         format!("asset-delete:{}", references[2].asset_id),
         "only the latest deletion command remains in Head"
     );
+    let mut head_without_current_publication = final_head.clone();
+    let head_fields = head_without_current_publication
+        .as_object_mut()
+        .expect("Catalog Head object");
+    head_fields.remove("publication_location");
+    head_fields.remove("publication_command_id");
+    let stable_head_fields = serde_json::to_string(&head_without_current_publication)?;
+    for reference in &references {
+        assert!(
+            !stable_head_fields.contains(&reference.asset_id),
+            "Head fields must not retain Asset IDs"
+        );
+    }
     let final_text = String::from_utf8(final_bytes.clone())?;
     for (index, reference) in references.iter().enumerate() {
         assert!(

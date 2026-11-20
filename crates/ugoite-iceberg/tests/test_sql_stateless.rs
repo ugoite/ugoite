@@ -84,29 +84,51 @@ async fn setup_sql_space_with_form_name(
             }),
         )
         .await?;
-    for (entry_id, status, priority) in [
+    let form = service.get_form(&space_id, form_name).await?;
+    let form_version = form["version"]
+        .as_u64()
+        .context("Form version is missing")? as u32;
+    let change_id = uuid::Uuid::now_v7().to_string();
+    let rows = [
         ("sql-00", "open", 1),
         ("sql-01", "closed", 2),
         ("sql-02", "open", 3),
         ("sql-03", "closed", 4),
         ("sql-04", "open", 5),
-    ] {
-        service
-            .create_structured_entry_with_receipt(
-                &space_id,
-                entry_id,
-                form_name.to_string(),
-                Vec::new(),
-                BTreeMap::from([
-                    ("Status".to_string(), Value::String(status.to_string())),
-                    ("Priority".to_string(), json!(priority)),
-                ]),
-                BTreeMap::new(),
-                "owner",
-            )
-            .await?;
-    }
-    let form_json = service.get_form(&space_id, form_name).await?;
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (entry_id, status, priority))| entry::RevisionRow {
+        revision_id: uuid::Uuid::now_v7().to_string(),
+        change_id: change_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: None,
+        timestamp: Utc::now().timestamp_micros() as f64 / 1_000_000.0 + index as f64,
+        author: "owner".to_string(),
+        updated_by: "owner".to_string(),
+        deleted_by: None,
+        fields: json!({"Status": status, "Priority": priority}),
+        extra_attributes: json!({}),
+        markdown_checksum: String::new(),
+        integrity: IntegrityPayload::default(),
+        restored_from: None,
+        form_version,
+        state: None,
+        entry_version: 1,
+        operation: "upsert".into(),
+        source_kind: "api".into(),
+        source_id: None,
+        extension_metadata: json!({}),
+    })
+    .collect::<Vec<_>>();
+    entry::append_revision_batch_for_form(
+        service.operator(),
+        &service.workspace_path(&space_id),
+        form_name,
+        &rows,
+    )
+    .await?;
+    let form_json = form;
     let form_id: ugoite_domain::id::FormId =
         serde_json::from_value(form_json["id"].clone()).context("Form id")?;
     let field_id = |name: &str| -> Result<i32> {
