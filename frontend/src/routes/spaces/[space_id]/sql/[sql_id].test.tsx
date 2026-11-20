@@ -142,6 +142,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     created_at: "2025-01-01T00:00:00Z",
   };
 
+  const retainReferencedSqlFormBindingGuards =
+    formBindingGuards.retainReferencedSqlFormBindingGuards;
+
   afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
@@ -306,7 +309,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     remove.mockRestore();
   });
 
-  it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
+  it("REQ-FE-062: saved SQL detail renders editable text and variable navigation", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Recent Search",

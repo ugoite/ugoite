@@ -141,6 +141,8 @@ features:
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
               - kind: satisfies
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-account-identity
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.setup-strengthening
       - id: contract
         role: contract-source
         facet: api

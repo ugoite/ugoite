@@ -1,20 +1,18 @@
 import { assertEquals } from "@std/assert/equals";
 
 const repository = new URL("../", import.meta.url);
-const [registrySource, completionSource, sqlSource, protocolSource] =
-  await Promise
-    .all([
-      Deno.readTextFile(
-        new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
-      ),
-      Deno.readTextFile(
-        new URL("frontend/src/lib/sql-completion.ts", repository),
-      ),
-      Deno.readTextFile(new URL("frontend/src/lib/sql.ts", repository)),
-      Deno.readTextFile(
-        new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
-      ),
-    ]);
+const [registrySource, completionSource, protocolSource] = await Promise
+  .all([
+    Deno.readTextFile(
+      new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
+    ),
+    Deno.readTextFile(
+      new URL("frontend/src/lib/sql-completion.ts", repository),
+    ),
+    Deno.readTextFile(
+      new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
+    ),
+  ]);
 
 function registryFunctions(): Array<{
   name: string;
@@ -71,30 +69,7 @@ function registryFunctions(): Array<{
   });
 }
 
-function returnedAggregateLists(source: string): Map<string, string[]> {
-  const body = source.match(
-    /const aggregateFunctionsForType = \([\s\S]*?\n\};/,
-  );
-  if (!body) throw new Error("aggregateFunctionsForType was not found");
-  const result = new Map<string, string[]>();
-  let pendingTypes: string[] = [];
-
-  for (const line of body[0].split("\n")) {
-    const type = line.match(/^\s*case "([^"]+)":/);
-    if (type) pendingTypes.push(type[1]);
-
-    const returned = line.match(/return \[([^\]]*)\]/);
-    if (!returned) continue;
-    const functions = [...returned[1].matchAll(/"([^"]+)"/g)].map((entry) =>
-      entry[1]
-    );
-    for (const pendingType of pendingTypes) result.set(pendingType, functions);
-    pendingTypes = [];
-  }
-  return result;
-}
-
-Deno.test("browser aggregate picker follows the Rust aggregate registry", () => {
+Deno.test("SQL completion and protocol aggregate names follow the Rust registry", () => {
   const functions = registryFunctions();
   const registeredSpellings = functions.flatMap((
     { name, aliases },
@@ -131,32 +106,5 @@ Deno.test("browser aggregate picker follows the Rust aggregate registry", () => 
     registeredSpellings.includes("mean"),
     true,
     "MEAN remains an accepted AVG alias rather than a separate picker entry",
-  );
-
-  const byType = returnedAggregateLists(sqlSource);
-  const numericTypes = new Set(["integer", "float", "decimal"]);
-  const orderableTypes = new Set([
-    "string",
-    "boolean",
-    "integer",
-    "float",
-    "decimal",
-    "date",
-    "timestamp",
-  ]);
-  for (const [type, actual] of byType) {
-    const expected = functions.flatMap(({ name, aliases, input }) => {
-      const allowed = input === "AnyScalar" ||
-        (input === "Numeric" && numericTypes.has(type)) ||
-        (input === "Orderable" && orderableTypes.has(type));
-      return allowed ? [name, ...aliases] : [];
-    });
-    assertEquals(actual, expected, `aggregate picker capabilities for ${type}`);
-  }
-
-  assertEquals(
-    byType.size,
-    9,
-    "all scalar SQL types have an aggregate completion capability row",
   );
 });

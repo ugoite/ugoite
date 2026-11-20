@@ -114,7 +114,7 @@ requirements:
   title: Owner-Approved Space Access Recovery
   description: An active human Space Owner may issue a tuple-bound, one-use approval for an active human principal in that Space. The target completes a five-minute WebAuthn registration, which creates a fresh HumanAccount and atomically replaces only the target Space Principal binding. The principal ID, membership, role, ACL, resource ownership, audit identity, old account credentials, sessions, and unrelated Space bindings are preserved; the old account simply loses authorization in the recovered Space.
   related_spec:
-  - ../architecture/security/authentication-overview.yaml
+  - ../../operate/identity-access.md
   - ../architecture/api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
@@ -189,7 +189,7 @@ requirements:
   title: Remote CLI Device Authentication
   description: The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote CLI asset upload uses the authenticated REST file multipart part, and generic OAuth compatibility remains future scope.
   related_spec:
-  - ../architecture/security/authentication-overview.yaml
+  - ../../operate/identity-access.md
   - ../architecture/api/rest.md#authentication
   - ../architecture/api/mcp.md#authentication
   priority: high

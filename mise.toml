@@ -283,10 +283,6 @@ run = [
 description = "Verify Composition canonicalization, diagnostics, and typed Input parsing in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
-[tasks."check:wasm:sql-structure-fixtures"]
-description = "Check representative SQL structure fixtures and protocol bounds in WASM; native response equality is covered by Rust tests"
-run = "deno run -A crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts"
-
 [tasks."profile:composition:parser"]
 description = "Measure the Composition YAML fixture parser budget and local throughput"
 run = "cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- --ignored --nocapture"
@@ -325,7 +321,6 @@ description = "Run all repository checks"
 run = [
   { task = "check:rust" },
   { task = "check:wasm:composition-parity" },
-  { task = "check:wasm:sql-structure-fixtures" },
   { task = "check:deno" },
   { task = "check:frontend-changed-types" },
   { task = "check:repo" },
@@ -342,9 +337,15 @@ run = "bash scripts/test-s3-storage.sh"
 [tasks."test:rust"]
 description = "Run workspace Rust tests with nextest and Cargo doctests"
 run = [
+  { task = "test:rust:core" },
+  { task = "test:older-cli-knowledge-preservation" },
+]
+
+[tasks."test:rust:core"]
+description = "Run workspace Rust tests with nextest and Cargo doctests"
+run = [
   "cargo nextest run --workspace --locked",
   "cargo test --workspace --doc --locked",
-  { task = "test:older-cli-knowledge-preservation" },
 ]
 
 [tasks."test:older-cli-knowledge-preservation"]
@@ -568,10 +569,6 @@ run = [
   "cargo nextest run -p ugoite-cli --locked --test test_cli_endpoint_routing -E 'test(test_sql_check_uses_the_remote_authorized_plan_route_without_rows)'",
 ]
 
-[tasks."test:sql-structure:domain"]
-description = "Run focused SQL Workspace structure parser and proposal tests"
-run = "cargo nextest run -p ugoite-domain --locked -E 'test(sql_structure::)'"
-
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"
 run = "deno run -A tools/artifacts.ts package-docsite"
@@ -761,7 +758,8 @@ run = [
 [tasks."ci:lane:rust-test"]
 description = "Run canonical Rust tests for hosted CI"
 run = [
-  { task = "test:rust" },
+  { task = "test:rust:core" },
+  "bash scripts/run-older-cli-preservation-if-needed.sh",
 ]
 
 [tasks."ci:lane:web"]

@@ -117,7 +117,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-080: Saved SQL Run applies a declared default and preserves an unset parameter", async ({ page, request }) => {
+  test("REQ-FE-081: Saved SQL Run applies a declared default and preserves an unset parameter", async ({ page, request }) => {
     const name = `Transient integer parameter ${Date.now()}`;
     const createResponse = await request.post(
       getBackendUrl(`/spaces/${spaceId}/sql`),

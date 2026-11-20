@@ -6827,6 +6827,7 @@ dependencies = [
  "ugoite-domain",
  "ugoite-iceberg",
  "ugoite-identity",
+ "ugoite-server",
  "ugoite-storage",
  "url",
  "uuid",

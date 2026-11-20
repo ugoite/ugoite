@@ -243,7 +243,10 @@ export type KonaseProtocolAction =
   | "konase.version"
   | "konase.new"
   | "konase.step"
-  | "konase.context";
+  | "konase.context"
+  | "konase.preview_write"
+  | "konase.validate_mutation_receipt"
+  | "konase.resolve_effect";
 
 /** Invoke the portable Konase control-plane protocol in Rust/WASM. */
 export const invokeKonase = async <T = unknown>(
@@ -1511,32 +1514,6 @@ export const compositionFormQuerySql = async (
     action: "domain.composition_form_query_sql",
     value: { relation, columns, aggregate: aggregate ?? null },
   });
-
-export type SqlStructureColumnType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp"
-  | "decimal"
-  | "json"
-  | "other";
-
-export type SqlStructureVariableType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp";
-
-export type SqlStructureContext = {
-  relation: string;
-  columns: { name: string; type: SqlStructureColumnType }[];
-  variables?: { name: string; type: SqlStructureVariableType }[];
-  stable_key?: string[];
-};
 
 export type VariableGraphInputValueByType = {
   string: string;

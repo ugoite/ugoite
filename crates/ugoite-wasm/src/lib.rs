@@ -100,6 +100,31 @@ fn is_composition_save_prepare(request: &serde_json::Value) -> bool {
         && request.get("operation").and_then(serde_json::Value::as_str) == Some("composition.save")
 }
 
+#[derive(serde::Deserialize)]
+struct KonaseWritePreviewRequest {
+    request_id: String,
+    work_id: String,
+    space_id: String,
+    operation: String,
+    #[serde(default)]
+    arguments: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+struct KonaseReceiptValidationRequest {
+    operation: String,
+    work_id: String,
+    #[serde(default)]
+    receipt: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct KonaseEffectRequest {
+    operation: String,
+    #[serde(default)]
+    declared_effect: Option<ugoite_konase::CapabilityEffect>,
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
         // Bound JSON decoding before inspecting the action. Only documented
@@ -239,6 +264,38 @@ fn invoke_konase(request: serde_json::Value) -> String {
                 let context = serde_json::to_value(context).map_err(|error| error.to_string())?;
                 ensure_json_size(&context, ugoite_konase::MAX_STATE_JSON_BYTES)?;
                 Ok(context)
+            }
+            "konase.preview_write" => {
+                let input = serde_json::from_value::<KonaseWritePreviewRequest>(payload)
+                    .map_err(|_| "Konase write preview request is invalid".to_string())?;
+                let preview = ugoite_konase::write_preview(
+                    &input.request_id,
+                    &input.work_id,
+                    &input.space_id,
+                    &input.operation,
+                    &input.arguments,
+                )?;
+                serde_json::to_value(preview).map_err(|error| error.to_string())
+            }
+            "konase.validate_mutation_receipt" => {
+                let input = serde_json::from_value::<KonaseReceiptValidationRequest>(payload)
+                    .map_err(|_| "Konase receipt validation request is invalid".to_string())?;
+                Ok(serde_json::Value::Bool(
+                    ugoite_konase::mutation_receipt_is_valid(
+                        &input.operation,
+                        &input.work_id,
+                        &input.receipt,
+                    ),
+                ))
+            }
+            "konase.resolve_effect" => {
+                let input = serde_json::from_value::<KonaseEffectRequest>(payload)
+                    .map_err(|_| "Konase effect request is invalid".to_string())?;
+                let effect = ugoite_konase::effective_capability_effect(
+                    &input.operation,
+                    input.declared_effect,
+                )?;
+                serde_json::to_value(effect).map_err(|error| error.to_string())
             }
             _ => Err(format!("unsupported Konase action: {action}")),
         }
@@ -425,52 +482,6 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
-            "domain.analyze_sql_structure" => {
-                let sql = payload
-                    .get("sql")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "sql must be a string".to_string())?;
-                let context: ugoite_domain::sql_structure::SqlStructureContext =
-                    serde_json::from_value(
-                        payload
-                            .get("context")
-                            .cloned()
-                            .ok_or_else(|| "context is required".to_string())?,
-                    )
-                    .map_err(|error| error.to_string())?;
-                serde_json::to_value(ugoite_domain::sql_structure::analyze_sql_structure(
-                    sql, &context,
-                ))
-                .map_err(|error| error.to_string())
-            }
-            "domain.propose_sql_structure_operation" => {
-                let sql = payload
-                    .get("sql")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| "sql must be a string".to_string())?;
-                let context: ugoite_domain::sql_structure::SqlStructureContext =
-                    serde_json::from_value(
-                        payload
-                            .get("context")
-                            .cloned()
-                            .ok_or_else(|| "context is required".to_string())?,
-                    )
-                    .map_err(|error| error.to_string())?;
-                let operation: ugoite_domain::sql_structure::SqlStructureOperation =
-                    serde_json::from_value(
-                        payload
-                            .get("operation")
-                            .cloned()
-                            .ok_or_else(|| "operation is required".to_string())?,
-                    )
-                    .map_err(|error| error.to_string())?;
-                serde_json::to_value(
-                    ugoite_domain::sql_structure::propose_sql_structure_operation(
-                        sql, &context, operation,
-                    ),
-                )
-                .map_err(|error| error.to_string())
-            }
             "domain.parse_variable_graph_input" => {
                 let descriptor = serde_json::from_value::<
                     ugoite_domain::composition::VariableGraphScalarDescriptor,
@@ -1326,6 +1337,50 @@ mod abi {
 mod tests {
     use serde_json::Value;
 
+    #[test]
+    fn konase_shared_write_contract_is_exposed_through_wasm() {
+        let preview = serde_json::json!({
+            "action": "konase.preview_write",
+            "value": {
+                "request_id": "request-1",
+                "work_id": "work-1",
+                "space_id": "space-1",
+                "operation": "ugoite.save",
+                "arguments": {"form": "Profile", "fields": {"password": "secret", "Body": "private"}}
+            }
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&preview.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["action"], "create");
+        assert!(response["value"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("password: [hidden]"));
+        assert!(!response["value"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("private"));
+
+        let effect = serde_json::json!({
+            "action": "konase.resolve_effect",
+            "value": {"operation": "ugoite.save", "declared_effect": "read"}
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&effect.to_string())).unwrap();
+        assert_eq!(response["value"], "write");
+
+        let receipt = serde_json::json!({
+            "action": "konase.validate_mutation_receipt",
+            "value": {"operation": "ugoite.save", "work_id": "work-1", "receipt": {
+                "id": "entry-1", "uri": "ugoite://entry/entry-1", "status": "created", "_untrusted_content": true
+            }}
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&receipt.to_string())).unwrap();
+        assert_eq!(response["value"], true);
+    }
+
     const SQL_FIRST_COMPOSITION: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
 
@@ -1849,630 +1904,6 @@ mod tests {
             assert_eq!(response["error"]["kind"], "domain_validation");
             assert_eq!(response["error"]["message"], native_error.to_string());
         }
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_form_relation_selection() {
-        let relation = "form_0123456789abcdef0123456789abcdef";
-        for (sql, expected) in [
-            ("SELECT 1", format!("SELECT * FROM \"{relation}\"")),
-            (
-                "SELECT \"_ugoite_id\" FROM \"old_relation\"",
-                format!("SELECT \"_ugoite_id\" FROM \"{relation}\""),
-            ),
-        ] {
-            let request = serde_json::json!({
-                "action": "domain.propose_sql_structure_operation",
-                "value": {
-                    "sql": sql,
-                    "context": {
-                        "relation": relation,
-                        "columns": [
-                            {"name": "_ugoite_id", "type": "string"}
-                        ],
-                        "variables": [],
-                        "stable_key": ["_ugoite_id"]
-                    },
-                    "operation": {
-                        "kind": "set_relation",
-                        "relation": relation
-                    }
-                }
-            })
-            .to_string();
-            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
-            assert_eq!(response["ok"], true, "{response}");
-            assert_eq!(response["value"]["status"], "supported");
-            assert_eq!(response["value"]["proposed_sql"], expected);
-        }
-    }
-
-    #[test]
-    fn sql_structure_protocol_exposes_row_limit_analysis_and_edit() {
-        let request = serde_json::json!({
-            "action": "domain.analyze_sql_structure",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "_ugoite_id", "type": "string"}],
-                    "variables": [],
-                    "stable_key": ["_ugoite_id"]
-                }
-            }
-        });
-        let analysis: Value =
-            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("analysis JSON");
-        assert_eq!(analysis["ok"], true, "{analysis}");
-        assert_eq!(analysis["value"]["contract_version"], 7);
-        assert_eq!(analysis["value"]["row_limit"], Value::Null);
-        assert_eq!(
-            analysis["value"]["capabilities"]["row_limit"]["enabled"],
-            true
-        );
-
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\" ORDER BY \"_ugoite_id\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "_ugoite_id", "type": "string"}],
-                    "variables": [],
-                    "stable_key": ["_ugoite_id"]
-                },
-                "operation": {
-                    "kind": "set_row_limit",
-                    "limit": "50",
-                    "offset": "10"
-                }
-            }
-        });
-        let proposal: Value =
-            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT * FROM \"Task\" ORDER BY \"_ugoite_id\" LIMIT 50 OFFSET 10"
-        );
-        assert_eq!(
-            proposal["value"]["document_node_edit"]["edits"][0]["expected_kind"],
-            "query"
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_preserves_explicit_null_sort_placement() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\" ORDER BY \"_ugoite_id\" ASC NULLS FIRST",
-                "context": {
-                    "relation": "Task",
-                    "columns": [
-                        {"name": "field_101", "type": "string"},
-                        {"name": "_ugoite_id", "type": "string"}
-                    ],
-                    "variables": [],
-                    "stable_key": ["_ugoite_id"]
-                },
-                "operation": {
-                    "kind": "set_sort",
-                    "order_by": [{
-                        "column": "field_101",
-                        "qualifier": null,
-                        "projection_alias": null,
-                        "direction": "desc",
-                        "nulls_first": false
-                    }]
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("Sort proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT * FROM \"Task\" ORDER BY \"field_101\" DESC NULLS LAST, \"_ugoite_id\" ASC"
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_group_by_edit() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT \"field_102\" FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_102", "type": "integer"}],
-                    "variables": [],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_group_by",
-                    "columns": ["field_102"]
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("GROUP BY proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT \"field_102\" FROM \"Task\" GROUP BY \"field_102\""
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_join_edit() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_101", "type": "string"}],
-                    "variables": [],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_join",
-                    "join_kind": "full",
-                    "left_column": "field_101",
-                    "right_column": "field_101"
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("JOIN proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT * FROM \"Task\" AS \"_ugoite_left\" FULL JOIN \"Task\" AS \"_ugoite_right\" ON \"_ugoite_left\".\"field_101\" = \"_ugoite_right\".\"field_101\""
-        );
-
-        let legacy_request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_101", "type": "string"}],
-                    "variables": [],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_join",
-                    "left_column": "field_101",
-                    "right_column": "field_101"
-                }
-            }
-        });
-        let legacy_proposal: Value =
-            serde_json::from_str(&super::invoke_json(&legacy_request.to_string()))
-                .expect("legacy INNER JOIN proposal JSON");
-        assert_eq!(legacy_proposal["ok"], true, "{legacy_proposal}");
-        assert!(legacy_proposal["value"]["proposed_sql"]
-            .as_str()
-            .unwrap()
-            .contains(" INNER JOIN "));
-    }
-
-    #[test]
-    fn sql_structure_having_protocol_matches_domain_round_trip() {
-        let sql = "SELECT SUM(\"amount\") FROM \"Task\"";
-        let context = ugoite_domain::sql_structure::SqlStructureContext {
-            relation: "Task".to_owned(),
-            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
-                name: "amount".to_owned(),
-                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
-            }],
-            variables: vec![],
-            stable_key: vec![],
-        };
-        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetHaving {
-            expression: Some(
-                ugoite_domain::sql_structure::SqlStructureHavingExpression::Predicate {
-                    aggregate: ugoite_domain::sql_structure::SqlStructureAggregate {
-                        function: ugoite_domain::sql_structure::SqlStructureAggregateFunction::Sum,
-                        column: Some("amount".to_owned()),
-                        arguments: vec![],
-                        distinct: false,
-                        alias: None,
-                    },
-                    operator: ugoite_domain::sql_structure::SqlStructureHavingOperator::Gt,
-                    value: ugoite_domain::sql_structure::SqlStructureHavingValue::Integer(
-                        "0".to_owned(),
-                    ),
-                },
-            ),
-        };
-        let expected_analysis = serde_json::to_value(
-            ugoite_domain::sql_structure::analyze_sql_structure(sql, &context),
-        )
-        .expect("Domain analysis serializes");
-        let analysis_request = serde_json::json!({
-            "action": "domain.analyze_sql_structure",
-            "value": {"sql": sql, "context": context.clone()},
-        })
-        .to_string();
-        let analysis_response: Value =
-            serde_json::from_str(&super::invoke_json(&analysis_request)).unwrap();
-        assert_eq!(analysis_response["ok"], true, "{analysis_response}");
-        assert_eq!(analysis_response["value"], expected_analysis);
-
-        let expected_proposal = serde_json::to_value(
-            ugoite_domain::sql_structure::propose_sql_structure_operation(
-                sql,
-                &context,
-                operation.clone(),
-            ),
-        )
-        .expect("Domain proposal serializes");
-        let proposal_request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {"sql": sql, "context": context, "operation": operation},
-        })
-        .to_string();
-        let proposal_response: Value =
-            serde_json::from_str(&super::invoke_json(&proposal_request)).unwrap();
-        assert_eq!(proposal_response["ok"], true, "{proposal_response}");
-        assert_eq!(proposal_response["value"], expected_proposal);
-        assert_eq!(
-            proposal_response["value"]["proposed_sql"],
-            "SELECT SUM(\"amount\") FROM \"Task\" HAVING SUM(\"amount\") > 0"
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_count_aggregate() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_101", "type": "string"}],
-                    "variables": [],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_aggregates",
-                    "aggregates": [{
-                        "function": "count",
-                        "column": null,
-                        "arguments": [],
-                        "distinct": false,
-                        "alias": {"name": "row_count", "quoted": true}
-                    }]
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("aggregate proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT COUNT(*) AS \"row_count\" FROM \"Task\""
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_rejects_missing_filter_expression() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\" WHERE \"field_101\" = $status",
-                "context": {
-                    "relation": "Task",
-                    "columns": [
-                        {"name": "field_101", "type": "string"}
-                    ],
-                    "variables": [
-                        {"name": "status", "type": "string"}
-                    ],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_filter_expression"
-                }
-            }
-        });
-        let response: Value =
-            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
-
-        assert_eq!(
-            response["ok"], false,
-            "missing expression must not clear WHERE"
-        );
-        assert_eq!(response["error"]["kind"], "domain_validation");
-        assert!(response["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("expression")));
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_a_typed_filter_parameter() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_101", "type": "string"}],
-                    "variables": [{"name": "status", "type": "string"}],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_filters",
-                    "filters": [{
-                        "column": "field_101",
-                        "qualifier": null,
-                        "operator": "eq",
-                        "parameter": "status"
-                    }]
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("Filter proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT * FROM \"Task\" WHERE \"field_101\" = $status"
-        );
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_a_typed_column_comparison() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [
-                        {"name": "field_101", "type": "string"},
-                        {"name": "_ugoite_id", "type": "string"}
-                    ],
-                    "variables": [],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_filter_expression",
-                    "expression": {
-                        "kind": "column_comparison",
-                        "left": {"column": "field_101"},
-                        "operator": "eq",
-                        "right": {"column": "_ugoite_id"}
-                    }
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("column comparison proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert!(proposal["value"]["proposed_sql"]
-            .as_str()
-            .is_some_and(|sql| sql.contains("\"field_101\" = \"_ugoite_id\"")));
-    }
-
-    #[test]
-    fn sql_structure_protocol_proposes_two_typed_between_bounds() {
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {
-                "sql": "SELECT * FROM \"Task\"",
-                "context": {
-                    "relation": "Task",
-                    "columns": [{"name": "field_102", "type": "integer"}],
-                    "variables": [
-                        {"name": "minimum", "type": "integer"},
-                        {"name": "maximum", "type": "integer"}
-                    ],
-                    "stable_key": []
-                },
-                "operation": {
-                    "kind": "set_filter_expression",
-                    "expression": {
-                        "kind": "predicate",
-                        "column": "field_102",
-                        "operator": "between",
-                        "parameter": "minimum",
-                        "second_parameter": "maximum"
-                    }
-                }
-            }
-        });
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
-            .expect("BETWEEN proposal JSON");
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"]["status"], "supported");
-        assert_eq!(
-            proposal["value"]["proposed_sql"],
-            "SELECT * FROM \"Task\" WHERE \"field_102\" BETWEEN $minimum AND $maximum"
-        );
-    }
-
-    #[test]
-    fn sql_structure_projection_aliases_match_domain_analysis_and_proposals() {
-        let sql = "SELECT \"field_102\" AS \"Total Amount\" FROM \"Task\"";
-        let context = ugoite_domain::sql_structure::SqlStructureContext {
-            relation: "Task".to_owned(),
-            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
-                name: "field_102".to_owned(),
-                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
-            }],
-            variables: vec![],
-            stable_key: vec![],
-        };
-        let expected_analysis = serde_json::to_value(
-            ugoite_domain::sql_structure::analyze_sql_structure(sql, &context),
-        )
-        .expect("Domain analysis serializes");
-        let analysis_request = serde_json::json!({
-            "action": "domain.analyze_sql_structure",
-            "value": {"sql": sql, "context": context.clone()},
-        })
-        .to_string();
-        let analysis_response: Value =
-            serde_json::from_str(&super::invoke_json(&analysis_request)).unwrap();
-        assert_eq!(analysis_response["ok"], true, "{analysis_response}");
-        assert_eq!(analysis_response["value"], expected_analysis);
-
-        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetColumns {
-            columns: vec!["field_102".to_owned()],
-            aliases: vec![Some(ugoite_domain::sql_structure::SqlStructureAlias {
-                name: "Net Total".to_owned(),
-                quoted: true,
-            })],
-        };
-        let expected_proposal = serde_json::to_value(
-            ugoite_domain::sql_structure::propose_sql_structure_operation(
-                sql,
-                &context,
-                operation.clone(),
-            ),
-        )
-        .expect("Domain proposal serializes");
-        let proposal_request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {"sql": sql, "context": context, "operation": operation},
-        })
-        .to_string();
-        let proposal_response: Value =
-            serde_json::from_str(&super::invoke_json(&proposal_request)).unwrap();
-        assert_eq!(proposal_response["ok"], true, "{proposal_response}");
-        assert_eq!(proposal_response["value"], expected_proposal);
-        assert_eq!(
-            proposal_response["value"]["proposed_sql"],
-            "SELECT \"field_102\" AS \"Net Total\" FROM \"Task\""
-        );
-    }
-
-    #[test]
-    fn sql_structure_projection_alias_sort_binding_rejections_match_domain() {
-        let sql = "SELECT \"field_102\" AS \"field_101\" FROM \"Task\" ORDER BY \"field_101\"";
-        let context = ugoite_domain::sql_structure::SqlStructureContext {
-            relation: "Task".to_owned(),
-            columns: vec![
-                ugoite_domain::sql_structure::SqlStructureColumn {
-                    name: "field_101".to_owned(),
-                    column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
-                },
-                ugoite_domain::sql_structure::SqlStructureColumn {
-                    name: "field_102".to_owned(),
-                    column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
-                },
-            ],
-            variables: vec![],
-            stable_key: vec![],
-        };
-        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetColumns {
-            columns: vec!["field_102".to_owned()],
-            aliases: vec![Some(ugoite_domain::sql_structure::SqlStructureAlias {
-                name: "total".to_owned(),
-                quoted: false,
-            })],
-        };
-        let expected = serde_json::to_value(
-            ugoite_domain::sql_structure::propose_sql_structure_operation(
-                sql,
-                &context,
-                operation.clone(),
-            ),
-        )
-        .expect("Domain proposal serializes");
-        assert_eq!(expected["status"], "unsupported");
-        assert_eq!(expected["reason"], "sort_unsupported");
-        assert_eq!(expected["proposed_sql"], Value::Null);
-
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {"sql": sql, "context": context, "operation": operation},
-        })
-        .to_string();
-        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
-        assert_eq!(response["ok"], true, "{response}");
-        assert_eq!(response["value"], expected);
-    }
-
-    #[test]
-    fn sql_structure_projection_slots_are_proposed_through_the_wasm_protocol() {
-        let sql = "SELECT \"field_102\" AS first, \"field_102\" AS second FROM \"Task\"";
-        let context = ugoite_domain::sql_structure::SqlStructureContext {
-            relation: "Task".to_owned(),
-            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
-                name: "field_102".to_owned(),
-                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
-            }],
-            variables: vec![],
-            stable_key: vec![],
-        };
-        let analysis_request = serde_json::json!({
-            "action": "domain.analyze_sql_structure",
-            "value": {"sql": sql, "context": context.clone()},
-        })
-        .to_string();
-        let analysis: Value = serde_json::from_str(&super::invoke_json(&analysis_request)).unwrap();
-        assert_eq!(analysis["ok"], true, "{analysis}");
-        assert_eq!(analysis["value"]["contract_version"], 7);
-        assert_eq!(
-            analysis["value"]["projection_aliases"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
-
-        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetProjectionSlots {
-            slots: vec![
-                ugoite_domain::sql_structure::SqlStructureProjectionSlotEdit {
-                    id: Some("projection-1".to_owned()),
-                    column: "field_102".to_owned(),
-                    alias: Some(ugoite_domain::sql_structure::SqlStructureAlias {
-                        name: "second_copy".to_owned(),
-                        quoted: false,
-                    }),
-                },
-                ugoite_domain::sql_structure::SqlStructureProjectionSlotEdit {
-                    id: Some("projection-0".to_owned()),
-                    column: "field_102".to_owned(),
-                    alias: Some(ugoite_domain::sql_structure::SqlStructureAlias {
-                        name: "first_copy".to_owned(),
-                        quoted: false,
-                    }),
-                },
-            ],
-        };
-        let expected = serde_json::to_value(
-            ugoite_domain::sql_structure::propose_sql_structure_operation(
-                sql,
-                &context,
-                operation.clone(),
-            ),
-        )
-        .expect("Domain proposal serializes");
-        let request = serde_json::json!({
-            "action": "domain.propose_sql_structure_operation",
-            "value": {"sql": sql, "context": context, "operation": operation},
-        })
-        .to_string();
-        let proposal: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
-        assert_eq!(proposal["ok"], true, "{proposal}");
-        assert_eq!(proposal["value"], expected);
-        assert!(proposal["value"]["proposed_sql"]
-            .as_str()
-            .unwrap()
-            .contains("AS second_copy, \"field_102\" AS first_copy"));
     }
 
     #[test]
@@ -6366,50 +5797,6 @@ mod tests {
     }
 
     #[test]
-    fn sql_document_node_edit_protocol_bounds_amplified_result_and_oversized_requests() {
-        let source = format!("SELECT {}", vec!["1"; 20_000].join(","));
-        let request = serde_json::json!({
-            "action": "domain.apply_sql_document_node_edit_transaction",
-            "value": {
-                "current_source": source,
-                "transaction": {
-                    "contract_version": ugoite_domain::sql_document::SQL_DOCUMENT_CONTRACT_VERSION,
-                    "expected_source": source,
-                    "edits": [],
-                }
-            }
-        })
-        .to_string();
-        let response_text = super::invoke_json(&request);
-        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
-        let response: Value = serde_json::from_str(&response_text).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "domain_output_too_large");
-
-        let oversized_request = serde_json::json!({
-            "action": "domain.apply_sql_document_node_edit_transaction",
-            "value": {
-                "current_source": "x".repeat(super::MAX_SQL_DOCUMENT_NODE_EDIT_REQUEST_BYTES),
-                "transaction": {
-                    "contract_version": ugoite_domain::sql_document::SQL_DOCUMENT_CONTRACT_VERSION,
-                    "expected_source": "",
-                    "edits": [],
-                }
-            }
-        })
-        .to_string();
-        assert!(oversized_request.len() > super::MAX_SQL_DOCUMENT_NODE_EDIT_REQUEST_BYTES);
-        let rejected: Value =
-            serde_json::from_str(&super::invoke_json(&oversized_request)).unwrap();
-        assert_eq!(rejected["ok"], false, "{rejected}");
-        assert_eq!(rejected["error"]["kind"], "input_too_large");
-        assert_eq!(
-            rejected["error"]["message"],
-            "JSON protocol input exceeds its size limit"
-        );
-    }
-
-    #[test]
     fn sql_document_edit_error_codes_cover_typed_node_failures() {
         use ugoite_domain::sql_document::SqlDocumentEditError as EditError;
 
@@ -6502,66 +5889,63 @@ mod tests {
     }
 
     #[test]
-    fn sql_document_edit_protocol_bounds_amplified_result_and_oversized_requests() {
+    fn sql_document_edit_protocol_bounds_amplified_results_and_oversized_requests() {
         let source = format!("SELECT {}", vec!["1"; 20_000].join(","));
-        let request = serde_json::json!({
-            "action": "domain.apply_sql_document_edit_transaction",
-            "value": {
-                "current_source": source,
-                "transaction": {"expected_source": source, "edits": []}
-            }
-        })
-        .to_string();
-        let response_text = super::invoke_json(&request);
-        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
-        let response: Value = serde_json::from_str(&response_text).unwrap();
-        assert_eq!(response["ok"], false, "{response}");
-        assert_eq!(response["error"]["kind"], "domain_output_too_large");
+        let cases = [
+            (
+                "domain.apply_sql_document_node_edit_transaction",
+                super::MAX_SQL_DOCUMENT_NODE_EDIT_REQUEST_BYTES,
+                serde_json::json!({
+                    "contract_version": ugoite_domain::sql_document::SQL_DOCUMENT_CONTRACT_VERSION,
+                    "expected_source": source.clone(),
+                    "edits": [],
+                }),
+                serde_json::json!({
+                    "contract_version": ugoite_domain::sql_document::SQL_DOCUMENT_CONTRACT_VERSION,
+                    "expected_source": "",
+                    "edits": [],
+                }),
+            ),
+            (
+                "domain.apply_sql_document_edit_transaction",
+                super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES,
+                serde_json::json!({ "expected_source": source.clone(), "edits": [] }),
+                serde_json::json!({ "expected_source": "", "edits": [] }),
+            ),
+        ];
 
-        let oversized_request = serde_json::json!({
-            "action": "domain.apply_sql_document_edit_transaction",
-            "value": {
-                "current_source": "x".repeat(super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
-                "transaction": {"expected_source": "", "edits": []}
-            }
-        })
-        .to_string();
-        assert!(oversized_request.len() > super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
-        let rejected: Value =
-            serde_json::from_str(&super::invoke_json(&oversized_request)).unwrap();
-        assert_eq!(rejected["ok"], false, "{rejected}");
-        assert_eq!(rejected["error"]["kind"], "input_too_large");
-        assert_eq!(
-            rejected["error"]["message"],
-            "JSON protocol input exceeds its size limit"
-        );
+        for (action, request_limit, transaction, oversized_transaction) in cases {
+            let request = serde_json::json!({
+                "action": action,
+                "value": { "current_source": source.clone(), "transaction": transaction },
+            })
+            .to_string();
+            let response_text = super::invoke_json(&request);
+            assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+            let response: Value = serde_json::from_str(&response_text).unwrap();
+            assert_eq!(response["ok"], false, "{action}: {response}");
+            assert_eq!(response["error"]["kind"], "domain_output_too_large");
 
-        let control_source = "\0".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES);
-        let maximum_escaped_request = serde_json::json!({
-            "action": "domain.apply_sql_document_edit_transaction",
-            "value": {
-                "current_source": control_source,
-                "transaction": {
-                    "expected_source": control_source,
-                    "edits": [{
-                        "range": {
-                            "start": 0,
-                            "end": ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES,
-                        },
-                        "expected_text": control_source,
-                        "replacement": control_source,
-                    }],
-                },
-            },
-        })
-        .to_string();
-        assert!(maximum_escaped_request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
-        assert!(maximum_escaped_request.len() <= super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
-        let bounded_result: Value =
-            serde_json::from_str(&super::invoke_json(&maximum_escaped_request)).unwrap();
-        assert_eq!(bounded_result["ok"], false, "{bounded_result}");
-        assert_eq!(bounded_result["error"]["kind"], "domain_output_too_large");
+            let oversized_request = serde_json::json!({
+                "action": action,
+                "value": {
+                    "current_source": "x".repeat(request_limit),
+                    "transaction": oversized_transaction,
+                }
+            })
+            .to_string();
+            assert!(oversized_request.len() > request_limit);
+            let rejected: Value =
+                serde_json::from_str(&super::invoke_json(&oversized_request)).unwrap();
+            assert_eq!(rejected["ok"], false, "{action}: {rejected}");
+            assert_eq!(rejected["error"]["kind"], "input_too_large");
+            assert_eq!(
+                rejected["error"]["message"],
+                "JSON protocol input exceeds its size limit"
+            );
+        }
     }
+
     #[test]
     fn composition_canonicalization_matches_the_native_domain_contract() {
         let native =

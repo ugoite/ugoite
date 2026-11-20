@@ -62,7 +62,7 @@ const renderWorkspace = (overrides: Partial<SQLWorkspaceProps> = {}) =>
   render(() => <SQLWorkspace {...defaultProps} {...overrides} />);
 
 describe("SQLWorkspace", () => {
-  it("REQ-FE-080: keeps SQL editing controlled and passes the accessible name", () => {
+  it("REQ-FE-081: keeps SQL editing controlled and passes the accessible name", () => {
     const onSqlChange = vi.fn();
     renderWorkspace({ sql: "SELECT 1", onSqlChange });
 
@@ -142,7 +142,7 @@ describe("SQLWorkspace", () => {
     expect(screen.getByRole("button", { name: "Run Query" })).toBeEnabled();
   });
 
-  it("REQ-FE-080: keeps exact Saved SQL read-only while preview remains available", () => {
+  it("REQ-FE-081: keeps exact Saved SQL read-only while preview remains available", () => {
     const onPreview = vi.fn();
     renderWorkspace({
       readOnly: true,
@@ -157,12 +157,12 @@ describe("SQLWorkspace", () => {
     expect(onPreview).toHaveBeenCalledOnce();
   });
 
-  it("REQ-FE-080: lets the route disable preview while its source is read-only", () => {
+  it("REQ-FE-081: lets the route disable preview while its source is read-only", () => {
     renderWorkspace({ previewDisabled: true });
     expect(screen.getByRole("button", { name: "Run Query" })).toBeDisabled();
   });
 
-  it("REQ-FE-080: presents variable defaults and forwards raw transient values", () => {
+  it("REQ-FE-081: presents variable defaults and forwards raw transient values", () => {
     const onParameterChange = vi.fn();
     renderWorkspace({
       variables: [
@@ -180,12 +180,12 @@ describe("SQLWorkspace", () => {
     expect(onParameterChange).toHaveBeenCalledWith("enabled", "false");
   });
 
-  it("REQ-FE-080: omits the variable pane when the query declares no variables", () => {
+  it("REQ-FE-081: omits the variable pane when the query declares no variables", () => {
     renderWorkspace({ variables: [] });
     expect(screen.queryByRole("region", { name: "Variables" })).toBeNull();
   });
 
-  it("REQ-FE-080: keeps editor and variable IDs unique across workspaces", () => {
+  it("REQ-FE-081: keeps editor and variable IDs unique across workspaces", () => {
     const { container } = render(() => (
       <>
         <SQLWorkspace
@@ -211,7 +211,7 @@ describe("SQLWorkspace", () => {
     expect(new Set(variableIds).size).toBe(2);
   });
 
-  it("REQ-FE-080: reports loading and errors without presenting a stale page", () => {
+  it("REQ-FE-081: reports loading and errors without presenting a stale page", () => {
     const loading = renderWorkspace({
       preview: { status: "loading", isCurrent: false, page },
     });
@@ -234,7 +234,7 @@ describe("SQLWorkspace", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("REQ-FE-080: keeps count explicit and delegates result paging", () => {
+  it("REQ-FE-081: keeps count explicit and delegates result paging", () => {
     const onCount = vi.fn();
     const onNext = vi.fn();
     renderWorkspace({
@@ -259,7 +259,7 @@ describe("SQLWorkspace", () => {
     expect(onCount).toHaveBeenCalledOnce();
   });
 
-  it("REQ-FE-080: presents explicit total count and an empty result state", () => {
+  it("REQ-FE-081: presents explicit total count and an empty result state", () => {
     const { unmount } = renderWorkspace({
       preview: {
         status: "success",
@@ -281,7 +281,7 @@ describe("SQLWorkspace", () => {
     expect(screen.getByText("The query returned no rows.")).toBeInTheDocument();
   });
 
-  it("REQ-FE-080: uses 16px inputs and 44px action targets", () => {
+  it("REQ-FE-081: uses 16px inputs and 44px action targets", () => {
     const stylesheet = readFileSync(join(__dirname, "..", "app.css"), "utf8");
     expect(stylesheet).toMatch(
       /\.sql-workspace \.ui-sql-editor,[\s\S]*?font-size:\s*16px/,
@@ -303,7 +303,7 @@ describe("SQLWorkspace", () => {
     );
   });
 
-  it("REQ-FE-080: hides a successful result page after its inputs change", () => {
+  it("REQ-FE-081: hides a successful result page after its inputs change", () => {
     renderWorkspace({
       preview: { status: "success", isCurrent: false, page },
     });

@@ -507,12 +507,34 @@ requirements:
           - id: cli-receipt-validation
             adapter: rust
             path: crates/ugoite-cli/src/commands/konase.rs
-            selector: { kind: test, name: tests::save_and_undo_receipts_must_match_the_mutation_contract }
+            selector: { kind: test, name: tests::mcp_write_failures_preserve_unknown_vs_invalid_receipt }
             claims:
               - kind: verifies
                 criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
                 covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::save_and_undo_receipts_must_match_the_mutation_contract } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::mcp_write_failures_preserve_unknown_vs_invalid_receipt } }
+          - id: shared-write-preview-mask
+            adapter: rust
+            path: crates/ugoite-konase/src/contract.rs
+            selector: { kind: test, name: tests::write_preview_masks_values_and_bounds_untrusted_labels }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: contract::tests::write_preview_masks_values_and_bounds_untrusted_labels } }
+          - id: shared-effect-and-receipt-contract
+            adapter: rust
+            path: crates/ugoite-konase/src/contract.rs
+            selector: { kind: test, name: tests::effect_and_receipt_contract_fail_closed }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: contract::tests::effect_and_receipt_contract_fail_closed } }
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: contract::tests::effect_and_receipt_contract_fail_closed } }
           - id: browser-approval-denial
             adapter: typescript
             path: frontend/src/lib/konase/host.test.ts
