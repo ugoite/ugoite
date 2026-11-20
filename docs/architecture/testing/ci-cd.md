@@ -45,7 +45,7 @@ Root task composition:
 - `ci:artifacts:load`: verify the same-run manifest, source SHA, CI run ID, and
   selected CLI or image digests, then selectively load or extract those files;
 - `ci:lane:e2e-smoke-mobile`, `ci:lane:e2e-composition-studio`,
-  `ci:lane:e2e-composition-metric`, `ci:lane:e2e-owner`, and
+  `ci:lane:e2e-owner-composition`, and
   `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
   build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;
@@ -95,7 +95,7 @@ unexpected skips, and unexpected executions. The three quality lanes run only
 `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and
 `mise run ci:lane:web`; they do not duplicate repository validation commands in
 GitHub Actions. The artifact producer runs `mise run ci:artifacts:prepare`;
-the three E2E groups use their corresponding Mise lane task and keep the
+the E2E groups use their corresponding Mise lane task and keep the
 Playwright worker count at one. The standalone
 docsite-navigation lane runs through `mise run ci:lane:docsite-nav` so broken
 links and navigation can fail before the artifact build completes.
@@ -103,8 +103,19 @@ Hosted Playwright lanes install Chromium, which is used by their selected test
 sets; local setup continues to install Chromium and WebKit for the broader E2E
 suite.
 
-The split-E2E pilot decision (#3307) is to keep the three independent E2E
-consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
+The owner-composition lane runs the owner-approved recovery journey first, then
+the Composition Metric cardinality/API journey, table pagination, and source
+ACL isolation checks in one Playwright invocation against the verified runtime
+image. This keeps the exact HTTP saved-revision and scalar-cardinality checks,
+including source authorization failures, while removing a separate artifact
+consumer setup. On run 44689906445, owner recovery took 82 seconds of E2E time,
+the Metric and source-ACL lane took 257 seconds, Studio took 567 seconds, and
+artifact build took 684 seconds. The combined owner and Metric E2E work remains
+below the observed Studio and artifact-build durations; revisit if later hosted
+timings move it onto the merge critical path.
+
+The split-E2E pilot decision (#3307) kept independent smoke/mobile, Composition
+Studio, and portable E2E consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
 workflow-to-gate times of 28–46 minutes with the consumers starting within
 about two minutes of artifact availability and finishing in 2–8 minutes, while
 the then-single `ci-cp1-acceptance` lane held the critical path at 27–42
@@ -113,8 +124,13 @@ minutes; after the CP1 fixtures/query/export trio landed, merge-group run
 within about eight minutes of artifact availability. Consolidating the suites
 into one job would not move `ci-required` p95 by the one-minute pilot
 threshold — the gate was CP1-bound, not E2E-bound — while it would serialize
-three browser suites onto one runner and lose per-lane failure isolation. Keep
-the independent jobs; revisit only with new same-topology comparison data.
+three browser suites onto one runner and lose per-lane failure isolation. The
+owner-composition lane now combines owner recovery with the shorter Metric and
+source-ACL tests: run 44689906445 measured 82 seconds of owner E2E plus 257
+seconds for the Metric/source-ACL lane, below the 567-second Studio E2E and
+684-second artifact build. This removes a separate consumer setup while
+keeping the observed critical path unchanged. Keep the remaining heavy jobs
+independent and revisit with new same-topology comparison data.
 Rust test sharding stays out of scope until runtime, compile/link, cache, and
 shard-comparison data show a clear improvement.
 
@@ -317,7 +333,7 @@ The required `ci-required` aggregator runs after all quality, artifact,
 docsite-navigation, CP1 fixtures/query/export, and impact-report lanes on pull requests,
 merge queues, and pushes to `main`. It checks the planned results for
 `ci-rust-check`, `ci-rust-test`, `ci-s3-shared-authorization`, `ci-web`,
-`artifact-build`, the three E2E consumer jobs, `ci-docsite-nav`, and the `ci-cp1-fixtures`, `ci-cp1-query`,
+`artifact-build`, the E2E consumer jobs, `ci-docsite-nav`, and the `ci-cp1-fixtures`, `ci-cp1-query`,
 and `ci-cp1-export` trio (planned and required as a unit by the single cp1
 flag), and fails on
 unexpected skips or executions. The PR
