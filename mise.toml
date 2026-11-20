@@ -535,7 +535,7 @@ run = [
 [tasks."test:composition-adapter"]
 description = "Run focused Composition graph protocol, Server adapter, and CLI parity tests"
 run = [
-  "cargo nextest run -p ugoite-api-client --lib --locked -E 'test(removed_composition_operations_have_no_protocol_fallback) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol)'",
+  "cargo nextest run -p ugoite-api-client --lib --locked -E 'test(unknown_operation_is_rejected_by_the_protocol) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol)'",
   { task = "test:composition-query" },
   "cargo nextest run -p ugoite-server --lib --locked -E 'test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_inline_sql_schema_with_date_parameters) | test(composition_save_rejects_projection_wildcard_from_non_browser_client) | test(composition_restore_route_rechecks_current_authorization_after_revocation)'",
   "cargo nextest run -p ugoite-server --test api_contract --locked -E 'test(openapi_exposes_graph_composition_operations_without_legacy_adapters)'",

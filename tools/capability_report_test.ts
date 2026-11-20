@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert/equals";
+import { parse } from "yaml";
 import { UGOITE_API_OPERATIONS } from "../frontend/src/lib/generated/operation-registry.ts";
 import {
   buildPreflightReport,
@@ -19,6 +20,45 @@ import {
   SERVICE_METHOD_OPERATIONS,
   validatePreflightSeedShape,
 } from "./capability_report.ts";
+
+interface JourneyRequirementGraph {
+  requirements?: Array<{
+    bindings?: Array<{
+      targets?: Array<{
+        path: string;
+        selector?: { kind: string; name: string };
+        claims?: Array<{
+          kind: string;
+          criterion?: string;
+          runner?: { runner?: string };
+        }>;
+      }>;
+    }>;
+  }>;
+}
+
+function exactJourneyE2eSelectors(
+  yaml: string,
+  criterion?: string,
+): string[] {
+  const graph = parse(yaml) as JourneyRequirementGraph;
+  const selectors = new Set<string>();
+  for (const requirement of graph.requirements ?? []) {
+    for (const binding of requirement.bindings ?? []) {
+      for (const target of binding.targets ?? []) {
+        if (
+          target.selector?.kind === "test" &&
+          target.claims?.some((claim) =>
+            claim.kind === "verifies" &&
+            (criterion === undefined || claim.criterion === criterion) &&
+            claim.runner?.runner === "e2e-playwright"
+          )
+        ) selectors.add(`${target.path} :: ${target.selector.name}`);
+      }
+    }
+  }
+  return [...selectors].sort();
+}
 
 Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", async () => {
   const report = await buildPreflightReport();
@@ -305,6 +345,9 @@ Deno.test("CLI core service map covers the journey mutations", () => {
 // Informational report: gaps are reported, never fail the build.
 Deno.test("capability report projects every journey capability", async () => {
   const report = await buildReport();
+  const journeyYaml = await Deno.readTextFile(
+    "docs/mitase/requirements/journey.yaml",
+  );
   assertEquals(report.journey, "JOURNEY-KNOWLEDGE-001");
   assertEquals(report.inventorySize, UGOITE_API_OPERATIONS.length);
   assertEquals(
@@ -316,6 +359,19 @@ Deno.test("capability report projects every journey capability", async () => {
       (CAPABILITY_STATES as readonly string[]).includes(row.state),
       true,
       `${row.id} has an unknown state`,
+    );
+    assertEquals(
+      new Set(row.mitaseEvidenceFound).size,
+      row.mitaseEvidenceFound.length,
+      `${row.id} repeats Mitase verification evidence`,
+    );
+    assertEquals(
+      row.e2eEvidenceFound,
+      exactJourneyE2eSelectors(
+        journeyYaml,
+        `REQ-JOURNEY-001#criterion.${row.id}`,
+      ),
+      `${row.id} E2E selectors must project from exact Journey Mitase claims`,
     );
   }
   const byId = new Map(report.capabilities.map((row) => [row.id, row]));
@@ -336,13 +392,13 @@ Deno.test("capability report projects every journey capability", async () => {
 // Mitase declares exact verification targets but never executes tests, so
 // selector/test-name parity is pinned here instead of failing silently.
 Deno.test("journey Mitase selectors match exact Playwright test names", async () => {
-  const testSource = await Deno.readTextFile("e2e/knowledge-journey.test.ts");
   const yaml = await Deno.readTextFile("docs/mitase/requirements/journey.yaml");
-  const declared = [...yaml.matchAll(/name: '([^']+)'/g)]
-    .map((match) => match[1])
-    .filter((name) => name.startsWith("JOURNEY-"));
+  const declared = exactJourneyE2eSelectors(yaml)
+    .filter((selector) => selector.includes("JOURNEY-"));
   assertEquals(declared.length, 12);
-  for (const name of declared) {
+  for (const selector of declared) {
+    const [file, name] = selector.split(" :: ", 2);
+    const testSource = await Deno.readTextFile(file);
     assertEquals(
       testSource.includes(`test("${name}"`),
       true,

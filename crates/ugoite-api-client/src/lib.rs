@@ -34,93 +34,6 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_COMPOSITION_SAVE_WORK_BYTES: usize = 1024 * 1024;
 pub const MAX_COMPOSITION_SAVE_WORK_ITEMS: usize = 256;
 
-/// Stable operation names understood by both native and WASM adapters.
-pub const SUPPORTED_OPERATIONS: &[&str] = &[
-    "auth.get_config",
-    "auth.get_session",
-    "auth.audit",
-    "auth.clear_session",
-    "auth.accept_invitation",
-    "auth.list_sessions",
-    "auth.revoke_session",
-    "auth.step_up.start",
-    "auth.step_up.status",
-    "auth.step_up.approve",
-    "auth.recovery.owner_start",
-    "auth.recovery.owner_finish",
-    "preferences.get",
-    "preferences.patch",
-    "space.list",
-    "space.create",
-    "space.get",
-    "space.audit",
-    "space.health",
-    "change.list",
-    "change.page",
-    "change.query",
-    "change.inspect",
-    "change.affected.get",
-    "change.revert.preview",
-    "change.revert",
-    "run.inspect",
-    "run.undo.preview",
-    "run.undo",
-    "ugoite.apply",
-    "pin.list",
-    "pin.create",
-    "pin.delete",
-    "space.pin_diff",
-    "space.patch",
-    "space.test_connection",
-    "space.members.list",
-    "space.members.invite",
-    "space.members.update_role",
-    "space.members.revoke",
-    "space.recovery.force_reset",
-    "form.list_types",
-    "form.list",
-    "form.get",
-    "form.upsert",
-    "entry.list",
-    "entry.query",
-    "entry.query.count",
-    "entry.get",
-    "entry.create",
-    "entry.update",
-    "entry.delete",
-    "entry.history",
-    "entry.revision",
-    "entry.restore",
-    "composition.lint",
-    "composition.list",
-    "composition.get",
-    "composition.history",
-    "composition.snapshot_check",
-    "composition.preview",
-    "composition.evaluate",
-    "composition.save",
-    "composition.restore",
-    "sql.lint",
-    "sql.list",
-    "sql.get",
-    "sql.create",
-    "sql.update",
-    "sql.delete",
-    "sql.query",
-    "sql.query.plan",
-    "sql.query.count",
-    "agent.list",
-    "agent.create",
-    "agent.revoke",
-    "approval.issue",
-    "access.get",
-    "access.put",
-    "asset.upload",
-    "asset.read",
-    "asset.delete",
-    "asset.list",
-];
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
@@ -343,43 +256,11 @@ pub enum AuthIntent {
 
 #[derive(Clone, Copy)]
 struct OperationSpec {
+    operation: &'static str,
     method: HttpMethod,
     failure_context: &'static str,
     body_kind: RequestBodyKind,
-}
-
-impl OperationSpec {
-    const fn get(failure_context: &'static str) -> Self {
-        Self {
-            method: HttpMethod::Get,
-            failure_context,
-            body_kind: RequestBodyKind::None,
-        }
-    }
-
-    const fn json(method: HttpMethod, failure_context: &'static str) -> Self {
-        Self {
-            method,
-            failure_context,
-            body_kind: RequestBodyKind::Json,
-        }
-    }
-
-    const fn no_body(method: HttpMethod, failure_context: &'static str) -> Self {
-        Self {
-            method,
-            failure_context,
-            body_kind: RequestBodyKind::None,
-        }
-    }
-
-    const fn multipart(failure_context: &'static str) -> Self {
-        Self {
-            method: HttpMethod::Post,
-            failure_context,
-            body_kind: RequestBodyKind::Multipart,
-        }
-    }
+    auth_intent: AuthIntent,
 }
 
 /// Authentication intent for one stable operation, read from the operation
@@ -389,26 +270,7 @@ impl OperationSpec {
 /// authorization (invitation acceptance and owner recovery, which must work
 /// while logged out).
 pub fn operation_auth_intent(operation: &str) -> Option<AuthIntent> {
-    let method = operation_spec(operation)?.method;
-    if matches!(method, HttpMethod::Get) {
-        return Some(AuthIntent::AllowAnonymous);
-    }
-    if matches!(
-        operation,
-        "auth.accept_invitation"
-            | "auth.recovery.owner_start"
-            | "auth.recovery.owner_finish"
-            | "entry.query"
-            | "entry.query.count"
-            | "sql.query"
-            | "sql.query.plan"
-            | "sql.query.count"
-            | "sql.lint"
-            | "composition.lint"
-    ) {
-        return Some(AuthIntent::AllowAnonymous);
-    }
-    Some(AuthIntent::RequireCredential)
+    operation_spec(operation).map(|spec| spec.auth_intent)
 }
 
 /// Whether `operation` must fail fast before transport when no credential is
@@ -450,1059 +312,1005 @@ pub fn prepare_request(
         ApiProtocolError::invalid_arguments(operation, "operation arguments must be a JSON object")
     })?;
 
-    let (spec, segments, query): (OperationSpec, Vec<String>, Vec<(String, String)>) =
-        match operation {
-            "auth.get_config" => (
-                OperationSpec::get("Failed to load auth config"),
-                vec!["auth".into(), "config".into()],
-                vec![],
-            ),
-            "auth.get_session" => (
-                OperationSpec::get("Failed to load auth session"),
-                vec!["auth".into(), "session".into()],
-                vec![],
-            ),
-            "auth.audit" => (
-                OperationSpec::get("Failed to load node audit log"),
-                vec!["auth".into(), "audit".into()],
-                vec![],
-            ),
-            "auth.clear_session" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to clear auth session"),
-                vec!["auth".into(), "session".into()],
-                vec![],
-            ),
-            "auth.accept_invitation" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to accept invitation"),
-                vec!["auth".into(), "invitations".into(), "accept".into()],
-                vec![],
-            ),
-            "auth.list_sessions" => (
-                OperationSpec::get("Failed to list browser sessions"),
-                vec!["auth".into(), "sessions".into()],
-                vec![],
-            ),
-            "auth.revoke_session" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to revoke browser session"),
-                vec![
-                    "auth".into(),
-                    "sessions".into(),
-                    required_string(operation, args, "session_id")?,
-                ],
-                vec![],
-            ),
-            "auth.step_up.start" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to start step-up challenge"),
-                vec!["auth".into(), "step-up".into(), "start".into()],
-                vec![],
-            ),
-            "auth.step_up.status" => (
-                OperationSpec::get("Failed to check step-up challenge"),
-                vec!["auth".into(), "step-up".into(), "status".into()],
-                vec![(
-                    "challenge_id".into(),
-                    required_string(operation, args, "challenge_id")?,
-                )],
-            ),
-            "auth.step_up.approve" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to approve step-up challenge"),
-                vec!["auth".into(), "step-up".into(), "approve".into()],
-                vec![],
-            ),
-            "auth.recovery.owner_start" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to start owner recovery"),
-                vec![
-                    "auth".into(),
-                    "recovery".into(),
-                    "owner".into(),
-                    "start".into(),
-                ],
-                vec![],
-            ),
-            "auth.recovery.owner_finish" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to finish owner recovery"),
-                vec![
-                    "auth".into(),
-                    "recovery".into(),
-                    "owner".into(),
-                    "finish".into(),
-                ],
-                vec![],
-            ),
+    let (_, segments, query): ((), Vec<String>, Vec<(String, String)>) = match operation {
+        "auth.get_config" => ((), vec!["auth".into(), "config".into()], vec![]),
+        "auth.get_session" => ((), vec!["auth".into(), "session".into()], vec![]),
+        "auth.audit" => ((), vec!["auth".into(), "audit".into()], vec![]),
+        "auth.clear_session" => ((), vec!["auth".into(), "session".into()], vec![]),
+        "auth.accept_invitation" => (
+            (),
+            vec!["auth".into(), "invitations".into(), "accept".into()],
+            vec![],
+        ),
+        "auth.list_sessions" => ((), vec!["auth".into(), "sessions".into()], vec![]),
+        "auth.revoke_session" => (
+            (),
+            vec![
+                "auth".into(),
+                "sessions".into(),
+                required_string(operation, args, "session_id")?,
+            ],
+            vec![],
+        ),
+        "auth.step_up.start" => (
+            (),
+            vec!["auth".into(), "step-up".into(), "start".into()],
+            vec![],
+        ),
+        "auth.step_up.status" => (
+            (),
+            vec!["auth".into(), "step-up".into(), "status".into()],
+            vec![(
+                "challenge_id".into(),
+                required_string(operation, args, "challenge_id")?,
+            )],
+        ),
+        "auth.step_up.approve" => (
+            (),
+            vec!["auth".into(), "step-up".into(), "approve".into()],
+            vec![],
+        ),
+        "auth.recovery.owner_start" => (
+            (),
+            vec![
+                "auth".into(),
+                "recovery".into(),
+                "owner".into(),
+                "start".into(),
+            ],
+            vec![],
+        ),
+        "auth.recovery.owner_finish" => (
+            (),
+            vec![
+                "auth".into(),
+                "recovery".into(),
+                "owner".into(),
+                "finish".into(),
+            ],
+            vec![],
+        ),
 
-            "preferences.get" => (
-                OperationSpec::get("Failed to load preferences"),
-                vec!["preferences".into(), "me".into()],
-                vec![],
-            ),
-            "preferences.patch" => (
-                OperationSpec::json(HttpMethod::Patch, "Failed to update preferences"),
-                vec!["preferences".into(), "me".into()],
-                vec![],
-            ),
+        "preferences.get" => ((), vec!["preferences".into(), "me".into()], vec![]),
+        "preferences.patch" => ((), vec!["preferences".into(), "me".into()], vec![]),
 
-            "space.list" => (
-                OperationSpec::get("Failed to list spaces"),
-                vec!["spaces".into()],
-                vec![],
-            ),
-            "space.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create space"),
-                vec!["spaces".into()],
-                vec![],
-            ),
-            "space.get" => (
-                OperationSpec::get("Failed to get space"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                ],
-                vec![],
-            ),
-            "space.audit" => {
-                let mut query = Vec::new();
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
-                }
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                for key in ["action", "actor_principal_id", "outcome"] {
-                    if let Some(value) = optional_string(operation, args, key)? {
-                        if !value.trim().is_empty() {
-                            query.push((key.into(), value));
-                        }
-                    }
-                }
-                (
-                    OperationSpec::get("Failed to load Space audit log"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "audit".into(),
-                    ],
-                    query,
-                )
+        "space.list" => ((), vec!["spaces".into()], vec![]),
+        "space.create" => ((), vec!["spaces".into()], vec![]),
+        "space.get" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+            ],
+            vec![],
+        ),
+        "space.audit" => {
+            let mut query = Vec::new();
+            if let Some(offset) = optional_u64(operation, args, "offset")? {
+                query.push(("offset".into(), offset.to_string()));
             }
-            "space.health" => {
-                let mut query = Vec::new();
-                if let Some(checkpoints) = args.get("checkpoints").and_then(Value::as_array) {
-                    for checkpoint in checkpoints {
-                        let checkpoint = checkpoint.as_str().ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "checkpoints must be an array of strings",
-                            )
-                        })?;
-                        query.push(("checkpoint".into(), checkpoint.to_string()));
-                    }
-                }
-                (
-                    OperationSpec::get("Failed to inspect Space health"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "health".into(),
-                    ],
-                    query,
-                )
+            if let Some(limit) = optional_u64(operation, args, "limit")? {
+                query.push(("limit".into(), limit.to_string()));
             }
-            "change.list" => (
-                OperationSpec::get("Failed to list Knowledge changes"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "changes".into(),
-                ],
-                vec![],
-            ),
-            "change.page" => {
-                let mut query = Vec::new();
-                if let Some(limit) = args.get("limit") {
-                    let limit = limit.as_u64().ok_or_else(|| {
-                        ApiProtocolError::invalid_arguments(
-                            operation,
-                            "limit must be a positive integer",
-                        )
-                    })?;
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(cursor) = args.get("cursor") {
-                    let cursor = cursor
-                        .as_str()
-                        .filter(|value| !value.is_empty())
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "cursor must be a non-empty string",
-                            )
-                        })?;
-                    query.push(("cursor".into(), cursor.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to page Knowledge changes"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "changes".into(),
-                        "page".into(),
-                    ],
-                    query,
-                )
-            }
-            "change.query" => {
-                let mut query = Vec::new();
-                if let Some(limit) = args.get("limit") {
-                    let limit = limit.as_u64().ok_or_else(|| {
-                        ApiProtocolError::invalid_arguments(
-                            operation,
-                            "limit must be a positive integer",
-                        )
-                    })?;
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(cursor) = args.get("cursor") {
-                    let cursor = cursor
-                        .as_str()
-                        .filter(|value| !value.is_empty())
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "cursor must be a non-empty string",
-                            )
-                        })?;
-                    query.push(("cursor".into(), cursor.to_string()));
-                }
-                for key in ["actor_principal_id", "run_id", "text"] {
-                    if let Some(value) = optional_string(operation, args, key)? {
+            for key in ["action", "actor_principal_id", "outcome"] {
+                if let Some(value) = optional_string(operation, args, key)? {
+                    if !value.trim().is_empty() {
                         query.push((key.into(), value));
                     }
                 }
-                for key in ["created_after_micros", "created_before_micros"] {
-                    if let Some(value) = args.get(key) {
-                        let value = value.as_i64().ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                format!("{key} must be an integer"),
-                            )
-                        })?;
-                        query.push((key.into(), value.to_string()));
-                    }
-                }
-                if let Some(sort) = args.get("sort") {
-                    let sort = sort.as_array().ok_or_else(|| {
-                        ApiProtocolError::invalid_arguments(operation, "sort must be an array")
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "audit".into(),
+                ],
+                query,
+            )
+        }
+        "space.health" => {
+            let mut query = Vec::new();
+            if let Some(checkpoints) = args.get("checkpoints").and_then(Value::as_array) {
+                for checkpoint in checkpoints {
+                    let checkpoint = checkpoint.as_str().ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "checkpoints must be an array of strings",
+                        )
                     })?;
-                    let mut sort_keys = Vec::with_capacity(sort.len());
-                    for item in sort {
-                        let field = item.get("field").and_then(Value::as_str).ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "each sort item must have a string field",
-                            )
-                        })?;
-                        if !["created_at_micros", "actor_principal_id", "run_id"].contains(&field) {
-                            return Err(ApiProtocolError::invalid_arguments(
-                                operation,
-                                "sort field is unsupported",
-                            ));
-                        }
-                        let direction =
-                            item.get("direction")
-                                .and_then(Value::as_str)
-                                .ok_or_else(|| {
-                                    ApiProtocolError::invalid_arguments(
-                                        operation,
-                                        "each sort item must have a string direction",
-                                    )
-                                })?;
-                        if !["asc", "desc"].contains(&direction) {
-                            return Err(ApiProtocolError::invalid_arguments(
-                                operation,
-                                "sort direction is unsupported",
-                            ));
-                        }
-                        sort_keys.push(format!("{field}:{direction}"));
-                    }
-                    if !sort_keys.is_empty() {
-                        query.push(("sort".into(), sort_keys.join(",")));
-                    }
+                    query.push(("checkpoint".into(), checkpoint.to_string()));
                 }
-                (
-                    OperationSpec::get("Failed to query Knowledge changes"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "changes".into(),
-                        "query".into(),
-                    ],
-                    query,
-                )
             }
-            "change.inspect" => {
-                let mut query = Vec::new();
-                if let Some(limit) = args.get("limit") {
-                    let limit = limit
-                        .as_u64()
-                        .filter(|limit| (1..=10).contains(limit))
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "limit must be an integer between 1 and 10",
-                            )
-                        })?;
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(cursor) = args.get("cursor") {
-                    let cursor = cursor
-                        .as_str()
-                        .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "cursor must be a non-empty string no longer than 16384 bytes",
-                            )
-                        })?;
-                    query.push(("cursor".into(), cursor.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to inspect Knowledge change"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "changes".into(),
-                        required_string(operation, args, "change_id")?,
-                        "inspect".into(),
-                    ],
-                    query,
-                )
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "health".into(),
+                ],
+                query,
+            )
+        }
+        "change.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "changes".into(),
+            ],
+            vec![],
+        ),
+        "change.page" => {
+            let mut query = Vec::new();
+            if let Some(limit) = args.get("limit") {
+                let limit = limit.as_u64().ok_or_else(|| {
+                    ApiProtocolError::invalid_arguments(
+                        operation,
+                        "limit must be a positive integer",
+                    )
+                })?;
+                query.push(("limit".into(), limit.to_string()));
             }
-            "change.affected.get" => (
-                OperationSpec::get("Failed to get Change target evidence"),
+            if let Some(cursor) = args.get("cursor") {
+                let cursor = cursor
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "cursor must be a non-empty string",
+                        )
+                    })?;
+                query.push(("cursor".into(), cursor.to_string()));
+            }
+            (
+                (),
                 vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "changes".into(),
-                    required_string(operation, args, "change_id")?,
-                    "affected".into(),
-                    required_string(operation, args, "entry_id")?,
+                    "page".into(),
                 ],
-                vec![],
-            ),
-            "change.revert.preview" => (
-                OperationSpec::get("Failed to preview Knowledge change revert"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "changes".into(),
-                    required_string(operation, args, "change_id")?,
-                    "revert".into(),
-                    "preview".into(),
-                ],
-                vec![],
-            ),
-            "change.revert" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to revert Knowledge change"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "changes".into(),
-                    required_string(operation, args, "change_id")?,
-                    "revert".into(),
-                ],
-                vec![],
-            ),
-            "run.undo.preview" => (
-                OperationSpec::get("Failed to preview Run undo"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "runs".into(),
-                    required_string(operation, args, "run_id")?,
-                    "undo".into(),
-                    "preview".into(),
-                ],
-                vec![],
-            ),
-            "run.inspect" => {
-                let mut query = Vec::new();
-                if let Some(limit) = args.get("limit") {
-                    let limit = limit
-                        .as_u64()
-                        .filter(|limit| (1..=10).contains(limit))
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "limit must be an integer between 1 and 10",
-                            )
-                        })?;
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(cursor) = args.get("cursor") {
-                    let cursor = cursor
-                        .as_str()
-                        .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
-                        .ok_or_else(|| {
-                            ApiProtocolError::invalid_arguments(
-                                operation,
-                                "cursor must be a non-empty string no longer than 16384 bytes",
-                            )
-                        })?;
-                    query.push(("cursor".into(), cursor.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to inspect Run"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "runs".into(),
-                        required_string(operation, args, "run_id")?,
-                        "inspect".into(),
-                    ],
-                    query,
-                )
+                query,
+            )
+        }
+        "change.query" => {
+            let mut query = Vec::new();
+            if let Some(limit) = args.get("limit") {
+                let limit = limit.as_u64().ok_or_else(|| {
+                    ApiProtocolError::invalid_arguments(
+                        operation,
+                        "limit must be a positive integer",
+                    )
+                })?;
+                query.push(("limit".into(), limit.to_string()));
             }
-            "run.undo" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to undo Run"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "runs".into(),
-                    required_string(operation, args, "run_id")?,
-                    "undo".into(),
-                ],
-                vec![],
-            ),
-            "ugoite.apply" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to apply Knowledge operations"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "apply".into(),
-                ],
-                vec![],
-            ),
-            "pin.list" => (
-                OperationSpec::get("Failed to list publication pins"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "pins".into(),
-                ],
-                vec![],
-            ),
-            "pin.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create publication pin"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "pins".into(),
-                ],
-                vec![],
-            ),
-            "pin.delete" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete publication pin"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "pins".into(),
-                    required_string(operation, args, "pin_name")?,
-                ],
-                vec![],
-            ),
-            "space.pin_diff" => (
-                OperationSpec::get("Failed to diff publication pins"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "pins".into(),
-                    "diff".into(),
-                ],
-                vec![
-                    ("from".into(), required_string(operation, args, "from")?),
-                    ("to".into(), required_string(operation, args, "to")?),
-                ],
-            ),
-            "space.patch" => (
-                OperationSpec::json(HttpMethod::Patch, "Failed to patch space"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                ],
-                vec![],
-            ),
-            "space.test_connection" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to test connection"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "test-connection".into(),
-                ],
-                vec![],
-            ),
-            "space.members.list" => (
-                OperationSpec::get("Failed to list members"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "members".into(),
-                ],
-                vec![],
-            ),
-            "space.members.invite" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to invite member"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "members".into(),
-                    "invitations".into(),
-                ],
-                vec![],
-            ),
-            "space.members.update_role" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to update role"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "members".into(),
-                    required_string(operation, args, "principal_id")?,
-                    "role".into(),
-                ],
-                vec![],
-            ),
-            "space.members.revoke" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to revoke member"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "members".into(),
-                    required_string(operation, args, "principal_id")?,
-                ],
-                vec![],
-            ),
-            "space.recovery.force_reset" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to issue owner recovery approval"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "admin".into(),
-                    "recovery".into(),
-                    "force-reset".into(),
-                ],
-                vec![],
-            ),
-            "form.list_types" => (
-                OperationSpec::get("Failed to list form types"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "forms".into(),
-                    "types".into(),
-                ],
-                vec![],
-            ),
-            "form.list" => (
-                OperationSpec::get("Failed to list forms"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "forms".into(),
-                ],
-                vec![],
-            ),
-            "form.get" => (
-                OperationSpec::get("Failed to get form"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "forms".into(),
-                    required_string(operation, args, "form_name")?,
-                ],
-                vec![],
-            ),
-            "form.upsert" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to save form"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "forms".into(),
-                ],
-                vec![],
-            ),
-
-            "entry.list" => {
-                let mut query = Vec::new();
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to list entries"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                    ],
-                    query,
-                )
+            if let Some(cursor) = args.get("cursor") {
+                let cursor = cursor
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "cursor must be a non-empty string",
+                        )
+                    })?;
+                query.push(("cursor".into(), cursor.to_string()));
             }
-            "entry.query" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to query entries"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    "query".into(),
-                ],
-                vec![],
-            ),
-            "entry.query.count" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to count entries"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    "query".into(),
-                    "count".into(),
-                ],
-                vec![],
-            ),
-            "entry.get" => {
-                let mut query = Vec::new();
-                if let Some(pin) = optional_string(operation, args, "pin")? {
-                    query.push(("pin".into(), pin));
+            for key in ["actor_principal_id", "run_id", "text"] {
+                if let Some(value) = optional_string(operation, args, key)? {
+                    query.push((key.into(), value));
                 }
-                (
-                    OperationSpec::get("Failed to get entry"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                        required_string(operation, args, "entry_id")?,
-                    ],
-                    query,
-                )
             }
-            "composition.lint" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to lint Composition"),
-                vec!["compositions".into(), "lint".into()],
-                vec![],
-            ),
-            "sql.lint" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to lint SQL"),
-                vec!["sql".into(), "lint".into()],
-                vec![],
-            ),
-            "composition.list" => {
-                let mut query = Vec::new();
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    if !(1..=100).contains(&limit) {
+            for key in ["created_after_micros", "created_before_micros"] {
+                if let Some(value) = args.get(key) {
+                    let value = value.as_i64().ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            format!("{key} must be an integer"),
+                        )
+                    })?;
+                    query.push((key.into(), value.to_string()));
+                }
+            }
+            if let Some(sort) = args.get("sort") {
+                let sort = sort.as_array().ok_or_else(|| {
+                    ApiProtocolError::invalid_arguments(operation, "sort must be an array")
+                })?;
+                let mut sort_keys = Vec::with_capacity(sort.len());
+                for item in sort {
+                    let field = item.get("field").and_then(Value::as_str).ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "each sort item must have a string field",
+                        )
+                    })?;
+                    if !["created_at_micros", "actor_principal_id", "run_id"].contains(&field) {
                         return Err(ApiProtocolError::invalid_arguments(
                             operation,
-                            "limit must be an integer between 1 and 100",
+                            "sort field is unsupported",
                         ));
                     }
-                    query.push(("limit".into(), limit.to_string()));
+                    let direction =
+                        item.get("direction")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                ApiProtocolError::invalid_arguments(
+                                    operation,
+                                    "each sort item must have a string direction",
+                                )
+                            })?;
+                    if !["asc", "desc"].contains(&direction) {
+                        return Err(ApiProtocolError::invalid_arguments(
+                            operation,
+                            "sort direction is unsupported",
+                        ));
+                    }
+                    sort_keys.push(format!("{field}:{direction}"));
                 }
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
+                if !sort_keys.is_empty() {
+                    query.push(("sort".into(), sort_keys.join(",")));
                 }
-                (
-                    OperationSpec::get("Failed to list Compositions"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "compositions".into(),
-                    ],
-                    query,
-                )
             }
-            "composition.get" => {
-                let mut path = vec![
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                    "query".into(),
+                ],
+                query,
+            )
+        }
+        "change.inspect" => {
+            let mut query = Vec::new();
+            if let Some(limit) = args.get("limit") {
+                let limit = limit
+                    .as_u64()
+                    .filter(|limit| (1..=10).contains(limit))
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be an integer between 1 and 10",
+                        )
+                    })?;
+                query.push(("limit".into(), limit.to_string()));
+            }
+            if let Some(cursor) = args.get("cursor") {
+                let cursor = cursor
+                    .as_str()
+                    .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "cursor must be a non-empty string no longer than 16384 bytes",
+                        )
+                    })?;
+                query.push(("cursor".into(), cursor.to_string()));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                    required_string(operation, args, "change_id")?,
+                    "inspect".into(),
+                ],
+                query,
+            )
+        }
+        "change.affected.get" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "changes".into(),
+                required_string(operation, args, "change_id")?,
+                "affected".into(),
+                required_string(operation, args, "entry_id")?,
+            ],
+            vec![],
+        ),
+        "change.revert.preview" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "changes".into(),
+                required_string(operation, args, "change_id")?,
+                "revert".into(),
+                "preview".into(),
+            ],
+            vec![],
+        ),
+        "change.revert" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "changes".into(),
+                required_string(operation, args, "change_id")?,
+                "revert".into(),
+            ],
+            vec![],
+        ),
+        "run.undo.preview" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "runs".into(),
+                required_string(operation, args, "run_id")?,
+                "undo".into(),
+                "preview".into(),
+            ],
+            vec![],
+        ),
+        "run.inspect" => {
+            let mut query = Vec::new();
+            if let Some(limit) = args.get("limit") {
+                let limit = limit
+                    .as_u64()
+                    .filter(|limit| (1..=10).contains(limit))
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be an integer between 1 and 10",
+                        )
+                    })?;
+                query.push(("limit".into(), limit.to_string()));
+            }
+            if let Some(cursor) = args.get("cursor") {
+                let cursor = cursor
+                    .as_str()
+                    .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
+                    .ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "cursor must be a non-empty string no longer than 16384 bytes",
+                        )
+                    })?;
+                query.push(("cursor".into(), cursor.to_string()));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "runs".into(),
+                    required_string(operation, args, "run_id")?,
+                    "inspect".into(),
+                ],
+                query,
+            )
+        }
+        "run.undo" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "runs".into(),
+                required_string(operation, args, "run_id")?,
+                "undo".into(),
+            ],
+            vec![],
+        ),
+        "ugoite.apply" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "apply".into(),
+            ],
+            vec![],
+        ),
+        "pin.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "pins".into(),
+            ],
+            vec![],
+        ),
+        "pin.create" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "pins".into(),
+            ],
+            vec![],
+        ),
+        "pin.delete" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "pins".into(),
+                required_string(operation, args, "pin_name")?,
+            ],
+            vec![],
+        ),
+        "space.pin_diff" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "pins".into(),
+                "diff".into(),
+            ],
+            vec![
+                ("from".into(), required_string(operation, args, "from")?),
+                ("to".into(), required_string(operation, args, "to")?),
+            ],
+        ),
+        "space.patch" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+            ],
+            vec![],
+        ),
+        "space.test_connection" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "test-connection".into(),
+            ],
+            vec![],
+        ),
+        "space.members.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "members".into(),
+            ],
+            vec![],
+        ),
+        "space.members.invite" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "members".into(),
+                "invitations".into(),
+            ],
+            vec![],
+        ),
+        "space.members.update_role" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "members".into(),
+                required_string(operation, args, "principal_id")?,
+                "role".into(),
+            ],
+            vec![],
+        ),
+        "space.members.revoke" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "members".into(),
+                required_string(operation, args, "principal_id")?,
+            ],
+            vec![],
+        ),
+        "space.recovery.force_reset" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "admin".into(),
+                "recovery".into(),
+                "force-reset".into(),
+            ],
+            vec![],
+        ),
+        "form.list_types" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "forms".into(),
+                "types".into(),
+            ],
+            vec![],
+        ),
+        "form.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "forms".into(),
+            ],
+            vec![],
+        ),
+        "form.get" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "forms".into(),
+                required_string(operation, args, "form_name")?,
+            ],
+            vec![],
+        ),
+        "form.upsert" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "forms".into(),
+            ],
+            vec![],
+        ),
+
+        "entry.list" => {
+            let mut query = Vec::new();
+            if let Some(limit) = optional_u64(operation, args, "limit")? {
+                query.push(("limit".into(), limit.to_string()));
+            }
+            if let Some(offset) = optional_u64(operation, args, "offset")? {
+                query.push(("offset".into(), offset.to_string()));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                ],
+                query,
+            )
+        }
+        "entry.query" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+                "query".into(),
+            ],
+            vec![],
+        ),
+        "entry.query.count" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+                "query".into(),
+                "count".into(),
+            ],
+            vec![],
+        ),
+        "entry.get" => {
+            let mut query = Vec::new();
+            if let Some(pin) = optional_string(operation, args, "pin")? {
+                query.push(("pin".into(), pin));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    required_string(operation, args, "entry_id")?,
+                ],
+                query,
+            )
+        }
+        "composition.lint" => ((), vec!["compositions".into(), "lint".into()], vec![]),
+        "sql.lint" => ((), vec!["sql".into(), "lint".into()], vec![]),
+        "composition.list" => {
+            let mut query = Vec::new();
+            if let Some(limit) = optional_u64(operation, args, "limit")? {
+                if !(1..=100).contains(&limit) {
+                    return Err(ApiProtocolError::invalid_arguments(
+                        operation,
+                        "limit must be an integer between 1 and 100",
+                    ));
+                }
+                query.push(("limit".into(), limit.to_string()));
+            }
+            if let Some(offset) = optional_u64(operation, args, "offset")? {
+                query.push(("offset".into(), offset.to_string()));
+            }
+            (
+                (),
+                vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "compositions".into(),
-                    required_string(operation, args, "composition_id")?,
-                ];
-                if let Some(revision_id) = optional_string(operation, args, "revision_id")? {
-                    if revision_id.is_empty() {
-                        return Err(ApiProtocolError::invalid_arguments(
-                            operation,
-                            "argument `revision_id` must be a non-empty string when provided",
-                        ));
-                    }
-                    path.push("history".into());
-                    path.push(revision_id);
+                ],
+                query,
+            )
+        }
+        "composition.get" => {
+            let mut path = vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+                required_string(operation, args, "composition_id")?,
+            ];
+            if let Some(revision_id) = optional_string(operation, args, "revision_id")? {
+                if revision_id.is_empty() {
+                    return Err(ApiProtocolError::invalid_arguments(
+                        operation,
+                        "argument `revision_id` must be a non-empty string when provided",
+                    ));
                 }
-                (
-                    OperationSpec::get("Failed to get Composition"),
-                    path,
-                    vec![],
-                )
+                path.push("history".into());
+                path.push(revision_id);
             }
-            "composition.history" => {
-                let mut query = Vec::new();
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    if !(1..=100).contains(&limit) {
-                        return Err(ApiProtocolError::invalid_arguments(
-                            operation,
-                            "limit must be an integer between 1 and 100",
-                        ));
-                    }
-                    query.push(("limit".into(), limit.to_string()));
+            ((), path, vec![])
+        }
+        "composition.history" => {
+            let mut query = Vec::new();
+            if let Some(limit) = optional_u64(operation, args, "limit")? {
+                if !(1..=100).contains(&limit) {
+                    return Err(ApiProtocolError::invalid_arguments(
+                        operation,
+                        "limit must be an integer between 1 and 100",
+                    ));
                 }
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to get Composition history"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "compositions".into(),
-                        required_string(operation, args, "composition_id")?,
-                        "history".into(),
-                    ],
-                    query,
-                )
+                query.push(("limit".into(), limit.to_string()));
             }
-            "composition.snapshot_check" => {
-                let path = vec![
+            if let Some(offset) = optional_u64(operation, args, "offset")? {
+                query.push(("offset".into(), offset.to_string()));
+            }
+            (
+                (),
+                vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "compositions".into(),
                     required_string(operation, args, "composition_id")?,
                     "history".into(),
+                ],
+                query,
+            )
+        }
+        "composition.snapshot_check" => {
+            let path = vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+                required_string(operation, args, "composition_id")?,
+                "history".into(),
+                required_string(operation, args, "revision_id")?,
+                "snapshot".into(),
+            ];
+            if path.iter().any(String::is_empty) {
+                return Err(ApiProtocolError::invalid_arguments(
+                    operation,
+                    "Composition snapshot coordinates must not be empty",
+                ));
+            }
+            ((), path, vec![])
+        }
+        "composition.preview" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+                "preview".into(),
+            ],
+            vec![],
+        ),
+        "composition.evaluate" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+                "evaluate".into(),
+            ],
+            vec![],
+        ),
+        "composition.save" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+            ],
+            vec![],
+        ),
+        "composition.restore" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "compositions".into(),
+                required_string(operation, args, "composition_id")?,
+                "restore".into(),
+            ],
+            vec![],
+        ),
+        "entry.create" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+            ],
+            vec![],
+        ),
+        "entry.update" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+                required_string(operation, args, "entry_id")?,
+            ],
+            vec![],
+        ),
+        "entry.delete" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+                required_string(operation, args, "entry_id")?,
+            ],
+            vec![],
+        ),
+        "entry.history" => {
+            let mut query = Vec::new();
+            if let Some(pin) = optional_string(operation, args, "pin")? {
+                query.push(("pin".into(), pin));
+            }
+            if let Some(limit) = optional_u64(operation, args, "limit")? {
+                query.push(("limit".into(), limit.to_string()));
+            }
+            if let Some(offset) = optional_u64(operation, args, "offset")? {
+                query.push(("offset".into(), offset.to_string()));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    required_string(operation, args, "entry_id")?,
+                    "history".into(),
+                ],
+                query,
+            )
+        }
+        "entry.revision" => {
+            let mut query = Vec::new();
+            if let Some(pin) = optional_string(operation, args, "pin")? {
+                query.push(("pin".into(), pin));
+            }
+            (
+                (),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "entries".into(),
+                    required_string(operation, args, "entry_id")?,
+                    "history".into(),
                     required_string(operation, args, "revision_id")?,
-                    "snapshot".into(),
-                ];
-                if path.iter().any(String::is_empty) {
-                    return Err(ApiProtocolError::invalid_arguments(
-                        operation,
-                        "Composition snapshot coordinates must not be empty",
-                    ));
-                }
+                ],
+                query,
+            )
+        }
+        "entry.restore" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "entries".into(),
+                required_string(operation, args, "entry_id")?,
+                "restore".into(),
+            ],
+            vec![],
+        ),
+
+        "sql.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+            ],
+            vec![],
+        ),
+        "sql.get" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                required_string(operation, args, "sql_id")?,
+            ],
+            vec![],
+        ),
+        "sql.create" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+            ],
+            vec![],
+        ),
+        "sql.update" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                required_string(operation, args, "sql_id")?,
+            ],
+            vec![],
+        ),
+        "sql.delete" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                required_string(operation, args, "sql_id")?,
+            ],
+            vec![],
+        ),
+        "sql.query" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                "query".into(),
+            ],
+            vec![],
+        ),
+        "sql.query.plan" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                "query".into(),
+                "plan".into(),
+            ],
+            vec![],
+        ),
+        "sql.query.count" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "sql".into(),
+                "query".into(),
+                "count".into(),
+            ],
+            vec![],
+        ),
+
+        "agent.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "agents".into(),
+            ],
+            vec![],
+        ),
+        "agent.create" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "agents".into(),
+            ],
+            vec![],
+        ),
+        "agent.revoke" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "agents".into(),
+                required_string(operation, args, "agent_id")?,
+            ],
+            vec![],
+        ),
+        "approval.issue" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "approvals".into(),
+            ],
+            vec![],
+        ),
+        "access.get" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "policies".into(),
+                required_string(operation, args, "kind")?,
+                required_string(operation, args, "resource_id")?,
+            ],
+            vec![],
+        ),
+        "access.put" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "policies".into(),
+                required_string(operation, args, "kind")?,
+                required_string(operation, args, "resource_id")?,
+            ],
+            vec![],
+        ),
+
+        "asset.upload" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "assets".into(),
+            ],
+            vec![],
+        ),
+        "asset.read" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "assets".into(),
+                required_string(operation, args, "asset_id")?,
+            ],
+            vec![
+                ("form".into(), required_string(operation, args, "form")?),
                 (
-                    OperationSpec::no_body(
-                        HttpMethod::Post,
-                        "Failed to recheck Composition snapshot",
-                    ),
-                    path,
-                    vec![],
-                )
-            }
-            "composition.preview" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to preview Composition"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "compositions".into(),
-                    "preview".into(),
-                ],
-                vec![],
-            ),
-            "composition.evaluate" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to evaluate Composition graph"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "compositions".into(),
-                    "evaluate".into(),
-                ],
-                vec![],
-            ),
-            "composition.save" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to save Composition"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "compositions".into(),
-                ],
-                vec![],
-            ),
-            "composition.restore" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to restore Composition"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "compositions".into(),
-                    required_string(operation, args, "composition_id")?,
-                    "restore".into(),
-                ],
-                vec![],
-            ),
-            "entry.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                ],
-                vec![],
-            ),
-            "entry.update" => (
-                OperationSpec::json(HttpMethod::Put, "Failed to update entry"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
+                    "entry_id".into(),
                     required_string(operation, args, "entry_id")?,
-                ],
-                vec![],
-            ),
-            "entry.delete" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete entry"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    required_string(operation, args, "entry_id")?,
-                ],
-                vec![],
-            ),
-            "entry.history" => {
-                let mut query = Vec::new();
-                if let Some(pin) = optional_string(operation, args, "pin")? {
-                    query.push(("pin".into(), pin));
-                }
-                if let Some(limit) = optional_u64(operation, args, "limit")? {
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(offset) = optional_u64(operation, args, "offset")? {
-                    query.push(("offset".into(), offset.to_string()));
-                }
-                (
-                    OperationSpec::get("Failed to get entry history"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                        required_string(operation, args, "entry_id")?,
-                        "history".into(),
-                    ],
-                    query,
-                )
-            }
-            "entry.revision" => {
-                let mut query = Vec::new();
-                if let Some(pin) = optional_string(operation, args, "pin")? {
-                    query.push(("pin".into(), pin));
-                }
-                (
-                    OperationSpec::get("Failed to get entry revision"),
-                    vec![
-                        "spaces".into(),
-                        required_string(operation, args, "space_id")?,
-                        "entries".into(),
-                        required_string(operation, args, "entry_id")?,
-                        "history".into(),
-                        required_string(operation, args, "revision_id")?,
-                    ],
-                    query,
-                )
-            }
-            "entry.restore" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to restore entry"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    required_string(operation, args, "entry_id")?,
-                    "restore".into(),
-                ],
-                vec![],
-            ),
+                ),
+            ],
+        ),
+        "asset.delete" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "assets".into(),
+                required_string(operation, args, "asset_id")?,
+            ],
+            vec![],
+        ),
+        "asset.list" => (
+            (),
+            vec![
+                "spaces".into(),
+                required_string(operation, args, "space_id")?,
+                "assets".into(),
+            ],
+            vec![],
+        ),
 
-            "sql.list" => (
-                OperationSpec::get("Failed to list saved SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                ],
-                vec![],
-            ),
-            "sql.get" => (
-                OperationSpec::get("Failed to get saved SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    required_string(operation, args, "sql_id")?,
-                ],
-                vec![],
-            ),
-            "sql.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create saved SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                ],
-                vec![],
-            ),
-            "sql.update" => (
-                OperationSpec::json(HttpMethod::Put, "Failed to update saved SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    required_string(operation, args, "sql_id")?,
-                ],
-                vec![],
-            ),
-            "sql.delete" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete saved SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    required_string(operation, args, "sql_id")?,
-                ],
-                vec![],
-            ),
-            "sql.query" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to query SQL"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    "query".into(),
-                ],
-                vec![],
-            ),
-            "sql.query.plan" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to plan SQL query"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    "query".into(),
-                    "plan".into(),
-                ],
-                vec![],
-            ),
-            "sql.query.count" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to count SQL query rows"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "sql".into(),
-                    "query".into(),
-                    "count".into(),
-                ],
-                vec![],
-            ),
-
-            "agent.list" => (
-                OperationSpec::get("Failed to list agents"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "agents".into(),
-                ],
-                vec![],
-            ),
-            "agent.create" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create agent"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "agents".into(),
-                ],
-                vec![],
-            ),
-            "agent.revoke" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to revoke agent"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "agents".into(),
-                    required_string(operation, args, "agent_id")?,
-                ],
-                vec![],
-            ),
-            "approval.issue" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to issue human approval"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "approvals".into(),
-                ],
-                vec![],
-            ),
-            "access.get" => (
-                OperationSpec::get("Failed to load access policy"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "policies".into(),
-                    required_string(operation, args, "kind")?,
-                    required_string(operation, args, "resource_id")?,
-                ],
-                vec![],
-            ),
-            "access.put" => (
-                OperationSpec::json(HttpMethod::Put, "Failed to update access policy"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "policies".into(),
-                    required_string(operation, args, "kind")?,
-                    required_string(operation, args, "resource_id")?,
-                ],
-                vec![],
-            ),
-
-            "asset.upload" => (
-                OperationSpec::multipart("Failed to upload asset"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "assets".into(),
-                ],
-                vec![],
-            ),
-            "asset.read" => (
-                OperationSpec::get("Failed to read asset"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "assets".into(),
-                    required_string(operation, args, "asset_id")?,
-                ],
-                vec![
-                    ("form".into(), required_string(operation, args, "form")?),
-                    (
-                        "entry_id".into(),
-                        required_string(operation, args, "entry_id")?,
-                    ),
-                ],
-            ),
-            "asset.delete" => (
-                OperationSpec::no_body(HttpMethod::Delete, "Failed to delete asset"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "assets".into(),
-                    required_string(operation, args, "asset_id")?,
-                ],
-                vec![],
-            ),
-            "asset.list" => (
-                OperationSpec::get("Failed to list assets"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "assets".into(),
-                ],
-                vec![],
-            ),
-
-            _ => return Err(ApiProtocolError::invalid_operation(operation)),
-        };
+        _ => return Err(ApiProtocolError::invalid_operation(operation)),
+    };
+    let spec =
+        operation_spec(operation).ok_or_else(|| ApiProtocolError::invalid_operation(operation))?;
 
     let path = encoded_path(&segments, &query).map_err(|message| {
         ApiProtocolError::invalid_arguments(operation, format!("failed to build URL: {message}"))
@@ -1893,426 +1701,123 @@ pub fn invoke_json(input: &str) -> String {
     })
 }
 
-fn operation_spec(operation: &str) -> Option<OperationSpec> {
-    let (method, failure_context, body_kind) = match operation {
-        "auth.get_config" => (
-            HttpMethod::Get,
-            "Failed to load auth config",
-            RequestBodyKind::None,
-        ),
-        "auth.get_session" => (
-            HttpMethod::Get,
-            "Failed to load auth session",
-            RequestBodyKind::None,
-        ),
-        "auth.audit" => (
-            HttpMethod::Get,
-            "Failed to load node audit log",
-            RequestBodyKind::None,
-        ),
-        "auth.clear_session" => (
-            HttpMethod::Delete,
-            "Failed to clear auth session",
-            RequestBodyKind::None,
-        ),
-        "auth.accept_invitation" => (
-            HttpMethod::Post,
-            "Failed to accept invitation",
-            RequestBodyKind::Json,
-        ),
-        "auth.list_sessions" => (
-            HttpMethod::Get,
-            "Failed to list browser sessions",
-            RequestBodyKind::None,
-        ),
-        "auth.revoke_session" => (
-            HttpMethod::Delete,
-            "Failed to revoke browser session",
-            RequestBodyKind::None,
-        ),
-        "auth.step_up.start" => (
-            HttpMethod::Post,
-            "Failed to start step-up challenge",
-            RequestBodyKind::Json,
-        ),
-        "auth.step_up.status" => (
-            HttpMethod::Get,
-            "Failed to check step-up challenge",
-            RequestBodyKind::None,
-        ),
-        "auth.step_up.approve" => (
-            HttpMethod::Post,
-            "Failed to approve step-up challenge",
-            RequestBodyKind::Json,
-        ),
-        "auth.recovery.owner_start" => (
-            HttpMethod::Post,
-            "Failed to start owner recovery",
-            RequestBodyKind::Json,
-        ),
-        "auth.recovery.owner_finish" => (
-            HttpMethod::Post,
-            "Failed to finish owner recovery",
-            RequestBodyKind::Json,
-        ),
-        "preferences.get" => (
-            HttpMethod::Get,
-            "Failed to load preferences",
-            RequestBodyKind::None,
-        ),
-        "preferences.patch" => (
-            HttpMethod::Patch,
-            "Failed to update preferences",
-            RequestBodyKind::Json,
-        ),
-        "space.list" => (
-            HttpMethod::Get,
-            "Failed to list spaces",
-            RequestBodyKind::None,
-        ),
-        "space.create" => (
-            HttpMethod::Post,
-            "Failed to create space",
-            RequestBodyKind::Json,
-        ),
-        "space.get" => (
-            HttpMethod::Get,
-            "Failed to get space",
-            RequestBodyKind::None,
-        ),
-        "space.audit" => (
-            HttpMethod::Get,
-            "Failed to load Space audit log",
-            RequestBodyKind::None,
-        ),
-        "space.health" => (
-            HttpMethod::Get,
-            "Failed to inspect Space health",
-            RequestBodyKind::None,
-        ),
-        "change.list" => (
-            HttpMethod::Get,
-            "Failed to list Knowledge changes",
-            RequestBodyKind::None,
-        ),
-        "change.page" => (
-            HttpMethod::Get,
-            "Failed to page Knowledge changes",
-            RequestBodyKind::None,
-        ),
-        "change.query" => (
-            HttpMethod::Get,
-            "Failed to query Knowledge changes",
-            RequestBodyKind::None,
-        ),
-        "change.inspect" => (
-            HttpMethod::Get,
-            "Failed to inspect Knowledge change",
-            RequestBodyKind::None,
-        ),
-        "change.affected.get" => (
-            HttpMethod::Get,
-            "Failed to get Change target evidence",
-            RequestBodyKind::None,
-        ),
-        "change.revert.preview" => (
-            HttpMethod::Get,
-            "Failed to preview Knowledge change revert",
-            RequestBodyKind::None,
-        ),
-        "change.revert" => (
-            HttpMethod::Post,
-            "Failed to revert Knowledge change",
-            RequestBodyKind::Json,
-        ),
-        "run.undo.preview" => (
-            HttpMethod::Get,
-            "Failed to preview Run undo",
-            RequestBodyKind::None,
-        ),
-        "run.inspect" => (
-            HttpMethod::Get,
-            "Failed to inspect Run",
-            RequestBodyKind::None,
-        ),
-        "run.undo" => (
-            HttpMethod::Post,
-            "Failed to undo Run",
-            RequestBodyKind::Json,
-        ),
-        "ugoite.apply" => (
-            HttpMethod::Post,
-            "Failed to apply Knowledge operations",
-            RequestBodyKind::Json,
-        ),
-        "pin.list" => (
-            HttpMethod::Get,
-            "Failed to list publication pins",
-            RequestBodyKind::None,
-        ),
-        "pin.create" => (
-            HttpMethod::Post,
-            "Failed to create publication pin",
-            RequestBodyKind::Json,
-        ),
-        "pin.delete" => (
-            HttpMethod::Delete,
-            "Failed to delete publication pin",
-            RequestBodyKind::None,
-        ),
-        "space.pin_diff" => (
-            HttpMethod::Get,
-            "Failed to diff publication pins",
-            RequestBodyKind::None,
-        ),
-        "space.patch" => (
-            HttpMethod::Patch,
-            "Failed to patch space",
-            RequestBodyKind::Json,
-        ),
-        "space.test_connection" => (
-            HttpMethod::Post,
-            "Failed to test connection",
-            RequestBodyKind::Json,
-        ),
-        "space.members.list" => (
-            HttpMethod::Get,
-            "Failed to list members",
-            RequestBodyKind::None,
-        ),
-        "space.members.invite" => (
-            HttpMethod::Post,
-            "Failed to invite member",
-            RequestBodyKind::Json,
-        ),
-        "space.members.update_role" => (
-            HttpMethod::Post,
-            "Failed to update role",
-            RequestBodyKind::Json,
-        ),
-        "space.members.revoke" => (
-            HttpMethod::Delete,
-            "Failed to revoke member",
-            RequestBodyKind::None,
-        ),
-        "space.recovery.force_reset" => (
-            HttpMethod::Post,
-            "Failed to issue owner recovery approval",
-            RequestBodyKind::Json,
-        ),
-        "form.list_types" => (
-            HttpMethod::Get,
-            "Failed to list form types",
-            RequestBodyKind::None,
-        ),
-        "form.list" => (
-            HttpMethod::Get,
-            "Failed to list forms",
-            RequestBodyKind::None,
-        ),
-        "form.get" => (HttpMethod::Get, "Failed to get form", RequestBodyKind::None),
-        "form.upsert" => (
-            HttpMethod::Post,
-            "Failed to save form",
-            RequestBodyKind::Json,
-        ),
-        "entry.list" => (
-            HttpMethod::Get,
-            "Failed to list entries",
-            RequestBodyKind::None,
-        ),
-        "entry.query" => (
-            HttpMethod::Post,
-            "Failed to query entries",
-            RequestBodyKind::Json,
-        ),
-        "entry.query.count" => (
-            HttpMethod::Post,
-            "Failed to count entries",
-            RequestBodyKind::Json,
-        ),
-        "entry.get" => (
-            HttpMethod::Get,
-            "Failed to get entry",
-            RequestBodyKind::None,
-        ),
-        "composition.lint" => (
-            HttpMethod::Post,
-            "Failed to lint Composition",
-            RequestBodyKind::Json,
-        ),
-        "composition.list" => (
-            HttpMethod::Get,
-            "Failed to list Compositions",
-            RequestBodyKind::None,
-        ),
-        "composition.get" => (
-            HttpMethod::Get,
-            "Failed to get Composition",
-            RequestBodyKind::None,
-        ),
-        "composition.history" => (
-            HttpMethod::Get,
-            "Failed to get Composition history",
-            RequestBodyKind::None,
-        ),
-        "composition.snapshot_check" => (
-            HttpMethod::Post,
-            "Failed to recheck Composition snapshot",
-            RequestBodyKind::None,
-        ),
-        "composition.preview" => (
-            HttpMethod::Post,
-            "Failed to preview Composition",
-            RequestBodyKind::Json,
-        ),
-        "composition.evaluate" => (
-            HttpMethod::Post,
-            "Failed to evaluate Composition graph",
-            RequestBodyKind::Json,
-        ),
-        "composition.save" => (
-            HttpMethod::Post,
-            "Failed to save Composition",
-            RequestBodyKind::Json,
-        ),
-        "composition.restore" => (
-            HttpMethod::Post,
-            "Failed to restore Composition",
-            RequestBodyKind::Json,
-        ),
-        "entry.create" => (
-            HttpMethod::Post,
-            "Failed to create entry",
-            RequestBodyKind::Json,
-        ),
-        "entry.update" => (
-            HttpMethod::Put,
-            "Failed to update entry",
-            RequestBodyKind::Json,
-        ),
-        "entry.delete" => (
-            HttpMethod::Delete,
-            "Failed to delete entry",
-            RequestBodyKind::None,
-        ),
-        "entry.history" => (
-            HttpMethod::Get,
-            "Failed to get entry history",
-            RequestBodyKind::None,
-        ),
-        "entry.revision" => (
-            HttpMethod::Get,
-            "Failed to get entry revision",
-            RequestBodyKind::None,
-        ),
-        "entry.restore" => (
-            HttpMethod::Post,
-            "Failed to restore entry",
-            RequestBodyKind::Json,
-        ),
-        "sql.list" => (
-            HttpMethod::Get,
-            "Failed to list saved SQL",
-            RequestBodyKind::None,
-        ),
-        "sql.lint" => (
-            HttpMethod::Post,
-            "Failed to lint SQL",
-            RequestBodyKind::Json,
-        ),
-        "sql.get" => (
-            HttpMethod::Get,
-            "Failed to get saved SQL",
-            RequestBodyKind::None,
-        ),
-        "sql.create" => (
-            HttpMethod::Post,
-            "Failed to create saved SQL",
-            RequestBodyKind::Json,
-        ),
-        "sql.update" => (
-            HttpMethod::Put,
-            "Failed to update saved SQL",
-            RequestBodyKind::Json,
-        ),
-        "sql.delete" => (
-            HttpMethod::Delete,
-            "Failed to delete saved SQL",
-            RequestBodyKind::None,
-        ),
-        "sql.query" => (
-            HttpMethod::Post,
-            "Failed to query SQL",
-            RequestBodyKind::Json,
-        ),
-        "sql.query.plan" => (
-            HttpMethod::Post,
-            "Failed to plan SQL query",
-            RequestBodyKind::Json,
-        ),
-        "sql.query.count" => (
-            HttpMethod::Post,
-            "Failed to count SQL query rows",
-            RequestBodyKind::Json,
-        ),
-        "agent.list" => (
-            HttpMethod::Get,
-            "Failed to list agents",
-            RequestBodyKind::None,
-        ),
-        "agent.create" => (
-            HttpMethod::Post,
-            "Failed to create agent",
-            RequestBodyKind::Json,
-        ),
-        "agent.revoke" => (
-            HttpMethod::Delete,
-            "Failed to revoke agent",
-            RequestBodyKind::None,
-        ),
-        "approval.issue" => (
-            HttpMethod::Post,
-            "Failed to issue human approval",
-            RequestBodyKind::Json,
-        ),
-        "access.get" => (
-            HttpMethod::Get,
-            "Failed to load access policy",
-            RequestBodyKind::None,
-        ),
-        "access.put" => (
-            HttpMethod::Put,
-            "Failed to update access policy",
-            RequestBodyKind::Json,
-        ),
-        "asset.upload" => (
-            HttpMethod::Post,
-            "Failed to upload asset",
-            RequestBodyKind::Multipart,
-        ),
-        "asset.read" => (
-            HttpMethod::Get,
-            "Failed to read asset",
-            RequestBodyKind::None,
-        ),
-        "asset.delete" => (
-            HttpMethod::Delete,
-            "Failed to delete asset",
-            RequestBodyKind::None,
-        ),
-        "asset.list" => (
-            HttpMethod::Get,
-            "Failed to list assets",
-            RequestBodyKind::None,
-        ),
-        _ => return None,
+// Canonical protocol metadata. `prepare_request` separately maps operation
+// names to explicit path/query arguments; it does not redefine method, body,
+// failure, or authentication behavior.
+// One ordered declaration emits both the stable public operation manifest and
+// the typed request/response/auth metadata registry.
+macro_rules! operation_registry {
+    ($(
+        $operation:literal => $method:expr, $failure_context:literal,
+            $body_kind:expr, $auth_intent:expr;
+    )+ $(,)?) => {
+        pub const SUPPORTED_OPERATIONS: &[&str] = &[
+            $( $operation, )+
+        ];
+
+        static OPERATION_SPECS: &[OperationSpec] = &[
+            $( OperationSpec {
+                operation: $operation,
+                method: $method,
+                failure_context: $failure_context,
+                body_kind: $body_kind,
+                auth_intent: $auth_intent,
+            }, )+
+        ];
     };
-    Some(OperationSpec {
-        method,
-        failure_context,
-        body_kind,
-    })
+}
+
+operation_registry! {
+    "auth.get_config" => HttpMethod::Get, "Failed to load auth config", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "auth.get_session" => HttpMethod::Get, "Failed to load auth session", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "auth.audit" => HttpMethod::Get, "Failed to load node audit log", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "auth.clear_session" => HttpMethod::Delete, "Failed to clear auth session", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "auth.accept_invitation" => HttpMethod::Post, "Failed to accept invitation", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "auth.list_sessions" => HttpMethod::Get, "Failed to list browser sessions", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "auth.revoke_session" => HttpMethod::Delete, "Failed to revoke browser session", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "auth.step_up.start" => HttpMethod::Post, "Failed to start step-up challenge", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "auth.step_up.status" => HttpMethod::Get, "Failed to check step-up challenge", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "auth.step_up.approve" => HttpMethod::Post, "Failed to approve step-up challenge", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "auth.recovery.owner_start" => HttpMethod::Post, "Failed to start owner recovery", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "auth.recovery.owner_finish" => HttpMethod::Post, "Failed to finish owner recovery", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "preferences.get" => HttpMethod::Get, "Failed to load preferences", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "preferences.patch" => HttpMethod::Patch, "Failed to update preferences", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.list" => HttpMethod::Get, "Failed to list spaces", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "space.create" => HttpMethod::Post, "Failed to create space", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.get" => HttpMethod::Get, "Failed to get space", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "space.audit" => HttpMethod::Get, "Failed to load Space audit log", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "space.health" => HttpMethod::Get, "Failed to inspect Space health", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.list" => HttpMethod::Get, "Failed to list Knowledge changes", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.page" => HttpMethod::Get, "Failed to page Knowledge changes", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.query" => HttpMethod::Get, "Failed to query Knowledge changes", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.inspect" => HttpMethod::Get, "Failed to inspect Knowledge change", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.affected.get" => HttpMethod::Get, "Failed to get Change target evidence", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.revert.preview" => HttpMethod::Get, "Failed to preview Knowledge change revert", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "change.revert" => HttpMethod::Post, "Failed to revert Knowledge change", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "run.inspect" => HttpMethod::Get, "Failed to inspect Run", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "run.undo.preview" => HttpMethod::Get, "Failed to preview Run undo", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "run.undo" => HttpMethod::Post, "Failed to undo Run", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "ugoite.apply" => HttpMethod::Post, "Failed to apply Knowledge operations", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "pin.list" => HttpMethod::Get, "Failed to list publication pins", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "pin.create" => HttpMethod::Post, "Failed to create publication pin", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "pin.delete" => HttpMethod::Delete, "Failed to delete publication pin", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "space.pin_diff" => HttpMethod::Get, "Failed to diff publication pins", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "space.patch" => HttpMethod::Patch, "Failed to patch space", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.test_connection" => HttpMethod::Post, "Failed to test connection", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.members.list" => HttpMethod::Get, "Failed to list members", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "space.members.invite" => HttpMethod::Post, "Failed to invite member", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.members.update_role" => HttpMethod::Post, "Failed to update role", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "space.members.revoke" => HttpMethod::Delete, "Failed to revoke member", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "space.recovery.force_reset" => HttpMethod::Post, "Failed to issue owner recovery approval", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "form.list_types" => HttpMethod::Get, "Failed to list form types", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "form.list" => HttpMethod::Get, "Failed to list forms", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "form.get" => HttpMethod::Get, "Failed to get form", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "form.upsert" => HttpMethod::Post, "Failed to save form", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "entry.list" => HttpMethod::Get, "Failed to list entries", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "entry.query" => HttpMethod::Post, "Failed to query entries", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "entry.query.count" => HttpMethod::Post, "Failed to count entries", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "entry.get" => HttpMethod::Get, "Failed to get entry", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "entry.create" => HttpMethod::Post, "Failed to create entry", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "entry.update" => HttpMethod::Put, "Failed to update entry", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "entry.delete" => HttpMethod::Delete, "Failed to delete entry", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "entry.history" => HttpMethod::Get, "Failed to get entry history", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "entry.revision" => HttpMethod::Get, "Failed to get entry revision", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "entry.restore" => HttpMethod::Post, "Failed to restore entry", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "composition.lint" => HttpMethod::Post, "Failed to lint Composition", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "composition.list" => HttpMethod::Get, "Failed to list Compositions", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "composition.get" => HttpMethod::Get, "Failed to get Composition", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "composition.history" => HttpMethod::Get, "Failed to get Composition history", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "composition.snapshot_check" => HttpMethod::Post, "Failed to recheck Composition snapshot", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "composition.preview" => HttpMethod::Post, "Failed to preview Composition", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "composition.evaluate" => HttpMethod::Post, "Failed to evaluate Composition graph", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "composition.save" => HttpMethod::Post, "Failed to save Composition", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "composition.restore" => HttpMethod::Post, "Failed to restore Composition", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "sql.lint" => HttpMethod::Post, "Failed to lint SQL", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "sql.list" => HttpMethod::Get, "Failed to list saved SQL", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "sql.get" => HttpMethod::Get, "Failed to get saved SQL", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "sql.create" => HttpMethod::Post, "Failed to create saved SQL", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "sql.update" => HttpMethod::Put, "Failed to update saved SQL", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "sql.delete" => HttpMethod::Delete, "Failed to delete saved SQL", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "sql.query" => HttpMethod::Post, "Failed to query SQL", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "sql.query.plan" => HttpMethod::Post, "Failed to plan SQL query", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "sql.query.count" => HttpMethod::Post, "Failed to count SQL query rows", RequestBodyKind::Json, AuthIntent::AllowAnonymous;
+    "agent.list" => HttpMethod::Get, "Failed to list agents", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "agent.create" => HttpMethod::Post, "Failed to create agent", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "agent.revoke" => HttpMethod::Delete, "Failed to revoke agent", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "approval.issue" => HttpMethod::Post, "Failed to issue human approval", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "access.get" => HttpMethod::Get, "Failed to load access policy", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "access.put" => HttpMethod::Put, "Failed to update access policy", RequestBodyKind::Json, AuthIntent::RequireCredential;
+    "asset.upload" => HttpMethod::Post, "Failed to upload asset", RequestBodyKind::Multipart, AuthIntent::RequireCredential;
+    "asset.read" => HttpMethod::Get, "Failed to read asset", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+    "asset.delete" => HttpMethod::Delete, "Failed to delete asset", RequestBodyKind::None, AuthIntent::RequireCredential;
+    "asset.list" => HttpMethod::Get, "Failed to list assets", RequestBodyKind::None, AuthIntent::AllowAnonymous;
+}
+
+fn operation_spec(operation: &str) -> Option<OperationSpec> {
+    OPERATION_SPECS
+        .iter()
+        .find(|spec| spec.operation == operation)
+        .copied()
 }
 
 fn required_string(
@@ -2475,13 +1980,12 @@ mod tests {
     }
 
     #[test]
-    fn removed_composition_operations_have_no_protocol_fallback() {
-        for operation in ["composition.resolve", "composition.metric.query"] {
-            let error = prepare_request(operation, &json!({}), None)
-                .expect_err("removed Composition operation must be rejected");
-            assert_eq!(error.kind, "invalid_operation");
-            assert_eq!(error.operation.as_deref(), Some(operation));
-        }
+    fn unknown_operation_is_rejected_by_the_protocol() {
+        let operation = "unknown.operation";
+        let error = prepare_request(operation, &json!({}), None)
+            .expect_err("unknown operation must be rejected");
+        assert_eq!(error.kind, "invalid_operation");
+        assert_eq!(error.operation.as_deref(), Some(operation));
     }
 
     #[test]
@@ -4428,7 +3932,7 @@ mod tests {
     }
 
     #[test]
-    fn test_api_req_api_001_supported_operation_manifest_matches_prepare_and_decode_specs() {
+    fn test_api_req_api_001_supported_operation_registry_prepares_and_decodes() {
         let mut operations = std::collections::BTreeSet::new();
         for operation in SUPPORTED_OPERATIONS {
             assert!(
