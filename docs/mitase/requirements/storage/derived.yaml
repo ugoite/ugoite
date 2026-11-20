@@ -77,12 +77,12 @@ requirements:
           - id: rebuild-recovery-case
             adapter: rust
             path: crates/ugoite-iceberg/src/derived_relation.rs
-            selector: { kind: symbol, name: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild }
+            selector: { kind: symbol, name: derived_relation::tests::obsolete_derived_head_is_replaced_by_the_next_rebuild }
             claims:
               - kind: verifies
                 criterion: REQ-STO-013#criterion.rebuildable-builds
                 covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::obsolete_derived_head_is_replaced_by_the_next_rebuild } }
           - id: materialized-coordinate-case
             adapter: rust
             path: crates/ugoite-iceberg/src/derived_relation.rs
