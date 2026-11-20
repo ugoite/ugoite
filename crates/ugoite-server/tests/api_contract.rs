@@ -1474,12 +1474,6 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "missing_field",
             "field_type_changed",
             "query_schema_changed",
-            "metric_result_not_scalar",
-            "metric_result_type_mismatch",
-            "metric_scalar_no_rows",
-            "metric_scalar_multiple_rows",
-            "metric_result_column_missing",
-            "metric_result_column_ambiguous",
         ])
     );
 }

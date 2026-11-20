@@ -1014,7 +1014,7 @@ fn resolve_parts(
                     }
                 ) {
                     return Err(vec![CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::MetricResultNotScalar,
+                        CompositionDiagnosticCode::VariableTypeMismatch,
                         variable,
                     )]);
                 }

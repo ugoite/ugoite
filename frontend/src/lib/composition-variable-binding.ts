@@ -1,13 +1,14 @@
+import type {
+  VariableGraphArgumentBinding,
+  VariableGraphLiteral,
+  VariableGraphQuery,
+  VariableGraphResultType,
+  VariableGraphScalarDescriptor,
+  VariableGraphScalarType,
+} from "~/lib/ugoite-client/protocol";
+
 /** Strict authoring contract for Composition's variable-only graph. */
-export type CompositionScalarType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "decimal"
-  | "date"
-  | "timestamp"
-  | "json";
+export type CompositionScalarType = VariableGraphScalarType;
 
 /** SQL argument types currently supported by the shared executor binder. */
 export type CompositionSqlArgumentType = Exclude<
@@ -15,44 +16,15 @@ export type CompositionSqlArgumentType = Exclude<
   "decimal" | "json"
 >;
 
-export interface CompositionScalarDescriptor {
-  scalar_type: CompositionScalarType;
-  nullable: boolean;
-}
+export type CompositionScalarDescriptor = VariableGraphScalarDescriptor;
+export type CompositionLiteral = VariableGraphLiteral;
+export type CompositionQueryArgument = VariableGraphArgumentBinding;
 
-export type CompositionLiteral =
-  | { kind: "string"; value: string }
-  | { kind: "boolean"; value: boolean }
-  | { kind: "integer"; value: string }
-  | { kind: "float"; value: number }
-  | { kind: "decimal"; value: string }
-  | { kind: "date"; value: string }
-  | { kind: "timestamp"; value: string }
-  | { kind: "json"; value: unknown }
-  | { kind: "null" };
+export type CompositionQueryDefinition = VariableGraphQuery & {
+  arguments: VariableGraphArgumentBinding[];
+};
 
-export interface CompositionQueryArgument {
-  name: string;
-  variable: string;
-}
-
-export interface CompositionQueryBase {
-  arguments: CompositionQueryArgument[];
-  /** Resolved by Core when the query variable is committed. */
-  form_bindings?: Array<{ relation: string; form_id: string }>;
-  /** Resolved by Core when the query variable is committed. */
-  schema_fingerprint?: string;
-}
-
-export type CompositionQueryDefinition =
-  CompositionQueryBase & { kind: "inline_sql"; sql: string };
-
-export type CompositionQueryReturn =
-  | { kind: "scalar"; value_type: CompositionScalarDescriptor }
-  | {
-    kind: "table";
-    columns: Array<{ name: string; value_type: CompositionScalarDescriptor }>;
-  };
+export type CompositionQueryReturn = VariableGraphResultType;
 
 export type CompositionVariableNode =
   | {

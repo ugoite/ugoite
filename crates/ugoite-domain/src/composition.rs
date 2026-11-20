@@ -20,7 +20,6 @@ pub use form_query::{
 pub mod variable_binding;
 pub mod variable_graph;
 pub mod variable_graph_input;
-pub mod variable_invalidation;
 mod yaml;
 
 use variable_binding::{compile_variable_graph_bindings, VariableGraphComponentBinding};
@@ -512,10 +511,6 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     QuerySchemaChanged,
-    MetricResultNotScalar,
-    MetricResultTypeMismatch,
-    MetricScalarNoRows,
-    MetricScalarMultipleRows,
 }
 
 impl CompositionDiagnosticCode {
@@ -531,10 +526,6 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::QuerySchemaChanged => "query_schema_changed",
-            Self::MetricResultNotScalar => "metric_result_not_scalar",
-            Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricScalarNoRows => "metric_scalar_no_rows",
-            Self::MetricScalarMultipleRows => "metric_scalar_multiple_rows",
         }
     }
 }

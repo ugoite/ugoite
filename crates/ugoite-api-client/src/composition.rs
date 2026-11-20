@@ -21,12 +21,6 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     QuerySchemaChanged,
-    MetricResultNotScalar,
-    MetricResultTypeMismatch,
-    MetricScalarNoRows,
-    MetricScalarMultipleRows,
-    MetricResultColumnMissing,
-    MetricResultColumnAmbiguous,
 }
 
 impl CompositionDiagnosticCode {
@@ -42,12 +36,6 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::QuerySchemaChanged => "query_schema_changed",
-            Self::MetricResultNotScalar => "metric_result_not_scalar",
-            Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricScalarNoRows => "metric_scalar_no_rows",
-            Self::MetricScalarMultipleRows => "metric_scalar_multiple_rows",
-            Self::MetricResultColumnMissing => "metric_result_column_missing",
-            Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
         }
     }
 
@@ -63,12 +51,6 @@ impl CompositionDiagnosticCode {
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
             "query_schema_changed" => Some(Self::QuerySchemaChanged),
-            "metric_result_not_scalar" => Some(Self::MetricResultNotScalar),
-            "metric_result_type_mismatch" => Some(Self::MetricResultTypeMismatch),
-            "metric_scalar_no_rows" => Some(Self::MetricScalarNoRows),
-            "metric_scalar_multiple_rows" => Some(Self::MetricScalarMultipleRows),
-            "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
-            "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
             _ => None,
         }
     }

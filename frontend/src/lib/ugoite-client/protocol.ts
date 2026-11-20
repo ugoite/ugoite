@@ -308,21 +308,13 @@ export type VariableGraphArgumentBinding = {
   variable: string;
 };
 
-export type VariableGraphQuery =
-  & (
-    | { kind: "inline_sql"; sql: string }
-    | {
-      kind: "saved_sql";
-      entry_id?: string | null;
-      revision_id?: string | null;
-      column?: string | null;
-    }
-  )
-  & {
-    arguments?: VariableGraphArgumentBinding[];
-    form_bindings?: { relation: string; form_id: string }[];
-    schema_fingerprint?: string;
-  };
+export type VariableGraphQuery = {
+  kind: "inline_sql";
+  sql: string;
+  arguments?: VariableGraphArgumentBinding[];
+  form_bindings?: { relation: string; form_id: string }[];
+  schema_fingerprint?: string;
+};
 
 export type VariableGraphResultType =
   | { kind: "scalar"; value_type: VariableGraphScalarDescriptor }
@@ -369,8 +361,6 @@ export type VariableGraphDiagnosticCode =
   | "invalid_input_default"
   | "invalid_result_descriptor"
   | "invalid_inline_sql"
-  | "invalid_saved_sql_identity"
-  | "invalid_saved_sql_column"
   | "missing_argument_binding"
   | "unused_argument_binding"
   | "missing_variable_reference"

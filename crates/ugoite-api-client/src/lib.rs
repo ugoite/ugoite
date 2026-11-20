@@ -3644,30 +3644,6 @@ mod tests {
                 CompositionDiagnosticCode::VariableTypeMismatch,
                 "variable_type_mismatch",
             ),
-            (
-                CompositionDiagnosticCode::MetricResultNotScalar,
-                "metric_result_not_scalar",
-            ),
-            (
-                CompositionDiagnosticCode::MetricResultTypeMismatch,
-                "metric_result_type_mismatch",
-            ),
-            (
-                CompositionDiagnosticCode::MetricScalarNoRows,
-                "metric_scalar_no_rows",
-            ),
-            (
-                CompositionDiagnosticCode::MetricScalarMultipleRows,
-                "metric_scalar_multiple_rows",
-            ),
-            (
-                CompositionDiagnosticCode::MetricResultColumnMissing,
-                "metric_result_column_missing",
-            ),
-            (
-                CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-                "metric_result_column_ambiguous",
-            ),
         ] {
             assert_eq!(code.as_str(), expected);
             assert_eq!(CompositionDiagnosticCode::from_code(expected), Some(code));
@@ -3682,11 +3658,20 @@ mod tests {
                 json!({"ok": false, "diagnostics": [{"code": expected}]})
             );
         }
-        assert_eq!(
-            CompositionDiagnosticCode::from_code("metric_scalar_expected_one_row"),
-            None,
-            "row cardinality diagnostics must remain distinct",
-        );
+        for removed in [
+            "metric_result_not_scalar",
+            "metric_result_type_mismatch",
+            "metric_scalar_no_rows",
+            "metric_scalar_multiple_rows",
+            "metric_result_column_missing",
+            "metric_result_column_ambiguous",
+        ] {
+            assert_eq!(
+                CompositionDiagnosticCode::from_code(removed),
+                None,
+                "obsolete metric diagnostic {removed} must be rejected"
+            );
+        }
 
         let lint_success = json!({
             "ok": true,
