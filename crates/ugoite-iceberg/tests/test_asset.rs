@@ -476,14 +476,17 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
     space::create_space(&op, "asset-lifecycle-bounded", "/tmp").await?;
     let ws_path = "spaces/asset-lifecycle-bounded";
     let store = ugoite_storage::SpaceCatalogStore::new(op.clone(), ws_path)?;
-    let references = futures::future::try_join_all((0..3).map(|index| async {
-        asset::save_asset(
-            &op,
-            ws_path,
-            &format!("asset-history-{index}.bin"),
-            format!("asset-history-bytes-{index}").as_bytes(),
-        )
-        .await
+    let references = futures::future::try_join_all((0..3).map(|index| {
+        let op = op.clone();
+        async move {
+            asset::save_asset(
+                &op,
+                ws_path,
+                &format!("asset-history-{index}.bin"),
+                format!("asset-history-bytes-{index}").as_bytes(),
+            )
+            .await
+        }
     }))
     .await?;
     let initial = store.read_exact_head().await?.expect("space Head").bytes;
