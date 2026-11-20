@@ -71,7 +71,7 @@ run = [
 
 [tasks."lint:rust"]
 description = "Lint Rust workspace"
-run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+run = "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings"
 
 [tasks."lint:deno"]
 description = "Lint Deno workspace sources"
@@ -274,6 +274,12 @@ run = [
 description = "Compile-check Rust workspace and supported WASM targets"
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
+  { task = "check:rust:wasm" },
+]
+
+[tasks."check:rust:wasm"]
+description = "Compile-check supported WASM targets"
+run = [
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
@@ -750,7 +756,7 @@ run = [
 description = "Run Rust and repository checks for hosted CI"
 run = [
   { task = "lint:rust" },
-  { task = "check:rust" },
+  { task = "check:rust:wasm" },
   { task = "check:repo" },
   { task = "check:wasm:composition-parity" },
 ]
