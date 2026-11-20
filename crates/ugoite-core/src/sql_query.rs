@@ -4,9 +4,6 @@
 //! only the immutable publication and query coordinate needed to repeat a
 //! bounded page; it is never an authorization credential.
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
@@ -34,8 +31,6 @@ pub struct SqlFormBindingGuard {
     pub name: String,
     pub form_id: String,
 }
-
-type HmacSha256 = Hmac<Sha256>;
 
 fn is_false(value: &bool) -> bool {
     !value
@@ -543,55 +538,36 @@ impl SqlContinuation {
     }
 
     pub fn encode(&self, signing_key: &[u8]) -> Result<String, SqlQueryError> {
-        if signing_key.is_empty() {
-            return Err(SqlQueryError::Invalid(
-                "SQL continuation signing key must not be empty".to_string(),
-            ));
-        }
         let payload = serde_json::to_vec(self).map_err(SqlQueryError::Serialize)?;
-        let mut mac = HmacSha256::new_from_slice(signing_key)
-            .map_err(|_| SqlQueryError::Invalid("invalid SQL continuation key".to_string()))?;
-        mac.update(&payload);
-        Ok(format!(
-            "v{}.{}.{}",
+        crate::signed_cursor::encode(
             SQL_CONTINUATION_VERSION,
-            URL_SAFE_NO_PAD.encode(payload),
-            URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-        ))
+            &payload,
+            signing_key,
+            "SQL continuation signing key must not be empty",
+            "invalid SQL continuation key",
+        )
+        .map_err(|error| match error {
+            crate::signed_cursor::Error::Invalid(message) => {
+                SqlQueryError::Invalid(message.to_string())
+            }
+            crate::signed_cursor::Error::Tampered => SqlQueryError::Tampered,
+        })
     }
 
     pub fn decode(token: &str, signing_key: &[u8]) -> Result<Self, SqlQueryError> {
-        let mut parts = token.split('.');
-        let version = parts
-            .next()
-            .ok_or_else(|| SqlQueryError::Invalid("SQL continuation is malformed".to_string()))?;
-        let payload = parts
-            .next()
-            .ok_or_else(|| SqlQueryError::Invalid("SQL continuation is malformed".to_string()))?;
-        let signature = parts
-            .next()
-            .ok_or_else(|| SqlQueryError::Invalid("SQL continuation is malformed".to_string()))?;
-        if parts.next().is_some() || version != "v1" {
-            return Err(SqlQueryError::Invalid(
-                "SQL continuation version is unsupported".to_string(),
-            ));
-        }
-        if signing_key.is_empty() {
-            return Err(SqlQueryError::Invalid(
-                "SQL continuation signing key must not be empty".to_string(),
-            ));
-        }
-        let payload_bytes = URL_SAFE_NO_PAD.decode(payload).map_err(|_| {
-            SqlQueryError::Invalid("SQL continuation payload is malformed".to_string())
+        let payload_bytes = crate::signed_cursor::decode(
+            token,
+            signing_key,
+            "SQL continuation",
+            "SQL continuation signing key must not be empty",
+            "invalid SQL continuation key",
+        )
+        .map_err(|error| match error {
+            crate::signed_cursor::Error::Invalid(message) => {
+                SqlQueryError::Invalid(message.to_string())
+            }
+            crate::signed_cursor::Error::Tampered => SqlQueryError::Tampered,
         })?;
-        let signature_bytes = URL_SAFE_NO_PAD.decode(signature).map_err(|_| {
-            SqlQueryError::Invalid("SQL continuation signature is malformed".to_string())
-        })?;
-        let mut mac = HmacSha256::new_from_slice(signing_key)
-            .map_err(|_| SqlQueryError::Invalid("invalid SQL continuation key".to_string()))?;
-        mac.update(&payload_bytes);
-        mac.verify_slice(&signature_bytes)
-            .map_err(|_| SqlQueryError::Tampered)?;
         let continuation: Self =
             serde_json::from_slice(&payload_bytes).map_err(SqlQueryError::Deserialize)?;
         if continuation.version != SQL_CONTINUATION_VERSION {

@@ -2,6 +2,7 @@
 
 use super::*;
 use datafusion::scalar::ScalarValue;
+use serde_json::Value;
 use std::collections::HashMap;
 use ugoite_domain::form::FormDefinition;
 
@@ -14,10 +15,160 @@ pub(super) struct PreparedSqlRequest {
     pub(super) form_binding_guards: Vec<ugoite_core::sql_query::SqlFormBindingGuard>,
 }
 
+pub(super) struct FinishedSqlPage {
+    pub(super) rows: Vec<Value>,
+    pub(super) exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
+    pub(super) has_more: bool,
+    pub(super) next_offset: usize,
+}
+
+pub(super) struct SqlPageContinuationContext<'a> {
+    pub(super) space_uid: ugoite_domain::id::SpaceId,
+    pub(super) publication: PublicationRef,
+    pub(super) sql_fingerprint: String,
+    pub(super) parameter_fingerprint: String,
+    pub(super) authorization_fingerprint: String,
+    pub(super) next_offset: usize,
+    pub(super) request: &'a SqlQueryRequest,
+    pub(super) prepared: &'a PreparedSqlRequest,
+    pub(super) composition_entry_id: Option<&'a str>,
+    pub(super) context_fingerprint: Option<&'a str>,
+    pub(super) signing_key: &'a [u8],
+}
+
+/// Fingerprints for the request after resolving Saved SQL parameter defaults.
+/// Keep this calculation shared so every page adapter signs and validates the
+/// same effective request identity.
+pub(super) fn page_continuation_fingerprints(
+    request: &SqlQueryRequest,
+    prepared: &PreparedSqlRequest,
+) -> Result<(String, String)> {
+    let effective_parameter_types = prepared.parameter_types.clone();
+    let parameter_fingerprint = SqlQueryRequest {
+        parameter_types: effective_parameter_types,
+        ..request.clone()
+    }
+    .parameter_fingerprint()
+    .map_err(sql_query_contract_error)?;
+    let sql_fingerprint = request
+        .sql_fingerprint(&prepared.normalized_sql)
+        .map_err(sql_query_contract_error)?;
+    Ok((sql_fingerprint, parameter_fingerprint))
+}
+
+/// Validate continuation identity in the established order: Space first,
+/// then SQL, parameters, Saved SQL revision/binding, and graph snapshot.
+pub(super) fn validate_page_continuation_identity(
+    cursor: &SqlContinuation,
+    space_uid: Uuid,
+    request: &SqlQueryRequest,
+    prepared: &PreparedSqlRequest,
+    sql_fingerprint: &str,
+    parameter_fingerprint: &str,
+    context_fingerprint: Option<&str>,
+) -> Result<()> {
+    if cursor.space_id.as_uuid() != space_uid {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL continuation belongs to another Space",
+        )
+        .into());
+    }
+    if cursor.sql_fingerprint != sql_fingerprint
+        || cursor.parameter_fingerprint != parameter_fingerprint
+        || cursor.saved_sql != request.saved_sql
+        || cursor.binding_fingerprint
+            != prepared
+                .saved_revision
+                .as_ref()
+                .map(saved_sql_binding_fingerprint)
+                .transpose()?
+        || cursor.context_fingerprint.as_deref() != context_fingerprint
+    {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL, parameter, Saved SQL revision, or graph snapshot fingerprint does not match the continuation",
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct SqlSourceAuthorization<'a> {
     pub(super) state: &'a AuthorizationState,
     pub(super) principal_ids: &'a [Uuid],
+}
+
+pub(super) fn count_query_request(request: &SqlQueryCountRequest) -> SqlQueryRequest {
+    SqlQueryRequest {
+        sql: request.sql.clone(),
+        parameters: request.parameters.clone(),
+        parameter_types: request.parameter_types.clone(),
+        include_exact_integer_values: false,
+        limit: 1,
+        continuation: None,
+        execution_id: None,
+        saved_sql: request.saved_sql.clone(),
+        binding_base: request.binding_base.clone(),
+        form_binding_guards: request.form_binding_guards.clone(),
+    }
+}
+
+/// Apply the shared SQL page boundary after fetching `limit + 1` rows.
+pub(super) fn finish_sql_page(
+    mut rows: Vec<Value>,
+    mut exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
+    limit: usize,
+    offset: usize,
+    has_order: bool,
+) -> Result<FinishedSqlPage> {
+    if !has_order && rows.len() > limit {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL pagination requires an explicit ORDER BY",
+        )
+        .into());
+    }
+    let has_more = has_order && rows.len() > limit;
+    rows.truncate(limit);
+    if let Some(exact_integer_rows) = exact_integer_rows.as_mut() {
+        exact_integer_rows.truncate(limit);
+    }
+    let next_offset = if has_more {
+        offset
+            .checked_add(rows.len())
+            .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?
+    } else {
+        offset
+    };
+    Ok(FinishedSqlPage {
+        rows,
+        exact_integer_rows,
+        has_more,
+        next_offset,
+    })
+}
+
+pub(super) fn encode_page_continuation(context: SqlPageContinuationContext<'_>) -> Result<String> {
+    let mut continuation = SqlContinuation::new(
+        context.space_uid,
+        context.publication,
+        context.sql_fingerprint,
+        context.parameter_fingerprint,
+        context.authorization_fingerprint,
+        context.next_offset,
+    )?;
+    continuation.saved_sql = context.request.saved_sql.clone();
+    continuation.binding_fingerprint = context
+        .prepared
+        .saved_revision
+        .as_ref()
+        .map(saved_sql_binding_fingerprint)
+        .transpose()?;
+    continuation.composition_entry_id = context.composition_entry_id.map(str::to_owned);
+    continuation.context_fingerprint = context.context_fingerprint.map(str::to_owned);
+    Ok(continuation.encode(context.signing_key)?)
 }
 
 /// Resolve and validate one exact Saved SQL revision before an adapter selects
@@ -27,6 +178,25 @@ pub(super) async fn prepare_sql_request(
     space_id: &str,
     request: &SqlQueryRequest,
     authorization: Option<SqlSourceAuthorization<'_>>,
+) -> Result<PreparedSqlRequest> {
+    prepare_sql_request_inner(service, space_id, request, authorization, false).await
+}
+
+pub(super) async fn prepare_sql_count_request(
+    service: &UgoiteService,
+    space_id: &str,
+    request: &SqlQueryRequest,
+    authorization: Option<SqlSourceAuthorization<'_>>,
+) -> Result<PreparedSqlRequest> {
+    prepare_sql_request_inner(service, space_id, request, authorization, true).await
+}
+
+async fn prepare_sql_request_inner(
+    service: &UgoiteService,
+    space_id: &str,
+    request: &SqlQueryRequest,
+    authorization: Option<SqlSourceAuthorization<'_>>,
+    validate_space_before_parameters: bool,
 ) -> Result<PreparedSqlRequest> {
     if let (Some(authorization), Some(source)) = (authorization, request.saved_sql.as_ref()) {
         ensure_saved_sql_access(authorization.state, authorization.principal_ids, source)?;
@@ -47,6 +217,9 @@ pub(super) async fn prepare_sql_request(
     let normalized_sql = index::normalize_sql_template(query_sql)?;
     validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
     index::validate_read_only_sql(&normalized_sql)?;
+    if validate_space_before_parameters {
+        service.validate_complete_space(space_id).await?;
+    }
 
     let parameter_types = effective_sql_parameter_types(
         &request.parameters,

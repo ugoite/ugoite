@@ -9,4 +9,5 @@ pub mod entry_query;
 pub mod error;
 pub mod metadata;
 pub mod query;
+mod signed_cursor;
 pub mod sql_query;
