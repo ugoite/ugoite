@@ -989,6 +989,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       await saveRequest(attempt, false);
     } catch (error) {
+      invalidDraft ||= error instanceof UgoiteApiError && (
+        error.code === "invalid_composition" ||
+        error.code === "variable_type_mismatch"
+      );
       const stillOwnsCurrentPreflight = generation === saveGeneration() &&
         currentSaveInvocation(invocationId) !== undefined;
       if (attempt) {
