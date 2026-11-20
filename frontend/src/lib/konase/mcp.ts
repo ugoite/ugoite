@@ -5,6 +5,7 @@ import type {
   ResourceContent,
   ResourceReference,
 } from "./host";
+import { invokeKonase } from "../ugoite-client/protocol";
 
 export type McpRequest = {
   request_id: string;
@@ -242,11 +243,11 @@ const canonicalEffect = (name: string): CapabilityEffect | undefined => {
 };
 
 /** Confirms that a successful write produced the canonical MCP receipt. */
-export function validateMutationResult(
+export async function validateMutationResult(
   request: McpRequest,
   workId: string,
   result: McpResult,
-): McpResult {
+): Promise<McpResult> {
   if (
     result.request_id !== request.request_id ||
     result.operation !== request.operation
@@ -255,31 +256,27 @@ export function validateMutationResult(
   }
   if (!result.success) return result;
   if (request.operation === "ugoite.save") {
-    if (!validSaveReceipt(result.structured_content)) {
+    if (!await validateReceipt(request.operation, workId, result.structured_content)) {
       throw new Error("MCP save receipt could not be verified");
     }
   } else if (request.operation === "ugoite.undo") {
-    if (!validUndoReceipt(result.structured_content, workId)) {
+    if (!await validateReceipt(request.operation, workId, result.structured_content)) {
       throw new Error("MCP undo receipt could not be verified");
     }
   }
   return result;
 }
 
-function validSaveReceipt(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
-  const id = value.id;
-  return typeof id === "string" && id.length > 0 &&
-    value.uri === `ugoite://entry/${id}` &&
-    (value.status === "created" || value.status === "updated") &&
-    value._untrusted_content === true;
-}
-
-function validUndoReceipt(value: unknown, workId: string): boolean {
-  return isRecord(value) && value.run_id === workId &&
-    Number.isSafeInteger(value.reverted_change_count) &&
-    (value.reverted_change_count as number) >= 0 &&
-    value._untrusted_content === true;
+async function validateReceipt(
+  operation: string,
+  workId: string,
+  receipt: unknown,
+): Promise<boolean> {
+  return await invokeKonase<boolean>("konase.validate_mutation_receipt", {
+    operation,
+    work_id: workId,
+    receipt,
+  });
 }
 
 const resourcesReadSchema = (): Record<string, unknown> => ({

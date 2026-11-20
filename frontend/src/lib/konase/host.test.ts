@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import selectedContextFixture from "../../../../crates/ugoite-konase/fixtures/selected-context.json";
+import * as protocol from "../ugoite-client/protocol";
 import {
   type Capability,
   KonaseHost,
@@ -9,6 +10,8 @@ import {
 } from "./host";
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 import type { ModelHost, ModelRequest, ModelResult } from "./model";
+
+const invokeKonaseOriginal = protocol.invokeKonase;
 
 class ScriptedModel implements ModelHost {
   readonly requests: ModelRequest[] = [];
@@ -732,6 +735,95 @@ describe("Konase browser host", () => {
     host.dispose();
     await expect(turnPromise).rejects.toThrow();
     expect(host.resolveConfirmation(preview.requestId, true)).toBe(false);
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("does not dispatch an approved write when disposal races WASM effect authorization", async () => {
+    let finishAuthorization!: (effect: unknown) => void;
+    let markAuthorizationStarted!: () => void;
+    const authorizationStarted = new Promise<void>((resolve) => {
+      markAuthorizationStarted = resolve;
+    });
+    const authorization = new Promise<unknown>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let effectCalls = 0;
+    const invokeKonaseSpy = vi.spyOn(protocol, "invokeKonase")
+      .mockImplementation(
+        async <T>(
+          action: Parameters<typeof protocol.invokeKonase>[0],
+          value?: unknown,
+        ): Promise<T> => {
+          if (action === "konase.resolve_effect") {
+            effectCalls += 1;
+            if (effectCalls === 2) {
+              markAuthorizationStarted();
+              return await authorization as T;
+            }
+          }
+          return await invokeKonaseOriginal<T>(action, value);
+        },
+      );
+
+    try {
+      const model = new ScriptedModel([{
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      }]);
+      const mcp = new ScriptedMcp();
+      const host = new KonaseHost({
+        model,
+        mcp,
+        spaceId: "space-a",
+        onConfirmationRequired: (preview) => {
+          host.resolveConfirmation(preview.requestId, true);
+        },
+      });
+      const turn = host.submit("Save the note");
+
+      await authorizationStarted;
+      host.dispose();
+      finishAuthorization("write");
+
+      await expect(turn).rejects.toThrow(/no longer active/);
+      expect(effectCalls).toBe(2);
+      expect(mcp.calls).toHaveLength(0);
+    } finally {
+      invokeKonaseSpy.mockRestore();
+    }
+  });
+
+  it("does not dispatch a write if its progress listener disposes the Host", async () => {
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{
+        id: "save-call",
+        name: "ugoite.save",
+        arguments: { form: "Note", fields: { title: "x" } },
+      }],
+    }]);
+    const mcp = new ScriptedMcp();
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+    host.subscribeProgress((progress) => {
+      if (progress.kind === "mcp" && progress.operation === "ugoite.save") {
+        host.dispose();
+      }
+    });
+
+    await expect(host.submit("Save the note")).rejects.toThrow(
+      /no longer active/,
+    );
     expect(mcp.calls).toHaveLength(0);
   });
 
