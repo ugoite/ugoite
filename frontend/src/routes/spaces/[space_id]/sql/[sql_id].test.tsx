@@ -240,8 +240,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     );
 
     routeParams.set?.({ space_id: "space-2", sql_id: "saved-query-2" });
-    await waitFor(() => expect(sqlEditor).toHaveValue("SELECT 2"));
-    fireEvent.input(sqlEditor, { target: { value: "SELECT 4" } });
+    const nextSqlEditor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(nextSqlEditor).toHaveValue("SELECT 2"));
+    fireEvent.input(nextSqlEditor, { target: { value: "SELECT 4" } });
     await waitFor(() => expect(pendingPrunes).toHaveLength(2));
 
     pendingPrunes[0]([]);
@@ -255,6 +256,61 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         .toHaveTextContent("false")
     );
     await waitFor(() => expect(sqlPlan).toHaveBeenCalled());
+  });
+
+  it("hides and fences a retained entry while the next route entry is loading", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "First query",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const remove = vi.spyOn(sqlApi, "delete").mockResolvedValue(undefined);
+    let resolvePending!: (
+      value: Awaited<ReturnType<typeof sqlApi.get>>,
+    ) => void;
+    const originalGet = sqlApi.get.bind(sqlApi);
+    const get = vi.spyOn(sqlApi, "get").mockImplementation((spaceId, sqlId) => {
+      if (sqlId === "pending-query") {
+        return new Promise((resolve) => resolvePending = resolve);
+      }
+      return originalGet(spaceId, sqlId);
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    const oldDeleteButton = await screen.findByRole("button", {
+      name: "Delete query",
+    });
+    routeParams.set?.({ space_id: "default", sql_id: "pending-query" });
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith("default", "pending-query")
+    );
+    expect(screen.queryByRole("heading", { name: "First query" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete query" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(oldDeleteButton);
+    expect(remove).not.toHaveBeenCalled();
+
+    resolvePending({
+      id: "pending-query",
+      name: "Next query",
+      kind: "user-query",
+      sql: "SELECT 2",
+      variables: [],
+      created_at: "2025-03-03T00:00:00Z",
+      updated_at: "2025-03-04T00:00:00Z",
+      revision_id: "rev-2",
+    });
+    expect(await screen.findByRole("heading", { name: "Next query" }))
+      .toBeInTheDocument();
+    get.mockRestore();
+    remove.mockRestore();
   });
 
   it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
