@@ -1,0 +1,220 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: security
+category: Security controls, integrity protections, and isolation requirements
+requirements:
+  - id: REQ-SEC-009
+    title: "Agent Principals and Scoped Proof-of-Possession Credentials"
+    description: "Automation MUST use sponsored Agent Principals with independent public-key credentials, expiry, explicit Space/action grants, opaque short-lived access tokens, and attributable audit records. Agents MUST NOT manage members, ownership, or agents. The server MUST require a single-use human approval bound to the exact operation, action, canonical resource, actor credential, lifecycle epochs, and 1–300 second expiry for entry.delete, sql.delete, asset.delete, and access.put. Approval replay, mismatch, expiry, and ambiguous mutation outcomes MUST fail closed and remain auditable."
+    priority: high
+    status: planned
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "Automation MUST use sponsored Agent Principals with independent public-key credentials, expiry, explicit Space/action grants, opaque short-lived access tokens, and attributable audit records. Agents MUST NOT manage members, ownership, or agents. The server MUST require a single-use human approval bound to the exact operation, action, canonical resource, actor credential, lifecycle epochs, and 1–300 second expiry for entry.delete, sql.delete, asset.delete, and access.put. Approval replay, mismatch, expiry, and ambiguous mutation outcomes MUST fail closed and remain auditable."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-009-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: crates/ugoite-iceberg/src/authorization.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-009#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: crates/ugoite-identity/src/oauth.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-009#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-009#criterion.migrated-contract
+  - id: REQ-SEC-010
+    title: "Credentialed CORS Allowlist"
+    description: "The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty, comma-separated list, credentialed browser responses use exact origin allowlisting. Preflight responses advertise only GET, POST, PUT, PATCH, DELETE, and OPTIONS plus Accept, Authorization, Content-Type, Idempotency-Key, DPoP, and X-Request-Id plus the MCP protocol headers; no wildcard is used. An unlisted origin does not receive Access-Control-Allow-Origin. This browser CORS permission is separate from CSRF protection: cookie-authenticated unsafe requests still require the canonical UGOITE_PUBLIC_ORIGIN."
+    priority: high
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty, comma-separated list, credentialed browser responses use exact origin allowlisting. Preflight responses advertise only GET, POST, PUT, PATCH, DELETE, and OPTIONS plus Accept, Authorization, Content-Type, Idempotency-Key, DPoP, and X-Request-Id plus the MCP protocol headers; no wildcard is used. An unlisted origin does not receive Access-Control-Allow-Origin. This browser CORS permission is separate from CSRF protection: cookie-authenticated unsafe requests still require the canonical UGOITE_PUBLIC_ORIGIN."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-010-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-010#criterion.migrated-contract
+  - id: REQ-SEC-011
+    title: "CLI Remote Endpoint Transport Safety"
+    description: "CLI server-backed endpoint configuration MUST reject non-loopback cleartext `http://` URLs, keep loopback cleartext URLs available for local development, fail closed when a saved endpoint is invalid, and refuse to treat such endpoints as active topology before any credentialed request can be sent to them."
+    priority: high
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "CLI server-backed endpoint configuration MUST reject non-loopback cleartext `http://` URLs, keep loopback cleartext URLs available for local development, fail closed when a saved endpoint is invalid, and refuse to treat such endpoints as active topology before any credentialed request can be sent to them."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-011-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: crates/ugoite-cli/tests/test_cli_context_safety.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-011#criterion.migrated-contract
+  - id: REQ-SEC-012
+    title: "Owner-Approved Space Access Recovery"
+    description: "An active human Space Owner may issue a tuple-bound, one-use approval for an active human principal in that Space. The target completes a five-minute WebAuthn registration, which creates a fresh HumanAccount and atomically replaces only the target Space Principal binding. The principal ID, membership, role, ACL, resource ownership, audit identity, old account credentials, sessions, and unrelated Space bindings are preserved; the old account simply loses authorization in the recovered Space."
+    priority: high
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "An active human Space Owner may issue a tuple-bound, one-use approval for an active human principal in that Space. The target completes a five-minute WebAuthn registration, which creates a fresh HumanAccount and atomically replaces only the target Space Principal binding. The principal ID, membership, role, ACL, resource ownership, audit identity, old account credentials, sessions, and unrelated Space bindings are preserved; the old account simply loses authorization in the recovered Space."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-012-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: e2e/owner-space-recovery.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-012#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: crates/ugoite-server/tests/owner_recovery.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-012#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-012#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-012#criterion.migrated-contract
+          - id: source-5
+            adapter: declared
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-012#criterion.migrated-contract
+  - id: REQ-SEC-013
+    title: "Durable Recovery Audit Delivery"
+    description: "Successful Space binding recovery persists one canonical, secret-free recovery.space_binding_replaced event in the Node outbox, then delivers it to the Space audit chain with restart-safe exactly-once event identity. Completion is independent from delivery and reports delivered or pending without reissuing credentials or recovery codes."
+    priority: high
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "Successful Space binding recovery persists one canonical, secret-free recovery.space_binding_replaced event in the Node outbox, then delivers it to the Space audit chain with restart-safe exactly-once event identity. Completion is independent from delivery and reports delivered or pending without reissuing credentials or recovery codes."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-013-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: crates/ugoite-identity/src/node_identity.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-013#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: crates/ugoite-server/tests/owner_recovery.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-013#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-013#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: crates/ugoite-iceberg/src/audit.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-013#criterion.migrated-contract
+  - id: REQ-SEC-015
+    title: "Remote CLI Device Authentication"
+    description: "The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote CLI asset upload uses the authenticated REST file multipart part, and generic OAuth compatibility remains future scope."
+    priority: high
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote CLI asset upload uses the authenticated REST file multipart part, and generic OAuth compatibility remains future scope."
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-010#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: req-sec-015-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: crates/ugoite-cli/src/commands/auth.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-015#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: crates/ugoite-cli/tests/integration_test.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-015#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-SEC-015#criterion.migrated-contract

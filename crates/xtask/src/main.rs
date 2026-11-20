@@ -870,7 +870,7 @@ fn docs_current_stack_check() -> Result<()> {
         }
     }
     let deferred_requirements = [(
-        "docs/spec/requirements/security.yaml",
+        "docs/mitase/requirements/security/migrated-controls.yaml",
         ["REQ-SEC-009"].as_slice(),
     )];
     for (path, ids) in deferred_requirements {

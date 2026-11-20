@@ -356,6 +356,47 @@ inventory:
         - docs/spec/index.md
         - docs/spec/requirements/ops.yaml
         - docs/spec/requirements/security.yaml
+        - .github/workflows/ci.yml
+        - .github/workflows/codeql.yml
+        - .github/workflows/release-candidate.yml
+        - .github/workflows/release-publish.yml
+        - Cargo.lock
+        - Dockerfile
+        - charts/ugoite/Chart.yaml
+        - charts/ugoite/templates/deployment.yaml
+        - charts/ugoite/templates/pvc.yaml
+        - charts/ugoite/values.yaml
+        - crates/ugoite-api-client/src/lib.rs
+        - crates/ugoite-cli/src/commands/auth.rs
+        - crates/ugoite-cli/tests/integration_test.rs
+        - crates/ugoite-cli/tests/test_cli_context_safety.rs
+        - crates/ugoite-iceberg/src/audit.rs
+        - crates/ugoite-iceberg/src/authorization.rs
+        - crates/ugoite-identity/src/node_identity.rs
+        - crates/ugoite-identity/src/oauth.rs
+        - crates/ugoite-server/src/lib.rs
+        - crates/ugoite-server/tests/api_contract.rs
+        - crates/ugoite-server/tests/owner_recovery.rs
+        - deno.lock
+        - docs/architecture/index.md
+        - docs/develop/index.md
+        - docs/get-started/quickstart.mdx
+        - docs/operate/index.md
+        - docs/spec/migration.md
+        - docs/use/assets.mdx
+        - docs/use/entries.mdx
+        - docs/use/forms.mdx
+        - docs/use/index.md
+        - docs/use/search.mdx
+        - docs/use/sql.mdx
+        - e2e/owner-space-recovery.test.ts
+        - e2e/scripts/run-e2e-compose.sh
+        - e2e/scripts/run-e2e-task.sh
+        - e2e/scripts/run-e2e.sh
+        - frontend/src/lib/ugoite-client/protocol.test.ts
+        - mise.toml
+        - tools/create_pr.ts
+        - tools/knowledge_compatibility_test.ts
         - docs/mitase/philosophies/foundation.yaml
         - docs/mitase/policies
         - docs/mitase/requirements/search.yaml
