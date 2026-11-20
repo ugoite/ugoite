@@ -4158,7 +4158,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
+    async fn obsolete_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
         let op = opendal::Operator::new(opendal::services::Memory::default())?;
         let ws_path = "spaces/derived-corrupt-head";
         crate::space::create_space(&op, "derived-corrupt-head", "memory:///").await?;
@@ -4167,7 +4167,38 @@ mod tests {
             "{ws_path}/_ugoite/derived/relations/{}/head.json",
             first.relation_id
         );
-        op.write(&head_path, b"{not valid json".to_vec()).await?;
+        // Pre-release Heads used the removed materialization coordinate.
+        // Treat them as rebuildable raw bytes, not as a compatibility format;
+        // the replacement still uses the exact observed Head CAS.
+        op.write(
+            &head_path,
+            serde_json::to_vec(&json!({
+                "format_version": 1,
+                "space_id": ws_path,
+                "relation_id": first.relation_id,
+                "generation": first.generation,
+                "definition_version": first.definition_version,
+                "definition_fingerprint": first.definition_fingerprint,
+                "producer_id": first.producer_id,
+                "producer_fingerprint": first.producer_fingerprint,
+                "compatibility_epoch": first.compatibility_epoch,
+                "materialization_id": "retired-materialization",
+                "table_identifier": first.table_identifier,
+                "table_uuid": first.table_uuid,
+                "metadata_location": first.metadata_location,
+                "snapshot_id": first.snapshot_id,
+                "schema_id": first.schema_id,
+                "base_generation": 0,
+                "target_generation": first.generation,
+                "input_digest": first.input_digest,
+                "source_coordinate": first.source_coordinate,
+                "materialization_manifest_location": "retired/manifest.json",
+                "materialization_manifest_checksum": "retired",
+                "last_command_id": "index:asset-text:1",
+                "checksum": "retired"
+            }))?,
+        )
+        .await?;
 
         assert!(asset_text_refresh_needed(&op, ws_path).await?);
         let repaired = rebuild_asset_text(&op, ws_path).await?;
