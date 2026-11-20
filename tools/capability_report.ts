@@ -585,7 +585,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       },
       {
         path: "crates/ugoite-cli/src/commands/konase.rs",
-        selector: "save_and_undo_receipts_must_match_the_mutation_contract",
+        selector: "mcp_write_failures_preserve_unknown_vs_invalid_receipt",
       },
       {
         path: "frontend/src/lib/konase/host.test.ts",

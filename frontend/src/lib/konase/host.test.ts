@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import selectedContextFixture from "../../../../crates/ugoite-konase/fixtures/selected-context.json";
+import * as protocol from "../ugoite-client/protocol";
 import {
   type Capability,
   KonaseHost,
@@ -10,32 +11,7 @@ import {
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 import type { ModelHost, ModelRequest, ModelResult } from "./model";
 
-const protocolTestHooks = vi.hoisted(() => ({
-  resolveEffect: undefined as
-    | undefined
-    | ((value: unknown) => Promise<unknown> | undefined),
-}));
-
-vi.mock("../ugoite-client/protocol", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("../ugoite-client/protocol")
-  >();
-  return {
-    ...actual,
-    invokeKonase: <T>(
-      action: Parameters<typeof actual.invokeKonase>[0],
-      value?: unknown,
-    ) => {
-      if (
-        action === "konase.resolve_effect" && protocolTestHooks.resolveEffect
-      ) {
-        const deferred = protocolTestHooks.resolveEffect(value);
-        if (deferred) return deferred as Promise<T>;
-      }
-      return actual.invokeKonase<T>(action, value);
-    },
-  };
-});
+const invokeKonaseOriginal = protocol.invokeKonase;
 
 class ScriptedModel implements ModelHost {
   readonly requests: ModelRequest[] = [];
@@ -772,12 +748,22 @@ describe("Konase browser host", () => {
       finishAuthorization = resolve;
     });
     let effectCalls = 0;
-    protocolTestHooks.resolveEffect = () => {
-      effectCalls += 1;
-      if (effectCalls !== 2) return undefined;
-      markAuthorizationStarted();
-      return authorization;
-    };
+    const invokeKonaseSpy = vi.spyOn(protocol, "invokeKonase")
+      .mockImplementation(
+        async <T>(
+          action: Parameters<typeof protocol.invokeKonase>[0],
+          value?: unknown,
+        ): Promise<T> => {
+          if (action === "konase.resolve_effect") {
+            effectCalls += 1;
+            if (effectCalls === 2) {
+              markAuthorizationStarted();
+              return await authorization as T;
+            }
+          }
+          return await invokeKonaseOriginal<T>(action, value);
+        },
+      );
 
     try {
       const model = new ScriptedModel([{
@@ -807,7 +793,7 @@ describe("Konase browser host", () => {
       expect(effectCalls).toBe(2);
       expect(mcp.calls).toHaveLength(0);
     } finally {
-      protocolTestHooks.resolveEffect = undefined;
+      invokeKonaseSpy.mockRestore();
     }
   });
 
@@ -828,11 +814,11 @@ describe("Konase browser host", () => {
       onConfirmationRequired: (preview) => {
         host.resolveConfirmation(preview.requestId, true);
       },
-      onProgress: (progress) => {
-        if (progress.kind === "mcp" && progress.operation === "ugoite.save") {
-          host.dispose();
-        }
-      },
+    });
+    host.subscribeProgress((progress) => {
+      if (progress.kind === "mcp" && progress.operation === "ugoite.save") {
+        host.dispose();
+      }
     });
 
     await expect(host.submit("Save the note")).rejects.toThrow(
