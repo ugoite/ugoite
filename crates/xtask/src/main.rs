@@ -1,7 +1,5 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
-#[cfg(test)]
-use serde_json::json;
 use serde_json::Value;
 use std::{env, fs, path::Path};
 #[cfg(feature = "space-tools")]
