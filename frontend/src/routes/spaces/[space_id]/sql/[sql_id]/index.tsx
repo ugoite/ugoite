@@ -72,10 +72,16 @@ export default function SpaceSqlDetailRoute() {
   const editorSession = createSqlEditorSession();
   const routeIdentity = () => JSON.stringify([spaceId(), sqlId()]);
   editorSession.activate(routeIdentity());
-  createEffect(() => editorSession.activate(routeIdentity()));
-
-  const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
-  const [forms] = createResource(async () => formApi.list(spaceId()));
+  const [entryRouteIdentity, setEntryRouteIdentity] = createSignal("");
+  const [entry] = createResource(routeIdentity, async (identity) => {
+    const [entrySpaceId, entrySqlId] = JSON.parse(identity) as [string, string];
+    const result = await sqlApi.get(entrySpaceId, entrySqlId);
+    if (identity === routeIdentity()) setEntryRouteIdentity(identity);
+    return result;
+  });
+  const [forms] = createResource(spaceId, (entrySpaceId) =>
+    formApi.list(entrySpaceId)
+  );
   const [queryName, setQueryName] = createSignal("");
   const [sqlInput, setSqlInput] = createSignal("");
   const [savedName, setSavedName] = createSignal("");
@@ -95,6 +101,7 @@ export default function SpaceSqlDetailRoute() {
   const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
     false,
   );
+  const [routeGeneration, setRouteGeneration] = createSignal(0);
   const [undeclaredArgument, setUndeclaredArgument] = createSignal<
     string | null
   >(null);
@@ -107,6 +114,18 @@ export default function SpaceSqlDetailRoute() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
 
   createEffect(() => {
+    if (!editorSession.activate(routeIdentity())) return;
+    setEntryRouteIdentity("");
+    setNormalizationPending(true);
+    setFormGuardPruningPending(false);
+    setNormalized({ sql: "", variables: [] });
+    setUndeclaredArgument(null);
+    setBusy(null);
+    setRouteGeneration((generation) => generation + 1);
+  });
+
+  createEffect(() => {
+    if (entryRouteIdentity() !== routeIdentity()) return;
     const current = entry();
     if (!current) return;
     setQueryName(current.name ?? "");
@@ -122,6 +141,12 @@ export default function SpaceSqlDetailRoute() {
   });
 
   createEffect(() => {
+    routeGeneration();
+    const current = entry();
+    if (!current || entryRouteIdentity() !== routeIdentity()) {
+      setNormalizationPending(true);
+      return;
+    }
     const source = sqlInput();
     const existing = savedVariables();
     const operation = editorSession.begin("normalize");
@@ -198,6 +223,11 @@ export default function SpaceSqlDetailRoute() {
     void pruning.then((retained) => {
       if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormBindingGuards(retained);
+    }).catch(() => {
+      // Guard pruning is advisory UI state; current failures must unblock the
+      // workspace so the server remains responsible for authorization.
+    }).finally(() => {
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormGuardPruningPending(false);
     });
   };
@@ -209,7 +239,6 @@ export default function SpaceSqlDetailRoute() {
   };
   const updateArgument = async (oldName: string, variable: SqlVariable) => {
     if (oldName !== variable.name) {
-      editorSession.activate(routeIdentity());
       const source = sqlInput();
       const operation = editorSession.begin("rename");
       try {
@@ -317,7 +346,6 @@ export default function SpaceSqlDetailRoute() {
   const handleSave = async () => {
     const current = entry();
     if (!current || busy() !== null) return;
-    editorSession.activate(routeIdentity());
     const operation = editorSession.begin("save");
     setActionError(null);
     const saveIdentity = JSON.stringify({
@@ -427,7 +455,6 @@ export default function SpaceSqlDetailRoute() {
 
   const handleDelete = async () => {
     if (busy() !== null) return;
-    editorSession.activate(routeIdentity());
     const operation = editorSession.begin("delete");
     setActionError(null);
     setBusy("delete");

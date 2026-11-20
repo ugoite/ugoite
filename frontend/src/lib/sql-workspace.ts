@@ -41,11 +41,12 @@ export function createSqlEditorSession() {
   let routeGeneration = 0;
   const generations = new Map<SqlEditorOperation, number>();
 
-  const activate = (nextIdentity: string) => {
-    if (nextIdentity === routeIdentity) return;
+  const activate = (nextIdentity: string): boolean => {
+    if (nextIdentity === routeIdentity) return false;
     routeIdentity = nextIdentity;
     routeGeneration += 1;
     generations.clear();
+    return true;
   };
 
   const begin = (operation: SqlEditorOperation): SqlEditorOperationToken => {

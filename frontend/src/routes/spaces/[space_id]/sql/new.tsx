@@ -40,7 +40,6 @@ export default function SpaceQueryCreateRoute() {
   const editorSession = createSqlEditorSession();
   const routeIdentity = () => JSON.stringify([spaceId(), "create"]);
   editorSession.activate(routeIdentity());
-  createEffect(() => editorSession.activate(routeIdentity()));
   const [queryName, setQueryName] = createSignal("");
   const [sqlInput, setSqlInput] = createSignal("SELECT 1");
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
@@ -64,9 +63,16 @@ export default function SpaceQueryCreateRoute() {
   const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
     false,
   );
-  const [forms] = createResource(async () => {
-    return await formApi.list(spaceId());
+  const [routeGeneration, setRouteGeneration] = createSignal(0);
+  createEffect(() => {
+    if (!editorSession.activate(routeIdentity())) return;
+    setNormalizationPending(true);
+    setFormGuardPruningPending(false);
+    setRouteGeneration((generation) => generation + 1);
   });
+  const [forms] = createResource(spaceId, (entrySpaceId) =>
+    formApi.list(entrySpaceId)
+  );
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
   const workspaceVariables = createMemo(() => {
@@ -81,6 +87,7 @@ export default function SpaceQueryCreateRoute() {
     }));
   });
   createEffect(() => {
+    routeGeneration();
     const sql = sqlInput().trim();
     const existing = argumentDefinitions();
     const operation = editorSession.begin("normalize");
@@ -141,7 +148,6 @@ export default function SpaceQueryCreateRoute() {
 
   const updateArgument = async (oldName: string, variable: SqlVariable) => {
     if (oldName !== variable.name) {
-      editorSession.activate(routeIdentity());
       const source = sqlInput();
       const operation = editorSession.begin("rename");
       try {
@@ -184,7 +190,6 @@ export default function SpaceQueryCreateRoute() {
   };
 
   const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
-    editorSession.activate(routeIdentity());
     const operation = editorSession.begin("form-guards");
     setFormGuardPruningPending(true);
     const current = formBindingGuards();
@@ -194,6 +199,11 @@ export default function SpaceQueryCreateRoute() {
     void pruning.then((retained) => {
       if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormBindingGuards(retained);
+    }).catch(() => {
+      // Guard pruning is advisory UI state; current failures must unblock the
+      // workspace so the server remains responsible for authorization.
+    }).finally(() => {
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormGuardPruningPending(false);
     });
   };
@@ -216,7 +226,6 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSave = async () => {
     if (isSaving()) return;
-    editorSession.activate(routeIdentity());
     const operation = editorSession.begin("save");
     setError(null);
     const name = queryName().trim();

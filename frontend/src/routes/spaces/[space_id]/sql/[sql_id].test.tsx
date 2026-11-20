@@ -15,33 +15,74 @@ import {
   seedSpace,
   seedSqlEntry,
 } from "~/test/mocks/handlers";
-import type { Space } from "~/lib/types";
+import type { Space, SqlFormBinding } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
-const navigateMock = vi.fn();
+const { navigateMock, routeParams, formGuardRequestMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  routeParams: {
+    set: undefined as
+      | ((params: { space_id: string; sql_id: string }) => void)
+      | undefined,
+  },
+  formGuardRequestMock: vi.fn(),
+}));
 const entryRelation = "form_00000000000000000000000000000001";
 
-vi.mock("@solidjs/router", () => ({
-  A: (props: {
-    href: string;
-    class?: string;
-    children: unknown;
-    "aria-label"?: string;
-    title?: string;
-  }) => (
-    <a
-      href={props.href}
-      class={props.class}
-      aria-label={props["aria-label"]}
-      title={props.title}
-    >
-      {props.children}
-    </a>
-  ),
-  useNavigate: () => navigateMock,
-  useParams: () => ({ space_id: "default", sql_id: "saved-query" }),
-}));
+vi.mock("@solidjs/router", async () => {
+  const { createSignal } = await import("solid-js");
+  const [params, setParams] = createSignal({
+    space_id: "default",
+    sql_id: "saved-query",
+  });
+  routeParams.set = setParams;
+  const reactiveParams = {
+    get space_id() {
+      return params().space_id;
+    },
+    get sql_id() {
+      return params().sql_id;
+    },
+  };
+  return {
+    A: (props: {
+      href: string;
+      class?: string;
+      children: unknown;
+      "aria-label"?: string;
+      title?: string;
+    }) => (
+      <a
+        href={props.href}
+        class={props.class}
+        aria-label={props["aria-label"]}
+        title={props.title}
+      >
+        {props.children}
+      </a>
+    ),
+    useNavigate: () => navigateMock,
+    useParams: () => reactiveParams,
+  };
+});
+
+vi.mock("~/lib/form-binding-guards", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("~/lib/form-binding-guards")
+  >();
+  return {
+    ...actual,
+    retainReferencedSqlFormBindingGuards: (
+      ...args: Parameters<
+        typeof actual.retainReferencedSqlFormBindingGuards
+      >
+    ) => {
+      const result = formGuardRequestMock(...args);
+      return result ?? actual.retainReferencedSqlFormBindingGuards(...args);
+    },
+  };
+});
 
 vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspace: (props: {
@@ -98,6 +139,9 @@ vi.mock("~/components/SQLWorkspace", () => ({
       >
         Run Query
       </button>
+      <output data-testid="workspace-preview-disabled">
+        {String(Boolean(props.previewDisabled))}
+      </output>
       <button type="button" onClick={props.onCount}>Count rows</button>
       <button type="button" onClick={props.onNext}>Next</button>
       <output>{props.preview.status}</output>
@@ -116,6 +160,8 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
   beforeEach(() => {
     navigateMock.mockReset();
+    routeParams.set?.({ space_id: "default", sql_id: "saved-query" });
+    formGuardRequestMock.mockReset();
     resetMockData();
     seedSpace(testSpace);
   });
@@ -145,6 +191,70 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     // Shell destinations stay in the shell: no route-level shortcuts.
     expect(screen.queryByRole("link", { name: "Back to Dashboard" }))
       .not.toBeInTheDocument();
+  });
+
+  it("restarts route-scoped pending work and keeps stale guard results from clearing the current route", async () => {
+    const sqlPlan = vi.spyOn(sqlApi, "plan").mockResolvedValue({
+      result_schema: [],
+    });
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "First query",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      metadata: { formBindings: [{ name: "OldForm", formId: "old-form" }] },
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    seedSpace({
+      space_uid: "space-2",
+      name: "Second Space",
+      created_at: "2025-03-03T00:00:00Z",
+    });
+    seedSqlEntry("space-2", {
+      id: "saved-query-2",
+      name: "Second query",
+      kind: "user-query",
+      sql: "SELECT 2",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-2",
+    });
+
+    const pendingPrunes: Array<(guards: SqlFormBinding[]) => void> = [];
+    formGuardRequestMock.mockImplementation(() =>
+      new Promise<SqlFormBinding[]>((resolve) => pendingPrunes.push(resolve))
+    );
+    render(() => <SpaceSqlDetailRoute />);
+    const sqlEditor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(sqlEditor).toHaveValue("SELECT 1"));
+
+    fireEvent.input(sqlEditor, { target: { value: "SELECT 3" } });
+    await waitFor(() => expect(pendingPrunes).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-preview-disabled"))
+        .toHaveTextContent("true")
+    );
+
+    routeParams.set?.({ space_id: "space-2", sql_id: "saved-query-2" });
+    await waitFor(() => expect(sqlEditor).toHaveValue("SELECT 2"));
+    fireEvent.input(sqlEditor, { target: { value: "SELECT 4" } });
+    await waitFor(() => expect(pendingPrunes).toHaveLength(2));
+
+    pendingPrunes[0]([]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-preview-disabled"))
+        .toHaveTextContent("true")
+    );
+    pendingPrunes[1]([]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-preview-disabled"))
+        .toHaveTextContent("false")
+    );
+    expect(sqlPlan).toHaveBeenCalled();
   });
 
   it("REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions", async () => {
