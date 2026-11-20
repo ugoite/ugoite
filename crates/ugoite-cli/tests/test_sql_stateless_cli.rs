@@ -87,50 +87,55 @@ fn setup_cli_sql_space() -> CliSqlSpace {
         "space create failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let form_file = dir.path().join("cli-sql-form.json");
-    std::fs::write(
-        &form_file,
-        format!(
-                    "{{\"name\":\"{form_name}\",\"version\":1,\"template\":\"# {form_name}\",\"fields\":{{\"Status\":{{\"type\":\"string\"}},\"Priority\":{{\"type\":\"long\"}}}}}}"
-                ),
+    let space = stdout_json(&output, "Space create");
+    let space_id = space["space"]["space_uid"]
+        .as_str()
+        .expect("created Space UID");
+    let service = ugoite_iceberg::service::UgoiteService::new_without_background_refresh(
+        dir.path().to_str().unwrap(),
     )
-    .unwrap();
-    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
-    assert!(
-        output.status.success(),
-        "form establish failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    .expect("open local Space service");
+    let runtime = tokio::runtime::Runtime::new().expect("create fixture runtime");
+    runtime
+        .block_on(service.upsert_form(
+            space_id,
+            &serde_json::json!({
+                "name": form_name,
+                "version": 1,
+                "template": format!("# {form_name}"),
+                "fields": {
+                    "Status": {"type": "string"},
+                    "Priority": {"type": "long"}
+                }
+            }),
+        ))
+        .expect("seed SQL Form through canonical service");
     for (entry_id, status, priority) in [
         ("cli-sql-00", "open", "1"),
         ("cli-sql-01", "closed", "2"),
         ("cli-sql-02", "open", "3"),
     ] {
-        let output = run_cli(
-            &config_path,
-            &[
-                "entry",
-                "create",
-                "--id",
+        runtime
+            .block_on(service.create_structured_entry_with_receipt(
+                space_id,
                 entry_id,
-                "--form",
-                form_name,
-                "--field",
-                &format!("Status={status}"),
-                "--field",
-                &format!("Priority={priority}"),
-            ],
-        );
-        assert!(
-            output.status.success(),
-            "entry create failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+                form_name.to_string(),
+                Vec::new(),
+                std::collections::BTreeMap::from([
+                    ("Status".to_string(), serde_json::json!(status)),
+                    (
+                        "Priority".to_string(),
+                        serde_json::json!(priority.parse::<i64>().unwrap()),
+                    ),
+                ]),
+                std::collections::BTreeMap::new(),
+                "sql-stateless-test",
+            ))
+            .expect("seed SQL Entry through canonical service");
     }
-    let form = stdout_json(
-        &run_cli(&config_path, &["form", "get", form_name]),
-        "form get for SQL relation",
-    );
+    let form = runtime
+        .block_on(service.get_form(space_id, form_name))
+        .expect("read SQL Form through canonical service");
     let form_id = form["id"].as_str().expect("form id").replace('-', "");
     let status_id = form
         .pointer("/fields/Status/id")

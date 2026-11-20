@@ -476,26 +476,104 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
     space::create_space(&op, "asset-lifecycle-bounded", "/tmp").await?;
     let ws_path = "spaces/asset-lifecycle-bounded";
     let store = ugoite_storage::SpaceCatalogStore::new(op.clone(), ws_path)?;
-    let initial = store
-        .read_exact_head()
-        .await?
-        .expect("space Head")
-        .bytes
-        .len();
-    for index in 0..64 {
-        let reference =
-            asset::save_asset(&op, ws_path, &format!("asset-{index}.bin"), b"bytes").await?;
+    let references = futures::future::try_join_all((0..3).map(|index| {
+        let op = op.clone();
+        async move {
+            asset::save_asset(
+                &op,
+                ws_path,
+                &format!("asset-history-{index}.bin"),
+                format!("asset-history-bytes-{index}").as_bytes(),
+            )
+            .await
+        }
+    }))
+    .await?;
+    let initial = store.read_exact_head().await?.expect("space Head").bytes;
+    let initial_head: serde_json::Value = serde_json::from_slice(&initial)?;
+    for reference in &references {
         asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     }
-    let final_size = store
-        .read_exact_head()
-        .await?
-        .expect("space Head")
-        .bytes
-        .len();
+    for reference in &references {
+        let error = asset::read_asset(&op, ws_path, &reference.asset_id)
+            .await
+            .expect_err("logically deleted Assets must not be readable");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("deleted Asset read keeps its typed error")
+                .code(),
+            ErrorCode::AssetNotFound
+        );
+    }
+    let final_bytes = store.read_exact_head().await?.expect("space Head").bytes;
+    let final_head: serde_json::Value = serde_json::from_slice(&final_bytes)?;
+    let initial_keys = initial_head
+        .as_object()
+        .expect("Catalog Head object")
+        .keys()
+        .collect::<Vec<_>>();
+    let final_keys = final_head
+        .as_object()
+        .expect("Catalog Head object")
+        .keys()
+        .collect::<Vec<_>>();
+    assert_eq!(final_keys, initial_keys, "Head shape must stay stable");
+    for key in [
+        "format_version",
+        "space_id",
+        "namespace",
+        "form_registry_generation",
+        "tables",
+        "pins",
+        "authorization_snapshot",
+    ] {
+        assert_eq!(final_head[key], initial_head[key], "Head {key} is stable");
+    }
+    assert_eq!(
+        final_head["publication_command_id"],
+        format!("asset-delete:{}", references[2].asset_id),
+        "only the latest deletion command remains in Head"
+    );
+    let mut head_without_current_publication = final_head.clone();
+    let head_fields = head_without_current_publication
+        .as_object_mut()
+        .expect("Catalog Head object");
+    head_fields.remove("publication_location");
+    head_fields.remove("publication_command_id");
+    let stable_head_fields = serde_json::to_string(&head_without_current_publication)?;
+    for reference in &references {
+        assert!(
+            !stable_head_fields.contains(&reference.asset_id),
+            "Head fields must not retain Asset IDs"
+        );
+    }
+    let final_text = String::from_utf8(final_bytes.clone())?;
+    for (index, reference) in references.iter().enumerate() {
+        assert!(
+            !final_text.contains(&format!("asset-history-{index}.bin")),
+            "Head must not retain Asset names"
+        );
+        assert!(
+            !final_text.contains(&reference.sha256),
+            "Head must not retain Asset checksums"
+        );
+        assert!(
+            !final_text.contains(&format!("asset-history-bytes-{index}")),
+            "Head must not retain Asset bytes"
+        );
+        if index < references.len() - 1 {
+            assert!(
+                !final_text.contains(&reference.asset_id),
+                "Head must not retain historical Asset IDs"
+            );
+        }
+    }
     assert!(
-        final_size <= initial + 512,
-        "Catalog Head grew from {initial} to {final_size} bytes"
+        final_bytes.len() <= initial.len() + 64,
+        "Catalog Head grew from {} to {} bytes across three deletions",
+        initial.len(),
+        final_bytes.len()
     );
     Ok(())
 }
