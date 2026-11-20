@@ -138,6 +138,7 @@ jobs:
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
       CI_IMPACT_EVENT: ${{ github.event_name }}
       CI_IMPACT_SCOPE: ${{ needs.impact.outputs.plan_scope }}
       CI_IMPACT_RUN_OLDER_CLI: ${{ needs.impact.outputs.plan_older_cli_knowledge_preservation }}
