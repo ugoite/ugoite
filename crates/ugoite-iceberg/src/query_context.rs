@@ -1284,7 +1284,7 @@ impl AuthorizedQueryContext {
         )
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
         let plan = self.context.state().create_logical_plan(sql).await?;

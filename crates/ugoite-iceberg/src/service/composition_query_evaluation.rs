@@ -11,9 +11,9 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::{Arc, LazyLock, Mutex};
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use tokio::sync::Notify;
 use ugoite_core::composition::{
     CompositionDependencyIndex, CompositionDiagnostic, CompositionRevisionRef,
@@ -46,7 +46,7 @@ use crate::iceberg_store;
 /// Debug-only rendezvous after graph query execution and immediately before
 /// the final authorization reread. This lets service tests deterministically
 /// commit an ACL change in the exact interval being checked.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestCompositionFinalAuthorizationGate {
@@ -57,7 +57,7 @@ pub struct TestCompositionFinalAuthorizationGate {
     release: Notify,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestCompositionFinalAuthorizationGate {
     pub fn new(space_id: impl Into<String>, variable_id: impl Into<String>) -> Arc<Self> {
         Arc::new(Self {
@@ -102,12 +102,12 @@ impl TestCompositionFinalAuthorizationGate {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_FINAL_AUTHORIZATION_GATE: LazyLock<
     Mutex<Option<Arc<TestCompositionFinalAuthorizationGate>>>,
 > = LazyLock::new(|| Mutex::new(None));
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn install_test_composition_final_authorization_gate(
     gate: Arc<TestCompositionFinalAuthorizationGate>,
@@ -117,7 +117,7 @@ pub fn install_test_composition_final_authorization_gate(
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn clear_test_composition_final_authorization_gate() {
     *TEST_FINAL_AUTHORIZATION_GATE
@@ -125,7 +125,7 @@ pub fn clear_test_composition_final_authorization_gate() {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 async fn wait_at_test_composition_final_authorization_gate(
     space_id: &str,
     query_results: &BTreeMap<String, VariableGraphQueryPreviewValue>,
@@ -1166,7 +1166,7 @@ impl UgoiteService {
         }
         query_diagnostics.sort();
         query_diagnostics.dedup();
-        #[cfg(debug_assertions)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(preview) = &preview {
             wait_at_test_composition_final_authorization_gate(space_id, &preview.query_results)
                 .await;

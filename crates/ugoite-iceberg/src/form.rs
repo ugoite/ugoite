@@ -3,11 +3,11 @@ use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::{AtomicUsize, Ordering};
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::{Arc, LazyLock, Mutex};
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use tokio::sync::Barrier;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::metadata;
@@ -24,7 +24,7 @@ const EXTRA_ATTRIBUTES_POLICY_METADATA: &str = "ugoite.extra_attributes_policy";
 
 /// Debug-only rendezvous that makes two Form evolutions start publication
 /// from the same observed version. This is absent from release builds.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestFormEvolutionGate {
@@ -33,7 +33,7 @@ pub struct TestFormEvolutionGate {
     barrier: Barrier,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestFormEvolutionGate {
     pub fn new(form_id: FormId) -> Arc<Self> {
         Arc::new(Self {
@@ -50,11 +50,11 @@ impl TestFormEvolutionGate {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_FORM_EVOLUTION_GATE: LazyLock<Mutex<Option<Arc<TestFormEvolutionGate>>>> =
     LazyLock::new(|| Mutex::new(None));
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn install_test_form_evolution_gate(gate: Arc<TestFormEvolutionGate>) {
     *TEST_FORM_EVOLUTION_GATE
@@ -62,7 +62,7 @@ pub fn install_test_form_evolution_gate(gate: Arc<TestFormEvolutionGate>) {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn clear_test_form_evolution_gate() {
     *TEST_FORM_EVOLUTION_GATE
@@ -70,7 +70,7 @@ pub fn clear_test_form_evolution_gate() {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 async fn pause_first_two_form_evolutions(form_id: FormId) {
     let gate = TEST_FORM_EVOLUTION_GATE
         .lock()
@@ -273,7 +273,7 @@ async fn commit_form_evolution(
         "form.evolve",
         &changes,
     )?;
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     pause_first_two_form_evolutions(current.id).await;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;

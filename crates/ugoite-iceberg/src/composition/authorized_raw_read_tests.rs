@@ -11,7 +11,7 @@ use ugoite_domain::identity::{
 };
 use uuid::Uuid;
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[path = "process_conflict_tests.rs"]
 mod process_conflict_tests;
 

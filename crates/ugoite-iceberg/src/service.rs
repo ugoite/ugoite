@@ -167,7 +167,7 @@ mod composition_resolver;
 mod composition_scalar_query;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub use composition_query_evaluation::{
     clear_test_composition_final_authorization_gate,

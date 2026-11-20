@@ -649,7 +649,7 @@ pub async fn verify_integrity(op: &Operator, space_id: &str) -> Result<usize> {
 // Task-local audit-chain write failure flag: the next chain write in scope
 // fails after pending markers are durable. Task-local so parallel tests
 // cannot steal or observe each other's injection.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 tokio::task_local! {
     static INJECT_AUDIT_CHAIN_WRITE_FAILURE: std::cell::Cell<bool>;
 }
@@ -660,7 +660,7 @@ tokio::task_local! {
 /// them without ever exposing a committed marker for an event absent from
 /// the persisted chain. Not compiled into release builds; exposes no
 /// production mutation bypass.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub async fn with_injected_audit_chain_write_failure<T>(
     operation: impl std::future::Future<Output = T>,
@@ -670,7 +670,7 @@ pub async fn with_injected_audit_chain_write_failure<T>(
         .await
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 fn take_injected_audit_chain_write_failure() -> bool {
     INJECT_AUDIT_CHAIN_WRITE_FAILURE
         .try_with(|flag| flag.take())
@@ -686,7 +686,7 @@ async fn write_events(
     // Debug-only fault injection: fail the chain write while pending
     // markers stay durable, so recovery tests can prove no committed marker
     // ever refers to an event absent from the persisted chain.
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     if take_injected_audit_chain_write_failure() {
         bail!("injected audit chain write failure");
     }

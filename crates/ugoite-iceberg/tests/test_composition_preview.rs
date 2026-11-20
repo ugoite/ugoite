@@ -28,7 +28,7 @@ use ugoite_iceberg::service::{
 };
 use uuid::Uuid;
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static COMPOSITION_FINAL_AUTHORIZATION_TEST_LOCK: tokio::sync::Mutex<()> =
     tokio::sync::Mutex::const_new(());
 
@@ -1040,13 +1040,13 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
     Ok(())
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 struct CompositionFinalAuthorizationGateCleanup {
     gate: std::sync::Arc<ugoite_iceberg::service::TestCompositionFinalAuthorizationGate>,
     evaluation_abort: Option<tokio::task::AbortHandle>,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for CompositionFinalAuthorizationGateCleanup {
     fn drop(&mut self) {
         self.gate.release();
@@ -1057,7 +1057,7 @@ impl Drop for CompositionFinalAuthorizationGateCleanup {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before_final_check(
 ) -> Result<()> {
@@ -1169,7 +1169,7 @@ async fn graph_evaluation_drops_query_results_when_form_access_is_revoked_before
     result
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn graph_evaluation_drops_query_results_when_composition_access_is_revoked_before_final_check(
 ) -> Result<()> {
