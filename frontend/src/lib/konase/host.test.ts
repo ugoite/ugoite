@@ -789,8 +789,7 @@ describe("Konase browser host", () => {
         }],
       }]);
       const mcp = new ScriptedMcp();
-      let host!: KonaseHost;
-      host = new KonaseHost({
+      const host = new KonaseHost({
         model,
         mcp,
         spaceId: "space-a",
@@ -822,8 +821,7 @@ describe("Konase browser host", () => {
       }],
     }]);
     const mcp = new ScriptedMcp();
-    let host!: KonaseHost;
-    host = new KonaseHost({
+    const host = new KonaseHost({
       model,
       mcp,
       spaceId: "space-a",
