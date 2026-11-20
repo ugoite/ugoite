@@ -1359,6 +1359,16 @@ fn range_has_comment(document: &SqlDocument, range: SqlSourceRange) -> bool {
     })
 }
 
+/// Apply simultaneous, guarded byte-range replacements to an SQL source.
+///
+/// Every range and expected slice is checked against the same original source.
+/// If any guard fails, no output is produced. The returned inverse transaction
+/// has both a whole-source stale guard and per-range preimage guards, so it can
+/// safely be used for undo only while the edited draft is still current.
+///
+/// This operation is a bounded source edit only. The result is reparsed for
+/// syntax diagnostics, but it does not authorize, validate, plan, save, or run
+/// SQL.
 fn apply_sql_document_edit_transaction(
     current_source: &str,
     transaction: &SqlDocumentEditTransaction,
@@ -1515,17 +1525,6 @@ fn sql_template_parameter_name(source: &str, start: usize, end: usize) -> Option
     Some(&contents[name_start..name_end])
 }
 
-/// Apply simultaneous, guarded byte-range replacements to an SQL source.
-///
-/// Every range and expected slice is checked against the same original source.
-/// If any guard fails, no output is produced. The returned inverse transaction
-/// has both a whole-source stale guard and per-range preimage guards, so it can
-/// safely be used for undo only while the edited draft is still current.
-///
-/// This operation is a bounded source edit only. The result is reparsed for
-/// syntax diagnostics, but it does not authorize, validate, plan, save, or run
-/// SQL.
-
 fn is_expression_node_kind(kind: SqlDocumentNodeKind) -> bool {
     matches!(
         kind,
@@ -1544,14 +1543,6 @@ fn is_expression_node_kind(kind: SqlDocumentNodeKind) -> bool {
             | SqlDocumentNodeKind::OtherExpression
     )
 }
-
-/// Rename every exact named `$old_name` placeholder token in a SQL source.
-///
-/// Names are supplied without the `$` prefix. Replacements are limited to
-/// tokenizer-classified placeholder tokens, so strings, comments, quoted
-/// identifiers, and longer parameter names remain byte-for-byte unchanged.
-/// The resulting source is reparsed into a document; syntax-invalid drafts
-/// remain editable and retain their updated diagnostics.
 
 fn valid_sql_number_literal(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -5395,7 +5386,7 @@ mod tests {
         let new_name = "r".repeat(MAX_SQL_DOCUMENT_BYTES / 2 + 2);
 
         assert_eq!(
-            rename_sql_document_parameter(&source, "x", &new_name),
+            rename_sql_document_parameter(source, "x", &new_name),
             Err(SqlDocumentEditError::OutputTooLarge)
         );
     }
