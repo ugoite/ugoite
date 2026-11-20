@@ -1032,25 +1032,13 @@ pub struct ExactDerivedRelationHead {
     pub etag: Option<String>,
 }
 
-/// Raw exact coordinate for the pre-current-build DerivedRelation Head.
-///
-/// This is not a compatibility representation.  It exists only so a shared
-/// writer can replace disposable v1 derived state with a new build through the
-/// same ETag-bound CAS used for every current Head publication.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExactLegacyDerivedRelationHead {
-    pub bytes: Vec<u8>,
-    pub etag: Option<String>,
-    pub generation: u64,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum GarbageHeadFence {
     CandidateIsCurrent,
     Contended,
-    /// A legacy v1 Head is still authoritative for the old disposable
-    /// materialization layout. It fences only that old coordinate; unrelated
-    /// current-build prefixes can still be reclaimed.
+    /// An obsolete coordinate outside the current `builds/` layout. This is
+    /// recognized only to let current-build GC proceed; its old physical
+    /// prefix is never listed, marked, or deleted here.
     LegacyHead,
     Fenced {
         empty_head: bool,
@@ -1092,17 +1080,6 @@ impl Drop for AbortOnDrop {
         }
     }
 }
-
-#[derive(Debug)]
-pub struct LegacyDerivedRelationHead;
-
-impl std::fmt::Display for LegacyDerivedRelationHead {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("legacy DerivedRelation Head format")
-    }
-}
-
-impl std::error::Error for LegacyDerivedRelationHead {}
 
 /// Relation-local Head storage. It deliberately shares only OpenDAL object
 /// mechanics with the authoritative Catalog store and has no Catalog history
@@ -1318,20 +1295,6 @@ impl DerivedRelationHeadStore {
         format!(
             "{}/_ugoite/derived/relations/{}/builds/{safe_build_id}",
             self.space_root, self.relation_id,
-        )
-    }
-
-    fn legacy_materializations_prefix(&self) -> String {
-        format!(
-            "{}/_ugoite/derived/relations/{}/materializations/",
-            self.space_root, self.relation_id
-        )
-    }
-
-    fn legacy_garbage_marker_path(&self) -> String {
-        format!(
-            "{}/_ugoite/derived/relations/{}/legacy-garbage.json",
-            self.space_root, self.relation_id
         )
     }
 
@@ -1618,19 +1581,6 @@ impl DerivedRelationHeadStore {
                 .as_secs(),
         }))
         .expect("derived build marker is serializable")
-    }
-
-    fn legacy_marker_bytes(generation: Option<u64>) -> Vec<u8> {
-        let mut marker = serde_json::json!({
-            "marked_at": SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        });
-        if let Some(generation) = generation {
-            marker["legacy_generation"] = serde_json::json!(generation);
-        }
-        serde_json::to_vec(&marker).expect("legacy derived marker is serializable")
     }
 
     fn json_time(bytes: &[u8], key: &str) -> Option<SystemTime> {
@@ -2224,7 +2174,11 @@ impl DerivedRelationHeadStore {
 
                     let current: DerivedRelationHead = match serde_json::from_value(value.clone()) {
                         Ok(current) => current,
-                        Err(_error) if is_legacy_derived_head(&value) => {
+                        Err(_error) if is_unbound_legacy_head(&value) => {
+                            // The removed materialization layout has no
+                            // coordinate in `builds/`. Keep its physical
+                            // objects untouched; it does not pin current-build
+                            // GC candidates.
                             return Ok(GarbageHeadFence::LegacyHead);
                         }
                         Err(error) => return Err(anyhow!("decode DerivedRelation Head: {error}")),
@@ -3232,101 +3186,6 @@ impl DerivedRelationHeadStore {
         Ok(deleted)
     }
 
-    /// Records the removed v1 materialization prefix as a grace-period GC
-    /// candidate. The marker is created after the current Head swap, so an
-    /// in-flight reader that pinned the legacy Head can finish before the
-    /// prefix is reclaimed.
-    pub async fn mark_legacy_materializations_garbage(&self) -> Result<()> {
-        let generation = self.read_legacy_exact().await?.map(|head| head.generation);
-        self.mark_legacy_materializations_garbage_for_generation(generation)
-            .await
-    }
-
-    /// Records a detached legacy prefix while retaining the exact generation
-    /// that was detached. The generation is evidence for recovery; deletion
-    /// still rechecks that no legacy Head remains immediately before it starts.
-    pub async fn mark_legacy_materializations_garbage_for_generation(
-        &self,
-        generation: Option<u64>,
-    ) -> Result<()> {
-        self.ensure_writable()?;
-        let entries = self
-            .list_derived_entries(&self.legacy_materializations_prefix())
-            .await?;
-        if !entries
-            .iter()
-            .any(|entry| entry.metadata().mode() == EntryMode::FILE)
-        {
-            return Ok(());
-        }
-        match self
-            .operator
-            .write_options(
-                &self.legacy_garbage_marker_path(),
-                Self::legacy_marker_bytes(generation),
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    /// Deletes a detached v1 prefix only after its durable marker has aged
-    /// past the same reader grace period as normal garbage builds. The marker
-    /// is deleted last so a crash during recursive deletion leaves a retryable
-    /// cleanup record.
-    pub async fn garbage_collect_legacy_materializations(
-        &self,
-        minimum_gc_age: Duration,
-    ) -> Result<bool> {
-        self.ensure_writable()?;
-        if self.write_mode == CatalogWriteMode::SingleProcess {
-            let _guard = self.serializer.lock().await;
-            return self
-                .garbage_collect_legacy_materializations_locked(minimum_gc_age)
-                .await;
-        }
-        self.garbage_collect_legacy_materializations_locked(minimum_gc_age)
-            .await
-    }
-
-    async fn garbage_collect_legacy_materializations_locked(
-        &self,
-        minimum_gc_age: Duration,
-    ) -> Result<bool> {
-        let marker = self.legacy_garbage_marker_path();
-        if !self.operator.exists(&marker).await? {
-            return Ok(false);
-        }
-        if !self.marker_old_enough(&marker, minimum_gc_age).await? {
-            return Ok(true);
-        }
-        // Marker creation can precede legacy Head detachment because local
-        // filesystems have no conditional delete primitive. A crash in that
-        // interval must never turn a still-live legacy coordinate into
-        // deletable storage. Re-read the exact Head at the destructive
-        // boundary; any legacy Head pins the whole materialization prefix.
-        if self.read_legacy_exact().await?.is_some() {
-            return Ok(true);
-        }
-        let entries = self
-            .list_derived_entries(&self.legacy_materializations_prefix())
-            .await?;
-        for entry in entries {
-            if entry.metadata().mode() == EntryMode::FILE {
-                self.operator.delete(entry.path()).await?;
-            }
-        }
-        self.operator.delete(&marker).await?;
-        Ok(false)
-    }
-
     pub async fn read_exact(&self) -> Result<Option<ExactDerivedRelationHead>> {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
@@ -3334,13 +3193,8 @@ impl DerivedRelationHeadStore {
         if self.head_fence(&value).is_some() {
             return Ok(None);
         }
-        let head: DerivedRelationHead = serde_json::from_value(value.clone()).map_err(|error| {
-            if is_legacy_derived_head(&value) {
-                LegacyDerivedRelationHead.into()
-            } else {
-                anyhow!("decode DerivedRelation Head: {error}")
-            }
-        })?;
+        let head: DerivedRelationHead = serde_json::from_value(value.clone())
+            .map_err(|error| anyhow!("decode DerivedRelation Head: {error}"))?;
         validate_derived_head_checksum(&head)?;
         self.validate_derived_head_identity(&head).await?;
         Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
@@ -3494,39 +3348,22 @@ impl DerivedRelationHeadStore {
         Ok(())
     }
 
-    /// Returns the current build coordinate for GC authority checks. A legacy
-    /// v1 Head still pins its old materialization prefix, but it does not pin
-    /// any build under the current `builds/` layout; it must therefore be
-    /// treated as an empty current-build coordinate while remaining untouched.
+    /// Returns the current build coordinate for GC authority checks.
     async fn current_build_id(&self) -> Result<Option<String>> {
         match self.read_exact().await {
             Ok(head) => Ok(head.map(|head| head.head.build_id)),
-            Err(error) if error.downcast_ref::<LegacyDerivedRelationHead>().is_some() => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => {
+                if self
+                    .read_raw_exact()
+                    .await?
+                    .is_some_and(|(value, _, _)| is_unbound_legacy_head(&value))
+                {
+                    Ok(None)
+                } else {
+                    Err(error)
+                }
+            }
         }
-    }
-
-    /// Reads the disposable v1 Head without treating it as a current
-    /// coordinate. Shared rebuilds use the returned ETag to replace it after
-    /// the new immutable build has been fully validated.
-    pub async fn read_legacy_exact(&self) -> Result<Option<ExactLegacyDerivedRelationHead>> {
-        let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
-            return Ok(None);
-        };
-        if self.head_fence(&value).is_some() {
-            return Ok(None);
-        }
-        if !is_legacy_derived_head(&value) {
-            return Ok(None);
-        }
-        Ok(Some(ExactLegacyDerivedRelationHead {
-            generation: value
-                .get("generation")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or_default(),
-            bytes,
-            etag,
-        }))
     }
 
     async fn read_raw_exact(&self) -> Result<Option<(serde_json::Value, Vec<u8>, Option<String>)>> {
@@ -3573,53 +3410,6 @@ impl DerivedRelationHeadStore {
             }
         }
         unreachable!("exact derived Head reads always return or continue")
-    }
-
-    /// v1 is intentionally not kept as an active compatibility format: its
-    /// Head points at the removed materializations/manifest layout.  A local
-    /// rebuild may explicitly invalidate that derived-only Head and recreate
-    /// the relation under the current-build layout. Shared mode fails closed
-    /// because OpenDAL has no conditional delete operation.
-    pub async fn invalidate_legacy_head(&self) -> Result<()> {
-        self.ensure_writable()?;
-        if self.write_mode.is_shared() {
-            return Err(anyhow!(
-                "legacy DerivedRelation Head requires a single-process rebuild"
-            ));
-        }
-        let _guard = self.serializer.lock().await;
-        let Some(metadata) = self.operator.stat(&self.head_path()).await.ok() else {
-            return Ok(());
-        };
-        let etag = metadata
-            .etag()
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned);
-        let bytes = match etag.as_deref() {
-            Some(etag) => {
-                self.operator
-                    .read_options(
-                        &self.head_path(),
-                        ReadOptions {
-                            if_match: Some(etag.to_string()),
-                            ..Default::default()
-                        },
-                    )
-                    .await?
-            }
-            None => self.operator.read(&self.head_path()).await?,
-        };
-        let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
-        if is_legacy_derived_head(&value) {
-            let generation = value.get("generation").and_then(serde_json::Value::as_u64);
-            // Detach the old Head, but retain its immutable prefix behind a
-            // durable grace-period marker so an already-open legacy reader is
-            // not broken by this explicit format discard.
-            self.mark_legacy_materializations_garbage_for_generation(generation)
-                .await?;
-            self.operator.delete(&self.head_path()).await?;
-        }
-        Ok(())
     }
 
     pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
@@ -3759,87 +3549,6 @@ impl DerivedRelationHeadStore {
             heartbeat_lost.load(Ordering::Acquire),
         )
         .await
-    }
-
-    /// Replaces a disposable legacy Head after a complete build has been
-    /// staged. Shared backends use the legacy Head's exact ETag, so a concurrent
-    /// writer that already moved the relation to the current format wins the
-    /// race and this build becomes garbage instead of overwriting it.
-    pub async fn publish_over_legacy(
-        &self,
-        expected: &ExactLegacyDerivedRelationHead,
-        head: &DerivedRelationHead,
-    ) -> Result<()> {
-        self.ensure_writable()?;
-        if !self.write_mode.is_shared() {
-            return Err(anyhow!(
-                "legacy DerivedRelation replacement requires shared mode"
-            ));
-        }
-        let etag = expected
-            .etag
-            .as_deref()
-            .context("shared legacy DerivedRelation replacement requires an ETag")?;
-        self.validate_derived_head_identity(head).await?;
-        let bytes = canonical_head_bytes(head)?;
-        self.begin_publishing(&head.build_id).await?;
-        let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
-        let result = self
-            .operator
-            .write_options(
-                &self.head_path(),
-                bytes,
-                WriteOptions {
-                    if_match: Some(etag.to_string()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map(|_| ())
-            .map_err(anyhow::Error::from);
-        heartbeat.abort();
-        self.finish_publishing_claim(
-            &head.build_id,
-            result,
-            heartbeat_lost.load(Ordering::Acquire),
-        )
-        .await
-    }
-
-    /// Replaces a disposable legacy Head while the caller already owns the
-    /// single-process relation lock. The legacy coordinate remains readable
-    /// until this exact swap completes; GC is marked only afterward.
-    pub async fn publish_over_legacy_with_single_process_lock(
-        &self,
-        expected: &ExactLegacyDerivedRelationHead,
-        head: &DerivedRelationHead,
-    ) -> Result<()> {
-        self.ensure_writable()?;
-        if self.write_mode != CatalogWriteMode::SingleProcess {
-            return Err(anyhow!(
-                "single-process legacy DerivedRelation replacement requires local mode"
-            ));
-        }
-        self.validate_derived_head_identity(head).await?;
-        self.begin_publishing(&head.build_id).await?;
-        let result = async {
-            let Some((_, current_bytes, current_etag)) = self.read_raw_exact().await? else {
-                return Err(anyhow!("legacy DerivedRelation Head disappeared"));
-            };
-            if current_bytes != expected.bytes
-                || (expected.etag.is_some() && current_etag != expected.etag)
-            {
-                return Err(anyhow!("legacy DerivedRelation Head changed"));
-            }
-            self.operator
-                .write(&self.head_path(), canonical_head_bytes(head)?)
-                .await
-                .map(|_| ())
-                .map_err(anyhow::Error::from)
-        }
-        .await;
-        self.finish_publishing_claim(&head.build_id, result, false)
-            .await
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -3996,7 +3705,7 @@ fn validate_derived_head_checksum(head: &DerivedRelationHead) -> Result<()> {
     Ok(())
 }
 
-fn is_legacy_derived_head(value: &serde_json::Value) -> bool {
+fn is_unbound_legacy_head(value: &serde_json::Value) -> bool {
     value.get("materialization_id").is_some()
         || value.get("base_generation").is_some()
         || value.get("target_generation").is_some()
@@ -5736,75 +5445,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_derived_head_is_explicitly_invalidated_for_rebuild() -> Result<()> {
-        let operator = Operator::new(Memory::default())?;
-        let relation_id = uuid::Uuid::from_u128(0xA006);
-        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let legacy_data_path = format!(
-            "{}/data/old.parquet",
-            store.legacy_materializations_prefix().trim_end_matches('/')
-        );
-        operator
-            .write(&legacy_data_path, b"legacy".to_vec())
-            .await?;
-        operator
-            .write(
-                &store.head_path(),
-                serde_json::to_vec(&serde_json::json!({
-                    "format_version": 1,
-                    "space_id": "demo",
-                    "relation_id": relation_id,
-                    "generation": 1,
-                    "definition_version": 1,
-                    "definition_fingerprint": "old",
-                    "producer_id": "old",
-                    "producer_fingerprint": "old",
-                    "compatibility_epoch": 1,
-                    "materialization_id": "old-materialization",
-                    "table_identifier": {"table":"derived"},
-                    "table_uuid": "old-table",
-                    "metadata_location": "memory:///old",
-                    "snapshot_id": null,
-                    "schema_id": 0,
-                    "base_generation": 0,
-                    "target_generation": 1,
-                    "build_id": "old-build",
-                    "input_digest": "old-input",
-                    "source_coordinate": {},
-                    "materialization_manifest_location": "old/manifest.json",
-                    "materialization_manifest_checksum": "old",
-                    "last_command_id": "index:asset-text:1",
-                    "checksum": "old"
-                }))?,
-            )
-            .await?;
-        let error = store
-            .read_exact()
-            .await
-            .expect_err("legacy Head must not be treated as a current build");
-        assert!(error
-            .downcast_ref::<super::LegacyDerivedRelationHead>()
-            .is_some());
-        let legacy = store
-            .read_legacy_exact()
-            .await?
-            .expect("legacy Head remains an exact disposable coordinate");
-        assert_eq!(legacy.generation, 1);
-        store.invalidate_legacy_head().await?;
-        assert!(!operator.exists(&store.head_path()).await?);
-        assert!(operator.exists(&legacy_data_path).await?);
-        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
-        let marker: serde_json::Value = serde_json::from_slice(
-            &operator
-                .read(&store.legacy_garbage_marker_path())
-                .await?
-                .to_vec(),
-        )?;
-        assert_eq!(marker["legacy_generation"], serde_json::json!(1));
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn garbage_age_starts_when_build_is_marked_garbage() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA007);
@@ -6037,92 +5677,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_materializations_use_a_grace_period_and_marker_last_cleanup() -> Result<()> {
-        let operator = Operator::new(Memory::default())?;
-        let relation_id = uuid::Uuid::from_u128(0xA00F);
-        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let legacy_data = format!("{}/metadata.json", store.legacy_materializations_prefix());
-        operator.write(&legacy_data, b"legacy".to_vec()).await?;
-
-        store.mark_legacy_materializations_garbage().await?;
-        assert!(
-            store
-                .garbage_collect_legacy_materializations(Duration::from_secs(3600))
-                .await?
-        );
-        assert!(operator.exists(&legacy_data).await?);
-        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
-
-        operator
-            .write(
-                &store.legacy_garbage_marker_path(),
-                serde_json::to_vec(&serde_json::json!({
-                    "marked_at": SystemTime::now()
-                        .duration_since(UNIX_EPOCH)?
-                        .as_secs()
-                        .saturating_sub(3600)
-                }))?,
-            )
-            .await?;
-        assert!(
-            !store
-                .garbage_collect_legacy_materializations(Duration::from_secs(1800))
-                .await?
-        );
-        assert!(!operator.exists(&legacy_data).await?);
-        assert!(!operator.exists(&store.legacy_garbage_marker_path()).await?);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn legacy_gc_never_deletes_while_legacy_head_still_pins_prefix() -> Result<()> {
-        let operator = Operator::new(Memory::default())?;
-        let relation_id = uuid::Uuid::from_u128(0xA010);
-        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let legacy_data = format!(
-            "{}/data/live.parquet",
-            store.legacy_materializations_prefix()
-        );
-        operator.write(&legacy_data, b"legacy".to_vec()).await?;
-        operator
-            .write(
-                &store.head_path(),
-                serde_json::to_vec(&serde_json::json!({
-                    "format_version": 1,
-                    "space_id": "demo",
-                    "relation_id": relation_id,
-                    "generation": 7,
-                    "materialization_id": "legacy",
-                    "base_generation": 0,
-                    "target_generation": 7,
-                    "materialization_manifest_location": "legacy/manifest.json"
-                }))?,
-            )
-            .await?;
-        store
-            .mark_legacy_materializations_garbage_for_generation(Some(7))
-            .await?;
-        operator
-            .write(
-                &store.legacy_garbage_marker_path(),
-                serde_json::to_vec(&serde_json::json!({
-                    "marked_at": 0,
-                    "legacy_generation": 7
-                }))?,
-            )
-            .await?;
-
-        assert!(
-            store
-                .garbage_collect_legacy_materializations(Duration::ZERO)
-                .await?
-        );
-        assert!(operator.exists(&legacy_data).await?);
-        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn staging_heartbeat_keeps_a_persisted_gc_timestamp() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00E);
@@ -6344,6 +5898,12 @@ mod tests {
         let relation_id = uuid::Uuid::from_u128(0xA010);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let orphan_build_id = test_build_id();
+        let obsolete_materialization = format!(
+            "spaces/demo/_ugoite/derived/relations/{relation_id}/materializations/old/data.parquet"
+        );
+        operator
+            .write(&obsolete_materialization, b"old derived bytes".to_vec())
+            .await?;
         operator
             .write(
                 &store.head_path(),
@@ -6365,6 +5925,9 @@ mod tests {
             vec![orphan_build_id]
         );
         assert!(!operator.exists(&orphan).await?);
+        // Current-build GC can proceed with an obsolete pointer present, but
+        // old physical prefixes are intentionally outside its deletion scope.
+        assert!(operator.exists(&obsolete_materialization).await?);
         assert!(operator.exists(&store.head_path()).await?);
         Ok(())
     }
