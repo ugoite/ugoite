@@ -42,4 +42,4 @@ message text is not contract.
 
 ## Related
 
-- `cargo run -p xtask -- openapi-check` verifies the contract.
+- `cargo run -p xtask --no-default-features -- openapi-check` verifies the contract.

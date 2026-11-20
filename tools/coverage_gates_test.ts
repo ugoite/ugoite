@@ -239,9 +239,12 @@ async function assertAggregateWorkflow(
   assertContainsAll(
     repoCheck,
     [
-      "cargo run -p xtask -- openapi-check",
-      "cargo run -p xtask -- architecture-check",
-      "cargo run -p xtask -- docs-current-stack-check",
+      "cargo run -p xtask --no-default-features -- openapi-check",
+      "cargo run -p xtask --no-default-features -- operation-registry-check",
+      "cargo run -p xtask --no-default-features -- architecture-check",
+      "cargo run -p xtask --no-default-features -- space-compat-check",
+      "cargo run -p xtask --no-default-features -- release-authority-check",
+      "cargo run -p xtask --no-default-features -- docs-current-stack-check",
     ],
     "repository check task",
   );

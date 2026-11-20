@@ -43,6 +43,6 @@ or persistence.
 New portable REST operations should be added to the manifest, request
 preparation, decoding tests, native adapter, browser adapter, OpenAPI/feature
 registry, and end-to-end coverage as applicable. After changing
-`SUPPORTED_OPERATIONS`, run `cargo run -p xtask -- operation-registry-generate`.
+`SUPPORTED_OPERATIONS`, run `cargo run -p xtask --no-default-features -- operation-registry-generate`.
 The browser client and capability report use the generated TypeScript
 inventory, and `check:repo` verifies that it is current.

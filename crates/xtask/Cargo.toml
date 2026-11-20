@@ -4,15 +4,26 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["space-tools"]
+space-tools = [
+  "dep:opendal",
+  "dep:tokio",
+  "dep:ugoite-core",
+  "dep:ugoite-domain",
+  "dep:ugoite_iceberg",
+  "dep:uuid",
+]
+
 [dependencies]
 anyhow.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
-opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs"] }
-tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
+opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs"], optional = true }
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros"], optional = true }
 ugoite-api-client = { path = "../ugoite-api-client" }
-ugoite-core = { path = "../ugoite-core" }
-ugoite-domain = { path = "../ugoite-domain" }
-ugoite_iceberg = { package = "ugoite-iceberg", path = "../ugoite-iceberg" }
-uuid = { version = "1.23.2", features = ["serde", "v7"] }
+ugoite-core = { path = "../ugoite-core", optional = true }
+ugoite-domain = { path = "../ugoite-domain", optional = true }
+ugoite_iceberg = { package = "ugoite-iceberg", path = "../ugoite-iceberg", optional = true }
+uuid = { version = "1.23.2", features = ["serde", "v7"], optional = true }
