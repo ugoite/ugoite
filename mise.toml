@@ -342,9 +342,15 @@ run = "bash scripts/test-s3-storage.sh"
 [tasks."test:rust"]
 description = "Run workspace Rust tests with nextest and Cargo doctests"
 run = [
+  { task = "test:rust:core" },
+  { task = "test:older-cli-knowledge-preservation" },
+]
+
+[tasks."test:rust:core"]
+description = "Run workspace Rust tests with nextest and Cargo doctests"
+run = [
   "cargo nextest run --workspace --locked",
   "cargo test --workspace --doc --locked",
-  { task = "test:older-cli-knowledge-preservation" },
 ]
 
 [tasks."test:older-cli-knowledge-preservation"]
@@ -761,7 +767,8 @@ run = [
 [tasks."ci:lane:rust-test"]
 description = "Run canonical Rust tests for hosted CI"
 run = [
-  { task = "test:rust" },
+  { task = "test:rust:core" },
+  "bash scripts/run-older-cli-preservation-if-needed.sh",
 ]
 
 [tasks."ci:lane:web"]
