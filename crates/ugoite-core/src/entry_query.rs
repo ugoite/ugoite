@@ -777,6 +777,13 @@ mod tests {
 
     #[test]
     fn signed_cursor_rejects_tampering_and_detects_auth_changes() {
+        // Use per-test key material so the fixture never resembles a deployed
+        // signing secret and the round trip proves the supplied key is used.
+        let signing_key = Uuid::new_v4().into_bytes();
+        let mut wrong_signing_key = Uuid::new_v4().into_bytes();
+        if wrong_signing_key == signing_key {
+            wrong_signing_key[0] ^= 1;
+        }
         let cursor = EntryCursor::new(
             SpaceId::from(Uuid::from_u128(1)),
             publication(),
@@ -787,11 +794,15 @@ mod tests {
             EntryId::from(Uuid::from_u128(3)),
         )
         .expect("cursor");
-        let token = cursor.encode(b"test-signing-key").expect("encode");
-        let decoded = EntryCursor::decode(&token, b"test-signing-key").expect("decode");
+        let token = cursor.encode(&signing_key).expect("encode");
+        let decoded = EntryCursor::decode(&token, &signing_key).expect("decode");
         assert_eq!(decoded, cursor);
         assert!(matches!(
-            EntryCursor::decode(&(token + "x"), b"test-signing-key"),
+            EntryCursor::decode(&token, &wrong_signing_key),
+            Err(EntryCursorError::Tampered)
+        ));
+        assert!(matches!(
+            EntryCursor::decode(&(token + "x"), &signing_key),
             Err(EntryCursorError::Tampered)
         ));
         assert!(matches!(
