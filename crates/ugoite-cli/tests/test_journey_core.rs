@@ -8,6 +8,10 @@
 //! durable state matter. Form establish intentionally drives `form save`,
 //! which uses the canonical save operation.
 
+// Several end-to-end async journeys compose deep service and CLI futures.
+// Keep their type-layout allowance local to this integration-test crate.
+#![recursion_limit = "256"]
+
 use std::process::Command;
 use std::process::Output;
 
