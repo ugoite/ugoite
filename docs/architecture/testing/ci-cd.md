@@ -103,16 +103,21 @@ Hosted Playwright lanes install Chromium, which is used by their selected test
 sets; local setup continues to install Chromium and WebKit for the broader E2E
 suite.
 
-The owner-composition lane runs the owner-approved recovery journey first, then
-the Composition Metric cardinality/API journey, table pagination, and source
-ACL isolation checks in one Playwright invocation against the verified runtime
-image. This keeps the exact HTTP saved-revision and scalar-cardinality checks,
-including source authorization failures, while removing a separate artifact
-consumer setup. On run 44689906445, owner recovery took 82 seconds of E2E time,
-the Metric and source-ACL lane took 257 seconds, Studio took 567 seconds, and
-artifact build took 684 seconds. The combined owner and Metric E2E work remains
-below the observed Studio and artifact-build durations; revisit if later hosted
-timings move it onto the merge critical path.
+The owner-composition lane combines three sequential root tasks while keeping
+their original Playwright invocations and service fixtures separate: the Metric
+journey and table pagination, source ACL isolation, then owner recovery. The ACL
+suite deliberately revokes a session, so its browser state must not carry into
+the other suites. A single Playwright invocation failed this way on run
+44833409661: the ACL cases passed, then pagination and owner recovery received
+401 responses. Separate invocations preserve the exact HTTP saved-revision,
+scalar-cardinality, pagination, source authorization, and recovery checks while
+sharing one hosted artifact consumer and verified runtime image load.
+
+Run 44689906445 measured 82 seconds of owner recovery E2E, 257 seconds for the
+Metric and source-ACL lane, 567 seconds for Studio E2E, and 684 seconds for
+artifact build. Those measurements exclude per-task service startup and do not
+predict the combined lane's total runtime; track the hosted job duration after
+this change and revisit if it moves the merge critical path.
 
 The split-E2E pilot decision (#3307) kept independent smoke/mobile, Composition
 Studio, and portable E2E consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
@@ -121,16 +126,11 @@ about two minutes of artifact availability and finishing in 2–8 minutes, while
 the then-single `ci-cp1-acceptance` lane held the critical path at 27–42
 minutes; after the CP1 fixtures/query/export trio landed, merge-group run
 37278654095 gated in under 19 minutes with the parallel consumers finishing
-within about eight minutes of artifact availability. Consolidating the suites
-into one job would not move `ci-required` p95 by the one-minute pilot
-threshold — the gate was CP1-bound, not E2E-bound — while it would serialize
-three browser suites onto one runner and lose per-lane failure isolation. The
-owner-composition lane now combines owner recovery with the shorter Metric and
-source-ACL tests: run 44689906445 measured 82 seconds of owner E2E plus 257
-seconds for the Metric/source-ACL lane, below the 567-second Studio E2E and
-684-second artifact build. This removes a separate consumer setup while
-keeping the observed critical path unchanged. Keep the remaining heavy jobs
-independent and revisit with new same-topology comparison data.
+within about eight minutes of artifact availability. Those timings supported
+combining the smaller owner and Metric artifact consumers, but not sharing a
+Playwright process or backend fixture: the ACL tests intentionally revoke
+sessions. Keep the three suites in separate invocations and track the combined
+job's hosted duration, while the remaining heavy consumers stay independent.
 Rust test sharding stays out of scope until runtime, compile/link, cache, and
 shard-comparison data show a clear improvement.
 

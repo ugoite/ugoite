@@ -117,23 +117,71 @@ async function assertAggregateWorkflow(
   const e2eTasks = JSON.parse(
     await Deno.readTextFile("e2e/deno.json"),
   ).tasks as Record<string, string>;
-  const ownerCompositionSuite = e2eTasks["owner-recovery"];
+  const ownerRecoverySuite = e2eTasks["owner-recovery"];
+  const compositionMetricSuite = e2eTasks["composition-metric"];
+  const sourceAclSuite = e2eTasks["composition-source-acl-isolation"];
   assertContainsAll(
-    ownerCompositionSuite,
-    [
-      "owner-space-recovery.test.ts",
-      "composition-metric-journey.test.ts",
-      "composition-table-metric-pagination.test.ts",
-      "composition-source-acl-isolation.test.ts",
-    ],
-    "combined owner and Composition E2E selector",
+    ownerRecoverySuite,
+    ["owner-space-recovery.test.ts"],
+    "owner recovery selector",
   );
   assertEquals(
-    ownerCompositionSuite.indexOf("owner-space-recovery.test.ts") <
-      ownerCompositionSuite.indexOf("composition-metric-journey.test.ts"),
-    true,
-    "the owner recovery journey stays first on pristine backend state",
+    ownerRecoverySuite.includes("composition-"),
+    false,
+    "owner recovery keeps an isolated Playwright invocation",
   );
+  assertContainsAll(
+    compositionMetricSuite,
+    [
+      "composition-metric-journey.test.ts",
+      "composition-table-metric-pagination.test.ts",
+    ],
+    "Composition Metric and table pagination selector",
+  );
+  assertContainsAll(
+    sourceAclSuite,
+    ["composition-source-acl-isolation.test.ts"],
+    "source ACL isolation selector",
+  );
+  assertEquals(
+    sourceAclSuite.includes("composition-metric-journey.test.ts") ||
+      sourceAclSuite.includes("owner-space-recovery.test.ts"),
+    false,
+    "session revocation stays isolated to the source ACL invocation",
+  );
+  const ownerCompositionLane = taskBlock(mise, "ci:lane:e2e-owner-composition");
+  const metricTask = '{ task = "test:e2e:composition-metric" }';
+  const aclTask = '{ task = "test:e2e:composition-source-acl-isolation" }';
+  const recoveryTask = '{ task = "test:e2e:owner-recovery" }';
+  assertContainsAll(
+    ownerCompositionLane,
+    [metricTask, aclTask, recoveryTask],
+    "owner-composition lane separate suite invocations",
+  );
+  assertEquals(
+    ownerCompositionLane.indexOf(metricTask) <
+        ownerCompositionLane.indexOf(aclTask) &&
+      ownerCompositionLane.indexOf(aclTask) <
+        ownerCompositionLane.indexOf(recoveryTask),
+    true,
+    "Metric, ACL, and owner recovery suites run in sequence",
+  );
+  for (
+    const [taskName, denoTask] of [
+      ["test:e2e:composition-metric", "e2e:composition-metric"],
+      [
+        "test:e2e:composition-source-acl-isolation",
+        "e2e:composition-source-acl-isolation",
+      ],
+      ["test:e2e:owner-recovery", "e2e:owner-recovery"],
+    ] as const
+  ) {
+    assertContainsAll(
+      taskBlock(mise, taskName),
+      ["docker image inspect", `deno task ${denoTask}`],
+      `${taskName} starts its own E2E runner`,
+    );
+  }
   assertEquals(
     mise.includes("ci:lane:e2e-composition-metric"),
     false,
