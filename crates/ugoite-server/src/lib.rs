@@ -3826,7 +3826,6 @@ fn recovery_result_headers() -> HeaderMap {
 /// Restart-safe recovery audit delivery. The Node outbox contains one
 /// redacted canonical event; each transition is persisted before the next
 /// delivery attempt, so a crash can resume without replaying secrets.
-
 async fn owner_force_reset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
