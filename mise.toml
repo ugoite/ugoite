@@ -271,9 +271,8 @@ run = [
 ]
 
 [tasks."check:rust"]
-description = "Compile-check Rust workspace and supported WASM targets"
+description = "Compile-check supported WASM targets (workspace targets are checked by Clippy)"
 run = [
-  "cargo check --workspace --all-targets --all-features --locked",
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
