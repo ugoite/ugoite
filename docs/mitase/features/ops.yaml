@@ -11,7 +11,7 @@ features:
       - id: documentation
         role: documentation
         facet: documentation
-        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, version declarations, and legacy registries connected as repository documentation artifacts. The legacy registries remain read-only migration evidence for this focused slice. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
+        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, version declarations, and empty legacy registries connected as repository documentation artifacts. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
         targets:
           - id: operations-guide
             adapter: declared
@@ -75,7 +75,7 @@ features:
       - id: registries
         role: implementation
         facet: documentation
-        responsibility: Keep the registry artifacts that the current taxonomy-integrity test parses as exact implementation targets. The test proves link resolution for the current registry corpus; it does not make later unmigrated domains canonical.
+        responsibility: Keep the empty legacy Operations and Security category shells as exact targets for the taxonomy-integrity test, which checks that all requirement records have migrated to Mitase.
         targets:
           - id: remaining-operations-requirements
             adapter: declared

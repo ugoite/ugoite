@@ -243,7 +243,10 @@ export type KonaseProtocolAction =
   | "konase.version"
   | "konase.new"
   | "konase.step"
-  | "konase.context";
+  | "konase.context"
+  | "konase.preview_write"
+  | "konase.validate_mutation_receipt"
+  | "konase.resolve_effect";
 
 /** Invoke the portable Konase control-plane protocol in Rust/WASM. */
 export const invokeKonase = async <T = unknown>(

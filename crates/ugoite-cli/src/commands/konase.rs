@@ -711,14 +711,12 @@ impl McpHost for RmcpMcpHost {
                 .collect::<Vec<_>>()
                 .join("\n");
             let valid_receipt = match operation.as_str() {
-                "ugoite.save" => result
-                    .structured_content
-                    .as_ref()
-                    .is_some_and(valid_save_receipt),
-                "ugoite.undo" => result
-                    .structured_content
-                    .as_ref()
-                    .is_some_and(|value| valid_undo_receipt(value, work_id)),
+                "ugoite.save" => result.structured_content.as_ref().is_some_and(|value| {
+                    ugoite_konase::mutation_receipt_is_valid("ugoite.save", work_id, value)
+                }),
+                "ugoite.undo" => result.structured_content.as_ref().is_some_and(|value| {
+                    ugoite_konase::mutation_receipt_is_valid("ugoite.undo", work_id, value)
+                }),
                 _ => false,
             };
             if result.is_error != Some(true) && !valid_receipt {
@@ -791,31 +789,10 @@ impl McpHost for RmcpMcpHost {
     }
 }
 
-fn valid_save_receipt(value: &Value) -> bool {
-    let id = value.get("id").and_then(Value::as_str);
-    let uri = value.get("uri").and_then(Value::as_str);
-    id.is_some_and(|id| !id.is_empty())
-        && uri
-            .is_some_and(|uri| Some(uri) == id.map(|id| format!("ugoite://entry/{id}")).as_deref())
-        && matches!(
-            value.get("status").and_then(Value::as_str),
-            Some("created" | "updated")
-        )
-        && value.get("_untrusted_content").and_then(Value::as_bool) == Some(true)
-}
-
-fn valid_undo_receipt(value: &Value, work_id: &str) -> bool {
-    value.get("run_id").and_then(Value::as_str) == Some(work_id)
-        && value
-            .get("reverted_change_count")
-            .and_then(Value::as_u64)
-            .is_some()
-        && value.get("_untrusted_content").and_then(Value::as_bool) == Some(true)
-}
-
 fn requires_approval(request: &McpRequest) -> bool {
-    request.effect == Some(CapabilityEffect::Write)
-        || matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo")
+    ugoite_konase::effective_capability_effect(&request.operation, request.effect)
+        .map(|effect| effect == CapabilityEffect::Write)
+        .unwrap_or(request.effect == Some(CapabilityEffect::Write))
 }
 
 fn request_confirmation(request: &ugoite_konase::ConfirmationRequest) -> bool {
@@ -1866,28 +1843,6 @@ mod tests {
             serde_json::Map::new(),
         ));
         assert_eq!(unannotated_write.effect, Some(CapabilityEffect::Write));
-    }
-
-    #[test]
-    fn save_and_undo_receipts_must_match_the_mutation_contract() {
-        assert!(valid_save_receipt(&json!({
-            "id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created", "_untrusted_content":true
-        })));
-        for invalid in [
-            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created"}),
-            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"deleted", "_untrusted_content":true}),
-            json!({"id":"entry-1", "uri":"https://example.test/entry-1", "status":"updated", "_untrusted_content":true}),
-        ] {
-            assert!(!valid_save_receipt(&invalid));
-        }
-        assert!(valid_undo_receipt(
-            &json!({"run_id":"work-1", "reverted_change_count":1, "_untrusted_content":true}),
-            "work-1"
-        ));
-        assert!(!valid_undo_receipt(
-            &json!({"run_id":"another-work", "reverted_change_count":1, "_untrusted_content":true}),
-            "work-1"
-        ));
     }
 
     #[test]

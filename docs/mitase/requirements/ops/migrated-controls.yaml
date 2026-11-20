@@ -1,0 +1,325 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-027
+    title: "Strict Lockfile Discipline"
+    description: "Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution."
+        governed_by: []
+    bindings:
+      - id: req-ops-027-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: Cargo.lock
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: deno.lock
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-027#criterion.migrated-contract
+  - id: REQ-OPS-028
+    title: "Repository-Owned Helm Chart"
+    description: "The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets."
+        governed_by: []
+    bindings:
+      - id: req-ops-028-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: charts/ugoite/Chart.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: charts/ugoite/values.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: charts/ugoite/templates/deployment.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: charts/ugoite/templates/pvc.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-028#criterion.migrated-contract
+  - id: REQ-OPS-030
+    title: "Pre-Merge Release Quick-Start Verification"
+    description: "A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start."
+    priority: medium
+    status: planned
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start."
+        governed_by: []
+  - id: REQ-OPS-031
+    title: "Immutable GitHub Action Pinning"
+    description: "External GitHub Actions must be pinned to full commit SHAs."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "External GitHub Actions must be pinned to full commit SHAs."
+        governed_by: []
+    bindings:
+      - id: req-ops-031-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-031#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: .github/workflows/codeql.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-031#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-031#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-031#criterion.migrated-contract
+  - id: REQ-OPS-032
+    title: "Contributor Setup and Hooks"
+    description: "Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
+    priority: medium
+    status: deprecated
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
+        governed_by: []
+    bindings:
+      - id: req-ops-032-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-032#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-032#criterion.migrated-contract
+  - id: REQ-OPS-033
+    title: "Local Alternate-Runtime Test Strictness"
+    description: "Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
+    priority: medium
+    status: deprecated
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
+        governed_by: []
+    bindings:
+      - id: req-ops-033-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-033#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-033#criterion.migrated-contract
+  - id: REQ-OPS-034
+    title: "Direct-Process E2E Cleanup"
+    description: "Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports."
+        governed_by: []
+    bindings:
+      - id: req-ops-034-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: e2e/scripts/run-e2e.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-034#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: e2e/scripts/run-e2e-task.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-034#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: e2e/scripts/run-e2e-compose.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-034#criterion.migrated-contract
+  - id: REQ-OPS-035
+    title: "Container Runtime Hardening"
+    description: "Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: security
+        statement: "Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage."
+        governed_by: []
+    bindings:
+      - id: req-ops-035-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: Dockerfile
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-035#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: charts/ugoite/templates/deployment.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-035#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: charts/ugoite/templates/pvc.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-035#criterion.migrated-contract
+  - id: REQ-OPS-036
+    title: "Contributor Workflow Guide"
+    description: "Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates."
+        governed_by: []
+    bindings:
+      - id: req-ops-036-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect current contributor/architecture/spec guides and the root task surface. File presence is evidence; complete prose parity is not independently verified.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: docs/develop/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-036#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: docs/architecture/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-036#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: docs/spec/migration.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-036#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-036#criterion.migrated-contract
