@@ -1,0 +1,146 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations documentation and pull-request tooling requirements
+requirements:
+  - id: REQ-OPS-037
+    title: "Browser Walkthrough Form Terminology"
+    description: "The browser walkthrough must use Form terminology."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: behavior
+        statement: "The browser walkthrough must use Form terminology."
+        governed_by: []
+    bindings:
+      - id: req-ops-037-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: docs/get-started/quickstart.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-037#criterion.migrated-contract
+  - id: REQ-OPS-040
+    title: "Browser Walkthrough Field Types"
+    description: "The browser walkthrough must explain short structured fields versus longer Markdown fields."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: behavior
+        statement: "The browser walkthrough must explain short structured fields versus longer Markdown fields."
+        governed_by: []
+    bindings:
+      - id: req-ops-040-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: docs/get-started/quickstart.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-040#criterion.migrated-contract
+  - id: REQ-OPS-041
+    title: "Browser Walkthrough Main Surfaces"
+    description: "The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: behavior
+        statement: "The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level."
+        governed_by: []
+    bindings:
+      - id: req-ops-041-source-evidence
+        role: evidence
+        facet: repository-artifact
+        responsibility: Connect the exact existing source artifacts without inferring full behavioral coverage from file presence.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: docs/use/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: docs/use/entries.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-3
+            adapter: declared
+            path: docs/use/forms.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-4
+            adapter: declared
+            path: docs/use/search.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-5
+            adapter: declared
+            path: docs/use/sql.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-6
+            adapter: declared
+            path: docs/use/assets.mdx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+          - id: source-7
+            adapter: declared
+            path: docs/operate/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-041#criterion.migrated-contract
+  - id: REQ-OPS-042
+    title: "Script-Driven Pull Request Creation"
+    description: "The repository-owned tools/create_pr.ts script validates the required pull-request sections, closing issue link, and Knowledge Compatibility Review before invoking GitHub tooling."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: migrated-contract
+        kind: quality
+        statement: "The repository-owned tools/create_pr.ts script validates the required pull-request sections, closing issue link, and Knowledge Compatibility Review before invoking GitHub tooling."
+        governed_by: []
+    bindings:
+      - id: req-ops-042-source-evidence
+        role: evidence
+        facet: verification
+        responsibility: Connect the repository-owned PR creation script and its exact validator tests; the test covers required PR sections and compatibility review validation before GitHub invocation.
+        targets:
+          - id: source-1
+            adapter: declared
+            path: tools/create_pr.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-042#criterion.migrated-contract
+          - id: source-2
+            adapter: declared
+            path: tools/knowledge_compatibility_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-042#criterion.migrated-contract

@@ -8,11 +8,12 @@ Mitase owns migrated specifications. This page locates the active sources.
 ## Cross-surface preflight authority map
 
 The canonical requirement, feature, philosophy, and policy graph lives in
-[Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase). The remaining
-Operations and Security records under `docs/spec/requirements` cover work
-that has yet to migrate. `docs/spec/ui` owns UI contracts for pages and
-components. The [architecture](../architecture/index.md) explains the
-implementation boundaries.
+[Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase). The legacy
+Operations and Security requirement registries now contain no active records;
+their empty category shells remain for the integrity check. `docs/spec/ui`
+owns UI contracts for pages and components. The
+[architecture](../architecture/index.md) explains the implementation
+boundaries.
 
 When migrating a record, preserve its meaning and any verification gaps,
 change the canonical specification artifact, and remove the duplicate record.

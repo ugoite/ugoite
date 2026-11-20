@@ -41,9 +41,10 @@ Deno.test("REQ-OPS-003: requirement IDs, related documents, and test references 
       }
     }
   }
-  assert(
-    ids.size > 0,
-    "remaining legacy requirements must retain their references",
+  assertEquals(
+    ids.size,
+    0,
+    "all Operations and Security requirement records have migrated to Mitase",
   );
 });
 
