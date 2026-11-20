@@ -2,6 +2,7 @@
 
 use super::*;
 use datafusion::scalar::ScalarValue;
+use serde_json::Value;
 use std::collections::HashMap;
 use ugoite_domain::form::FormDefinition;
 
@@ -20,6 +21,83 @@ pub(super) struct SqlSourceAuthorization<'a> {
     pub(super) principal_ids: &'a [Uuid],
 }
 
+pub(super) fn count_query_request(request: &SqlQueryCountRequest) -> SqlQueryRequest {
+    SqlQueryRequest {
+        sql: request.sql.clone(),
+        parameters: request.parameters.clone(),
+        parameter_types: request.parameter_types.clone(),
+        include_exact_integer_values: false,
+        limit: 1,
+        continuation: None,
+        execution_id: None,
+        saved_sql: request.saved_sql.clone(),
+        binding_base: request.binding_base.clone(),
+        form_binding_guards: request.form_binding_guards.clone(),
+    }
+}
+
+/// Apply the shared SQL page boundary after fetching `limit + 1` rows.
+pub(super) fn finish_sql_page(
+    mut rows: Vec<Value>,
+    mut exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
+    limit: usize,
+    offset: usize,
+    has_order: bool,
+) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>, bool, usize)> {
+    if !has_order && rows.len() > limit {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL pagination requires an explicit ORDER BY",
+        )
+        .into());
+    }
+    let has_more = has_order && rows.len() > limit;
+    rows.truncate(limit);
+    if let Some(exact_integer_rows) = exact_integer_rows.as_mut() {
+        exact_integer_rows.truncate(limit);
+    }
+    let next_offset = if has_more {
+        offset
+            .checked_add(rows.len())
+            .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?
+    } else {
+        offset
+    };
+    Ok((rows, exact_integer_rows, has_more, next_offset))
+}
+
+pub(super) fn encode_page_continuation(
+    space_uid: ugoite_domain::id::SpaceId,
+    publication: PublicationRef,
+    sql_fingerprint: String,
+    parameter_fingerprint: String,
+    authorization_fingerprint: String,
+    next_offset: usize,
+    request: &SqlQueryRequest,
+    prepared: &PreparedSqlRequest,
+    composition_entry_id: Option<&str>,
+    context_fingerprint: Option<&str>,
+    signing_key: &[u8],
+) -> Result<String> {
+    let mut continuation = SqlContinuation::new(
+        space_uid,
+        publication,
+        sql_fingerprint,
+        parameter_fingerprint,
+        authorization_fingerprint,
+        next_offset,
+    )?;
+    continuation.saved_sql = request.saved_sql.clone();
+    continuation.binding_fingerprint = prepared
+        .saved_revision
+        .as_ref()
+        .map(saved_sql_binding_fingerprint)
+        .transpose()?;
+    continuation.composition_entry_id = composition_entry_id.map(str::to_owned);
+    continuation.context_fingerprint = context_fingerprint.map(str::to_owned);
+    Ok(continuation.encode(signing_key)?)
+}
+
 /// Resolve and validate one exact Saved SQL revision before an adapter selects
 /// its publication, result shape, and transport-specific execution limits.
 pub(super) async fn prepare_sql_request(
@@ -27,6 +105,25 @@ pub(super) async fn prepare_sql_request(
     space_id: &str,
     request: &SqlQueryRequest,
     authorization: Option<SqlSourceAuthorization<'_>>,
+) -> Result<PreparedSqlRequest> {
+    prepare_sql_request_inner(service, space_id, request, authorization, false).await
+}
+
+pub(super) async fn prepare_sql_count_request(
+    service: &UgoiteService,
+    space_id: &str,
+    request: &SqlQueryRequest,
+    authorization: Option<SqlSourceAuthorization<'_>>,
+) -> Result<PreparedSqlRequest> {
+    prepare_sql_request_inner(service, space_id, request, authorization, true).await
+}
+
+async fn prepare_sql_request_inner(
+    service: &UgoiteService,
+    space_id: &str,
+    request: &SqlQueryRequest,
+    authorization: Option<SqlSourceAuthorization<'_>>,
+    validate_space_before_parameters: bool,
 ) -> Result<PreparedSqlRequest> {
     if let (Some(authorization), Some(source)) = (authorization, request.saved_sql.as_ref()) {
         ensure_saved_sql_access(authorization.state, authorization.principal_ids, source)?;
@@ -47,6 +144,9 @@ pub(super) async fn prepare_sql_request(
     let normalized_sql = index::normalize_sql_template(query_sql)?;
     validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
     index::validate_read_only_sql(&normalized_sql)?;
+    if validate_space_before_parameters {
+        service.validate_complete_space(space_id).await?;
+    }
 
     let parameter_types = effective_sql_parameter_types(
         &request.parameters,

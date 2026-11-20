@@ -5,9 +5,6 @@
 //! types; adapters resolve the logical field references inside their own
 //! authorized execution boundary.
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -179,8 +176,6 @@ impl EntryQueryFieldKind {
         }
     }
 }
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// The semantic scope of an Entry query.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -509,55 +504,36 @@ impl EntryCursor {
     }
 
     pub fn encode(&self, signing_key: &[u8]) -> Result<String, EntryCursorError> {
-        if signing_key.is_empty() {
-            return Err(EntryCursorError::Invalid(
-                "cursor signing key must not be empty".to_string(),
-            ));
-        }
         let payload = serde_json::to_vec(self).map_err(EntryCursorError::Serialize)?;
-        let mut mac = HmacSha256::new_from_slice(signing_key)
-            .map_err(|_| EntryCursorError::Invalid("invalid cursor signing key".to_string()))?;
-        mac.update(&payload);
-        Ok(format!(
-            "v{}.{}.{}",
+        crate::signed_cursor::encode(
             ENTRY_CURSOR_VERSION,
-            URL_SAFE_NO_PAD.encode(payload),
-            URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-        ))
+            &payload,
+            signing_key,
+            "cursor signing key must not be empty",
+            "invalid cursor signing key",
+        )
+        .map_err(|error| match error {
+            crate::signed_cursor::Error::Invalid(message) => {
+                EntryCursorError::Invalid(message.to_string())
+            }
+            crate::signed_cursor::Error::Tampered => EntryCursorError::Tampered,
+        })
     }
 
     pub fn decode(token: &str, signing_key: &[u8]) -> Result<Self, EntryCursorError> {
-        let mut parts = token.split('.');
-        let version = parts
-            .next()
-            .ok_or_else(|| EntryCursorError::Invalid("cursor is malformed".to_string()))?;
-        let payload = parts
-            .next()
-            .ok_or_else(|| EntryCursorError::Invalid("cursor is malformed".to_string()))?;
-        let signature = parts
-            .next()
-            .ok_or_else(|| EntryCursorError::Invalid("cursor is malformed".to_string()))?;
-        if parts.next().is_some() || version != "v1" {
-            return Err(EntryCursorError::Invalid(
-                "cursor version is unsupported".to_string(),
-            ));
-        }
-        if signing_key.is_empty() {
-            return Err(EntryCursorError::Invalid(
-                "cursor signing key must not be empty".to_string(),
-            ));
-        }
-        let payload_bytes = URL_SAFE_NO_PAD
-            .decode(payload)
-            .map_err(|_| EntryCursorError::Invalid("cursor payload is malformed".to_string()))?;
-        let signature_bytes = URL_SAFE_NO_PAD
-            .decode(signature)
-            .map_err(|_| EntryCursorError::Invalid("cursor signature is malformed".to_string()))?;
-        let mut mac = HmacSha256::new_from_slice(signing_key)
-            .map_err(|_| EntryCursorError::Invalid("invalid cursor signing key".to_string()))?;
-        mac.update(&payload_bytes);
-        mac.verify_slice(&signature_bytes)
-            .map_err(|_| EntryCursorError::Tampered)?;
+        let payload_bytes = crate::signed_cursor::decode(
+            token,
+            signing_key,
+            "cursor",
+            "cursor signing key must not be empty",
+            "invalid cursor signing key",
+        )
+        .map_err(|error| match error {
+            crate::signed_cursor::Error::Invalid(message) => {
+                EntryCursorError::Invalid(message.to_string())
+            }
+            crate::signed_cursor::Error::Tampered => EntryCursorError::Tampered,
+        })?;
         let cursor: Self =
             serde_json::from_slice(&payload_bytes).map_err(EntryCursorError::Deserialize)?;
         if cursor.version != ENTRY_CURSOR_VERSION {
