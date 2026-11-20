@@ -2805,39 +2805,6 @@ fn sql_query_limits(max_rows: usize) -> QueryLimits {
     }
 }
 
-/// Executes a bounded scalar probe with explicit query limits. This is the
-/// same authorized SQL page path used by tables, capped at two rows by the
-/// scalar contract.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless_with_limits(
-    op: &Operator,
-    ws_path: &str,
-    sql_query: &str,
-    relation_scopes: &BTreeMap<String, EntryScope>,
-    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    forms: Vec<FormDefinition>,
-    checkpoint: SpaceCheckpoint,
-    query_limits: QueryLimits,
-) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>)> {
-    let (columns, result_schema, mut rows, _exact_integer_rows, _has_order) =
-        execute_sql_query_authorized_by_form_page_at_checkpoint_stateless_with_limits(
-            op,
-            ws_path,
-            query_limits,
-            sql_query,
-            relation_scopes,
-            parameters,
-            false,
-            0,
-            ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS,
-            forms,
-            checkpoint,
-        )
-        .await?;
-    rows.truncate(ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS);
-    Ok((columns, result_schema, rows))
-}
-
 /// Executes a bounded scalar probe against a fixed authorized publication.
 /// The caller uses the rows only for cardinality validation; table paging and
 /// ordering are intentionally not part of this contract.

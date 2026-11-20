@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   affectedCompositionQueries,
   changedCompositionQueryIds,
+  dependentCompositionQueryIds,
   mergeCompositionEvaluation,
   unavailableCompositionQueryIds,
 } from "./composition-evaluation";
@@ -148,6 +149,37 @@ describe("Composition graph evaluation reuse", () => {
         new Set(["day"]),
       ),
     ).toEqual(["rows", "count"]);
+  });
+
+  it("schedules dependency invalidation for drafts with unresolved bindings", () => {
+    const valueType = { scalar_type: "integer" as const, nullable: false };
+    const draft = graph([
+      {
+        id: "dependent",
+        kind: "query",
+        returns: { kind: "scalar", value_type: valueType },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $value",
+          arguments: [{ name: "value", variable: "upstream" }],
+        },
+      },
+      {
+        id: "downstream",
+        kind: "query",
+        returns: { kind: "scalar", value_type: valueType },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $value",
+          arguments: [{ name: "value", variable: "dependent" }],
+        },
+      },
+    ]);
+
+    expect(dependentCompositionQueryIds(draft, new Set(["upstream"]))).toEqual([
+      "dependent",
+      "downstream",
+    ]);
   });
 
   it("blocks unavailable inputs and their dependent queries only", () => {

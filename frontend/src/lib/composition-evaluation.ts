@@ -10,7 +10,10 @@ export interface CompositionEvaluationIdentity {
   authorizationFingerprint: string;
 }
 
-/** Return query values invalidated by a semantic graph-draft change. */
+/**
+ * Browser-owned scheduling hint for graph drafts, including temporarily invalid
+ * drafts. Core remains authoritative for validating dependencies and execution.
+ */
 export const dependentCompositionQueryIds = (
   draft: CompositionGraphDraft,
   variableIds: ReadonlySet<string>,
@@ -42,7 +45,9 @@ export const dependentCompositionQueryIds = (
       }
     }
   }
-  return [...affected];
+  return queries.filter((query) => affected.has(query.id)).map((query) =>
+    query.id
+  );
 };
 
 /** Scheduling hints only; Core independently validates the selected dependency closure. */

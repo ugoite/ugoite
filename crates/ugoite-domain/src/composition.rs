@@ -20,7 +20,6 @@ pub use form_query::{
 pub mod variable_binding;
 pub mod variable_graph;
 pub mod variable_graph_input;
-pub mod variable_invalidation;
 mod yaml;
 
 use variable_binding::{compile_variable_graph_bindings, VariableGraphComponentBinding};

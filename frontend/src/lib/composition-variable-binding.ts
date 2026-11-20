@@ -1,13 +1,7 @@
+import type { VariableGraphScalarType } from "~/lib/ugoite-client/protocol";
+
 /** Strict authoring contract for Composition's variable-only graph. */
-export type CompositionScalarType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "decimal"
-  | "date"
-  | "timestamp"
-  | "json";
+export type CompositionScalarType = VariableGraphScalarType;
 
 /** SQL argument types currently supported by the shared executor binder. */
 export type CompositionSqlArgumentType = Exclude<

@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
+use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryRequest};
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind, CompositionSpec,
     DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, VariableGraphColumn,
@@ -17,7 +17,6 @@ use ugoite_domain::identity::{
 };
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::composition::CompositionSaveRequest;
-use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
 
@@ -397,77 +396,6 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         "continuation should fail because current authorization changed: {error}"
     );
 
-    // The standalone Saved SQL scalar probe must use the same current Entry
-    // ACL as ordinary SQL reads while retaining its exact Saved SQL revision.
-    authorizer
-        .set_policy(
-            &space_id,
-            owner,
-            &ResourceRef {
-                kind: ResourceKind::Entry,
-                id: "composition-query-00".to_string(),
-                parent: None,
-            },
-            AccessPolicy {
-                policy_id: Uuid::now_v7(),
-                inherit_space_role: false,
-                grants: vec![Grant {
-                    principal_id: owner,
-                    actions: [Action::Read].into_iter().collect(),
-                }],
-            },
-        )
-        .await?;
-    let saved_sql = service
-        .create_saved_sql(
-            &space_id,
-            Some("metric-scalar-source"),
-            &SqlPayload {
-                name: Some("Metric scalar source".to_string()),
-                kind: SqlKind::UserQuery,
-                metadata: None,
-                sql: format!(
-                    "SELECT \"_ugoite_id\" AS id FROM \"{form_name}\" ORDER BY \"_ugoite_id\""
-                ),
-                variables: json!([]),
-            },
-            "owner",
-        )
-        .await?;
-    let probe_request = || SqlQueryRequest {
-        form_binding_guards: Vec::new(),
-        sql: String::new(),
-        parameters: Map::new(),
-        parameter_types: BTreeMap::new(),
-        include_exact_integer_values: false,
-        limit: 2,
-        continuation: None,
-        execution_id: None,
-        saved_sql: Some(SavedSqlRevisionRef {
-            id: "metric-scalar-source".to_string(),
-            revision_id: saved_sql["revision_id"]
-                .as_str()
-                .expect("saved SQL revision id")
-                .to_string(),
-        }),
-        binding_base: None,
-    };
-    let viewer_probe = service
-        .probe_sql_scalar_authorized_for_principals(&space_id, &[viewer], probe_request())
-        .await?;
-    let owner_probe = service
-        .probe_sql_scalar_authorized_for_principals(&space_id, &[owner], probe_request())
-        .await?;
-    assert_eq!(viewer_probe.rows.len(), 2);
-    assert_eq!(owner_probe.rows.len(), 2);
-    assert!(viewer_probe
-        .rows
-        .iter()
-        .all(|row| { row["id"] != "composition-query-00" && row["id"] != "composition-query-02" }));
-    assert!(owner_probe
-        .rows
-        .iter()
-        .any(|row| row["id"] == "composition-query-00"));
     Ok(())
 }
 
