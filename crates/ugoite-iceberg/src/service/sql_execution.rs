@@ -15,6 +15,27 @@ pub(super) struct PreparedSqlRequest {
     pub(super) form_binding_guards: Vec<ugoite_core::sql_query::SqlFormBindingGuard>,
 }
 
+pub(super) struct FinishedSqlPage {
+    pub(super) rows: Vec<Value>,
+    pub(super) exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
+    pub(super) has_more: bool,
+    pub(super) next_offset: usize,
+}
+
+pub(super) struct SqlPageContinuationContext<'a> {
+    pub(super) space_uid: ugoite_domain::id::SpaceId,
+    pub(super) publication: PublicationRef,
+    pub(super) sql_fingerprint: String,
+    pub(super) parameter_fingerprint: String,
+    pub(super) authorization_fingerprint: String,
+    pub(super) next_offset: usize,
+    pub(super) request: &'a SqlQueryRequest,
+    pub(super) prepared: &'a PreparedSqlRequest,
+    pub(super) composition_entry_id: Option<&'a str>,
+    pub(super) context_fingerprint: Option<&'a str>,
+    pub(super) signing_key: &'a [u8],
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct SqlSourceAuthorization<'a> {
     pub(super) state: &'a AuthorizationState,
@@ -43,7 +64,7 @@ pub(super) fn finish_sql_page(
     limit: usize,
     offset: usize,
     has_order: bool,
-) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>, bool, usize)> {
+) -> Result<FinishedSqlPage> {
     if !has_order && rows.len() > limit {
         return Err(AppError::invalid_input(
             ErrorCode::InvalidInput,
@@ -63,39 +84,33 @@ pub(super) fn finish_sql_page(
     } else {
         offset
     };
-    Ok((rows, exact_integer_rows, has_more, next_offset))
+    Ok(FinishedSqlPage {
+        rows,
+        exact_integer_rows,
+        has_more,
+        next_offset,
+    })
 }
 
-pub(super) fn encode_page_continuation(
-    space_uid: ugoite_domain::id::SpaceId,
-    publication: PublicationRef,
-    sql_fingerprint: String,
-    parameter_fingerprint: String,
-    authorization_fingerprint: String,
-    next_offset: usize,
-    request: &SqlQueryRequest,
-    prepared: &PreparedSqlRequest,
-    composition_entry_id: Option<&str>,
-    context_fingerprint: Option<&str>,
-    signing_key: &[u8],
-) -> Result<String> {
+pub(super) fn encode_page_continuation(context: SqlPageContinuationContext<'_>) -> Result<String> {
     let mut continuation = SqlContinuation::new(
-        space_uid,
-        publication,
-        sql_fingerprint,
-        parameter_fingerprint,
-        authorization_fingerprint,
-        next_offset,
+        context.space_uid,
+        context.publication,
+        context.sql_fingerprint,
+        context.parameter_fingerprint,
+        context.authorization_fingerprint,
+        context.next_offset,
     )?;
-    continuation.saved_sql = request.saved_sql.clone();
-    continuation.binding_fingerprint = prepared
+    continuation.saved_sql = context.request.saved_sql.clone();
+    continuation.binding_fingerprint = context
+        .prepared
         .saved_revision
         .as_ref()
         .map(saved_sql_binding_fingerprint)
         .transpose()?;
-    continuation.composition_entry_id = composition_entry_id.map(str::to_owned);
-    continuation.context_fingerprint = context_fingerprint.map(str::to_owned);
-    Ok(continuation.encode(signing_key)?)
+    continuation.composition_entry_id = context.composition_entry_id.map(str::to_owned);
+    continuation.context_fingerprint = context.context_fingerprint.map(str::to_owned);
+    Ok(continuation.encode(context.signing_key)?)
 }
 
 /// Resolve and validate one exact Saved SQL revision before an adapter selects

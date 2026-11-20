@@ -7236,39 +7236,41 @@ impl UgoiteService {
                 checkpoint,
             )
             .await?;
-        let (rows, exact_integer_rows, has_more, next_offset) = sql_execution::finish_sql_page(
+        let page = sql_execution::finish_sql_page(
             rows,
             exact_integer_rows,
             request.limit,
             offset,
             has_order,
         )?;
-        let next = if has_more {
+        let next = if page.has_more {
             Some(sql_execution::encode_page_continuation(
-                space_uid.into(),
-                publication.clone(),
-                sql_fingerprint,
-                parameter_fingerprint,
-                LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
-                next_offset,
-                &request,
-                &prepared,
-                None,
-                continuation_context_fingerprint,
-                &signing_key,
+                sql_execution::SqlPageContinuationContext {
+                    space_uid: space_uid.into(),
+                    publication: publication.clone(),
+                    sql_fingerprint,
+                    parameter_fingerprint,
+                    authorization_fingerprint: LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
+                    next_offset: page.next_offset,
+                    request: &request,
+                    prepared: &prepared,
+                    composition_entry_id: None,
+                    context_fingerprint: continuation_context_fingerprint,
+                    signing_key: &signing_key,
+                },
             )?)
         } else {
             None
         };
         Ok(SqlQueryPage {
             columns,
-            rows,
-            has_more,
+            rows: page.rows,
+            has_more: page.has_more,
             next,
             execution_id: request.execution_id,
             request_fingerprint,
             result_schema: Some(result_schema),
-            exact_integer_rows,
+            exact_integer_rows: page.exact_integer_rows,
             composition_count_snapshot: None,
         })
     }
@@ -7630,26 +7632,28 @@ impl UgoiteService {
                 checkpoint,
             )
             .await?;
-        let (rows, exact_integer_rows, has_more, next_offset) = sql_execution::finish_sql_page(
+        let page = sql_execution::finish_sql_page(
             rows,
             exact_integer_rows,
             request.limit,
             offset,
             has_order,
         )?;
-        let next = if has_more {
+        let next = if page.has_more {
             Some(sql_execution::encode_page_continuation(
-                state.space_uid.into(),
-                publication.clone(),
-                sql_fingerprint.clone(),
-                parameter_fingerprint.clone(),
-                authorization_fingerprint.clone(),
-                next_offset,
-                &request,
-                &prepared,
-                composition_entry_id,
-                continuation_context_fingerprint,
-                &signing_key,
+                sql_execution::SqlPageContinuationContext {
+                    space_uid: state.space_uid.into(),
+                    publication: publication.clone(),
+                    sql_fingerprint: sql_fingerprint.clone(),
+                    parameter_fingerprint: parameter_fingerprint.clone(),
+                    authorization_fingerprint: authorization_fingerprint.clone(),
+                    next_offset: page.next_offset,
+                    request: &request,
+                    prepared: &prepared,
+                    composition_entry_id,
+                    context_fingerprint: continuation_context_fingerprint,
+                    signing_key: &signing_key,
+                },
             )?)
         } else {
             None
@@ -7693,13 +7697,13 @@ impl UgoiteService {
             };
         Ok(SqlQueryPage {
             columns,
-            rows,
-            has_more,
+            rows: page.rows,
+            has_more: page.has_more,
             next,
             execution_id: request.execution_id,
             request_fingerprint,
             result_schema: Some(result_schema),
-            exact_integer_rows,
+            exact_integer_rows: page.exact_integer_rows,
             composition_count_snapshot,
         })
     }
