@@ -110,7 +110,6 @@ const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
 // v1 used one fixed marker beside the relation. Keep it as a migration input
 // until an admitted clear has removed it; upgraded Spaces must not lose a
 // durable refresh request merely because current writers use tokenized paths.
-const LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
 const ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT: Duration = Duration::from_secs(30);
 
@@ -764,14 +763,6 @@ fn asset_text_refresh_request_path(ws_path: &str, token: &str) -> String {
     format!("{}{token}.json", asset_text_refresh_request_prefix(ws_path))
 }
 
-fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
-    format!(
-        "{ws_path}/_ugoite/derived/relations/{}/{}",
-        DerivedRelationId::ASSET_TEXT,
-        LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE,
-    )
-}
-
 fn refresh_request_token(path: &str) -> Option<&str> {
     let token = path.rsplit('/').next()?.strip_suffix(".json")?;
     let uuid = Uuid::parse_str(token).ok()?;
@@ -1204,10 +1195,6 @@ async fn snapshot_asset_text_refresh_request_paths(
     ws_path: &str,
 ) -> Result<Vec<String>> {
     let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
-    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
-    if legacy_asset_text_refresh_pending(op, &legacy_path).await? {
-        paths.push(legacy_path);
-    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1283,8 +1270,7 @@ async fn clear_asset_text_refresh_request_paths_with_admission_lock(
 }
 
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
-    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
-    let mut count = usize::from(legacy_asset_text_refresh_pending(op, &legacy_path).await?);
+    let mut count = 0usize;
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1310,10 +1296,6 @@ async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Resul
 
 async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
     for path in paths {
-        if path.ends_with(&format!("/{LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE}")) {
-            acknowledge_legacy_asset_text_refresh_request(op, path).await?;
-            continue;
-        }
         match op.delete(path).await {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
@@ -1345,11 +1327,6 @@ pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) ->
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
-    if legacy_asset_text_refresh_pending(op, &legacy_asset_text_refresh_request_path(ws_path))
-        .await?
-    {
-        return Ok(true);
-    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1368,72 +1345,6 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
         }
     }
     Ok(false)
-}
-
-async fn legacy_asset_text_refresh_pending(op: &Operator, path: &str) -> Result<bool> {
-    let metadata = match op.stat(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    let etag = metadata
-        .etag()
-        .filter(|etag| !etag.is_empty())
-        .map(str::to_owned);
-    let bytes = match etag.as_deref() {
-        Some(etag) => {
-            op.read_options(
-                path,
-                ReadOptions {
-                    if_match: Some(etag.to_string()),
-                    ..Default::default()
-                },
-            )
-            .await?
-        }
-        None if !is_shared_backend(op) => op.read(path).await?,
-        None => bail!("shared legacy AssetText refresh marker requires an exact ETag"),
-    };
-    Ok(serde_json::from_slice::<Value>(&bytes.to_vec())
-        .ok()
-        .and_then(|value| value.get("acknowledged").and_then(Value::as_bool))
-        != Some(true))
-}
-
-async fn acknowledge_legacy_asset_text_refresh_request(op: &Operator, path: &str) -> Result<()> {
-    let metadata = match op.stat(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.into()),
-    };
-    let etag = metadata
-        .etag()
-        .filter(|etag| !etag.is_empty())
-        .map(str::to_owned);
-    let bytes = serde_json::to_vec(&json!({
-        "acknowledged": true,
-        "acknowledged_at": Utc::now(),
-    }))?;
-    let result: opendal::Result<()> = match etag {
-        Some(etag) => op
-            .write_options(
-                path,
-                bytes,
-                WriteOptions {
-                    if_match: Some(etag),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map(|_| ()),
-        None if !is_shared_backend(op) => op.write(path, bytes).await.map(|_| ()),
-        None => bail!("shared legacy AssetText refresh acknowledgement requires an ETag"),
-    };
-    match result {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
-        Err(error) => Err(error.into()),
-    }
 }
 
 /// Returns whether the durable authoritative source requires an AssetText
@@ -1456,13 +1367,6 @@ pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<b
             return Ok(source_coordinate
                 .get("catalog_head_sha256")
                 .is_some_and(|value| !value.is_null()));
-        }
-        Err(error)
-            if error
-                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
-                .is_some() =>
-        {
-            return Ok(true);
         }
         Err(error) => {
             // A malformed checksum/identity/binding is a rebuildable derived
@@ -1515,10 +1419,10 @@ async fn rebuild_asset_text_with_mode(
     } else {
         DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
     };
-    // v1 Heads point to the removed materializations layout. Keep the exact
-    // disposable coordinate pinned until the new build is ready, then replace
-    // it under the same relation-local mutex/CAS used for current Heads. The
-    // detached prefix is marked for grace-period GC only after that swap.
+    // Unsupported or corrupt derived Head bytes remain pinned until a fully
+    // validated replacement is ready, then swap through the same exact CAS
+    // boundary as every current Head publication. Unrecognized old physical
+    // prefixes are left untouched.
     let _rebuild_guard = if shared {
         None
     } else {
@@ -1532,29 +1436,17 @@ async fn rebuild_asset_text_with_mode(
         snapshot_asset_text_refresh_request_paths(op, ws_path).await
     })
     .await?;
-    let mut legacy_expected = None;
-    let mut corrupt_expected = None;
-    if let Err(error) = head_store.read_exact().await {
-        if error
-            .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
-            .is_some()
-        {
-            legacy_expected = Some(
-                head_store
-                    .read_legacy_exact()
-                    .await?
-                    .context("legacy DerivedRelation Head disappeared")?,
-            );
-        } else {
-            corrupt_expected = Some(
-                head_store
-                    .read_raw_for_rebuild()
-                    .await?
-                    .context("corrupt DerivedRelation Head disappeared")?,
-            );
-        }
-    }
-    let expected = if legacy_expected.is_some() || corrupt_expected.is_some() {
+    let corrupt_expected = if head_store.read_exact().await.is_err() {
+        Some(
+            head_store
+                .read_raw_for_rebuild()
+                .await?
+                .context("corrupt DerivedRelation Head disappeared")?,
+        )
+    } else {
+        None
+    };
+    let expected = if corrupt_expected.is_some() {
         None
     } else {
         head_store.read_exact().await?
@@ -1562,7 +1454,6 @@ async fn rebuild_asset_text_with_mode(
     let current_generation = expected
         .as_ref()
         .map(|head| head.head.generation)
-        .or_else(|| legacy_expected.as_ref().map(|head| head.generation))
         .or_else(|| {
             corrupt_expected.as_ref().and_then(|raw| {
                 serde_json::from_slice::<Value>(&raw.bytes)
@@ -1775,15 +1666,7 @@ async fn rebuild_asset_text_with_mode(
             "authoritative source changed before AssetText publication; retry"
         ));
     }
-    let publish_result = if let Some(legacy_expected) = legacy_expected.as_ref() {
-        if shared {
-            head_store.publish_over_legacy(legacy_expected, &head).await
-        } else {
-            head_store
-                .publish_over_legacy_with_single_process_lock(legacy_expected, &head)
-                .await
-        }
-    } else if let Some(corrupt_expected) = corrupt_expected.as_ref() {
+    let publish_result = if let Some(corrupt_expected) = corrupt_expected.as_ref() {
         if shared {
             head_store
                 .publish_over_corrupt(corrupt_expected, &head)
@@ -1810,13 +1693,6 @@ async fn rebuild_asset_text_with_mode(
                 if let Some(expected) = expected.as_ref() {
                     let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
                 }
-                if legacy_expected.is_some() {
-                    let _ = head_store
-                        .mark_legacy_materializations_garbage_for_generation(
-                            legacy_expected.as_ref().map(|legacy| legacy.generation),
-                        )
-                        .await;
-                }
                 // A previous uncertain publication may have left a garbage
                 // marker on this build. Once the exact Head reread proves the
                 // build is current, that marker must not retain its old age
@@ -1839,16 +1715,6 @@ async fn rebuild_asset_text_with_mode(
         // build before the confirmation read so a transient read failure does
         // not strand it without a durable cleanup candidate.
         let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
-    }
-    if legacy_expected.is_some() {
-        // The new Head is now authoritative. Retain the detached v1 prefix
-        // until its reader grace period expires; the marker is durable so a
-        // crash after the CAS cannot strand the old bytes.
-        let _ = head_store
-            .mark_legacy_materializations_garbage_for_generation(
-                legacy_expected.as_ref().map(|legacy| legacy.generation),
-            )
-            .await;
     }
     schedule_asset_text_gc(op, ws_path);
     let current = match head_store.read_exact().await {
@@ -2025,24 +1891,11 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                             } else {
                                 base.single_process()
                             };
-                            let current_build = head_store.read_exact().await?;
-                            let current_build_id =
-                                current_build.map(|head| head.head.build_id);
-                            head_store.mark_legacy_materializations_garbage().await?;
                             head_store
-                                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
-                                .await?;
-                            head_store
-                                .garbage_collect(
-                                    current_build_id.as_deref(),
-                                    MINIMUM_GC_AGE,
-                                )
+                                .garbage_collect(None, MINIMUM_GC_AGE)
                                 .await?;
                             let pending = head_store
-                                .has_pending_garbage(
-                                    current_build_id.as_deref(),
-                                    MINIMUM_GC_AGE,
-                                )
+                                .has_pending_garbage(None, MINIMUM_GC_AGE)
                                 .await?;
                             Ok::<bool, anyhow::Error>(pending)
                         })
@@ -2148,33 +2001,7 @@ pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<
     } else {
         base.single_process()
     };
-    let current_build_id = match head_store.read_exact().await {
-        Ok(head) => {
-            // A current-build Head is authoritative. Any v1 materialization
-            // prefix is now detached garbage, including one left by a crash
-            // immediately after a shared legacy-to-current swap. Discovery and
-            // deletion both honor the reader grace period.
-            head_store.mark_legacy_materializations_garbage().await?;
-            head_store
-                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
-                .await?;
-            head.map(|head| head.head.build_id)
-        }
-        Err(error)
-            if error
-                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
-                .is_some() =>
-        {
-            // Never mark or delete the v1 prefix while its legacy Head still
-            // points at it. A later rebuild will replace that Head by exact
-            // CAS first.
-            None
-        }
-        Err(error) => return Err(error),
-    };
-    head_store
-        .garbage_collect(current_build_id.as_deref(), MINIMUM_GC_AGE)
-        .await
+    head_store.garbage_collect(None, MINIMUM_GC_AGE).await
 }
 
 /// Rehydrates the process-local GC wake-up for an existing Space. This is
@@ -3965,22 +3792,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_refresh_request_marker_is_acknowledged_during_clear() -> anyhow::Result<()> {
-        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
-        let workspace = "spaces/legacy-refresh-marker";
-        let legacy_path = legacy_asset_text_refresh_request_path(workspace);
-
-        operator.write(&legacy_path, b"{}".to_vec()).await?;
-        assert!(asset_text_refresh_requested(&operator, workspace).await?);
-        clear_asset_text_refresh_requested(&operator, workspace).await?;
-        assert!(operator.exists(&legacy_path).await?);
-        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
-        let marker: Value = serde_json::from_slice(&operator.read(&legacy_path).await?.to_vec())?;
-        assert_eq!(marker.get("acknowledged"), Some(&Value::Bool(true)));
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn finalization_cannot_clear_a_newer_refresh_request() -> anyhow::Result<()> {
         let operator = opendal::Operator::new(opendal::services::Memory::default())?;
         let workspace = "spaces/refresh-marker-race";
@@ -4347,7 +4158,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
+    async fn obsolete_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
         let op = opendal::Operator::new(opendal::services::Memory::default())?;
         let ws_path = "spaces/derived-corrupt-head";
         crate::space::create_space(&op, "derived-corrupt-head", "memory:///").await?;
@@ -4356,7 +4167,38 @@ mod tests {
             "{ws_path}/_ugoite/derived/relations/{}/head.json",
             first.relation_id
         );
-        op.write(&head_path, b"{not valid json".to_vec()).await?;
+        // Pre-release Heads used the removed materialization coordinate.
+        // Treat them as rebuildable raw bytes, not as a compatibility format;
+        // the replacement still uses the exact observed Head CAS.
+        op.write(
+            &head_path,
+            serde_json::to_vec(&json!({
+                "format_version": 1,
+                "space_id": ws_path,
+                "relation_id": first.relation_id,
+                "generation": first.generation,
+                "definition_version": first.definition_version,
+                "definition_fingerprint": first.definition_fingerprint,
+                "producer_id": first.producer_id,
+                "producer_fingerprint": first.producer_fingerprint,
+                "compatibility_epoch": first.compatibility_epoch,
+                "materialization_id": "retired-materialization",
+                "table_identifier": first.table_identifier,
+                "table_uuid": first.table_uuid,
+                "metadata_location": first.metadata_location,
+                "snapshot_id": first.snapshot_id,
+                "schema_id": first.schema_id,
+                "base_generation": 0,
+                "target_generation": first.generation,
+                "input_digest": first.input_digest,
+                "source_coordinate": first.source_coordinate,
+                "materialization_manifest_location": "retired/manifest.json",
+                "materialization_manifest_checksum": "retired",
+                "last_command_id": "index:asset-text:1",
+                "checksum": "retired"
+            }))?,
+        )
+        .await?;
 
         assert!(asset_text_refresh_needed(&op, ws_path).await?);
         let repaired = rebuild_asset_text(&op, ws_path).await?;

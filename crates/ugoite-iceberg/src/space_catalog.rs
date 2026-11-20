@@ -12,7 +12,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -244,7 +244,7 @@ pub struct SpaceCatalog {
     /// registration are published together by `update_table`.
     staged_new_table: Arc<std::sync::Mutex<Option<iceberg::table::Table>>>,
     staged_new_table_claimed: Arc<AtomicBool>,
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     publication_gate: Option<Arc<crate::TestPublicationGate>>,
     /// When present, every read and mutation on this catalog is evaluated
     /// against this exact Head.  A coordinator creates one of these for an
@@ -316,7 +316,7 @@ impl SpaceCatalog {
             mutation_claimed: Arc::new(AtomicBool::new(false)),
             staged_new_table: Arc::new(std::sync::Mutex::new(None)),
             staged_new_table_claimed: Arc::new(AtomicBool::new(false)),
-            #[cfg(debug_assertions)]
+            #[cfg(any(test, feature = "test-support"))]
             publication_gate: crate::current_test_publication_gate(),
             bound_attempt: None,
         })
@@ -648,7 +648,7 @@ impl SpaceCatalog {
             mutation_claimed: Arc::new(AtomicBool::new(false)),
             staged_new_table: Arc::new(std::sync::Mutex::new(None)),
             staged_new_table_claimed: Arc::new(AtomicBool::new(false)),
-            #[cfg(debug_assertions)]
+            #[cfg(any(test, feature = "test-support"))]
             publication_gate: crate::current_test_publication_gate(),
             bound_attempt: None,
         }
@@ -3199,7 +3199,7 @@ impl SpaceCatalog {
         let mut publication = publication;
         publication.checksum = publication_checksum(&publication)?;
         self.write_publication(&publication).await?;
-        #[cfg(debug_assertions)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(gate) = self
             .publication_gate
             .as_ref()
@@ -3209,7 +3209,7 @@ impl SpaceCatalog {
             // while the authoritative Head still proves the exact base.
             gate.pause().await;
         }
-        #[cfg(debug_assertions)]
+        #[cfg(any(test, feature = "test-support"))]
         wait_for_external_publication_gate().await?;
         let bytes = encode_head(&next)?;
         if bytes.len() > MAX_HEAD_BYTES {
@@ -3252,7 +3252,7 @@ impl SpaceCatalog {
                 // so the recovery path matches a genuine lost response; the
                 // drain's idempotent Head CAS then converges without a second
                 // publication.
-                #[cfg(debug_assertions)]
+                #[cfg(any(test, feature = "test-support"))]
                 if take_injected_unknown_head_outcome() {
                     return Err(Error::new(
                         ErrorKind::Unexpected,
@@ -4305,7 +4305,7 @@ fn is_condition_conflict(error: &anyhow::Error) -> bool {
 // Task-local Head-state ambiguity flag: the next Catalog Head CAS in scope
 // reports a lost response after committing. Task-local so parallel tests
 // cannot steal or observe each other's injection.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 tokio::task_local! {
     static INJECT_UNKNOWN_HEAD_OUTCOME: std::cell::Cell<bool>;
 }
@@ -4316,7 +4316,7 @@ tokio::task_local! {
 /// re-read Head and converge on the already-committed publication instead of
 /// publishing twice or reusing a stale approval. Not compiled into release
 /// builds; exposes no production mutation bypass.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub async fn with_injected_unknown_head_publication_outcome<T>(
     operation: impl std::future::Future<Output = T>,
@@ -4326,7 +4326,7 @@ pub async fn with_injected_unknown_head_publication_outcome<T>(
         .await
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 fn take_injected_unknown_head_outcome() -> bool {
     INJECT_UNKNOWN_HEAD_OUTCOME
         .try_with(|flag| flag.take())
@@ -4341,10 +4341,10 @@ fn take_injected_unknown_head_outcome() -> bool {
 /// and prove the Head CAS linearizes the two. Test-only: compiled under
 /// `debug_assertions` and a strict no-op unless the environment variable is
 /// set, so production publication paths are unaffected.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static EXTERNAL_PUBLICATION_GATE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 async fn wait_for_external_publication_gate() -> Result<()> {
     let Ok(directory) = std::env::var("UGOITE_TEST_PUBLICATION_GATE_DIR") else {
         return Ok(());

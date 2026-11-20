@@ -6743,6 +6743,7 @@ dependencies = [
  "typetag",
  "ugoite-core",
  "ugoite-domain",
+ "ugoite-iceberg",
  "ugoite-storage",
  "unicode-normalization",
  "url",

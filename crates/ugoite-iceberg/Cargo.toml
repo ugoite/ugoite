@@ -48,6 +48,8 @@ uuid = { version = "1.23.2", features = ["v4", "v5", "v7", "serde"] }
 [dev-dependencies]
 criterion = "0.8"
 tempfile = "3"
+# Enable test hooks for standalone integration targets without release builds.
+ugoite-iceberg = { path = ".", features = ["test-support"] }
 
 [[bench]]
 name = "revision_log"

@@ -35,7 +35,7 @@ mod sql_parser;
 pub mod verify;
 
 pub use health::SpaceHealthReport;
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub use space_catalog::with_injected_unknown_head_publication_outcome;
 use space_catalog::SpaceCatalog;
@@ -84,7 +84,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::Duration;
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 use tokio::sync::Notify;
 use tokio::sync::Semaphore;
 use ugoite_core::error::{AppError, ErrorCode};
@@ -705,7 +705,7 @@ pub struct CommitReceipt {
 pub struct SpaceCommitCoordinator {
     workspace: IcebergWorkspace,
     publication: PublicationContext,
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     validation_gate: Option<Arc<TestValidationGate>>,
 }
 
@@ -827,7 +827,7 @@ fn composition_admission_conflict(reason: &str) -> anyhow::Error {
 /// Debug-only synchronization used by the deterministic publication race
 /// tests. It is absent from release builds and cannot affect production
 /// scheduling or persistence.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestValidationGate {
@@ -837,7 +837,7 @@ pub struct TestValidationGate {
     release: Notify,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestValidationGate {
     pub fn new() -> Arc<Self> {
         Self::for_entry(None)
@@ -904,11 +904,11 @@ impl TestValidationGate {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_VALIDATION_GATE: LazyLock<Mutex<Option<Arc<TestValidationGate>>>> =
     LazyLock::new(|| Mutex::new(None));
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn install_test_validation_gate(gate: Arc<TestValidationGate>) {
     *TEST_VALIDATION_GATE
@@ -916,7 +916,7 @@ pub fn install_test_validation_gate(gate: Arc<TestValidationGate>) {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn clear_test_validation_gate() {
     *TEST_VALIDATION_GATE
@@ -924,7 +924,7 @@ pub fn clear_test_validation_gate() {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
     TEST_VALIDATION_GATE
         .lock()
@@ -932,7 +932,7 @@ fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
         .clone()
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) async fn wait_at_test_validation_gate(revisions: &[EntryRevision]) {
     if let Some(gate) =
         current_test_validation_gate().filter(|gate| gate.matches_revisions(revisions))
@@ -944,7 +944,7 @@ pub(crate) async fn wait_at_test_validation_gate(revisions: &[EntryRevision]) {
 /// Debug-only synchronization for proving recovery after an immutable
 /// publication has been written but before its Catalog Head CAS. It is not
 /// compiled into release builds and exposes no production mutation bypass.
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestPublicationGate {
@@ -954,7 +954,7 @@ pub struct TestPublicationGate {
     release: Notify,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestPublicationGate {
     pub fn new() -> Arc<Self> {
         Self::for_space(None)
@@ -997,11 +997,11 @@ impl TestPublicationGate {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_PUBLICATION_GATE: LazyLock<Mutex<Option<Arc<TestPublicationGate>>>> =
     LazyLock::new(|| Mutex::new(None));
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn install_test_publication_gate(gate: Arc<TestPublicationGate>) {
     *TEST_PUBLICATION_GATE
@@ -1009,7 +1009,7 @@ pub fn install_test_publication_gate(gate: Arc<TestPublicationGate>) {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn clear_test_publication_gate() {
     *TEST_PUBLICATION_GATE
@@ -1017,7 +1017,7 @@ pub fn clear_test_publication_gate() {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(test, feature = "test-support"))]
 fn current_test_publication_gate() -> Option<Arc<TestPublicationGate>> {
     TEST_PUBLICATION_GATE
         .lock()
@@ -1210,7 +1210,7 @@ impl IcebergWorkspace {
         .await
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn namespace_for_testing(&self) -> &NamespaceIdent {
         &self.namespace
@@ -1218,13 +1218,13 @@ impl IcebergWorkspace {
 
     /// Test-only physical inspection. Release builds expose no Catalog handle,
     /// so application code cannot bypass `SpaceCommitCoordinator` to commit.
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn catalog_for_testing(&self) -> Arc<dyn Catalog> {
         self.catalog.clone()
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn clone_for_testing(&self) -> Self {
         self.clone()
@@ -1253,7 +1253,7 @@ impl IcebergWorkspace {
         Ok(SpaceCommitCoordinator {
             workspace: self.clone(),
             publication,
-            #[cfg(debug_assertions)]
+            #[cfg(any(test, feature = "test-support"))]
             validation_gate: current_test_validation_gate(),
         })
     }
@@ -3729,7 +3729,7 @@ impl SpaceCommitCoordinator {
             std::slice::from_ref(&revision),
         )
         .map_err(|error| invalid_revision_input(format!("Form validation failed: {error:#}")))?;
-        #[cfg(debug_assertions)]
+        #[cfg(any(test, feature = "test-support"))]
         crate::wait_at_test_validation_gate(std::slice::from_ref(&revision)).await;
         crate::authorization::ensure_authorization_write_fence().await?;
         let mut receipt = attempt
@@ -3886,7 +3886,7 @@ impl SpaceCommitCoordinator {
             attempt
                 .validate_row_reference_targets(form_id, &revisions, relation_scopes)
                 .await?;
-            #[cfg(debug_assertions)]
+            #[cfg(any(test, feature = "test-support"))]
             if let Some(gate) = self
                 .validation_gate
                 .as_ref()
@@ -3975,7 +3975,7 @@ impl SpaceCommitCoordinator {
                     crate::asset::AssetDeleteConflict::Hidden,
                 ));
             }
-            #[cfg(debug_assertions)]
+            #[cfg(any(test, feature = "test-support"))]
             if let Some(gate) = &self.validation_gate {
                 gate.pause().await;
             }

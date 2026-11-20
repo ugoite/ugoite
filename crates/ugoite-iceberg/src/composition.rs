@@ -739,7 +739,7 @@ pub(crate) async fn save_composition_with_work_and_head_proof(
         .build(&form, current.as_ref())
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     validate_composition_revision(&revision, &form)?;
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, feature = "test-support"))]
     crate::wait_at_test_validation_gate(std::slice::from_ref(&revision)).await;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace =
