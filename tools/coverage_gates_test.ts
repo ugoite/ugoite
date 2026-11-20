@@ -161,6 +161,7 @@ async function assertAggregateWorkflow(
   const denoLint = taskBlock(mise, "lint:deno");
   const canonicalLint = taskBlock(mise, "lint");
   const rustCheck = taskBlock(mise, "check:rust");
+  const rustWasmCheck = taskBlock(mise, "check:rust:wasm");
   const denoCheck = taskBlock(mise, "check:deno");
   const repoCheck = taskBlock(mise, "check:repo");
   const canonicalCheck = taskBlock(mise, "check");
@@ -204,7 +205,7 @@ async function assertAggregateWorkflow(
   );
   assertContainsAll(
     rustLint,
-    ["cargo clippy --workspace --all-targets --all-features -- -D warnings"],
+    ["cargo clippy --workspace --all-targets --all-features --locked -- -D warnings"],
     "Rust lint task",
   );
   assertContainsAll(
@@ -221,11 +222,18 @@ async function assertAggregateWorkflow(
     rustCheck,
     [
       "cargo check --workspace --all-targets --all-features --locked",
+      '{ task = "check:rust:wasm" }',
+    ],
+    "Rust check task",
+  );
+  assertContainsAll(
+    rustWasmCheck,
+    [
       "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
       "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
       "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
     ],
-    "Rust check task",
+    "Rust WASM check task",
   );
   assertContainsAll(denoCheck, ["deno task check"], "Deno check task");
   assertContainsAll(
@@ -383,7 +391,7 @@ async function assertAggregateWorkflow(
   );
 
   const hostedLaneExpectations: [string, string[]][] = [
-    ["rust-check", ["lint:rust", "check:rust", "check:repo"]],
+    ["rust-check", ["lint:rust", "check:rust:wasm", "check:repo"]],
     ["rust-test", [
       "test:rust:core",
       "bash scripts/run-older-cli-preservation-if-needed.sh",
