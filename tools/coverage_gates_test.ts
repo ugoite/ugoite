@@ -50,8 +50,7 @@ async function ciGatePasses(
     ARTIFACT_BUILD_RESULT: "success",
     E2E_SMOKE_MOBILE_RESULT: "success",
     E2E_COMPOSITION_STUDIO_RESULT: "success",
-    E2E_COMPOSITION_METRIC_RESULT: "success",
-    E2E_OWNER_RESULT: "success",
+    E2E_OWNER_COMPOSITION_RESULT: "success",
     E2E_PORTABLE_RESULT: "success",
     DOCSITE_NAV_RESULT: "success",
     CP1_FIXTURES_RESULT: "success",
@@ -115,6 +114,79 @@ async function assertAggregateWorkflow(
   workflow: string,
   mise: string,
 ): Promise<void> {
+  const e2eTasks = JSON.parse(
+    await Deno.readTextFile("e2e/deno.json"),
+  ).tasks as Record<string, string>;
+  const ownerRecoverySuite = e2eTasks["owner-recovery"];
+  const compositionMetricSuite = e2eTasks["composition-metric"];
+  const sourceAclSuite = e2eTasks["composition-source-acl-isolation"];
+  assertContainsAll(
+    ownerRecoverySuite,
+    ["owner-space-recovery.test.ts"],
+    "owner recovery selector",
+  );
+  assertEquals(
+    ownerRecoverySuite.includes("composition-"),
+    false,
+    "owner recovery keeps an isolated Playwright invocation",
+  );
+  assertContainsAll(
+    compositionMetricSuite,
+    [
+      "composition-metric-journey.test.ts",
+      "composition-table-metric-pagination.test.ts",
+    ],
+    "Composition Metric and table pagination selector",
+  );
+  assertContainsAll(
+    sourceAclSuite,
+    ["composition-source-acl-isolation.test.ts"],
+    "source ACL isolation selector",
+  );
+  assertEquals(
+    sourceAclSuite.includes("composition-metric-journey.test.ts") ||
+      sourceAclSuite.includes("owner-space-recovery.test.ts"),
+    false,
+    "session revocation stays isolated to the source ACL invocation",
+  );
+  const ownerCompositionLane = taskBlock(mise, "ci:lane:e2e-owner-composition");
+  const metricTask = '{ task = "test:e2e:composition-metric" }';
+  const aclTask = '{ task = "test:e2e:composition-source-acl-isolation" }';
+  const recoveryTask = '{ task = "test:e2e:owner-recovery" }';
+  assertContainsAll(
+    ownerCompositionLane,
+    [metricTask, aclTask, recoveryTask],
+    "owner-composition lane separate suite invocations",
+  );
+  assertEquals(
+    ownerCompositionLane.indexOf(metricTask) <
+        ownerCompositionLane.indexOf(aclTask) &&
+      ownerCompositionLane.indexOf(aclTask) <
+        ownerCompositionLane.indexOf(recoveryTask),
+    true,
+    "Metric, ACL, and owner recovery suites run in sequence",
+  );
+  for (
+    const [taskName, denoTask] of [
+      ["test:e2e:composition-metric", "e2e:composition-metric"],
+      [
+        "test:e2e:composition-source-acl-isolation",
+        "e2e:composition-source-acl-isolation",
+      ],
+      ["test:e2e:owner-recovery", "e2e:owner-recovery"],
+    ] as const
+  ) {
+    assertContainsAll(
+      taskBlock(mise, taskName),
+      ["docker image inspect", `deno task ${denoTask}`],
+      `${taskName} starts its own E2E runner`,
+    );
+  }
+  assertEquals(
+    mise.includes("ci:lane:e2e-composition-metric"),
+    false,
+    "Composition Metric no longer has a separate hosted CI lane",
+  );
   const rustCheckJob = workflowJobBlock(workflow, "rust-check");
   const rustTestJob = workflowJobBlock(workflow, "rust-test");
   const s3SharedAuthorizationJob = workflowJobBlock(
@@ -128,11 +200,10 @@ async function assertAggregateWorkflow(
     workflow,
     "e2e-composition-studio",
   );
-  const e2eCompositionMetricJob = workflowJobBlock(
+  const e2eOwnerCompositionJob = workflowJobBlock(
     workflow,
-    "e2e-composition-metric",
+    "e2e-owner-composition",
   );
-  const e2eOwnerJob = workflowJobBlock(workflow, "e2e-owner");
   const e2ePortableJob = workflowJobBlock(workflow, "e2e-portable");
   const impactJob = workflowJobBlock(workflow, "impact");
   const docsiteNavJob = workflowJobBlock(workflow, "docsite-nav");
@@ -529,16 +600,6 @@ async function assertAggregateWorkflow(
     ],
     "Composition Studio E2E consumer lane",
   );
-  assertContainsAll(
-    e2eCompositionMetricJob,
-    [
-      "name: ci-e2e-composition-metric",
-      "needs: [impact, artifact-build]",
-      "uses: ./.github/workflows/e2e-artifact-consumer.yml",
-      "lane_task: ci:lane:e2e-composition-metric",
-    ],
-    "Composition Metric E2E consumer lane",
-  );
   const e2eArtifactConsumer = await Deno.readTextFile(
     ".github/workflows/e2e-artifact-consumer.yml",
   );
@@ -557,7 +618,10 @@ async function assertAggregateWorkflow(
   for (
     const [job, subject] of [
       [e2eSmokeMobileJob, "smoke/mobile E2E consumer lane"],
-      [e2eOwnerJob, "owner recovery E2E consumer lane"],
+      [
+        e2eOwnerCompositionJob,
+        "owner recovery and Composition E2E consumer lane",
+      ],
       [e2ePortableJob, "portable-space E2E consumer lane"],
     ] as const
   ) {
@@ -572,17 +636,17 @@ async function assertAggregateWorkflow(
     );
   }
   assertContainsAll(
-    e2eOwnerJob,
+    e2eOwnerCompositionJob,
     [
-      "name: ci-e2e-owner",
+      "name: ci-e2e-owner-composition",
       "UGOITE_ARTIFACT_SELECTION: runtime",
       "name: ugoite-artifact-manifest",
       "name: ugoite-runtime-image",
       "name: Configure Deno and Playwright cache paths",
       "actions/download-artifact@",
-      "scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner",
+      "scripts/measure-step.sh owner-recovery-composition mise run ci:lane:e2e-owner-composition",
     ],
-    "owner recovery E2E consumer lane",
+    "owner recovery and Composition E2E consumer lane",
   );
   assertContainsAll(
     e2ePortableJob,
@@ -665,7 +729,7 @@ async function assertAggregateWorkflow(
       "mise run ci:lane:e2e-portable",
       "mise run ci:lane:e2e-smoke-mobile",
       "mise run ci:lane:docsite-nav",
-      "mise run ci:lane:e2e-owner",
+      "mise run ci:lane:e2e-owner-composition",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
       "mise run test:s3-storage",
@@ -1028,7 +1092,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-composition-metric, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-owner-composition, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -1047,8 +1111,7 @@ async function assertAggregateWorkflow(
       "ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}",
       "E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}",
       "E2E_COMPOSITION_STUDIO_RESULT: ${{ needs.e2e-composition-studio.result }}",
-      "E2E_COMPOSITION_METRIC_RESULT: ${{ needs.e2e-composition-metric.result }}",
-      "E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}",
+      "E2E_OWNER_COMPOSITION_RESULT: ${{ needs.e2e-owner-composition.result }}",
       "E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}",
       "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
       "CP1_FIXTURES_RESULT: ${{ needs.cp1-fixtures.result }}",
@@ -1152,8 +1215,7 @@ Deno.test("required CI workflows cover base-ref edits without cancelling content
       ARTIFACT_BUILD_RESULT: "skipped",
       E2E_SMOKE_MOBILE_RESULT: "skipped",
       E2E_COMPOSITION_STUDIO_RESULT: "skipped",
-      E2E_COMPOSITION_METRIC_RESULT: "skipped",
-      E2E_OWNER_RESULT: "skipped",
+      E2E_OWNER_COMPOSITION_RESULT: "skipped",
       E2E_PORTABLE_RESULT: "skipped",
       DOCSITE_NAV_RESULT: "skipped",
       CP1_FIXTURES_RESULT: "skipped",

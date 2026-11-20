@@ -741,8 +741,8 @@ jobs:
             echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
           } >>"$GITHUB_STEP_SUMMARY"
 
-  e2e-owner:
-    name: ci-e2e-owner
+  e2e-owner-composition:
+    name: ci-e2e-owner-composition
     needs: [impact, artifact-build]
     if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
     runs-on: ubuntu-24.04
@@ -809,14 +809,14 @@ jobs:
       - name: Verify and load the exact build artifacts
         id: load-artifacts
         run: scripts/measure-step.sh load-artifacts mise run ci:artifacts:load
-      - name: Run owner recovery E2E
+      - name: Run owner recovery and Composition E2E
         id: e2e
-        run: scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner
+        run: scripts/measure-step.sh owner-recovery-composition mise run ci:lane:e2e-owner-composition
       - name: Upload E2E evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ugoite-e2e-owner-${{ github.run_id }}
+          name: ugoite-e2e-owner-composition-${{ github.run_id }}
           path: e2e/test-results/
           if-no-files-found: warn
           retention-days: 14
@@ -833,7 +833,7 @@ jobs:
           BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
         run: |
           {
-            echo "## Owner recovery E2E timing"
+            echo "## Owner recovery and Composition E2E timing"
             echo
             echo "- Artifact download: ${DOWNLOAD_SECONDS:-n/a}s / ${DOWNLOAD_BYTES:-n/a} bytes"
             echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
@@ -853,16 +853,6 @@ jobs:
       job_name: Composition Studio E2E
       lane_name: composition-studio
       lane_task: ci:lane:e2e-composition-studio
-
-  e2e-composition-metric:
-    name: ci-e2e-composition-metric
-    needs: [impact, artifact-build]
-    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
-    uses: ./.github/workflows/e2e-artifact-consumer.yml
-    with:
-      job_name: Composition Metric E2E
-      lane_name: composition-metric
-      lane_task: ci:lane:e2e-composition-metric
 
   e2e-portable:
     name: ci-e2e-portable
@@ -1385,7 +1375,7 @@ jobs:
   required:
     name: ci-required
     if: ${{ always() }}
-    needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-composition-metric, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]
+    needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-owner-composition, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
@@ -1417,8 +1407,7 @@ jobs:
           ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}
           E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}
           E2E_COMPOSITION_STUDIO_RESULT: ${{ needs.e2e-composition-studio.result }}
-          E2E_COMPOSITION_METRIC_RESULT: ${{ needs.e2e-composition-metric.result }}
-          E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}
+          E2E_OWNER_COMPOSITION_RESULT: ${{ needs.e2e-owner-composition.result }}
           E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}
           DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}
           CP1_FIXTURES_RESULT: ${{ needs.cp1-fixtures.result }}
