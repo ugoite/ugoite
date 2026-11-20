@@ -24,6 +24,7 @@
  */
 
 import { UGOITE_API_OPERATIONS } from "../frontend/src/lib/generated/operation-registry.ts";
+import { parse } from "yaml";
 
 const ROOT = new URL("../", import.meta.url);
 
@@ -40,11 +41,6 @@ export const CAPABILITY_STATES = [
 
 export type CapabilityState = (typeof CAPABILITY_STATES)[number];
 
-export interface E2ePointer {
-  file: string;
-  fragment: string;
-}
-
 export interface JourneyCapability {
   id: string;
   checkpoint: string;
@@ -52,7 +48,6 @@ export interface JourneyCapability {
   /** Informational pointer to the normative Mitase criterion, not a copy. */
   requirement: string;
   outcome: string;
-  e2eEvidence: E2ePointer[];
 }
 
 export interface CapabilityRow {
@@ -673,9 +668,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-API-001#criterion.space-lifecycle",
     outcome:
       "A durable Space exists and can be reopened with identical compatibility semantics regardless of surface.",
-    e2eEvidence: [
-      { file: "e2e/smoke.test.ts", fragment: "GET /spaces returns list" },
-    ],
   },
   {
     id: "form-establish",
@@ -684,9 +676,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-JOURNEY-001#criterion.form-establish",
     outcome:
       "The user can establish a Form defining the schema used by a subsequent Entry, with equivalent schema semantics regardless of surface.",
-    e2eEvidence: [
-      { file: "e2e/forms.test.ts", fragment: "Create and List Forms" },
-    ],
   },
   {
     id: "entry-create",
@@ -695,9 +684,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-ENTRY-001#criterion.creation",
     outcome:
       "An equivalent Knowledge object is created and exactly one revision is appended.",
-    e2eEvidence: [
-      { file: "e2e/entries.test.ts", fragment: "creates a new entry" },
-    ],
   },
   {
     id: "entry-edit",
@@ -706,16 +692,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-ENTRY-003#criterion.update",
     outcome:
       "Optimistic concurrency and validation behave identically; a stale parent revision conflicts instead of overwriting.",
-    e2eEvidence: [
-      {
-        file: "e2e/entries.test.ts",
-        fragment: "consecutive PUT should succeed with updated revision_id",
-      },
-      {
-        file: "e2e/entries.test.ts",
-        fragment: "PUT with stale revision_id should return 409 conflict",
-      },
-    ],
   },
   {
     id: "search-keyword",
@@ -724,12 +700,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-SRCH-001#criterion.keyword-search",
     outcome:
       "The updated durable Entry is discoverable under identical query conditions regardless of surface.",
-    e2eEvidence: [
-      {
-        file: "e2e/search-ui.test.ts",
-        fragment: "REQ-SRCH-004: search page starts with direct keyword search",
-      },
-    ],
   },
   {
     id: "entry-history",
@@ -738,9 +708,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-ENTRY-005#criterion.history",
     outcome:
       "Create and edit remain observable as append-only history without rewriting prior revisions.",
-    e2eEvidence: [
-      { file: "e2e/entries.test.ts", fragment: "history.revisions" },
-    ],
   },
   {
     id: "entry-restore",
@@ -749,13 +716,6 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     requirement: "REQ-ENTRY-005#criterion.history",
     outcome:
       "Restore appends a new revision or change; history never shortens and no destructive rollback occurs.",
-    e2eEvidence: [
-      {
-        file: "e2e/knowledge-journey.test.ts",
-        fragment:
-          "JOURNEY-KNOWLEDGE-001: Restore appends a new revision without shortening history",
-      },
-    ],
   },
 ];
 
@@ -815,6 +775,56 @@ async function collectFiles(
   return files.sort();
 }
 
+interface JourneyRequirementGraph {
+  requirements?: Array<{
+    id?: string;
+    bindings?: Array<{
+      targets?: Array<{
+        path?: string;
+        selector?: { kind?: string; name?: string };
+        claims?: Array<{
+          kind?: string;
+          criterion?: string;
+          runner?: { runner?: string };
+        }>;
+      }>;
+    }>;
+  }>;
+}
+
+interface ExactE2eSelector {
+  file: string;
+  name: string;
+}
+
+/** Read the current exact E2E selectors from Journey's verification claims. */
+function journeyE2eSelectors(
+  graph: JourneyRequirementGraph,
+  criterion: string,
+): ExactE2eSelector[] {
+  const selectors = new Map<string, ExactE2eSelector>();
+  for (const requirement of graph.requirements ?? []) {
+    for (const binding of requirement.bindings ?? []) {
+      for (const target of binding.targets ?? []) {
+        if (
+          target.selector?.kind !== "test" || !target.selector.name ||
+          !target.path
+        ) continue;
+        const verifiesCriterion = target.claims?.some((claim) =>
+          claim.kind === "verifies" && claim.criterion === criterion &&
+          claim.runner?.runner === "e2e-playwright"
+        );
+        if (!verifiesCriterion) continue;
+        const selector = { file: target.path, name: target.selector.name };
+        selectors.set(`${selector.file}\0${selector.name}`, selector);
+      }
+    }
+  }
+  return [...selectors.values()].sort((left, right) =>
+    left.file.localeCompare(right.file) || left.name.localeCompare(right.name)
+  );
+}
+
 function repoRelative(pathname: string): string {
   const rootPath = decodeURIComponent(new URL(ROOT).pathname).replace(
     /\/$/,
@@ -872,6 +882,9 @@ export function classify(
 
 export async function buildReport(): Promise<CapabilityReport> {
   const operations = new Set<string>(UGOITE_API_OPERATIONS);
+  const journeyGraph = parse(
+    await readUnderRoot("docs/mitase/requirements/journey.yaml"),
+  ) as JourneyRequirementGraph;
 
   // Frontend: quoted portable operations referenced under frontend/src/lib.
   const frontendOps = new Set<string>();
@@ -908,7 +921,7 @@ export async function buildReport(): Promise<CapabilityReport> {
   }
 
   // Mitase: exact `criterion: REQ-...#criterion....` verification claims.
-  const mitaseClaims = new Map<string, string[]>();
+  const mitaseClaims = new Map<string, Set<string>>();
   for (const dir of ["docs/mitase/requirements/", "docs/mitase/features/"]) {
     for (const path of await collectFiles(dir, ".yaml")) {
       const content = await Deno.readTextFile(path);
@@ -919,7 +932,9 @@ export async function buildReport(): Promise<CapabilityReport> {
       ) {
         const key = match[1];
         const rel = repoRelative(path);
-        mitaseClaims.set(key, [...(mitaseClaims.get(key) ?? []), rel]);
+        const sources = mitaseClaims.get(key) ?? new Set<string>();
+        sources.add(rel);
+        mitaseClaims.set(key, sources);
       }
     }
   }
@@ -935,24 +950,30 @@ export async function buildReport(): Promise<CapabilityReport> {
 
     const e2eEvidenceFound: string[] = [];
     const e2eEvidenceMissing: string[] = [];
-    for (const pointer of capability.e2eEvidence) {
+    const journeyCriterion = `REQ-JOURNEY-001#criterion.${capability.id}`;
+    const selectors = journeyE2eSelectors(journeyGraph, journeyCriterion);
+    for (const selector of selectors) {
       let content: string;
       try {
-        content = await readUnderRoot(pointer.file);
+        content = await readUnderRoot(selector.file);
       } catch {
-        e2eEvidenceMissing.push(`${pointer.file} is unreadable`);
+        e2eEvidenceMissing.push(`${selector.file} is unreadable`);
         continue;
       }
-      if (content.includes(pointer.fragment)) {
-        e2eEvidenceFound.push(`${pointer.file} :: ${pointer.fragment}`);
+      if (content.includes(`test(${JSON.stringify(selector.name)}`)) {
+        e2eEvidenceFound.push(`${selector.file} :: ${selector.name}`);
       } else {
-        e2eEvidenceMissing.push(`${pointer.file} :: ${pointer.fragment}`);
+        e2eEvidenceMissing.push(`${selector.file} :: ${selector.name}`);
       }
     }
-    if (capability.e2eEvidence.length === 0) {
-      e2eEvidenceMissing.push("no e2e pointer wired for this capability yet");
+    if (selectors.length === 0) {
+      e2eEvidenceMissing.push(
+        `no Journey Mitase e2e selector verifies ${journeyCriterion}`,
+      );
     }
-    const mitaseEvidenceFound = (mitaseClaims.get(capability.requirement) ?? [])
+    const mitaseEvidenceFound = [
+      ...(mitaseClaims.get(capability.requirement) ?? new Set<string>()),
+    ].sort()
       .map((file) => `${file} verifies ${capability.requirement}`);
 
     const { state, note } = classify(
