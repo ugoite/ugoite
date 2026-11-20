@@ -25,5 +25,10 @@
       "body": "The second durable value."
     }
   ],
-  "history_operations": ["upsert", "upsert"]
+  "history_operations": ["upsert", "upsert"],
+  "asset": {
+    "asset_id": "01a1f765-628e-7cf0-8ac6-16e581b0d678",
+    "size_bytes": 43,
+    "sha256": "cde6840c981326059bcd99f18ee0847c08bf02ced76c9da1d594652bcca131ba"
+  }
 }

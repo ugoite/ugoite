@@ -6,6 +6,7 @@ use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::Digest;
 use std::collections::BTreeSet;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::space::classify_space_version;
@@ -20,6 +21,8 @@ const FIXTURE_SETTINGS: &str = include_str!(
     "../../../fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/settings.json"
 );
 const FIXTURE_EXPECTED: &str = include_str!("../../../fixtures/spaces/0.1/expected.json");
+const FIXTURE_ASSET: &[u8] =
+    include_bytes!("../../../fixtures/spaces/0.1/assets/01a1f765-628e-7cf0-8ac6-16e581b0d678");
 
 #[derive(Debug, Deserialize)]
 struct ExpectedFixture {
@@ -32,6 +35,14 @@ struct ExpectedFixture {
     form: ExpectedForm,
     entries: Vec<ExpectedEntry>,
     history_operations: Vec<String>,
+    asset: ExpectedAsset,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExpectedAsset {
+    asset_id: String,
+    sha256: String,
+    size_bytes: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +124,11 @@ async fn stage_frozen_fixture(op: &Operator) -> anyhow::Result<ExpectedFixture> 
         .await?;
     op.write(&settings_path, FIXTURE_SETTINGS.as_bytes().to_vec())
         .await?;
+    let asset_path = format!(
+        "spaces/{}/assets/{}",
+        expected.space_id, expected.asset.asset_id
+    );
+    op.write(&asset_path, FIXTURE_ASSET.to_vec()).await?;
     Ok(expected)
 }
 
@@ -132,6 +148,19 @@ async fn frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history() -
     assert_eq!(
         opened["settings"],
         serde_json::json!({"default_form": "Entry"})
+    );
+
+    let asset_path = format!("spaces/{}/assets/{}", space_id, expected.asset.asset_id);
+    let asset_before = op.read(&asset_path).await?.to_vec();
+    assert_eq!(asset_before, FIXTURE_ASSET);
+    let old_asset = service
+        .read_asset(space_id, &expected.asset.asset_id)
+        .await?;
+    assert_eq!(old_asset.bytes, FIXTURE_ASSET);
+    assert_eq!(old_asset.bytes.len() as u64, expected.asset.size_bytes);
+    assert_eq!(
+        hex::encode(sha2::Sha256::digest(&old_asset.bytes)),
+        expected.asset.sha256
     );
 
     let form = service.get_form(space_id, &expected.form.name).await?;
@@ -176,10 +205,18 @@ async fn frozen_space_01_fixture_opens_mutates_reopens_and_preserves_history() -
         .to_owned();
 
     drop(service);
-    let reopened_service = UgoiteService::from_operator(op, "memory://fixture");
+    let reopened_service = UgoiteService::from_operator(op.clone(), "memory://fixture");
     let reopened = reopened_service.get_space(space_id).await?;
     assert_eq!(reopened["space_version"], "0.1");
     assert_eq!(reopened["space_uid"], expected.space_uid);
+    assert_eq!(
+        reopened_service
+            .read_asset(space_id, &expected.asset.asset_id)
+            .await?
+            .bytes,
+        FIXTURE_ASSET
+    );
+    assert_eq!(op.read(&asset_path).await?.to_vec(), asset_before);
 
     let entries = reopened_service.list_entries(space_id).await?;
     assert_eq!(entries.len(), expected.entries.len());
