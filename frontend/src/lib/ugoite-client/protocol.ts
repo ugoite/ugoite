@@ -530,9 +530,6 @@ export type SqlDocumentNodeData =
     has_filter: boolean;
     has_over: boolean;
     has_argument_clauses: boolean;
-    can_replace_argument: boolean;
-    can_add_argument: boolean;
-    can_remove_argument: boolean;
   }
   | {
     kind: "case";

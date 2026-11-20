@@ -8,10 +8,10 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg,
-    FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Ident, LimitClause,
-    ObjectName, ObjectNamePart, OrderByKind, OrderBySort, Query, Select, SelectItem, SetExpr,
-    Spanned, Statement, Subscript, TableFactor, Value, ValueWithSpan, Visit, Visitor,
+    AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArguments,
+    GroupByExpr, GroupByWithModifier, Ident, LimitClause, ObjectName, ObjectNamePart, OrderByKind,
+    OrderBySort, Query, Select, SelectItem, SetExpr, Spanned, Statement, Subscript, TableFactor,
+    Value, ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 28;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 29;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -426,15 +426,6 @@ pub enum SqlDocumentNodeData {
         has_over: bool,
         /// Whether the argument list contains modifiers such as ORDER BY or LIMIT.
         has_argument_clauses: bool,
-        /// Whether the shared SQL aggregate registry permits replacing an
-        /// existing argument on this exact call shape.
-        can_replace_argument: bool,
-        /// Whether the shared SQL aggregate registry permits adding an argument
-        /// to this exact call shape.
-        can_add_argument: bool,
-        /// Whether the shared SQL aggregate registry permits removing the final
-        /// argument from this exact call shape.
-        can_remove_argument: bool,
     },
     /// A CASE expression's branch structure.
     Case {
@@ -4205,20 +4196,6 @@ fn literal_kind(value: &Value) -> SqlDocumentLiteralKind {
     }
 }
 
-fn function_argument_is_wildcard(argument: &FunctionArg) -> bool {
-    let expression = match argument {
-        FunctionArg::Named { arg, .. } | FunctionArg::ExprNamed { arg, .. } => arg,
-        FunctionArg::Unnamed(arg) => arg,
-    };
-    match expression {
-        FunctionArgExpr::Wildcard
-        | FunctionArgExpr::QualifiedWildcard(_)
-        | FunctionArgExpr::WildcardWithOptions(_) => true,
-        FunctionArgExpr::Expr(Expr::Wildcard(_) | Expr::QualifiedWildcard(_, _)) => true,
-        FunctionArgExpr::Expr(_) => false,
-    }
-}
-
 fn expression_data(
     expression: &Expr,
     source: &str,
@@ -4322,49 +4299,6 @@ fn expression_data(
                 &function.args,
                 FunctionArguments::List(arguments) if !arguments.clauses.is_empty()
             );
-            let has_wildcard_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if arguments.args.iter().any(function_argument_is_wildcard)
-            );
-            let aggregate = function
-                .name
-                .0
-                .last()
-                .and_then(|part| match part {
-                    ObjectNamePart::Identifier(identifier) => {
-                        crate::sql_functions::user_sql_aggregate(&identifier.value)
-                    }
-                    ObjectNamePart::Function(_) => None,
-                });
-            let can_replace_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !arguments.args.is_empty()
-                        && aggregate.is_some()
-            );
-            let can_add_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !has_wildcard_argument
-                        && !matches!(arguments.duplicate_treatment, Some(DuplicateTreatment::Distinct))
-                        && aggregate.is_some_and(|descriptor| descriptor.arity.accepts(arguments.args.len() + 1))
-            );
-            let can_remove_argument = matches!(
-                &function.args,
-                FunctionArguments::List(arguments)
-                    if !has_filter
-                        && !has_over
-                        && arguments.clauses.is_empty()
-                        && !arguments.args.is_empty()
-                        && aggregate.is_some_and(|descriptor| descriptor.arity.accepts(arguments.args.len() - 1))
-            );
             Some(SqlDocumentNodeData::Function {
                 name: object_name_parts(&function.name),
                 argument_count,
@@ -4372,9 +4306,6 @@ fn expression_data(
                 has_filter,
                 has_over,
                 has_argument_clauses,
-                can_replace_argument,
-                can_add_argument,
-                can_remove_argument,
             })
         }
         Expr::Case {
@@ -5204,9 +5135,6 @@ mod tests {
                 has_filter: false,
                 has_over: false,
                 has_argument_clauses: false,
-                can_replace_argument: true,
-                can_add_argument: false,
-                can_remove_argument: true,
             } if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("COUNT")))
         ));
         assert!(has_semantic(
