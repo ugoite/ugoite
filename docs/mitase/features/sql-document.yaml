@@ -5,13 +5,13 @@ category: SQL source document protocol
 features:
   - id: FEAT-SQL-001
     title: Rust-owned SQL source document protocol
-    summary: Preserve bounded source parsing and typed source edits as a stable Domain/WASM contract; the former SQL structure GUI is retired separately.
+    summary: Preserve bounded SQL parsing, parameter rename, and Form picker relation edits as a stable Domain/WASM contract.
     status: implemented
     bindings:
       - id: contract-source
         role: contract-source
         facet: domain
-        responsibility: Define the Rust source-aware edit operation retained as the anchor for the published parser protocol.
+        responsibility: Define the Rust source-aware Form picker operation retained as the anchor for the published parser protocol.
         targets:
           - id: guarded-edit-contract
             adapter: rust
@@ -23,7 +23,7 @@ features:
       - id: rust-document
         role: implementation
         facet: domain
-        responsibility: Parse exact SQL drafts and apply guarded source-aware edits without authorizing execution.
+        responsibility: Parse exact SQL drafts, rename parameters, and apply guarded Form picker relation edits without authorizing execution.
         targets:
           - id: parser
             adapter: rust
@@ -49,7 +49,7 @@ features:
       - id: portable-wasm
         role: implementation
         facet: wasm
-        responsibility: Keep the existing versioned parser, parameter-rename and guarded-edit actions available with typed request and response shapes.
+        responsibility: Keep the existing versioned parser, parameter-rename, and Form picker edit actions available with typed request and response shapes.
         targets:
           - id: versioned-action-dispatch
             adapter: rust
@@ -83,6 +83,19 @@ features:
                   arguments:
                     package: ugoite-domain
                     test: sql_document::tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+          - id: native-form-picker-edit
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: test, name: tests::semantic_form_picker_replaces_and_adds_a_relation_losslessly }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers: [FEAT-SQL-001#binding.rust-document/target.guarded-edit]
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::semantic_form_picker_replaces_and_adds_a_relation_losslessly
           - id: wasm-native-parser-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
@@ -112,7 +125,7 @@ features:
           - id: wasm-guarded-edit-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: test, name: tests::sql_document_semantic_edit_protocol_matches_native_and_undo }
+            selector: { kind: test, name: tests::sql_document_form_picker_edit_protocol_matches_native_source }
             claims:
               - kind: verifies
                 criterion: REQ-SQL-001#criterion.portable-protocol
@@ -121,7 +134,7 @@ features:
                   runner: cargo-test-unit
                   arguments:
                     package: ugoite-wasm
-                    test: sql_document_semantic_edit_protocol_matches_native_and_undo
+                    test: sql_document_form_picker_edit_protocol_matches_native_source
           - id: frontend-wasm-parser
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts

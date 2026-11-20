@@ -9,7 +9,6 @@ import type {
 } from "~/components/SQLWorkspace";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
-import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import { normalizeSqlVariables, parseSqlVariableDefault } from "~/lib/sql";
 import type {
   SqlQueryPage,
@@ -620,33 +619,6 @@ export function createSqlWorkspaceController(
     planController = undefined;
   });
 
-  const planColumns = async (): Promise<PlannedSqlColumns> => {
-    const parts = planParts();
-    const isCurrent = () => parts.identity === planParts().identity;
-    const built = buildRequest(undefined, parts);
-    const result = await sqlApi.plan(options.spaceId(), {
-      sql: built.request.sql,
-      parameters: built.request.parameters,
-      parameter_types: built.request.parameter_types,
-      ...(built.request.saved_sql
-        ? { saved_sql: built.request.saved_sql }
-        : {}),
-      ...(built.request.binding_base
-        ? { binding_base: built.request.binding_base }
-        : {}),
-      ...(built.request.form_binding_guards?.length
-        ? { form_binding_guards: built.request.form_binding_guards }
-        : {}),
-    });
-    if (!isCurrent()) {
-      throw new Error(t("sqlPage.structure.documentEditUnavailable"));
-    }
-    return {
-      columns: result.result_schema.map((column) => column.name),
-      isCurrent,
-    };
-  };
-
   return {
     parameterValues,
     onParameterChange: (name: string, rawValue: string) => {
@@ -654,7 +626,6 @@ export function createSqlWorkspaceController(
     },
     preview,
     plan,
-    planColumns,
     run,
     count,
     next,

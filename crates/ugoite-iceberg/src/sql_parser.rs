@@ -3,8 +3,8 @@
 use datafusion::sql::parser::{DFParserBuilder, Statement};
 use std::collections::VecDeque;
 
-/// Match the maximum expression depth exposed by the typed SQL structure
-/// editor while keeping parser recursion bounded for every SQL entry point.
+/// Bound SQL parser recursion while leaving room for deeply nested, user-
+/// authored expressions across every SQL entry point.
 pub(crate) const SQL_PARSER_RECURSION_LIMIT: usize = 256;
 
 pub(crate) fn parse_sql(
@@ -46,7 +46,7 @@ mod tests {
     }
 
     #[test]
-    fn parser_accepts_the_filter_tree_depth_exposed_by_the_gui() {
+    fn parser_accepts_deeply_nested_boolean_expressions() {
         let predicate = "\"_ugoite_id\" = $entry_id";
         let mut expression = predicate.to_owned();
         for depth in 0..32 {
