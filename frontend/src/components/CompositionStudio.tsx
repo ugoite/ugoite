@@ -24,7 +24,6 @@ import {
 } from "~/lib/composition-api";
 import { stringifyCompositionDocument } from "~/lib/exact-integer";
 import {
-  compositionBindingDiagnostics,
   compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
   type CompositionGraphDraft,
@@ -867,11 +866,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSaveError(t("composition.studioInvalidDocument"));
       return;
     }
-    const localDiagnostics = compositionBindingDiagnostics(current);
-    if (localDiagnostics.length > 0) {
-      setSaveError(t("composition.studioInvalidDocument"));
-      return;
-    }
     const inputSnapshot = getSaveInputSnapshot();
     if (!inputSnapshot) {
       setSaveError(t("composition.queryFailed"));
@@ -892,6 +886,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setSaveError(null);
     let attempt: PendingCompositionSaveAttempt | undefined;
     let foundPendingAttempt = false;
+    let invalidDraft = false;
     try {
       const owner = await getPrincipalGeneration();
       if (
@@ -937,6 +932,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
         return;
       }
       if (!checked.ok || !checked.plan) {
+        invalidDraft = checked.diagnostics?.some((diagnostic) =>
+          diagnostic.code === "invalid_composition" ||
+          diagnostic.code === "variable_type_mismatch"
+        ) ?? false;
         throw new Error("Composition preview failed");
       }
       const queryMap = new Map(checked.plan.queries.map((query) => [
@@ -990,6 +989,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
       await saveRequest(attempt, false);
     } catch (error) {
+      invalidDraft ||= error instanceof UgoiteApiError && (
+        error.code === "invalid_composition" ||
+        error.code === "variable_type_mismatch"
+      );
       const stillOwnsCurrentPreflight = generation === saveGeneration() &&
         currentSaveInvocation(invocationId) !== undefined;
       if (attempt) {
@@ -1000,7 +1003,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
         }
       }
       if (stillOwnsCurrentPreflight) {
-        setSaveError(compositionCanonicalizeErrorMessage(error));
+        setSaveError(
+          invalidDraft
+            ? t("composition.studioInvalidDocument")
+            : compositionCanonicalizeErrorMessage(error),
+        );
       }
     } finally {
       const ownsPreflight = activeSaveInvocation?.id === invocationId;

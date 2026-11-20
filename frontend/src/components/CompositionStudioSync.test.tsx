@@ -1075,6 +1075,25 @@ describe("CompositionStudio graph surface", () => {
     });
   });
 
+  it("uses Rust preview validation for invalid component bindings before saving", async () => {
+    const draft = renderedDraftWithTable();
+    draft.components[0] = { id: "table_1", kind: "table", variable: "missing" };
+    previewGraphMock.mockResolvedValueOnce({
+      ok: false,
+      diagnostics: [{ code: "invalid_composition" }],
+    });
+    renderStudio(draft);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This revision cannot be edited.",
+    );
+    expect(previewGraphMock).toHaveBeenCalledOnce();
+    expect(canonicalizeMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
   it("locks the captured draft while Save is validating it", async () => {
     renderStudio(renderedDraftWithTable());
     const save = await screen.findByRole("button", { name: "Save" });
