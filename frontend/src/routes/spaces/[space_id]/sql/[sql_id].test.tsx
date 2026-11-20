@@ -30,9 +30,6 @@ const { navigateMock, routeParams, formGuardRequestMock } = vi.hoisted(() => ({
   formGuardRequestMock: vi.fn(),
 }));
 const entryRelation = "form_00000000000000000000000000000001";
-const retainReferencedSqlFormBindingGuards =
-  formBindingGuards.retainReferencedSqlFormBindingGuards;
-
 vi.mock("@solidjs/router", async () => {
   const { createSignal } = await import("solid-js");
   const [params, setParams] = createSignal({
