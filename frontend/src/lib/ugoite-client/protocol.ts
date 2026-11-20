@@ -361,8 +361,6 @@ export type VariableGraphDiagnosticCode =
   | "invalid_input_default"
   | "invalid_result_descriptor"
   | "invalid_inline_sql"
-  | "invalid_saved_sql_identity"
-  | "invalid_saved_sql_column"
   | "missing_argument_binding"
   | "unused_argument_binding"
   | "missing_variable_reference"
