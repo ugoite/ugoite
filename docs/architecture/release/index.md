@@ -29,11 +29,11 @@ a product or support claim is safe to make.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
 - [v0.2.1 read-surface acceptance evidence](v0.2.1-read-acceptance.md) indexes
-  query and SQL export evidence without implying a release.
+  query and SQL export evidence and records its own limits.
 - [v0.2.1 product journey and evidence index](v0.2.1-product-journeys.md)
   defines user-visible outcomes and marks evidence that remains unverified.
-- [v0.2.1 release note draft](v0.2.1-release-note-draft.md) lists proposed scope
-  without treating it as prepared, implemented, or released.
+- [v0.2.1 stable release note](../../version/releases/v0.2.1.md) records the
+  published release and its compatibility boundary.
 - [v0.2.1 operation-audit baseline](v0.2.1-operation-audit-baseline.md) records
   six independently reproduced findings and separates baseline observations from
   fix acceptance evidence.

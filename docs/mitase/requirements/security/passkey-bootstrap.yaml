@@ -117,6 +117,10 @@ requirements:
         kind: security
         statement: After successful initial setup, the setup UI presents the returned account ID alongside the one-time recovery codes because Account Self-Recovery requires both values.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: setup-strengthening
+        kind: security
+        statement: The initial setup UI requires registration of a second Passkey before enabling its Continue action. This UI strengthening step is separate from the server's initial Passkey ceremony and from later recovery-only TOTP enrollment.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
       - id: opaque-bootstrap-session
         kind: security
         statement: Successful setup creates the ordinary opaque browser session, while session expiry and revocation invalidate its server-side authority without exposing a verifier.
@@ -179,6 +183,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
                 covers: [FEAT-SEC-002#binding.client/target.auth-client, FEAT-SEC-002#binding.client/target.setup-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: keeps the protected route after setup strengthening } }
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.setup-strengthening
+                covers: [FEAT-SEC-002#binding.client/target.setup-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: keeps the protected route after setup strengthening } }
           - id: setup-recovery-handoff-case
             adapter: typescript

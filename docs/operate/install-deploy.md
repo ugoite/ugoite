@@ -5,10 +5,12 @@ sidebar:
   order: 2
 ---
 
-Choose the supported deployment shape before changing individual environment
-variables. Current v0.1 paths are release Compose, source Compose, and a local
-source development loop; the checked-in Helm chart is explicitly unsupported.
-All supported shapes run the same Rust server with operator-owned Space storage.
+Choose a deployment shape before changing individual environment variables.
+Release Compose is the documented published-image procedure; source Compose and
+the local source loop support repository development. The Helm chart is a Tier 1
+release artifact, while Kubernetes production deployment support is not
+established by artifact packaging and verification. All shapes run the same Rust
+server with operator-owned Space storage.
 
 ## Outcome
 
@@ -56,24 +58,29 @@ shape does not add browser-local persistence.
 
 ## Version boundary
 
-The v0.1 line is published and maintained; this page describes the current
-v0.1.1 product boundary. The active v0.2 direction is Product UX: make the
+The v0.1 line is published and maintained; the current published baseline is
+v0.2.1. The active v0.2 direction is Product UX: make the
 frozen Foundation completable, discoverable, consistent, recoverable, and
 correctly documented. Knowledge-to-tools is a North Star, not a shipped
 deployment capability or v0.2 acceptance claim.
 
 ## Kubernetes / Helm
 
-The checked-in Helm chart is an unsupported placeholder, not a current v0.1
-deployment path. Its chart metadata and startup notes are not an operator
-contract, and the old local-demo login wording must not be used for a deployed
-node. Do not install it for production or treat its PVC and replica settings as
-supported behavior.
+The versioned Helm chart is built, linted, included in release candidates, and
+verified as a Tier 1 release artifact. Those checks establish the chart package
+and distribution identity; they do not establish production Kubernetes support,
+provider-specific storage durability, or high-availability behavior. Kubernetes
+operators must evaluate their cluster, persistence, ingress/TLS, backup, and
+recovery configuration for their deployment. The chart defaults to one
+replica and persistent storage; its package verification does not certify
+failover or high availability.
 
-For Kubernetes today, use a supported container deployment procedure managed by
-the operator, or wait for the chart implementation and its verification
-contract to be completed. When that work lands, update this section together
-with the chart; do not restore a separate legacy deployment guide.
+For the current chart values and installation example, see the chart's
+[README](https://github.com/ugoite/ugoite/blob/main/charts/ugoite/README.md).
+Complete the setup URL, register the
+initial Passkey, save the recovery codes, and register a second Passkey before
+continuing. See [Identity and Access](identity-access.md) for the authentication
+and recovery boundaries.
 
 ## Source development deployment
 
