@@ -15,7 +15,11 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
 }));
 
-import { createSqlWorkspaceController } from "./sql-workspace";
+import {
+  createSqlEditorSession,
+  createSqlWorkspaceController,
+  normalizeSqlWorkspaceVariables,
+} from "./sql-workspace";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -339,5 +343,48 @@ describe("SQL workspace planning", () => {
     );
     expect(planMock.mock.calls[0][2].aborted).toBe(true);
     disposeRoot();
+  });
+});
+
+describe("Saved SQL workspace editing", () => {
+  it("fences stale route operations while keeping independent operations current", () => {
+    const session = createSqlEditorSession();
+    session.activate("space-a/new");
+
+    const normalization = session.begin("normalize");
+    const guardPrune = session.begin("form-guards");
+    expect(session.isCurrent(normalization)).toBe(true);
+    expect(session.isCurrent(guardPrune)).toBe(true);
+
+    const newerNormalization = session.begin("normalize");
+    expect(session.isCurrent(normalization)).toBe(false);
+    expect(session.isCurrent(newerNormalization)).toBe(true);
+    expect(session.isCurrent(guardPrune)).toBe(true);
+
+    session.activate("space-a/sql-1");
+    expect(session.isCurrent(newerNormalization)).toBe(false);
+    expect(session.isCurrent(guardPrune)).toBe(false);
+    const deletion = session.begin("delete");
+    expect(session.isCurrent(deletion)).toBe(true);
+  });
+
+  it("keeps declared variable metadata while normalizing the edited SQL", async () => {
+    const result = await normalizeSqlWorkspaceVariables(
+      "SELECT * FROM orders WHERE id = $order_id",
+      [{
+        name: "order_id",
+        type: "integer",
+        description: "The order to inspect",
+        default: 42,
+      }],
+    );
+
+    expect(result.sql).toBe("SELECT * FROM orders WHERE id = $order_id");
+    expect(result.variables).toEqual([{
+      name: "order_id",
+      type: "integer",
+      description: "The order to inspect",
+      default: 42,
+    }]);
   });
 });

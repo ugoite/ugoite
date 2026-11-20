@@ -1,9 +1,6 @@
 import uiDictionary from "../../../shared/i18n/ui.json";
 import { createRoot, createSignal } from "solid-js";
-import {
-  readLocalPreferences,
-  writeLocalPreferences,
-} from "./preferences-local";
+import { readLocalPreferences } from "./preferences-local";
 
 type Dictionary = typeof uiDictionary;
 
@@ -45,7 +42,6 @@ const localeStore = createRoot(() => {
       return;
     }
     setLocaleInternal(nextLocale);
-    writeLocalPreferences({ locale: nextLocale as "en" | "ja" });
     applyLocaleAttributes(nextLocale);
   };
 
