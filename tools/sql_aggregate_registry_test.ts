@@ -1,19 +1,18 @@
 import { assertEquals } from "@std/assert/equals";
 
 const repository = new URL("../", import.meta.url);
-const [registrySource, completionSource, protocolSource] =
-  await Promise
-    .all([
-      Deno.readTextFile(
-        new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
-      ),
-      Deno.readTextFile(
-        new URL("frontend/src/lib/sql-completion.ts", repository),
-      ),
-      Deno.readTextFile(
-        new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
-      ),
-    ]);
+const [registrySource, completionSource, protocolSource] = await Promise
+  .all([
+    Deno.readTextFile(
+      new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
+    ),
+    Deno.readTextFile(
+      new URL("frontend/src/lib/sql-completion.ts", repository),
+    ),
+    Deno.readTextFile(
+      new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
+    ),
+  ]);
 
 function registryFunctions(): Array<{
   name: string;
@@ -108,5 +107,4 @@ Deno.test("SQL completion and protocol aggregate names follow the Rust registry"
     true,
     "MEAN remains an accepted AVG alias rather than a separate picker entry",
   );
-
 });
