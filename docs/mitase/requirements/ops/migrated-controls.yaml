@@ -12,7 +12,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-027-source-evidence
         role: evidence
@@ -56,7 +56,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-028-source-evidence
         role: evidence
@@ -100,7 +100,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
   - id: REQ-OPS-031
     title: "Immutable GitHub Action Pinning"
     description: "External GitHub Actions must be pinned to full commit SHAs."
@@ -110,7 +110,7 @@ requirements:
       - id: migrated-contract
         kind: security
         statement: "External GitHub Actions must be pinned to full commit SHAs."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-031-source-evidence
         role: evidence
@@ -154,7 +154,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-032-source-evidence
         role: evidence
@@ -184,7 +184,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates (REQ-OPS-005, REQ-OPS-006, REQ-OPS-007, and REQ-OPS-019)."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-033-source-evidence
         role: evidence
@@ -214,7 +214,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-034-source-evidence
         role: evidence
@@ -251,7 +251,7 @@ requirements:
       - id: migrated-contract
         kind: security
         statement: "Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-035-source-evidence
         role: evidence
@@ -288,7 +288,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-036-source-evidence
         role: evidence

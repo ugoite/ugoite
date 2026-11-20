@@ -12,7 +12,7 @@ requirements:
       - id: migrated-contract
         kind: behavior
         statement: "The browser walkthrough must use Form terminology."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-037-source-evidence
         role: evidence
@@ -35,7 +35,7 @@ requirements:
       - id: migrated-contract
         kind: behavior
         statement: "The browser walkthrough must explain short structured fields versus longer Markdown fields."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-040-source-evidence
         role: evidence
@@ -58,7 +58,7 @@ requirements:
       - id: migrated-contract
         kind: behavior
         statement: "The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-041-source-evidence
         role: evidence
@@ -123,7 +123,7 @@ requirements:
       - id: migrated-contract
         kind: quality
         statement: "The repository-owned tools/create_pr.ts script validates the required pull-request sections, closing issue link, and Knowledge Compatibility Review before invoking GitHub tooling."
-        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance, POL-009#rule.governance, POL-010#rule.governance, POL-013#rule.governance]
+        governed_by: []
     bindings:
       - id: req-ops-042-source-evidence
         role: evidence
