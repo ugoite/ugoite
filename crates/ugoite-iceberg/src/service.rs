@@ -7161,7 +7161,7 @@ impl UgoiteService {
             Some(cursor) => {
                 sql_execution::validate_page_continuation_identity(
                     &cursor,
-                    space_uid.into(),
+                    space_uid,
                     &request,
                     &prepared,
                     &sql_fingerprint,
