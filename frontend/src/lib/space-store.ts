@@ -1,10 +1,8 @@
 import { createSignal } from "solid-js";
-import {
-  readLocalPreferences,
-  writeLocalPreferences,
-} from "./preferences-local";
+import { readLocalPreferences } from "./preferences-local";
 import {
   portablePreferences,
+  portablePreferencesInitialized,
   setSelectedSpacePreference,
 } from "~/lib/preferences-store";
 import { DEFAULT_SPACE_SLUG, sortSpaces, spaceUid } from "./space-list";
@@ -24,17 +22,18 @@ export function createSpaceStore() {
   const [error, setError] = createSignal<string | null>(null);
   const [initialized, setInitialized] = createSignal(false);
 
-  /** Get preferred space ID from portable preferences with local fallback */
+  /** Use the local fallback until remote preferences have initialized. */
   function getPersistedSpaceId(): string | null {
-    return portablePreferences().selected_space_id ??
-      readLocalPreferences().selected_space_id;
+    return portablePreferencesInitialized()
+      ? portablePreferences().selected_space_id
+      : portablePreferences().selected_space_id ??
+        readLocalPreferences().selected_space_id;
   }
 
   /** Persist space ID to portable preferences and local fallback storage */
   function persistSpaceId(id: string | null): void {
     const patch = {} as import("./types").UserPreferencesPatchPayload;
     patch.selected_space_id = id;
-    writeLocalPreferences(patch);
     void setSelectedSpacePreference(id);
   }
 

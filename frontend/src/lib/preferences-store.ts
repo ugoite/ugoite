@@ -14,9 +14,14 @@ const mergePreferences = (
   fallback: Partial<UserPreferences> | null | undefined,
 ): UserPreferences => {
   const preferences = emptyUserPreferences();
-  preferences.selected_space_id = primary?.selected_space_id ??
-    fallback?.selected_space_id ?? null;
-  preferences.locale = primary?.locale ?? fallback?.locale ?? null;
+  // `null` is a real preference value (the user cleared it). Only an absent
+  // field may inherit from the fallback source.
+  preferences.selected_space_id = primary?.selected_space_id !== undefined
+    ? primary.selected_space_id
+    : fallback?.selected_space_id ?? null;
+  preferences.locale = primary?.locale !== undefined
+    ? primary.locale
+    : fallback?.locale ?? null;
   return preferences;
 };
 
@@ -35,14 +40,16 @@ const applyPatch = (
 };
 
 const missingPortableFields = (
-  portable: UserPreferences,
+  portable: Partial<UserPreferences>,
   local: UserPreferences,
 ): UserPreferencesPatchPayload => {
   const patch: UserPreferencesPatchPayload = {};
-  if (portable.selected_space_id === null && local.selected_space_id !== null) {
+  if (
+    portable.selected_space_id === undefined && local.selected_space_id !== null
+  ) {
     patch.selected_space_id = local.selected_space_id;
   }
-  if (portable.locale === null && local.locale !== null) {
+  if (portable.locale === undefined && local.locale !== null) {
     patch.locale = local.locale;
   }
   return patch;
@@ -124,18 +131,15 @@ const preferencesStore = createRoot(() => {
 
     initialization = (async () => {
       try {
-        const remotePreferences = mergePreferences(
-          await preferencesApi.getMe(),
-          emptyUserPreferences(),
-        );
+        const remoteResponse = await preferencesApi.getMe();
         const effectivePreferences = mergePreferences(
-          remotePreferences,
+          remoteResponse,
           localPreferences,
         );
         syncPreferences(effectivePreferences);
 
         const migrationPatch = missingPortableFields(
-          remotePreferences,
+          remoteResponse,
           localPreferences,
         );
         if (hasPatchValues(migrationPatch)) {

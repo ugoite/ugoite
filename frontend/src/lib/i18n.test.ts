@@ -19,7 +19,7 @@ describe("i18n", () => {
 
     expect(locale()).toBe("ja");
     expect(t("settings.language")).toBe("言語");
-    expect(localStorage.getItem("ugoite-locale")).toBe("ja");
+    expect(localStorage.getItem("ugoite-locale")).toBeNull();
   });
 
   it("applies locale attributes on initialize", () => {

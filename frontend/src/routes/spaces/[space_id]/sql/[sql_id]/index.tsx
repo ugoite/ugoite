@@ -21,7 +21,11 @@ import {
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
-import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import {
+  createSqlEditorSession,
+  createSqlWorkspaceController,
+  normalizeSqlWorkspaceVariables,
+} from "~/lib/sql-workspace";
 import {
   replaceSqlFormBindingGuard,
   retainReferencedSqlFormBindingGuards,
@@ -65,9 +69,22 @@ export default function SpaceSqlDetailRoute() {
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const sqlId = () => params.sql_id;
-
-  const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
-  const [forms] = createResource(async () => formApi.list(spaceId()));
+  const editorSession = createSqlEditorSession();
+  const routeIdentity = () => JSON.stringify([spaceId(), sqlId()]);
+  editorSession.activate(routeIdentity());
+  const [entryResource] = createResource(routeIdentity, async (identity) => {
+    const [entrySpaceId, entrySqlId] = JSON.parse(identity) as [string, string];
+    const result = await sqlApi.get(entrySpaceId, entrySqlId);
+    return { identity, value: result };
+  });
+  const currentEntry = () => {
+    const loaded = entryResource();
+    return loaded?.identity === routeIdentity() ? loaded.value : undefined;
+  };
+  const [forms] = createResource(
+    spaceId,
+    (entrySpaceId) => formApi.list(entrySpaceId),
+  );
   const [queryName, setQueryName] = createSignal("");
   const [sqlInput, setSqlInput] = createSignal("");
   const [savedName, setSavedName] = createSignal("");
@@ -87,6 +104,7 @@ export default function SpaceSqlDetailRoute() {
   const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
     false,
   );
+  const [routeGeneration, setRouteGeneration] = createSignal(0);
   const [undeclaredArgument, setUndeclaredArgument] = createSignal<
     string | null
   >(null);
@@ -97,10 +115,30 @@ export default function SpaceSqlDetailRoute() {
   const [busy, setBusy] = createSignal<"save" | "delete" | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
-  let normalizationGeneration = 0;
 
   createEffect(() => {
-    const current = entry();
+    if (!editorSession.activate(routeIdentity())) return;
+    setNormalizationPending(true);
+    setFormGuardPruningPending(false);
+    setNormalized({ sql: "", variables: [] });
+    setUndeclaredArgument(null);
+    setQueryName("");
+    setSqlInput("");
+    setSavedName("");
+    setSavedSql("");
+    setSavedVariables([]);
+    setDefaultDrafts({});
+    setFormBindingGuards([]);
+    setRevisionVariables([]);
+    setRevisionId(null);
+    setBusy(null);
+    setActionError(null);
+    setDeleteConfirmOpen(false);
+    setRouteGeneration((generation) => generation + 1);
+  });
+
+  createEffect(() => {
+    const current = currentEntry();
     if (!current) return;
     setQueryName(current.name ?? "");
     setSqlInput(current.sql);
@@ -115,14 +153,20 @@ export default function SpaceSqlDetailRoute() {
   });
 
   createEffect(() => {
+    routeGeneration();
+    const current = currentEntry();
+    if (!current) {
+      setNormalizationPending(true);
+      return;
+    }
     const source = sqlInput();
     const existing = savedVariables();
-    const generation = ++normalizationGeneration;
+    const operation = editorSession.begin("normalize");
     setNormalizationPending(true);
     setNormalized({ sql: "", variables: [] });
     setUndeclaredArgument(null);
-    void normalizeSqlVariables(source, existing).then((result) => {
-      if (generation !== normalizationGeneration) return;
+    void normalizeSqlWorkspaceVariables(source, existing).then((result) => {
+      if (!editorSession.isCurrent(operation)) return;
       setNormalized({ sql: result.sql, variables: result.variables });
       const declared = new Set(existing.map((variable) => variable.name));
       setUndeclaredArgument(
@@ -130,11 +174,11 @@ export default function SpaceSqlDetailRoute() {
           ?.name ?? null,
       );
     }).catch(() => {
-      if (generation === normalizationGeneration) {
+      if (editorSession.isCurrent(operation)) {
         setNormalized({ sql: "", variables: [] });
       }
     }).finally(() => {
-      if (generation === normalizationGeneration) {
+      if (editorSession.isCurrent(operation)) {
         setNormalizationPending(false);
       }
     });
@@ -181,17 +225,21 @@ export default function SpaceSqlDetailRoute() {
     }));
   });
   const variableCount = createMemo(() => normalized().variables.length);
-  let formGuardGeneration = 0;
   const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
-    const generation = ++formGuardGeneration;
+    const operation = editorSession.begin("form-guards");
     setFormGuardPruningPending(true);
     const current = formBindingGuards();
     const pruning = selected
       ? replaceSqlFormBindingGuard(sql, current, selected)
       : retainReferencedSqlFormBindingGuards(sql, current);
     void pruning.then((retained) => {
-      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormBindingGuards(retained);
+    }).catch(() => {
+      // Guard pruning is advisory UI state; current failures must unblock the
+      // workspace so the server remains responsible for authorization.
+    }).finally(() => {
+      if (!editorSession.isCurrent(operation) || sqlInput() !== sql) return;
       setFormGuardPruningPending(false);
     });
   };
@@ -204,13 +252,16 @@ export default function SpaceSqlDetailRoute() {
   const updateArgument = async (oldName: string, variable: SqlVariable) => {
     if (oldName !== variable.name) {
       const source = sqlInput();
+      const operation = editorSession.begin("rename");
       try {
         const document = await renameSqlDocumentParameter(
           (await normalizeSqlVariables(source)).sql,
           oldName,
           variable.name,
         );
-        if (sqlInput() !== source) return false;
+        if (!editorSession.isCurrent(operation) || sqlInput() !== source) {
+          return false;
+        }
         setSqlInput(document.source);
       } catch {
         return false;
@@ -244,7 +295,7 @@ export default function SpaceSqlDetailRoute() {
   };
   const bindingDiagnostics = createMemo(() => {
     if (forms.state !== "ready") return [];
-    const bindings = entry()?.metadata?.formBindings ?? [];
+    const bindings = currentEntry()?.metadata?.formBindings ?? [];
     const available = (forms() ?? []) as Form[];
     return bindings.map((binding) => ({
       ...binding,
@@ -273,14 +324,14 @@ export default function SpaceSqlDetailRoute() {
     planSavedSql: () => undefined,
     formBindingGuards,
     bindingBase: () => {
-      const current = entry();
+      const current = currentEntry();
       const baseRevisionId = revisionId() ?? current?.revision_id;
       return current && baseRevisionId
         ? { id: current.id, revisionId: baseRevisionId }
         : undefined;
     },
     savedSql: () => {
-      const current = entry();
+      const current = currentEntry();
       if (!current) return undefined;
       return selectSavedSqlPreviewRevision({
         id: current.id,
@@ -295,7 +346,8 @@ export default function SpaceSqlDetailRoute() {
 
   const handleRun = () => {
     if (
-      !entry() || isDirty() || normalizationPending() || variableCount() > 0
+      !currentEntry() || isDirty() || normalizationPending() ||
+      variableCount() > 0
     ) return;
     navigate(
       `/spaces/${encodeURIComponent(spaceId())}/sql/${
@@ -305,8 +357,9 @@ export default function SpaceSqlDetailRoute() {
   };
 
   const handleSave = async () => {
-    const current = entry();
-    if (!current || busy() !== null) return;
+    const current = currentEntry();
+    if (!current || current.kind !== "user-query" || busy() !== null) return;
+    const operation = editorSession.begin("save");
     setActionError(null);
     const saveIdentity = JSON.stringify({
       sql: sqlInput(),
@@ -321,9 +374,12 @@ export default function SpaceSqlDetailRoute() {
         savedVariables(),
       );
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      }
       return;
     }
+    if (!editorSession.isCurrent(operation)) return;
     const sql = normalizedQuery.sql.trim();
     if (!sql) {
       setActionError(t("sqlPage.sqlRequired"));
@@ -353,7 +409,7 @@ export default function SpaceSqlDetailRoute() {
           sql: sqlInput(),
           arguments: savedVariables(),
           defaults: defaultDrafts(),
-          revision: revisionId() ?? entry()?.revision_id,
+          revision: revisionId() ?? currentEntry()?.revision_id,
         }) !== saveIdentity ||
       currentPlan.status !== "success" ||
       !currentPlan.isCurrent
@@ -380,6 +436,7 @@ export default function SpaceSqlDetailRoute() {
         variables: nextVariables.variables,
         parent_revision_id: nextRevisionId,
       });
+      if (!editorSession.isCurrent(operation)) return;
       setQueryName(name ?? "");
       setSqlInput(sql);
       setSavedName(name ?? "");
@@ -389,14 +446,16 @@ export default function SpaceSqlDetailRoute() {
       setDefaultDrafts({});
       setRevisionId(result.revisionId);
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
+      }
     } finally {
-      setBusy(null);
+      if (editorSession.isCurrent(operation)) setBusy(null);
     }
   };
 
   const openDeleteConfirm = () => {
-    if (busy() !== null) return;
+    if (!currentEntry() || busy() !== null) return;
     setActionError(null);
     setDeleteConfirmOpen(true);
   };
@@ -408,16 +467,25 @@ export default function SpaceSqlDetailRoute() {
   };
 
   const handleDelete = async () => {
-    if (busy() !== null) return;
+    const current = currentEntry();
+    if (!current || current.kind !== "user-query" || busy() !== null) return;
+    const operation = editorSession.begin("delete");
+    const deleteSpaceId = spaceId();
+    const deleteSqlId = current.id;
     setActionError(null);
     setBusy("delete");
     try {
-      await sqlApi.delete(spaceId(), sqlId());
+      await sqlApi.delete(deleteSpaceId, deleteSqlId);
+      if (!editorSession.isCurrent(operation)) {
+        return;
+      }
       setDeleteConfirmOpen(false);
       navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
     } catch (error) {
-      setActionError(formatUserFacingError(error, "sqlPage.failedDelete"));
-      setBusy(null);
+      if (editorSession.isCurrent(operation)) {
+        setActionError(formatUserFacingError(error, "sqlPage.failedDelete"));
+      }
+      if (editorSession.isCurrent(operation)) setBusy(null);
     }
   };
 
@@ -431,7 +499,7 @@ export default function SpaceSqlDetailRoute() {
           />
           <div class="ui-stack-sm">
             <Show
-              when={entry()}
+              when={currentEntry()}
               fallback={<h1>{t("sqlPage.detail")}</h1>}
             >
               {(data) => (
@@ -447,18 +515,18 @@ export default function SpaceSqlDetailRoute() {
       </div>
       <section
         class="settingsMain surface"
-        aria-busy={entry.loading || undefined}
+        aria-busy={entryResource.loading || undefined}
       >
         <Switch>
           {/* Panel-local spinner: loaded query stays mounted on refetch. */}
-          <Match when={entry.loading && !entry()}>
+          <Match when={entryResource.loading && !currentEntry()}>
             <LocalBusyIndicator label={t("sqlPage.loadingQuery")} />
           </Match>
-          <Match when={entry.error}>
+          <Match when={entryResource.error}>
             <div class="ui-stack-sm">
               <p class="text-sm ui-text-danger">
                 {formatUserFacingError(
-                  entry.error,
+                  entryResource.error,
                   "sqlPage.failedLoadQuery",
                 )}
               </p>
@@ -467,10 +535,10 @@ export default function SpaceSqlDetailRoute() {
               </p>
             </div>
           </Match>
-          <Match when={entry()}>
+          <Match when={currentEntry()}>
             {(data) => (
               <>
-                <Show when={entry.loading}>
+                <Show when={entryResource.loading}>
                   <LocalBusyIndicator
                     size="sm"
                     label={t("sqlPage.loadingQuery")}
@@ -645,12 +713,12 @@ export default function SpaceSqlDetailRoute() {
           </p>
         </Show>
         <div class="flex flex-wrap items-center gap-3">
-          <Show when={entry()?.kind === "user-query"}>
+          <Show when={currentEntry()?.kind === "user-query"}>
             <button
               type="button"
               class="btn primary"
               onClick={() => void handleSave()}
-              disabled={!entry() || busy() !== null || !isDirty() ||
+              disabled={!currentEntry() || busy() !== null || !isDirty() ||
                 workspace.plan().status !== "success" ||
                 !workspace.plan().isCurrent}
               aria-busy={busy() === "save" || undefined}
@@ -664,13 +732,13 @@ export default function SpaceSqlDetailRoute() {
                 icon: "trash",
                 label: t("sqlPage.delete"),
                 danger: true,
-                disabled: busy() !== null || !entry(),
+                disabled: busy() !== null || !currentEntry(),
                 busy: busy() === "delete",
                 onClick: openDeleteConfirm,
               }]}
             />
           </Show>
-          <Show when={entry() && variableCount() === 0 && !isDirty()}>
+          <Show when={currentEntry() && variableCount() === 0 && !isDirty()}>
             <button
               type="button"
               class="btn"
@@ -679,7 +747,7 @@ export default function SpaceSqlDetailRoute() {
               {t("sqlPage.results")}
             </button>
           </Show>
-          <Show when={entry() && variableCount() > 0 && !isDirty()}>
+          <Show when={currentEntry() && variableCount() > 0 && !isDirty()}>
             <A href={queryVariablesHref()} class="btn">
               {t("sqlPage.openVariables")}
             </A>
@@ -689,7 +757,7 @@ export default function SpaceSqlDetailRoute() {
           <p class="text-sm ui-muted">{t("sqlPage.unsavedChanges")}</p>
         </Show>
         <ConfirmDestructiveAction
-          open={deleteConfirmOpen() && entry()?.kind === "user-query"}
+          open={deleteConfirmOpen() && currentEntry()?.kind === "user-query"}
           title={t("sqlPage.delete")}
           body={t("sqlPage.confirmDelete")}
           confirmLabel={t("sqlPage.delete")}

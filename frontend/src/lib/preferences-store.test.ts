@@ -26,6 +26,11 @@ describe("preferencesStore", () => {
 
   it("REQ-FE-003: initializes selected space from local fallback and migrates portable storage", async () => {
     localStorage.setItem("ugoite-selected-space", "space-local");
+    const { server } = await import("~/test/mocks/server");
+    const { http, HttpResponse } = await import("msw");
+    server.use(
+      http.get(testApiUrl("/preferences/me"), () => HttpResponse.json({})),
+    );
 
     const { initializePortablePreferences, portablePreferences } = await import(
       "./preferences-store"
@@ -59,9 +64,11 @@ describe("preferencesStore", () => {
 
   it("REQ-FE-044: migrates a missing locale from local fallback", async () => {
     localStorage.setItem("ugoite-locale", "ja");
-    seedPreferences({
-      locale: null,
-    });
+    const { server } = await import("~/test/mocks/server");
+    const { http, HttpResponse } = await import("msw");
+    server.use(
+      http.get(testApiUrl("/preferences/me"), () => HttpResponse.json({})),
+    );
 
     const { initializePortablePreferences } = await import(
       "./preferences-store"
@@ -73,6 +80,25 @@ describe("preferencesStore", () => {
     expect(getPreferencePatches()).toContainEqual(
       expect.objectContaining(expectedPatch),
     );
+  });
+
+  it("keeps explicit remote null preferences instead of restoring stale local values", async () => {
+    localStorage.setItem("ugoite-selected-space", "space-stale");
+    localStorage.setItem("ugoite-locale", "ja");
+    seedPreferences({ selected_space_id: null, locale: null });
+
+    const { initializePortablePreferences, portablePreferences } = await import(
+      "./preferences-store"
+    );
+    await initializePortablePreferences();
+
+    expect(portablePreferences()).toEqual({
+      selected_space_id: null,
+      locale: null,
+    });
+    expect(localStorage.getItem("ugoite-selected-space")).toBeNull();
+    expect(localStorage.getItem("ugoite-locale")).toBeNull();
+    expect(getPreferencePatches()).toEqual([]);
   });
 
   it("REQ-FE-044: public routes apply local locale without remote preference fetch", async () => {
