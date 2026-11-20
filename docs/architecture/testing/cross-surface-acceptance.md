@@ -42,8 +42,10 @@ The v0.2.1 journey and selector inventory is archived at the
 [source revision `0cd0ac31d04e32c7e5282cbce5bb2c47102fbf27`](https://github.com/ugoite/ugoite/blob/0cd0ac31d04e32c7e5282cbce5bb2c47102fbf27/docs/architecture/testing/cross-surface-acceptance.md#product-journeys-for-the-v021-candidate).
 That snapshot is a historical locator and evidence definition; it does not
 record candidate execution at that revision. Current journey criteria and
-verification selectors are defined by [Journey Mitase](../../mitase/requirements/journey.yaml).
-For the published release summary, see the [v0.2.1 release note](../../version/releases/v0.2.1.md).
+verification selectors are defined by
+[Journey Mitase](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/journey.yaml).
+For the published release summary, see the
+[v0.2.1 release note](../../version/releases/v0.2.1.md).
 
 For each executed selector, record the exact candidate source SHA, fixture or
 seed, command and selector, surface and transport, environment, expected and
