@@ -469,7 +469,7 @@ export interface SqlFormBinding {
   formId: string;
 }
 
-/** Wire shape for a request guard that pins SQL resolution to one Form. */
+/** API wire shape guarding an authorized SQL Form binding. */
 export interface SqlFormBindingGuard {
   name: string;
   form_id: string;

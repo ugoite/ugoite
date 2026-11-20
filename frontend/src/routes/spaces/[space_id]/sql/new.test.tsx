@@ -20,9 +20,6 @@ const {
   sqlQueryMock,
   sqlCountMock,
   sqlPlanMock,
-  parseSqlDocumentMock,
-  applySqlDocumentEditTransactionMock,
-  applySqlDocumentSemanticEditTransactionMock,
   renameSqlDocumentParameterMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -31,9 +28,6 @@ const {
   sqlQueryMock: vi.fn(),
   sqlCountMock: vi.fn(),
   sqlPlanMock: vi.fn(),
-  parseSqlDocumentMock: vi.fn(),
-  applySqlDocumentEditTransactionMock: vi.fn(),
-  applySqlDocumentSemanticEditTransactionMock: vi.fn(),
   renameSqlDocumentParameterMock: vi.fn(),
 }));
 
@@ -136,10 +130,6 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
       count: sqlCountMock,
       plan: sqlPlanMock,
     },
-    parseSqlDocument: parseSqlDocumentMock,
-    applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
-    applySqlDocumentSemanticEditTransaction:
-      applySqlDocumentSemanticEditTransactionMock,
     renameSqlDocumentParameter: renameSqlDocumentParameterMock,
   };
 });
@@ -265,42 +255,6 @@ describe("/spaces/:space_id/sql/new", () => {
     });
     sqlCountMock.mockReset().mockResolvedValue(1);
     sqlPlanMock.mockReset().mockResolvedValue({ result_schema: [] });
-    parseSqlDocumentMock.mockReset().mockImplementation(
-      async (source: string) => ({
-        contract_version: 1,
-        source,
-        status: "parsed",
-        diagnostics: [],
-        tokens: [],
-        nodes: [{
-          id: 1,
-          parent: null,
-          kind: "select",
-          semantic: null,
-          range: null,
-        }],
-      }),
-    );
-    applySqlDocumentEditTransactionMock.mockReset().mockImplementation(
-      async (_source: string, transaction: {
-        edits: { replacement: string }[];
-      }) => ({
-        document: {
-          status: "parsed",
-          source: transaction.edits[0].replacement,
-        },
-        undo: transaction,
-      }),
-    );
-    applySqlDocumentSemanticEditTransactionMock.mockReset().mockImplementation(
-      async (source: string) => ({
-        document: {
-          status: "parsed",
-          source: `${source} FROM "Entry"`,
-        },
-        undo: { expected_source: source, edits: [] },
-      }),
-    );
     renameSqlDocumentParameterMock.mockReset().mockImplementation(
       async (source: string, oldName: string, newName: string) => ({
         status: "parsed",

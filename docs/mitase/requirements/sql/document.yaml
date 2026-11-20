@@ -21,14 +21,13 @@ requirements:
         kind: compatibility
         statement: >-
           The existing versioned SQL Document WASM actions and typed protocol
-          for parse, parameter rename, and guarded source edits remain available
-          with their native behavior. Guarded edits apply atomically against an
-          exact source snapshot, reject stale, overlapping, or mismatched byte
-          ranges, reparse the resulting draft, and return an inverse edit for
-          undo. Typed projection edits preserve same-scope ORDER BY and GROUP BY
-          bindings or fail closed when a reference cannot be retained safely.
-          These source-preservation and binding rules are protocol obligations;
-          they do not require a production SQL structure editor. Removing or
+          for parsing, parameter rename, and Form picker relation selection
+          remain available with their native behavior. Guarded relation edits
+          apply atomically against an exact source snapshot, reject stale or
+          unavailable selections, preserve untouched source text and comments,
+          reparse the resulting draft, and return an inverse edit for undo.
+          These source-preservation rules are protocol obligations; they do not
+          require a production SQL structure editor. Removing or
           changing these public actions requires a separately planned breaking
           release.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance]
