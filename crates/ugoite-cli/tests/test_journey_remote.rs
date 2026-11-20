@@ -1711,18 +1711,17 @@ spec:
         "the newer literal filter should select one January row"
     );
 
-    let legacy_parameter_args = [
+    let unsupported_flag_args = [
         "composition",
         "query",
         composition_id.as_str(),
-        "--param",
+        "--unsupported-option",
         "month_start=2026-01-01",
     ];
-    let legacy_parameter = run_cli(&fixture.config_path, &legacy_parameter_args).await;
-    assert!(!legacy_parameter.status.success());
-    assert!(
-        String::from_utf8_lossy(&legacy_parameter.stderr).contains("unexpected argument '--param'")
-    );
+    let unsupported_flag = run_cli(&fixture.config_path, &unsupported_flag_args).await;
+    assert!(!unsupported_flag.status.success());
+    assert!(String::from_utf8_lossy(&unsupported_flag.stderr)
+        .contains("unexpected argument '--unsupported-option'"));
 
     let unknown_unset_args = [
         "composition",
