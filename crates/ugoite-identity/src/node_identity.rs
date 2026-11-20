@@ -2052,6 +2052,7 @@ impl NodeIdentityService {
     }
 
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_for_tests(
         rp_id: impl Into<String>,
         public_origin: impl Into<String>,
@@ -2068,6 +2069,7 @@ impl NodeIdentityService {
     /// operator so a test can model a process restart against the same
     /// control store.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_for_tests_with_operator(
         operator: opendal::Operator,
         rp_id: impl Into<String>,
@@ -2084,6 +2086,7 @@ impl NodeIdentityService {
     /// Test-only constructor that reuses a cloneable control-store handle to
     /// model a process restart against the same in-memory Node state.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_for_tests_with_control_store(
         store: OpenDalNodeControlStore,
         rp_id: impl Into<String>,
@@ -2095,6 +2098,7 @@ impl NodeIdentityService {
     /// Test-only persistence hook for exercising the server's recovery audit
     /// reconciler with a durable Node outbox record.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn seed_test_recovery_audit_outbox(
         &self,
         record: RecoveryAuditOutboxRecord,
@@ -2108,6 +2112,7 @@ impl NodeIdentityService {
     /// Test-only hook that models the durable Node state after setup
     /// registration but before initial Space claims have completed.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn seed_test_initial_space_claims(
         &self,
         account: HumanAccount,
@@ -2135,6 +2140,7 @@ impl NodeIdentityService {
     /// material; the coordinator only needs active accounts and unique
     /// account-to-Principal bindings to exercise the two-store fence saga.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn seed_test_recovery_accounts(&self, accounts: &[(Uuid, Uuid, Uuid)]) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
@@ -2174,6 +2180,7 @@ impl NodeIdentityService {
     /// tests. Production provider creation still goes through discovery and
     /// HTTPS validation in the server adapter.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn seed_test_oidc_provider(&self, provider: OidcProvider) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
@@ -2186,6 +2193,7 @@ impl NodeIdentityService {
     /// Read an attempt for the server's mock OIDC issuer tests without
     /// consuming it. Production callbacks use `consume_oidc_attempt` only.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn inspect_test_oidc_attempt(&self, state_token: &str) -> Result<OidcLoginAttempt> {
         let state = self.read_state().await?;
         state
@@ -2200,6 +2208,7 @@ impl NodeIdentityService {
     /// production registration still requires the normal Passkey ceremony.
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn seed_test_human_approval_credentials(
         &self,
         space_uid: Uuid,

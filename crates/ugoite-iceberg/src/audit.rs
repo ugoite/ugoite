@@ -943,7 +943,7 @@ pub(crate) async fn append_audit_events_with_retention_for_test(
     append_audit_events_inner(op, space_id, payloads, None, Some(retention_limit), false).await
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) async fn append_audit_events_with_checkpoint(
     op: &Operator,
     space_id: &str,
