@@ -36,6 +36,64 @@ pub(super) struct SqlPageContinuationContext<'a> {
     pub(super) signing_key: &'a [u8],
 }
 
+/// Fingerprints for the request after resolving Saved SQL parameter defaults.
+/// Keep this calculation shared so every page adapter signs and validates the
+/// same effective request identity.
+pub(super) fn page_continuation_fingerprints(
+    request: &SqlQueryRequest,
+    prepared: &PreparedSqlRequest,
+) -> Result<(String, String)> {
+    let effective_parameter_types = prepared.parameter_types.clone();
+    let parameter_fingerprint = SqlQueryRequest {
+        parameter_types: effective_parameter_types,
+        ..request.clone()
+    }
+    .parameter_fingerprint()
+    .map_err(sql_query_contract_error)?;
+    let sql_fingerprint = request
+        .sql_fingerprint(&prepared.normalized_sql)
+        .map_err(sql_query_contract_error)?;
+    Ok((sql_fingerprint, parameter_fingerprint))
+}
+
+/// Validate continuation identity in the established order: Space first,
+/// then SQL, parameters, Saved SQL revision/binding, and graph snapshot.
+pub(super) fn validate_page_continuation_identity(
+    cursor: &SqlContinuation,
+    space_uid: Uuid,
+    request: &SqlQueryRequest,
+    prepared: &PreparedSqlRequest,
+    sql_fingerprint: &str,
+    parameter_fingerprint: &str,
+    context_fingerprint: Option<&str>,
+) -> Result<()> {
+    if cursor.space_id.as_uuid() != space_uid {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL continuation belongs to another Space",
+        )
+        .into());
+    }
+    if cursor.sql_fingerprint != sql_fingerprint
+        || cursor.parameter_fingerprint != parameter_fingerprint
+        || cursor.saved_sql != request.saved_sql
+        || cursor.binding_fingerprint
+            != prepared
+                .saved_revision
+                .as_ref()
+                .map(saved_sql_binding_fingerprint)
+                .transpose()?
+        || cursor.context_fingerprint.as_deref() != context_fingerprint
+    {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL, parameter, Saved SQL revision, or graph snapshot fingerprint does not match the continuation",
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct SqlSourceAuthorization<'a> {
     pub(super) state: &'a AuthorizationState,
