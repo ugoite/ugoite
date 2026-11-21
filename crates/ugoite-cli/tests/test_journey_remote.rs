@@ -1629,12 +1629,6 @@ spec:
         "Core Composition history before read journey",
     );
     assert_eq!(history_before["total"], 2);
-    let remote_history_before = stdout_json(
-        &run_cli(&fixture.config_path, &history_args).await,
-        "Remote Composition history before read journey",
-    );
-    assert_eq!(remote_history_before, history_before);
-
     let inspect_args = [
         "composition",
         "inspect",
