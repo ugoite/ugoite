@@ -82,7 +82,10 @@ Deno.test("REQ-OPS-060: maintenance classification is checked by the existing PR
       "Proof: signed cursor tests plus SQL and Entry continuation tests",
       "Proof: <smallest behavioral check and any cross-boundary check>",
     ),
-    changed.replace("Release basis: not applicable; internal reuse", "Release basis:"),
+    changed.replace(
+      "Release basis: not applicable; internal reuse",
+      "Release basis:",
+    ),
     changed.replace(
       "- [x] A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.",
       "- [x] A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.\n- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
@@ -90,7 +93,9 @@ Deno.test("REQ-OPS-060: maintenance classification is checked by the existing PR
   ];
   for (const body of invalid) {
     assertEquals(
-      validatePrBody(body).some((error) => error.includes("Maintenance Budget Review")),
+      validatePrBody(body).some((error) =>
+        error.includes("Maintenance Budget Review")
+      ),
       true,
       body,
     );
