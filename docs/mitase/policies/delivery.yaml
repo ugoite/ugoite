@@ -65,7 +65,7 @@ policies:
     rules:
       - id: governance
         level: must
-        statement: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+        statement: Specifications must link requirements to the tests or trusted checks that actually exercise the stated behavior. A linked file or a matching test name alone is not proof of a semantic assertion; the verification scope and limitations must stay explicit. Use a representative lowest-boundary test and only the cross-boundary evidence needed to prove the contract.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-000#principle.tools-without-authority, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
     bindings:
       - id: requirement-traceability-boundary
@@ -139,7 +139,7 @@ policies:
     rules:
       - id: governance
         level: must
-        statement: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+        statement: Current product evolution must be recorded in its canonical Mitase Requirement, Feature, and verification graph before implementation fragments into local decisions. Capability reports are projections, not independent catalogs of truth. Historical acceptance evidence remains tied to its original candidate and is not presented as current product status; retired requirements are removed or explicitly superseded, not copied into new active authorities.
         governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle]
     bindings:
       - id: specification-first-boundary
