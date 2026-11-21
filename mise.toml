@@ -25,9 +25,13 @@ description = "Cache the minimal Rust and Deno development toolchain"
 run = [
   "rustup target add wasm32-unknown-unknown",
   "cargo fetch --locked",
-  "deno install --frozen --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp",
+  { task = "deps:deno:verify" },
   "deno task e2e:install:browsers",
 ]
+
+[tasks."deps:deno:verify"]
+description = "Verify the shared Deno workspace lockfile"
+run = "deno install --frozen --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp"
 
 [tasks.dev]
 description = "Run the current backend, frontend, and docsite development servers"
@@ -698,6 +702,7 @@ run = [
 
 [tasks."ci:artifacts:prepare"]
 description = "Build, package, verify, and version-check artifacts before E2E"
+depends = ["deps:deno:verify"]
 run = [
   { task = "build" },
   { task = "package" },
@@ -766,6 +771,7 @@ run = [
 [tasks."ci:lane:web"]
 description = "Run formatting, Deno, frontend, and docsite quality gates for hosted CI"
 run = [
+  { task = "deps:deno:verify" },
   { task = "fmt:check" },
   { task = "lint:deno" },
   { task = "check:deno" },
