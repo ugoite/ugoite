@@ -3847,9 +3847,6 @@ a.tool {
 .compositionFlowItem--text {
   flex: 1 1 100%;
 }
-.compositionFlowItem--metric {
-  flex: 1 1 0;
-}
 .compositionFlowItem--table {
   flex: 1 1 100%;
   min-width: 0;
@@ -3880,9 +3877,6 @@ a.tool {
   color: var(--muted);
 }
 @media (max-width: 560px) {
-  .compositionFlowItem--metric {
-    flex-basis: 100%;
-  }
   .compositionFlowItem--input {
     flex-basis: 100%;
   }
