@@ -624,6 +624,25 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-045#criterion.spa-shell-html-revalidation
+      - id: maintenance-review
+        role: implementation
+        facet: repository-governance
+        responsibility: Keep maintenance review in the existing trusted PR validator and template. The declaration is not proof of product behavior and adds no separate privileged workflow.
+        targets:
+          - id: maintenance-gate
+            adapter: typescript
+            path: tools/pr_body_gate.ts
+            selector: { kind: symbol, name: validateMaintenanceReview }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-060#criterion.maintenance-budget-review
+          - id: maintenance-template
+            adapter: declared
+            path: .github/pull_request_template.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-060#criterion.maintenance-budget-review
     contracts:
       - id: release-note-publication
         kind: custom
