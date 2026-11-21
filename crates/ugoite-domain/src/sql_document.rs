@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArguments,
     GroupByExpr, GroupByWithModifier, Ident, LimitClause, ObjectName, ObjectNamePart, OrderByKind,
-    OrderBySort, Query, Select, SelectItem, SetExpr, Spanned, Statement, Subscript, TableFactor,
-    Value, ValueWithSpan, Visit, Visitor,
+    Query, Select, SelectItem, SetExpr, Spanned, Statement, Subscript, TableFactor, Value,
+    ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -2262,15 +2262,11 @@ impl QueryStructureCollector<'_> {
                                     Some(item_range),
                                     order_id,
                                     Some(SqlDocumentNodeData::OrderByItem {
-                                        direction: item.options.sort.as_ref().and_then(|sort| {
-                                            match sort {
-                                                OrderBySort::Asc => {
-                                                    Some(SqlDocumentOrderDirection::Asc)
-                                                }
-                                                OrderBySort::Desc => {
-                                                    Some(SqlDocumentOrderDirection::Desc)
-                                                }
-                                                OrderBySort::Using(_) => None,
+                                        direction: item.options.asc.map(|ascending| {
+                                            if ascending {
+                                                SqlDocumentOrderDirection::Asc
+                                            } else {
+                                                SqlDocumentOrderDirection::Desc
                                             }
                                         }),
                                         nulls_order: item.options.nulls_first.map(|first| {
@@ -4139,7 +4135,6 @@ fn table_factor_data(table_factor: &TableFactor) -> SqlDocumentNodeData {
         TableFactor::NestedJoin { alias, .. } => ("nested_join", alias.as_ref()),
         TableFactor::Pivot { alias, .. } => ("pivot", alias.as_ref()),
         TableFactor::Unpivot { alias, .. } => ("unpivot", alias.as_ref()),
-        TableFactor::UnpivotExpr { .. } => ("unpivot_expression", None),
         TableFactor::MatchRecognize { alias, .. } => ("match_recognize", alias.as_ref()),
         TableFactor::XmlTable { alias, .. } => ("xml_table", alias.as_ref()),
         TableFactor::SemanticView { alias, .. } => ("semantic_view", alias.as_ref()),
