@@ -21,6 +21,8 @@ needs them.
    capability that spans Rust, adapters, frontend, tests, and documentation.
 5. Read [Documentation Development](documentation.md) before adding or moving
    prose.
+6. Follow [Dependency Maintenance](dependency-maintenance.md) when reviewing
+   or updating toolchains and dependencies.
 
 ## Architecture re-entry points
 
