@@ -101,6 +101,7 @@ updates:
       # because Deno cannot resolve astro:middleware.
       - dependency-name: "@astrojs/starlight"
         versions:
+          - "0.42.8"
           - "0.42.9"
           - "0.42.10"
           - "0.42.11"
@@ -111,6 +112,7 @@ updates:
       # and the resolved version.
       - dependency-name: "@playwright/test"
         versions:
+          - "1.62.1"
           - "1.63.0"
           - "1.64.0"
           - "1.64.1"
@@ -121,6 +123,7 @@ updates:
       # version.
       - dependency-name: "@solidjs/start"
         versions:
+          - "2.1.0"
           - "2.2.0"
           - "2.2.1"
           - "2.2.2"
