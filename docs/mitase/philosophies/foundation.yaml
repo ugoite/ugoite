@@ -27,7 +27,7 @@ philosophies:
         statement: Product and architecture decisions must preserve user optionality by default. Storage abstraction, reusable core components, open table formats, and portable interfaces are first-class features because they reduce lock-in and preserve long-term user freedom.
         applies_to: [product, specification, implementation]
       - id: coding-guideline
-        statement: Prefer abstractions and open interfaces over tightly coupled one-off integrations. Reuse shared core modules, avoid storage/provider-specific assumptions in API/UI layers, and keep code paths portable across backends and runtimes.
+        statement: Prefer the smallest shared abstraction that removes demonstrated duplication while preserving portability. Keep provider assumptions out of API/UI layers, and reject generic frameworks, wrappers, and compatibility adapters without a current contract or distinct invariant.
         applies_to: [implementation]
   - id: PHIL-002
     title: Serverless-Oriented Minimal Node Topology
@@ -47,7 +47,7 @@ philosophies:
         statement: Product behavior should be encoded as durable, reusable rules rather than manual one-off artifacts. Specifications, implementation, and validation are coupled so behavior can be continuously re-verified.
         applies_to: [product, specification, implementation, verification]
       - id: coding-guideline
-        statement: Tie behavior changes to specs and tests in the same change set. Prefer reusable helpers, schemas, and automation over manual procedural steps, and avoid introducing logic that cannot be continuously validated in CI.
+        statement: Tie behavior changes to canonical specs and proportionate tests in the same change set. Remove superseded implementation, checks, and documentation together; avoid manual projections, redundant gates, and logic that cannot be continuously validated.
         applies_to: [implementation, verification]
   - id: PHIL-004
     title: Give AI Freedom Inside Trusted Constraints
@@ -75,3 +75,16 @@ philosophies:
       - id: verifiable-interaction
         statement: Interaction claims remain continuously verifiable through declared routes, components, dictionaries, and tests rather than prose assertions alone.
         applies_to: [specification, implementation, verification]
+  - id: PHIL-005
+    title: Minimum Sufficient Mechanisms
+    summary: Keep only the semantic authorities and maintenance paths needed to preserve user-owned Knowledge.
+    principles:
+      - id: one-meaning-one-owner
+        statement: Each durable product rule has one semantic owner; local, remote, browser, CLI, WASM, and AI surfaces project that meaning without establishing parallel authorities. An abstraction earns its existence by removing real duplication, not by anticipating future variants.
+        applies_to: [architecture, specification, implementation, verification]
+      - id: release-earned-compatibility
+        statement: Preserve the meaning and safety guarantees of actually released Knowledge and operator contracts. Unreleased internal protocols, abandoned implementation shapes, and rebuildable derived state do not earn indefinite readers, fallbacks, or regression gates solely by having existed.
+        applies_to: [architecture, specification, implementation, verification]
+      - id: evidence-without-ceremony
+        statement: Prove each distinct invariant at the smallest trustworthy boundary, keeping real security, storage, and released-compatibility evidence where indispensable. Duplicate end-to-end paths, oversized fixed fixtures, and manual evidence copies do not become product requirements.
+        applies_to: [architecture, specification, implementation, verification]
