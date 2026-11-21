@@ -3,11 +3,11 @@
 //! This syntax helper is shared by server binding and local editor adapters. It
 //! does not resolve identity or grant authorization; those remain server duties.
 
-use sqlparser_datafusion::ast::{
+use sqlparser::ast::{
     Ident, ObjectName, ObjectNamePart, Statement, TableAlias, TableFactor, VisitMut, VisitorMut,
 };
-use sqlparser_datafusion::dialect::GenericDialect;
-use sqlparser_datafusion::parser::Parser;
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
@@ -50,10 +50,7 @@ pub fn resolve_form_name_references_in_statements<'a>(
     impl VisitorMut for Resolver<'_> {
         type Break = ();
 
-        fn pre_visit_query(
-            &mut self,
-            query: &mut sqlparser_datafusion::ast::Query,
-        ) -> ControlFlow<()> {
+        fn pre_visit_query(&mut self, query: &mut sqlparser::ast::Query) -> ControlFlow<()> {
             self.cte_scopes.push(
                 query
                     .with
@@ -73,10 +70,7 @@ pub fn resolve_form_name_references_in_statements<'a>(
             ControlFlow::Continue(())
         }
 
-        fn post_visit_query(
-            &mut self,
-            _query: &mut sqlparser_datafusion::ast::Query,
-        ) -> ControlFlow<()> {
+        fn post_visit_query(&mut self, _query: &mut sqlparser::ast::Query) -> ControlFlow<()> {
             self.cte_scopes.pop();
             ControlFlow::Continue(())
         }
@@ -217,8 +211,8 @@ mod tests {
         collect_quoted_form_name_references, collect_quoted_form_relation_names,
         resolve_form_name_references_in_statements,
     };
-    use sqlparser_datafusion::dialect::GenericDialect;
-    use sqlparser_datafusion::parser::Parser;
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
