@@ -803,19 +803,16 @@ export class KonaseHost {
       !isRecord(projection) || projection._untrusted_content !== true ||
       typeof projection.id !== "string" || !projection.id.trim() ||
       typeof projection.name !== "string" || !projection.name.trim() ||
+      typeof projection.display_label !== "string" ||
+      !projection.display_label.trim() ||
       !isRecord(projection.fields)
     ) {
       throw new Error("Existing Entry Form could not be safely resolved");
     }
 
-    const formName = safePreviewLabel(projection.name);
     return {
       ...preview,
-      form: formName,
-      summary: preview.summary.replace(
-        "Form from existing Entry",
-        `Form ${formName}`,
-      ),
+      form: projection.display_label,
     };
   }
 
@@ -1053,7 +1050,7 @@ class BrowserAgentRuntime {
     this.approvedDispatch = {
       request: pending.request,
       workId,
-      spaceId: safePreviewLabel(spaceId),
+      spaceId,
       generation,
     };
     return { kind: "call_mcp", request: pending.request };
@@ -1234,15 +1231,6 @@ function freezeNested(value: unknown): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function safePreviewLabel(value: string): string {
-  const characters = [...value];
-  const shortened = characters.length > 96;
-  return characters.slice(0, shortened ? 84 : 96).map((character) => {
-    const code = character.codePointAt(0) ?? 0;
-    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? " " : character;
-  }).join("") + (shortened ? "… [omitted]" : "");
 }
 
 export type {

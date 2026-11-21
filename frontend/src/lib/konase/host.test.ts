@@ -125,6 +125,7 @@ class ScriptedMcp implements McpHost {
           content: JSON.stringify({
             id: "form-7",
             name: "Note",
+            display_label: "Safe Note",
             fields: {},
             _untrusted_content: true,
           }),
@@ -598,6 +599,7 @@ describe("Konase browser host", () => {
   });
 
   it("shows a safe per-call preview and dispatches the original arguments only after approval", async () => {
+    const spaceId = "s".repeat(128);
     const argumentsValue = {
       form: "Note",
       fields: { title: "private note body", api_token: "secret-token-value" },
@@ -623,7 +625,7 @@ describe("Konase browser host", () => {
     const host = new KonaseHost({
       model,
       mcp,
-      spaceId: "space-a",
+      spaceId,
       onConfirmationRequired: resolvePreview,
     });
 
@@ -632,7 +634,7 @@ describe("Konase browser host", () => {
     expect(mcp.calls).toHaveLength(0);
     expect(preview).toMatchObject({
       workId: expect.stringMatching(/^work-/),
-      spaceId: "space-a",
+      spaceId: `${"s".repeat(84)}… [omitted]`,
       operation: "ugoite.save",
       action: "create",
       form: "Note",
@@ -891,7 +893,7 @@ describe("Konase browser host", () => {
       workId: turn.workId,
       action: "update",
       spaceId: "space-a",
-      form: "Note",
+      form: "Safe Note",
       entryId: "entry-7",
     });
     expect(previews[0].summary).not.toContain("space-a");
@@ -947,6 +949,7 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          display_label: "Note",
           _untrusted_content: true,
         }),
       },
@@ -955,6 +958,16 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          fields: {},
+          _untrusted_content: true,
+        }),
+      },
+      {
+        uri,
+        content: JSON.stringify({
+          id: "form-7",
+          name: "Note",
+          display_label: "Note",
           fields: [],
           _untrusted_content: true,
         }),
@@ -964,6 +977,7 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          display_label: "Note",
           fields: {},
           _untrusted_content: true,
         }),

@@ -1093,6 +1093,8 @@ async fn schema_for_entry(
 }
 
 fn form_projection(form: &Value) -> Value {
+    let name = sanitize_mcp_string(form.get("name").and_then(Value::as_str).unwrap_or_default());
+    let display_label = ugoite_domain::preview_label::safe_preview_label(&name);
     let fields = form
         .get("fields")
         .and_then(Value::as_object)
@@ -1112,7 +1114,7 @@ fn form_projection(form: &Value) -> Value {
                 .collect::<serde_json::Map<_, _>>()
         })
         .unwrap_or_default();
-    json!({"id":form.get("id").and_then(Value::as_str).unwrap_or_default(),"version":form.get("version").and_then(Value::as_i64).unwrap_or(1),"name":sanitize_mcp_string(form.get("name").and_then(Value::as_str).unwrap_or_default()),"description":form.get("description").and_then(Value::as_str).map(sanitize_mcp_string),"fields":fields,"_untrusted_content":true})
+    json!({"id":form.get("id").and_then(Value::as_str).unwrap_or_default(),"version":form.get("version").and_then(Value::as_i64).unwrap_or(1),"name":name,"display_label":display_label,"description":form.get("description").and_then(Value::as_str).map(sanitize_mcp_string),"fields":fields,"_untrusted_content":true})
 }
 
 #[allow(clippy::result_large_err)]
@@ -1928,6 +1930,23 @@ mod tests {
             .unwrap()
             .to_ascii_lowercase()
             .contains("data:text/html"));
+
+        let schema_request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!("entry-schema"),
+            method: "resources/read".to_string(),
+            params: json!({"uri":"ugoite://entry/entry-sanitize/schema"}),
+        };
+        let schema_result = resources_read(&state, &auth, &schema_request)
+            .await
+            .expect("Entry schema resource");
+        let schema_text = schema_result["contents"][0]["text"]
+            .as_str()
+            .expect("schema resource text");
+        let schema: Value = serde_json::from_str(schema_text).expect("schema resource JSON");
+        assert_eq!(schema["name"], "Note");
+        assert_eq!(schema["display_label"], "Note");
+        assert_eq!(schema["_untrusted_content"], true);
     }
 
     #[tokio::test]

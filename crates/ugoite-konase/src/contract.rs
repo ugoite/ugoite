@@ -1,6 +1,7 @@
 use crate::CapabilityEffect;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use ugoite_domain::preview_label::safe_preview_label;
 
 const MAX_PREVIEW_CHARS: usize = 1_200;
 
@@ -177,21 +178,6 @@ pub fn mutation_receipt_is_valid(operation: &str, work_id: &str, value: &Value) 
         }
         _ => false,
     }
-}
-
-fn safe_preview_label(value: &str) -> String {
-    let mut result = String::new();
-    for character in value.chars().take(84) {
-        result.push(if character.is_control() {
-            ' '
-        } else {
-            character
-        });
-    }
-    if value.chars().count() > 96 {
-        result.push_str("… [omitted]");
-    }
-    result
 }
 
 fn is_sensitive_field(name: &str) -> bool {
