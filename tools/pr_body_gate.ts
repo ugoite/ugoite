@@ -4,6 +4,7 @@ export const requiredSections = [
   "## Summary",
   "## Related Issue (required)",
   "## Knowledge Compatibility Review",
+  "## Maintenance Budget Review",
   "## Testing",
 ];
 
@@ -18,6 +19,43 @@ export function sectionText(body: string, heading: string): string {
     new RegExp(`##\\s*${heading}\\s*\\n+([\\s\\S]*?)(?:\\n##\\s|$)`, "i"),
   );
   return match?.[1]?.trim() ?? "";
+}
+
+const maintenanceClassifications = [
+  "No new semantic owner, compatibility adapter, specification authority, or test surface.",
+  "A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.",
+] as const;
+
+/** Require a reviewable maintenance classification, not a claim that tests passed. */
+export function validateMaintenanceReview(body: string): string[] {
+  const review = sectionText(body, "Maintenance Budget Review");
+  if (!review) return ["Maintenance Budget Review is missing or empty."];
+  const checked = (review.match(/^\s*-\s*\[[xX]\]\s+.+$/gm) ?? [])
+    .map((line) => line.replace(/^\s*-\s*\[[xX]\]\s+/, "").trim());
+  if (
+    checked.length !== 1 ||
+    !maintenanceClassifications.includes(
+      checked[0] as (typeof maintenanceClassifications)[number],
+    )
+  ) {
+    return [
+      "Maintenance Budget Review must select exactly one valid classification.",
+    ];
+  }
+  if (checked[0] !== maintenanceClassifications[1]) return [];
+  const errors: string[] = [];
+  for (const name of ["Owner", "Release basis", "Proof"]) {
+    const note = review.split("\n")
+      .find((line) => line.trimStart().startsWith(name + ":"))
+      ?.trimStart().slice(name.length + 1).trim() ?? "";
+    if (!note || /^<.*>$/.test(note) || /^(?:todo|tbd)$/i.test(note)) {
+      errors.push(
+        "Maintenance Budget Review requires a concrete " + name +
+          ": note for a changed surface.",
+      );
+    }
+  }
+  return errors;
 }
 
 export function validatePrBody(body: string): string[] {
@@ -47,6 +85,7 @@ export function validatePrBody(body: string): string[] {
   }
 
   errors.push(...validateKnowledgeCompatibilityReview(body));
+  errors.push(...validateMaintenanceReview(body));
 
   const testingText = sectionText(body, "Testing");
   if (!/- \[(?: |x|X)\]/.test(testingText)) {
