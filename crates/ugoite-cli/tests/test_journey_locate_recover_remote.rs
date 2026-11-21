@@ -8,7 +8,7 @@
 //! and auth ceremony stay in setup; validation and recovery semantics must
 //! match the core outcome.
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
 use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
 use serde_json::json;
@@ -25,7 +25,7 @@ use ugoite_iceberg::{
     entry::EntryDraftRequest, iceberg_store::native_workspace, integrity::RealIntegrityProvider,
     service::UgoiteService,
 };
-use ugoite_server::{AppState, app};
+use ugoite_server::{app, AppState};
 
 struct ServerGuard(JoinHandle<()>);
 
