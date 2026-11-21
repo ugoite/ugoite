@@ -13,6 +13,7 @@ pub mod identity;
 pub mod integrity;
 pub mod metadata;
 pub mod pin;
+pub mod preview_label;
 pub mod publication_ref;
 pub mod search;
 pub mod space;

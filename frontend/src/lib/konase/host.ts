@@ -803,19 +803,16 @@ export class KonaseHost {
       !isRecord(projection) || projection._untrusted_content !== true ||
       typeof projection.id !== "string" || !projection.id.trim() ||
       typeof projection.name !== "string" || !projection.name.trim() ||
+      typeof projection.display_label !== "string" ||
+      !projection.display_label.trim() ||
       !isRecord(projection.fields)
     ) {
       throw new Error("Existing Entry Form could not be safely resolved");
     }
 
-    const formName = safePreviewLabel(projection.name);
     return {
       ...preview,
-      form: formName,
-      summary: preview.summary.replace(
-        "Form from existing Entry",
-        `Form ${formName}`,
-      ),
+      form: projection.display_label,
     };
   }
 

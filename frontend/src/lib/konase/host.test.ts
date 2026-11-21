@@ -125,6 +125,7 @@ class ScriptedMcp implements McpHost {
           content: JSON.stringify({
             id: "form-7",
             name: "Note",
+            display_label: "Safe Note",
             fields: {},
             _untrusted_content: true,
           }),
@@ -891,7 +892,7 @@ describe("Konase browser host", () => {
       workId: turn.workId,
       action: "update",
       spaceId: "space-a",
-      form: "Note",
+      form: "Safe Note",
       entryId: "entry-7",
     });
     expect(previews[0].summary).not.toContain("space-a");
@@ -947,6 +948,7 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          display_label: "Note",
           _untrusted_content: true,
         }),
       },
@@ -955,6 +957,16 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          fields: {},
+          _untrusted_content: true,
+        }),
+      },
+      {
+        uri,
+        content: JSON.stringify({
+          id: "form-7",
+          name: "Note",
+          display_label: "Note",
           fields: [],
           _untrusted_content: true,
         }),
@@ -964,6 +976,7 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
+          display_label: "Note",
           fields: {},
           _untrusted_content: true,
         }),
