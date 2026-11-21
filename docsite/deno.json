@@ -1,18 +1,18 @@
 {
   "tasks": {
-    "dev": "deno run -A npm:astro@7.0.2 dev --host 127.0.0.1 --strictPort --port 4321",
-    "build": "deno run -A npm:astro@7.0.2 build",
-    "preview:e2e": "deno run -A npm:astro@7.0.2 preview --host 127.0.0.1 --strictPort --port 4321",
-    "check": "deno run -A npm:astro@7.0.2 check",
-    "test": "deno run -A npm:vitest@4.1.8 run",
-    "coverage": "deno run -A npm:vitest@4.1.8 run --coverage --maxWorkers=1"
+    "dev": "deno run -A astro dev --host 127.0.0.1 --strictPort --port 4321",
+    "build": "deno run -A astro build",
+    "preview:e2e": "deno run -A astro preview --host 127.0.0.1 --strictPort --port 4321",
+    "check": "deno run -A astro check",
+    "test": "deno run -A vitest run",
+    "coverage": "deno run -A vitest run --coverage --maxWorkers=1"
   },
   "imports": {
     "@astrojs/check": "npm:@astrojs/check@0.9.9",
     "@astrojs/internal-helpers/": "npm:/@astrojs/internal-helpers@0.10.0/",
     "@astrojs/markdown-satteri": "npm:@astrojs/markdown-satteri@0.3.2",
     "@astrojs/starlight": "npm:@astrojs/starlight@0.41.0",
-    "@astrojs/starlight/": "npm:/@astrojs/starlight@0.41.0/",
+    "@astrojs/starlight/schema": "npm:@astrojs/starlight@0.41.0/schema",
     "@oslojs/encoding": "npm:@oslojs/encoding@1.1.0",
     "@tailwindcss/node": "npm:@tailwindcss/node@4.3.0",
     "@tailwindcss/node/require-cache": "npm:@tailwindcss/node@4.3.0/require-cache",

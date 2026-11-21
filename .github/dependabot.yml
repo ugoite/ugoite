@@ -93,6 +93,12 @@ updates:
       deno-workspace:
         patterns:
           - "*"
+    ignore:
+      # TypeScript 7 removes compiler APIs used by the frontend changed-file
+      # check. Keep patch and minor updates visible while that consumer adapts.
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
   # Rust compiler updates arrive as normal PRs against the single
   # rust-toolchain.toml authority (monthly cadence).
   - package-ecosystem: "rust-toolchain"
