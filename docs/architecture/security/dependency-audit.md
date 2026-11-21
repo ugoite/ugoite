@@ -157,13 +157,34 @@ passed. The exact targets were added to the existing holds by
 #5029 after that policy change merged. That closure is not evidence that the
 remaining updates passed.
 
+[PR #5033](https://github.com/ugoite/ugoite/pull/5033), generated after
+#5031, reports five directories and 63 updates. Its diff changes all five
+Deno manifests and the shared `deno.lock`, and it is the only open Deno
+version-update PR. The frozen `deps:deno:verify` task passed in Web and artifact
+preparation; Docsite navigation did not run that task. Required CI run
+[44891845573](https://github.com/ugoite/ugoite/actions/runs/44891845573)
+reproduced the three compatibility failures with lower manifest targets:
+
+- Starlight `0.42.5` failed Docsite static rendering because Deno could not
+  resolve `astro:middleware`.
+- Playwright target `1.61.0` resolved to `1.65.1`; Docsite navigation tests
+  loaded as CommonJS and failed on `import.meta` outside a module.
+- SolidStart target `2.0.4` resolved to `2.2.3`; frontend type checking
+  reported that `defineConfig` is missing from the package export.
+
+`ci-impact-plan`, `ci-pr-context-report`, Rust check, S3 authorization, and
+CP1 fixture lanes passed. E2E and CP1 query/export were skipped after required
+lanes failed. Rust test was still running when this evidence was recorded;
+the three failed required lanes are enough to keep this group unaccepted. The
+new target holds are not yet present in the merged policy.
+
 [Issue #4693](https://github.com/ugoite/ugoite/issues/4693) tracks verification
-of the next grouped update after #5031. Workspace coverage, the one-open-PR
-limit, and the frozen boundary have been exercised by generated update PRs.
-The rollout remains incomplete until a new grouped PR after the latest holds
-has no duplicate candidate and passes required CI. Any remaining candidate
-PRs should be closed only after their updates are accounted for in a
-successful grouped PR.
+of grouped update PR #5033. Workspace coverage, the one-open-PR limit, and the
+frozen boundary have been exercised by generated update PRs, but #5033 did not
+pass its required Web, artifact, and Docsite lanes. The rollout remains
+incomplete until a new grouped PR after the latest holds has no duplicate
+candidate and passes required CI. Any remaining candidate PRs should be
+closed only after their updates are accounted for in a successful grouped PR.
 
 ## Intentionally held updates and security exceptions
 
