@@ -23,6 +23,11 @@ import {
 
 interface JourneyRequirementGraph {
   requirements?: Array<{
+    id?: string;
+    criteria?: Array<{
+      id?: string;
+      statement?: string;
+    }>;
     bindings?: Array<{
       targets?: Array<{
         path: string;
@@ -294,7 +299,6 @@ Deno.test("capability seed covers JOURNEY-KNOWLEDGE-001 checkpoints", () => {
   for (const capability of JOURNEY_CAPABILITIES) {
     assertEquals(capability.operations.length > 0, true);
     assertEquals(capability.requirement.includes("#criterion."), true);
-    assertEquals(capability.outcome.length > 0, true);
   }
 });
 
@@ -348,6 +352,12 @@ Deno.test("capability report projects every journey capability", async () => {
   const journeyYaml = await Deno.readTextFile(
     "docs/mitase/requirements/journey.yaml",
   );
+  const journeyGraph = parse(journeyYaml) as JourneyRequirementGraph;
+  const journeyCriteria = new Map(
+    journeyGraph.requirements
+      ?.find((requirement) => requirement.id === "REQ-JOURNEY-001")
+      ?.criteria?.map((criterion) => [criterion.id, criterion.statement]),
+  );
   assertEquals(report.journey, "JOURNEY-KNOWLEDGE-001");
   assertEquals(report.inventorySize, UGOITE_API_OPERATIONS.length);
   assertEquals(
@@ -355,6 +365,11 @@ Deno.test("capability report projects every journey capability", async () => {
     JOURNEY_CAPABILITIES.map((capability) => capability.id),
   );
   for (const row of report.capabilities) {
+    assertEquals(
+      row.outcome,
+      journeyCriteria.get(row.id),
+      `${row.id} outcome must project from its Journey criterion statement`,
+    );
     assertEquals(
       (CAPABILITY_STATES as readonly string[]).includes(row.state),
       true,

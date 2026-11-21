@@ -47,7 +47,6 @@ export interface JourneyCapability {
   operations: string[];
   /** Informational pointer to the normative Mitase criterion, not a copy. */
   requirement: string;
-  outcome: string;
 }
 
 export interface CapabilityRow {
@@ -666,56 +665,42 @@ export const JOURNEY_CAPABILITIES: JourneyCapability[] = [
     checkpoint: "Space",
     operations: ["space.create", "space.list", "space.get"],
     requirement: "REQ-API-001#criterion.space-lifecycle",
-    outcome:
-      "A durable Space exists and can be reopened with identical compatibility semantics regardless of surface.",
   },
   {
     id: "form-establish",
     checkpoint: "Form",
     operations: ["form.upsert", "form.list", "form.get"],
     requirement: "REQ-JOURNEY-001#criterion.form-establish",
-    outcome:
-      "The user can establish a Form defining the schema used by a subsequent Entry, with equivalent schema semantics regardless of surface.",
   },
   {
     id: "entry-create",
     checkpoint: "Entry create",
     operations: ["entry.create", "entry.list", "entry.get"],
     requirement: "REQ-ENTRY-001#criterion.creation",
-    outcome:
-      "An equivalent Knowledge object is created and exactly one revision is appended.",
   },
   {
     id: "entry-edit",
     checkpoint: "Entry edit",
     operations: ["entry.update"],
     requirement: "REQ-ENTRY-003#criterion.update",
-    outcome:
-      "Optimistic concurrency and validation behave identically; a stale parent revision conflicts instead of overwriting.",
   },
   {
     id: "search-keyword",
     checkpoint: "Search",
     operations: ["entry.query"],
     requirement: "REQ-SRCH-001#criterion.keyword-search",
-    outcome:
-      "The updated durable Entry is discoverable under identical query conditions regardless of surface.",
   },
   {
     id: "entry-history",
     checkpoint: "History",
     operations: ["entry.history", "entry.revision"],
     requirement: "REQ-ENTRY-005#criterion.history",
-    outcome:
-      "Create and edit remain observable as append-only history without rewriting prior revisions.",
   },
   {
     id: "entry-restore",
     checkpoint: "Restore",
     operations: ["entry.restore"],
     requirement: "REQ-ENTRY-005#criterion.history",
-    outcome:
-      "Restore appends a new revision or change; history never shortens and no destructive rollback occurs.",
   },
 ];
 
@@ -778,6 +763,10 @@ async function collectFiles(
 interface JourneyRequirementGraph {
   requirements?: Array<{
     id?: string;
+    criteria?: Array<{
+      id?: string;
+      statement?: string;
+    }>;
     bindings?: Array<{
       targets?: Array<{
         path?: string;
@@ -790,6 +779,21 @@ interface JourneyRequirementGraph {
       }>;
     }>;
   }>;
+}
+
+function journeyOutcome(
+  graph: JourneyRequirementGraph,
+  criterionId: string,
+): string {
+  const criterion = graph.requirements
+    ?.find((requirement) => requirement.id === "REQ-JOURNEY-001")
+    ?.criteria?.find((candidate) => candidate.id === criterionId);
+  if (!criterion?.statement?.trim()) {
+    throw new Error(
+      `REQ-JOURNEY-001 must define a statement for criterion ${criterionId}`,
+    );
+  }
+  return criterion.statement;
 }
 
 interface ExactE2eSelector {
@@ -987,7 +991,7 @@ export async function buildReport(): Promise<CapabilityReport> {
       checkpoint: capability.checkpoint,
       operations: capability.operations,
       requirement: capability.requirement,
-      outcome: capability.outcome,
+      outcome: journeyOutcome(journeyGraph, capability.id),
       frontend,
       cliCore,
       cliRemote,
