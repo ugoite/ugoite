@@ -17,7 +17,7 @@ permissions:
 jobs:
   require-close-issue-link:
     runs-on: ubuntu-slim
-    if: ${{ github.event_name == 'merge_group' || (!github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]') }}
+    if: ${{ github.event_name == 'merge_group' || (!github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'renovate[bot]') }}
     steps:
       - name: Check out trusted gate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

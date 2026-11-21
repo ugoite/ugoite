@@ -168,9 +168,12 @@ Deno.test("pr_body_gate extracts sections case-insensitively", () => {
   assertEquals(sectionText("no headings", "Summary"), "");
 });
 
-Deno.test("pr_body_gate exempts only the Dependabot author", () => {
+Deno.test("pr_body_gate exempts only the trusted dependency update bots", () => {
   assertEquals(isExemptAuthor("dependabot[bot]"), true);
+  assertEquals(isExemptAuthor("renovate[bot]"), true);
   assertEquals(isExemptAuthor("tohboeh5"), false);
+  assertEquals(isExemptAuthor("renovatebot[bot]"), false);
+  assertEquals(isExemptAuthor("renovate[bot]-fork"), false);
   assertEquals(isExemptAuthor(undefined), false);
 });
 
@@ -214,4 +217,26 @@ Deno.test("pr_body_gate yields an empty body without a merge-group PR number", a
   });
   assertEquals(pointer, { body: "" });
   assertEquals(validatePrBody(pointer.body).length > 0, true);
+});
+
+Deno.test("pr_body_gate resolves the Renovate author from a merge group", async () => {
+  const pointer = await resolvePullRequestPointer({
+    GITHUB_EVENT_NAME: "merge_group",
+    GITHUB_REF: "refs/heads/gh-readonly-queue/main/pr-2462-abc123",
+    GITHUB_REPOSITORY: "ugoite/ugoite",
+    GITHUB_TOKEN: "test-token",
+  }, async () =>
+    new Response(
+      JSON.stringify({
+        body: "generated dependency update body",
+        user: { login: "renovate[bot]" },
+      }),
+      { status: 200 },
+    ));
+
+  assertEquals(pointer, {
+    body: "generated dependency update body",
+    author: "renovate[bot]",
+  });
+  assertEquals(isExemptAuthor(pointer.author), true);
 });

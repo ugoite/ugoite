@@ -8,10 +8,15 @@ export const requiredSections = [
   "## Testing",
 ];
 
-export const dependabotAuthor = "dependabot[bot]";
+export const exemptUpdateBotAuthors = [
+  "dependabot[bot]",
+  "renovate[bot]",
+] as const;
 
 export function isExemptAuthor(author: string | undefined): boolean {
-  return author === dependabotAuthor;
+  return exemptUpdateBotAuthors.some((trustedAuthor) =>
+    trustedAuthor === author
+  );
 }
 
 export function sectionText(body: string, heading: string): string {
@@ -109,8 +114,9 @@ export async function fetchPullRequestPointer(
   repo: string,
   prNumber: number,
   token: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<PullRequestPointer> {
-  const response = await fetch(
+  const response = await fetchImpl(
     `https://api.github.com/repos/${repo}/pulls/${prNumber}`,
     {
       headers: {
@@ -131,13 +137,16 @@ export async function fetchPullRequestPointer(
   return { body: data.body ?? "", author: data.user?.login };
 }
 
-export async function resolvePullRequestPointer(env: {
-  GITHUB_EVENT_NAME?: string;
-  GITHUB_EVENT_PATH?: string;
-  GITHUB_REF?: string;
-  GITHUB_REPOSITORY?: string;
-  GITHUB_TOKEN?: string;
-}): Promise<PullRequestPointer> {
+export async function resolvePullRequestPointer(
+  env: {
+    GITHUB_EVENT_NAME?: string;
+    GITHUB_EVENT_PATH?: string;
+    GITHUB_REF?: string;
+    GITHUB_REPOSITORY?: string;
+    GITHUB_TOKEN?: string;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<PullRequestPointer> {
   if (env.GITHUB_EVENT_NAME === "merge_group") {
     const prNumber = extractPrNumberFromMergeGroupRef(env.GITHUB_REF ?? "");
     if (prNumber !== null && env.GITHUB_REPOSITORY && env.GITHUB_TOKEN) {
@@ -145,6 +154,7 @@ export async function resolvePullRequestPointer(env: {
         env.GITHUB_REPOSITORY,
         prNumber,
         env.GITHUB_TOKEN,
+        fetchImpl,
       );
     }
     return { body: "" };
@@ -165,7 +175,7 @@ if (import.meta.main) {
   const pointer = await resolvePullRequestPointer(Deno.env.toObject());
   if (isExemptAuthor(pointer.author)) {
     console.log(
-      "Dependabot pull requests use generated bodies; skipping the human PR template gate.",
+      "Dependency update bot pull requests use generated bodies; skipping the human PR template gate.",
     );
     Deno.exit(0);
   }
