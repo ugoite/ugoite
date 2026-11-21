@@ -97,16 +97,23 @@ updates:
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
-      # Starlight 0.43.1 imports astro:middleware during static rendering; the
-      # current Deno build path cannot resolve that scheme.
+      # Separate grouped runs showed Starlight 0.43.0 and 0.43.1 failing
+      # static rendering because Deno cannot resolve astro:middleware.
       - dependency-name: "@astrojs/starlight"
         versions:
+          - "0.43.0"
           - "0.43.1"
-      # Playwright 1.65.1 loads the Docsite navigation TypeScript tests as
-      # CommonJS, where their import.meta usage fails.
+      # The 1.65.0 manifest update resolves 1.65.1 in the lockfile; the
+      # navigation tests then load as CommonJS, where import.meta fails. Hold
+      # both the update target and the resolved version.
       - dependency-name: "@playwright/test"
         versions:
+          - "1.65.0"
           - "1.65.1"
+      # SolidStart 2.2.3 removes defineConfig, which frontend/app.config.ts uses.
+      - dependency-name: "@solidjs/start"
+        versions:
+          - "2.2.3"
   # Rust compiler updates arrive as normal PRs against the single
   # rust-toolchain.toml authority (monthly cadence).
   - package-ecosystem: "rust-toolchain"
