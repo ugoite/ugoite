@@ -599,6 +599,7 @@ describe("Konase browser host", () => {
   });
 
   it("shows a safe per-call preview and dispatches the original arguments only after approval", async () => {
+    const spaceId = "s".repeat(128);
     const argumentsValue = {
       form: "Note",
       fields: { title: "private note body", api_token: "secret-token-value" },
@@ -624,7 +625,7 @@ describe("Konase browser host", () => {
     const host = new KonaseHost({
       model,
       mcp,
-      spaceId: "space-a",
+      spaceId,
       onConfirmationRequired: resolvePreview,
     });
 
@@ -633,7 +634,7 @@ describe("Konase browser host", () => {
     expect(mcp.calls).toHaveLength(0);
     expect(preview).toMatchObject({
       workId: expect.stringMatching(/^work-/),
-      spaceId: "space-a",
+      spaceId: `${"s".repeat(84)}… [omitted]`,
       operation: "ugoite.save",
       action: "create",
       form: "Note",
