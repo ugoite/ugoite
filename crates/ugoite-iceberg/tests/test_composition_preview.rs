@@ -33,6 +33,10 @@ static COMPOSITION_FINAL_AUTHORIZATION_TEST_LOCK: tokio::sync::Mutex<()> =
     tokio::sync::Mutex::const_new(());
 
 async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocument, FormId)> {
+    use ugoite_domain::change::ChangeCommand;
+    use ugoite_iceberg::entry::EntryDraftRequest;
+    use ugoite_iceberg::integrity::RealIntegrityProvider;
+
     let op = common::setup_operator()?;
     let service = UgoiteService::from_operator(
         op,
@@ -56,20 +60,38 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
             }),
         )
         .await?;
-    let field_id = FieldId::new(100)?;
-    for index in 0..3 {
-        service
-            .create_structured_entry_with_receipt(
-                &space_id,
-                &format!("composition-preview-{index:02}"),
-                form_name.to_string(),
+    let integrity = RealIntegrityProvider::from_space(service.operator(), &space_id).await?;
+    let command = ChangeCommand {
+        change_id: "composition-preview-fixture-seed".to_owned(),
+        run_id: None,
+        actor_principal_id: "owner".to_owned(),
+        message: Some("seed composition preview fixture".to_owned()),
+        reverts_change_id: None,
+        created_at_micros: 1,
+    };
+    let requests = (0..3)
+        .map(|index| EntryDraftRequest {
+            entry_id: format!("composition-preview-{index:02}"),
+            draft: ugoite_core::entry::structured_fields_to_draft(
+                Some(form_name),
                 Vec::new(),
                 BTreeMap::from([("title".to_string(), Value::String(format!("row-{index}")))]),
                 BTreeMap::new(),
-                "owner",
-            )
-            .await?;
-    }
+            ),
+        })
+        .collect();
+    ugoite_iceberg::entry::create_draft_entries_with_scopes_and_change(
+        service.operator(),
+        &format!("spaces/{space_id}"),
+        requests,
+        "owner",
+        &integrity,
+        None,
+        Some(command),
+    )
+    .await?;
+
+    let field_id = FieldId::new(100)?;
 
     let document = CompositionDocument {
         format: CompositionFormat::UgoiteComposition,
