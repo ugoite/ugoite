@@ -26,5 +26,14 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-OPS-060#criterion.maintenance-budget-review
-                covers: [FEAT-OPS-001#binding.maintenance-review/target.maintenance-gate, FEAT-OPS-001#binding.maintenance-review/target.maintenance-template]
+                covers: [FEAT-OPS-001#binding.maintenance-review/target.maintenance-gate]
                 runner: { runner: deno-test-file, arguments: { file: tools/pr_body_gate_test.ts, test: "REQ-OPS-060: maintenance classification is checked by the existing PR gate" } }
+          - id: maintenance-template-test
+            adapter: typescript
+            path: tools/pr_body_gate_test.ts
+            selector: { kind: test, name: "REQ-OPS-060: maintenance classification is selected from the PR template" }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-060#criterion.maintenance-budget-review
+                covers: [FEAT-OPS-001#binding.maintenance-review/target.maintenance-template]
+                runner: { runner: deno-test-file, arguments: { file: tools/pr_body_gate_test.ts, test: "REQ-OPS-060: maintenance classification is selected from the PR template" } }

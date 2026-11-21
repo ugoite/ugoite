@@ -245,6 +245,7 @@ inventory:
         - tools/spec_integrity_test.ts
         - tools/coverage_gates_test.ts
         - tools/knowledge_compatibility_test.ts
+        - tools/pr_body_gate.ts
         - tools/pr_body_gate_test.ts
         - tools/release_contract_test.ts
         - tools/release-notes.ts
@@ -348,6 +349,7 @@ inventory:
         - docs/get-started/quickstart.mdx
         - docs/architecture/release/v0.3-preflight.md
         - docs/architecture/testing/ci-cd.md
+        - docs/architecture/contracts/maintenance-budget.md
     declared:
       roots:
         - AGENTS.md

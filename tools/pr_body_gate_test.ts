@@ -102,6 +102,22 @@ Deno.test("REQ-OPS-060: maintenance classification is checked by the existing PR
   }
 });
 
+Deno.test("REQ-OPS-060: maintenance classification is selected from the PR template", async () => {
+  const template = await Deno.readTextFile(
+    new URL("../.github/pull_request_template.md", import.meta.url),
+  );
+  const templateReview = sectionText(template, "Maintenance Budget Review");
+  const completedReview = templateReview.replace(
+    "- [ ] No new semantic owner, compatibility adapter, specification authority, or",
+    "- [x] No new semantic owner, compatibility adapter, specification authority, or",
+  );
+  const body = validBody.replace(
+    "- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+    completedReview,
+  );
+  assertEquals(validatePrBody(body), []);
+});
+
 Deno.test("pr_body_gate accepts close and closes issue links", () => {
   assertEquals(
     validatePrBody(validBody.replace("close: #2462", "closes #2462")),
