@@ -49,6 +49,12 @@ philosophies:
       - id: coding-guideline
         statement: Tie behavior changes to specs and tests in the same change set. Prefer reusable helpers, schemas, and automation over manual procedural steps, and avoid introducing logic that cannot be continuously validated in CI.
         applies_to: [implementation, verification]
+      - id: maintenance-sufficiency
+        statement: Preserve one owner for each semantic rule and retain no additional runtime path, compatibility adapter, editor projection, or specification solely for a hypothetical use. Remove obsolete Work and unshipped scaffolding without weakening released Knowledge meaning.
+        applies_to: [architecture, specification, implementation, verification]
+      - id: evidence-proportionality
+        statement: Prove each invariant at the lowest meaningful boundary, adding real integration evidence only for behavior that crosses it. Security, concurrency, history, and recovery guarantees must survive reductions in test count and fixture size.
+        applies_to: [specification, implementation, verification]
   - id: PHIL-004
     title: Give AI Freedom Inside Trusted Constraints
     summary: AI should accelerate user workflows only within explicit trust boundaries that keep risk observable and governable.

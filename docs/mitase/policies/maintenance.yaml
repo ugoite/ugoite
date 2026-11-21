@@ -1,0 +1,87 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-018
+    title: Minimum Sufficient Maintenance and Semantic Authority
+    summary: One durable rule, evidence-based compatibility, proportionate tests, and a single current specification.
+    description: Every new code path, compatibility adapter, test fixture, and independent specification creates maintenance cost. Only the minimum set that preserves current behavior, released Knowledge meaning, and security boundaries belongs in the active system. A review declaration makes the tradeoff visible; tests and contract evidence, not that declaration, prove correctness.
+    rules:
+      - id: single-semantic-owner
+        level: must
+        statement: Each durable business decision has one canonical Rust semantic owner. Rust Domain/Core, authorized Space service, and Node Identity have distinct authority; Local and Remote adapters may have different admission checks but must reuse the same behavior after scope resolution. Browser code may own disposable editor state and provisional hints, never a divergent durable validator. Do not introduce a general abstraction unless it removes a concrete duplicated rule.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-003#principle.maintenance-sufficiency, PHIL-001#principle.product-design-principle]
+      - id: released-compatibility-only
+        level: must
+        statement: Retain a compatibility reader, alias, fixture, or migration only for a demonstrated published writer, separately versioned public contract, or approved versioned transition; cite the released artifact and protected semantic assertion. The v0.1 Knowledge floor remains mandatory. Unshipped editor/protocol experiments and rebuildable non-authoritative derived state receive no speculative compatibility guarantee; safe reconstruction, publication fencing, and in-flight readers remain protected.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-003#principle.maintenance-sufficiency]
+      - id: minimum-behavioral-proof
+        level: should
+        statement: Verify a rule at its lowest deterministic boundary and retain focused real Storage, transport, browser, or distributed-backend cases for unique failure modes. Tests must preserve authorization, CAS races, append-only history, boundedness, exact versions, and cancellation when relevant. Avoid repeated serial fixture publications, redundant full-journey matrices, and large fixed-count fixtures that prove no distinct property; measure actual CI critical paths before optimizing.
+        governed_by: [PHIL-003#principle.evidence-proportionality, PHIL-003#principle.product-design-principle, PHIL-004#principle.coding-guideline]
+      - id: single-current-specification
+        level: must
+        statement: Active product requirements, feature bindings, verification claims, and implementation ownership have one current Mitase graph. Generated inventories and capability reports are projections, not competing authorities. Retired requirements, obsolete source selectors, and old implementation-name tests must be removed or explicitly scoped as historical evidence. Evidence bindings must describe what they establish and must not claim runtime pass status from mere file existence.
+        governed_by: [PHIL-003#principle.maintenance-sufficiency, PHIL-003#principle.product-design-principle, PHIL-004#principle.coding-guideline]
+    bindings:
+      - id: maintenance-rule-evidence
+        role: evidence
+        facet: semantic-ownership
+        responsibility: Record the current architecture, compatibility contract, and specification source that establish the responsibilities described by the maintenance rules; these artifacts evidence governance decisions without mechanically enforcing them.
+        targets:
+          - id: rust-semantic-owners
+            adapter: rust
+            path: crates/ugoite-domain/src/lib.rs
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.single-semantic-owner }]
+          - id: application-semantic-owner
+            adapter: rust
+            path: crates/ugoite-core/src/lib.rs
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.single-semantic-owner }]
+          - id: space-semantic-owner
+            adapter: rust
+            path: crates/ugoite-iceberg/src/lib.rs
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.single-semantic-owner }]
+          - id: identity-semantic-owner
+            adapter: rust
+            path: crates/ugoite-identity/src/lib.rs
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.single-semantic-owner }]
+          - id: released-knowledge-compatibility-floor
+            adapter: declared
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.released-compatibility-only }]
+          - id: current-specification-source
+            adapter: declared
+            path: docs/spec/index.md
+            selector: { kind: file }
+            claims: [{ kind: evidences, anchor: POL-018#rule.single-current-specification }]
+      - id: maintenance-decision-guide
+        role: documentation
+        facet: design-reference
+        responsibility: Explain the review decision procedure without creating a second behavior specification or test authority.
+        targets:
+          - id: semantic-ownership
+            adapter: markdown
+            path: docs/architecture/contracts/maintenance-budget.md
+            selector: { kind: heading, value: Semantic ownership }
+            claims: [{ kind: documents, anchor: POL-018#rule.single-semantic-owner }]
+          - id: compatibility-evidence
+            adapter: markdown
+            path: docs/architecture/contracts/maintenance-budget.md
+            selector: { kind: heading, value: Compatibility evidence }
+            claims: [{ kind: documents, anchor: POL-018#rule.released-compatibility-only }]
+          - id: verification-cost
+            adapter: markdown
+            path: docs/architecture/contracts/maintenance-budget.md
+            selector: { kind: heading, value: Verification cost }
+            claims: [{ kind: documents, anchor: POL-018#rule.minimum-behavioral-proof }]
+          - id: specification-lifecycle
+            adapter: markdown
+            path: docs/architecture/contracts/maintenance-budget.md
+            selector: { kind: heading, value: Specification lifecycle }
+            claims: [{ kind: documents, anchor: POL-018#rule.single-current-specification }]

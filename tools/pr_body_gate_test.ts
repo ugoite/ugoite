@@ -20,6 +20,10 @@ const validBody = [
   "",
   "- [x] No effect on the v0.1 Knowledge semantic contract.",
   "",
+  "## Maintenance Budget Review",
+  "",
+  "- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+  "",
   "## Testing",
   "",
   "- [x] `mise run mitase:check`",
@@ -54,6 +58,64 @@ Deno.test("pr_body_gate rejects the Summary placeholder", () => {
     )).some((error) => error.includes("Summary section must be filled in")),
     true,
   );
+});
+
+Deno.test("REQ-OPS-060: maintenance classification is checked by the existing PR gate", () => {
+  assertEquals(validatePrBody(validBody), []);
+  const changed = validBody.replace(
+    "- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+    [
+      "- [x] A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.",
+      "Owner: ugoite-core signed cursor codec",
+      "Release basis: not applicable; internal reuse",
+      "Proof: signed cursor tests plus SQL and Entry continuation tests",
+    ].join("\n"),
+  );
+  assertEquals(validatePrBody(changed), []);
+  const invalid = [
+    validBody.replace("No new semantic owner", "Some unknown semantic owner"),
+    validBody.replace(
+      "- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+      "- [ ] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+    ),
+    changed.replace(
+      "Proof: signed cursor tests plus SQL and Entry continuation tests",
+      "Proof: <smallest behavioral check and any cross-boundary check>",
+    ),
+    changed.replace(
+      "Release basis: not applicable; internal reuse",
+      "Release basis:",
+    ),
+    changed.replace(
+      "- [x] A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.",
+      "- [x] A maintenance surface is added or retained; justify its owner, release basis, and minimum proof.\n- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+    ),
+  ];
+  for (const body of invalid) {
+    assertEquals(
+      validatePrBody(body).some((error) =>
+        error.includes("Maintenance Budget Review")
+      ),
+      true,
+      body,
+    );
+  }
+});
+
+Deno.test("REQ-OPS-060: maintenance classification is selected from the PR template", async () => {
+  const template = await Deno.readTextFile(
+    new URL("../.github/pull_request_template.md", import.meta.url),
+  );
+  const templateReview = sectionText(template, "Maintenance Budget Review");
+  const completedReview = templateReview.replace(
+    "- [ ] No new semantic owner, compatibility adapter, specification authority, or",
+    "- [x] No new semantic owner, compatibility adapter, specification authority, or",
+  );
+  const body = validBody.replace(
+    "- [x] No new semantic owner, compatibility adapter, specification authority, or test surface.",
+    completedReview,
+  );
+  assertEquals(validatePrBody(body), []);
 });
 
 Deno.test("pr_body_gate accepts close and closes issue links", () => {

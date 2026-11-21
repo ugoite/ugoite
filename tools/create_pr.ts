@@ -1,4 +1,4 @@
-import { validateKnowledgeCompatibilityReview } from "./knowledge_compatibility.ts";
+import { validatePrBody } from "./pr_body_gate.ts";
 
 const args = [...Deno.args];
 
@@ -14,25 +14,8 @@ const title = take("--title");
 const bodyFile = take("--body-file");
 const body = await Deno.readTextFile(bodyFile);
 
-for (
-  const section of [
-    "## Summary",
-    "## Related Issue (required)",
-    "## Knowledge Compatibility Review",
-    "## Testing",
-  ]
-) {
-  if (!body.toLowerCase().includes(section.toLowerCase())) {
-    throw new Error(`PR body is missing required section: ${section}`);
-  }
-}
-if (!/(?:close:\s*#\d+|closes\s+#\d+)/i.test(body)) {
-  throw new Error("PR body must close a related issue");
-}
-const compatibilityErrors = validateKnowledgeCompatibilityReview(body);
-if (compatibilityErrors.length > 0) {
-  throw new Error(compatibilityErrors.join("\n"));
-}
+const errors = validatePrBody(body);
+if (errors.length > 0) throw new Error(errors.join("\n"));
 
 const result = await new Deno.Command("gh", {
   args: [

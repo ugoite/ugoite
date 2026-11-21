@@ -1,0 +1,39 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-060
+    title: Review Maintenance Surface Growth
+    description: The existing trusted pull-request body validator requires a small, explicit maintenance-budget classification without adding a separate privileged workflow or treating the classification as proof of correctness.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: maintenance-budget-review
+        kind: quality
+        statement: A non-exempt pull request declares whether it adds or retains a semantic owner, compatibility adapter, specification authority, or test surface; any such change names its owner, released compatibility basis or not-applicable rationale, and minimum focused behavioral proof. Exactly one classification is accepted, and untouched placeholders are rejected. This gate enforces a reviewed declaration, not semantic validity or successful test execution.
+        governed_by: [POL-008#rule.governance, POL-013#rule.governance, POL-018#rule.single-semantic-owner, POL-018#rule.released-compatibility-only, POL-018#rule.minimum-behavioral-proof, POL-018#rule.single-current-specification]
+    bindings:
+      - id: maintenance-review-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the exact existing trusted PR-body validator accepts one declaration and rejects absent, contradictory, or placeholder submissions; no claim of runtime semantic equivalence is made.
+        targets:
+          - id: maintenance-review-test
+            adapter: typescript
+            path: tools/pr_body_gate_test.ts
+            selector: { kind: test, name: "REQ-OPS-060: maintenance classification is checked by the existing PR gate" }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-060#criterion.maintenance-budget-review
+                covers: [FEAT-OPS-001#binding.maintenance-review/target.maintenance-gate]
+                runner: { runner: deno-test-file, arguments: { file: tools/pr_body_gate_test.ts, test: "REQ-OPS-060: maintenance classification is checked by the existing PR gate" } }
+          - id: maintenance-template-test
+            adapter: typescript
+            path: tools/pr_body_gate_test.ts
+            selector: { kind: test, name: "REQ-OPS-060: maintenance classification is selected from the PR template" }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-060#criterion.maintenance-budget-review
+                covers: [FEAT-OPS-001#binding.maintenance-review/target.maintenance-template]
+                runner: { runner: deno-test-file, arguments: { file: tools/pr_body_gate_test.ts, test: "REQ-OPS-060: maintenance classification is selected from the PR template" } }
