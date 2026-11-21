@@ -702,6 +702,7 @@ run = [
 
 [tasks."ci:artifacts:prepare"]
 description = "Build, package, verify, and version-check artifacts before E2E"
+depends = ["deps:deno:verify"]
 run = [
   { task = "build" },
   { task = "package" },
