@@ -97,8 +97,8 @@ updates:
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
-      # Starlight 0.43.0 and 0.43.1 import astro:middleware during static
-      # rendering; the current Deno build path cannot resolve that scheme.
+      # Separate grouped runs showed Starlight 0.43.0 and 0.43.1 failing
+      # static rendering because Deno cannot resolve astro:middleware.
       - dependency-name: "@astrojs/starlight"
         versions:
           - "0.43.0"
