@@ -124,8 +124,7 @@ class ScriptedMcp implements McpHost {
           uri: String(request.arguments.uri),
           content: JSON.stringify({
             id: "form-7",
-            name: "Note",
-            display_label: "Safe Note",
+            name: "Safe Note",
             fields: {},
             _untrusted_content: true,
           }),
@@ -859,7 +858,9 @@ describe("Konase browser host", () => {
     expect(mcp.calls).toHaveLength(0);
   });
 
-  it("resolves an omitted Form name before approving a complete field-map replacement", async () => {
+  it("formats an existing Form name in Rust before approving a field-map replacement", async () => {
+    const formName = "N".repeat(97);
+    const schemaUri = "ugoite://entry/entry-7/schema";
     const argumentsValue = {
       id: "entry-7",
       fields: { title: "Replacement title" },
@@ -875,7 +876,18 @@ describe("Konase browser host", () => {
       },
       { request_id: "", text: "Entry updated", tool_calls: [] },
     ]);
-    const mcp = new ScriptedMcp();
+    const mcp = new ScriptedMcp(false, false, "read", {
+      success: true,
+      resource_contents: [{
+        uri: schemaUri,
+        content: JSON.stringify({
+          id: "form-7",
+          name: formName,
+          fields: {},
+          _untrusted_content: true,
+        }),
+      }],
+    });
     const previews: WritePreview[] = [];
     const host = new KonaseHost({
       model,
@@ -893,7 +905,7 @@ describe("Konase browser host", () => {
       workId: turn.workId,
       action: "update",
       spaceId: "space-a",
-      form: "Safe Note",
+      form: `${"N".repeat(84)}… [omitted]`,
       entryId: "entry-7",
     });
     expect(previews[0].summary).not.toContain("space-a");
@@ -949,7 +961,6 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
-          display_label: "Note",
           _untrusted_content: true,
         }),
       },
@@ -967,7 +978,6 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
-          display_label: "Note",
           fields: [],
           _untrusted_content: true,
         }),
@@ -977,7 +987,6 @@ describe("Konase browser host", () => {
         content: JSON.stringify({
           id: "form-7",
           name: "Note",
-          display_label: "Note",
           fields: {},
           _untrusted_content: true,
         }),

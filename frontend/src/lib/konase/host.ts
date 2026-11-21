@@ -803,17 +803,17 @@ export class KonaseHost {
       !isRecord(projection) || projection._untrusted_content !== true ||
       typeof projection.id !== "string" || !projection.id.trim() ||
       typeof projection.name !== "string" || !projection.name.trim() ||
-      typeof projection.display_label !== "string" ||
-      !projection.display_label.trim() ||
       !isRecord(projection.fields)
     ) {
       throw new Error("Existing Entry Form could not be safely resolved");
     }
 
-    return {
-      ...preview,
-      form: projection.display_label,
-    };
+    return await createWritePreview(
+      request,
+      preview.workId,
+      preview.spaceId,
+      projection.name,
+    );
   }
 
   private async requestApproval(
@@ -1207,13 +1207,16 @@ async function createWritePreview(
   request: McpRequest,
   workId: string,
   spaceId: string,
+  form?: string,
 ): Promise<WritePreview> {
   return await invokeKonase<WritePreview>("konase.preview_write", {
     request_id: request.request_id,
     work_id: workId,
     space_id: spaceId,
     operation: request.operation,
-    arguments: request.arguments,
+    arguments: form === undefined
+      ? request.arguments
+      : { ...request.arguments, form },
   });
 }
 
