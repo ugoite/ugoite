@@ -94,7 +94,7 @@ that its remaining updates passed.
 [PR #5010](https://github.com/ugoite/ugoite/pull/5010), generated after
 #5007, reported one directory and 63 updates. Its diff included all five Deno
 manifests and the shared `deno.lock`. The frozen `deps:deno:verify` task passed
-in Web, Docsite navigation, and artifact preparation. Required CI run
+in Web and artifact preparation. Required CI run
 [44880629751](https://github.com/ugoite/ugoite/actions/runs/44880629751)
 rejected three candidates:
 
