@@ -97,6 +97,16 @@ updates:
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
+      # Starlight 0.43.1 imports astro:middleware during static rendering; the
+      # current Deno build path cannot resolve that scheme.
+      - dependency-name: "@astrojs/starlight"
+        versions:
+          - "0.43.1"
+      # Playwright 1.65.1 loads the Docsite navigation TypeScript tests as
+      # CommonJS, where their import.meta usage fails.
+      - dependency-name: "@playwright/test"
+        versions:
+          - "1.65.1"
   # Rust compiler updates arrive as normal PRs against the single
   # rust-toolchain.toml authority (monthly cadence).
   - package-ecosystem: "rust-toolchain"
