@@ -599,13 +599,14 @@ export type SqlDocument = {
   nodes: SqlDocumentNode[];
 };
 
-export type SqlDocumentEdit = {
+type SqlDocumentEdit = {
   range: SqlDocumentSourceRange;
   expected_text: string;
   replacement: string;
 };
 
-export type SqlDocumentEditTransaction = {
+/** Guarded inverse edits returned by the semantic edit protocol, not request input. */
+type SqlDocumentEditTransaction = {
   expected_source: string;
   edits: SqlDocumentEdit[];
 };
