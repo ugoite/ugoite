@@ -459,7 +459,7 @@ run = [
   "deno test -A tools/*_test.ts",
   "bash scripts/activate-ugoite-wasm.sh debug",
   "bash -lc 'cd frontend && deno run -A npm:vitest run --coverage --maxWorkers=1 --no-file-parallelism'",
-  "bash -lc 'cd docsite && deno run -A npm:vitest@4.1.8 run --maxWorkers=1 --no-file-parallelism'",
+  "bash -lc 'cd docsite && deno run -A vitest run --maxWorkers=1 --no-file-parallelism'",
 ]
 
 [tasks."test:e2e"]
