@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   affectedCompositionQueries,
   changedCompositionQueryIds,
+  compositionDependencyClosure,
   dependentCompositionQueryIds,
   mergeCompositionEvaluation,
   unavailableCompositionQueryIds,
@@ -70,6 +71,19 @@ const graph = (
 });
 
 describe("Composition graph evaluation reuse", () => {
+  it("walks shared dependency closure once in query order, including cycles", () => {
+    expect(compositionDependencyClosure(
+      ["second", "first", "unrelated"],
+      new Map([
+        ["source", ["first"]],
+        ["first", ["second"]],
+        ["second", ["first"]],
+        ["missing", ["not-a-query"]],
+      ]),
+      new Set(["source", "missing"]),
+    )).toEqual(["second", "first"]);
+  });
+
   it("invalidates direct and downstream query previews for semantic draft edits", () => {
     const constant = {
       id: "threshold",
