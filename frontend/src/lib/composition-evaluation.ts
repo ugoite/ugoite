@@ -11,6 +11,31 @@ export interface CompositionEvaluationIdentity {
 }
 
 /**
+ * Walk query dependencies from changed variables. Adapters provide the graph
+ * edges in their native shape; traversal and stable output ordering stay shared.
+ */
+export const compositionDependencyClosure = (
+  queryIds: readonly string[],
+  consumersByVariable: ReadonlyMap<string, readonly string[]>,
+  changedVariableIds: ReadonlySet<string>,
+): string[] => {
+  const knownQueries = new Set(queryIds);
+  const affected = new Set<string>();
+  const pending = [...changedVariableIds];
+
+  while (pending.length > 0) {
+    const variableId = pending.pop()!;
+    for (const queryId of consumersByVariable.get(variableId) ?? []) {
+      if (!knownQueries.has(queryId) || affected.has(queryId)) continue;
+      affected.add(queryId);
+      pending.push(queryId);
+    }
+  }
+
+  return queryIds.filter((queryId) => affected.has(queryId));
+};
+
+/**
  * Browser-owned scheduling hint for graph drafts, including temporarily invalid
  * drafts. Core remains authoritative for validating dependencies and execution.
  */
@@ -19,34 +44,18 @@ export const dependentCompositionQueryIds = (
   variableIds: ReadonlySet<string>,
 ): string[] => {
   const queries = draft.variables.filter((node) => node.kind === "query");
-  const affected = new Set<string>();
-  for (const variableId of variableIds) {
-    for (const query of queries) {
-      if (
-        query.query.arguments.some((argument) =>
-          argument.variable === variableId
-        )
-      ) affected.add(query.id);
+  const consumersByVariable = new Map<string, string[]>();
+  for (const query of queries) {
+    for (const argument of query.query.arguments) {
+      const consumers = consumersByVariable.get(argument.variable) ?? [];
+      consumers.push(query.id);
+      consumersByVariable.set(argument.variable, consumers);
     }
   }
-
-  let found = true;
-  while (found) {
-    found = false;
-    for (const query of queries) {
-      if (affected.has(query.id)) continue;
-      if (
-        query.query.arguments.some((argument) =>
-          affected.has(argument.variable)
-        )
-      ) {
-        affected.add(query.id);
-        found = true;
-      }
-    }
-  }
-  return queries.filter((query) => affected.has(query.id)).map((query) =>
-    query.id
+  return compositionDependencyClosure(
+    queries.map((query) => query.id),
+    consumersByVariable,
+    variableIds,
   );
 };
 
@@ -131,36 +140,29 @@ export const affectedCompositionQueries = (
   dependencies: CompositionDependencyIndex,
   changedVariableIds: ReadonlySet<string>,
 ): string[] => {
-  const queryIds = new Set(queries.map((query) => query.variable_id));
-  const affected = new Set<string>();
+  const queryIds = queries.map((query) => query.variable_id);
+  const consumersByVariable = new Map<string, string[]>();
   const variableConsumers = dependencies.variable_consumers ?? {};
-  for (const variableId of changedVariableIds) {
-    for (
-      const queryId of variableConsumers[variableId]?.query_variable_ids ?? []
-    ) {
-      if (queryIds.has(queryId)) affected.add(queryId);
+  for (const [variableId, consumers] of Object.entries(variableConsumers)) {
+    for (const queryId of consumers.query_variable_ids ?? []) {
+      const consumersForVariable = consumersByVariable.get(variableId) ?? [];
+      consumersForVariable.push(queryId);
+      consumersByVariable.set(variableId, consumersForVariable);
     }
   }
-
   // Input/constant edges are represented by variable_consumers. Query-to-
   // query edges are represented by planner-resolved deferred arguments.
-  let found = true;
-  while (found) {
-    found = false;
-    for (const query of queries) {
-      if (affected.has(query.variable_id)) continue;
-      if (
-        query.deferred_arguments.some((argument) =>
-          affected.has(argument.variable_id)
-        )
-      ) {
-        affected.add(query.variable_id);
-        found = true;
-      }
+  for (const query of queries) {
+    for (const argument of query.deferred_arguments) {
+      const consumers = consumersByVariable.get(argument.variable_id) ?? [];
+      consumers.push(query.variable_id);
+      consumersByVariable.set(argument.variable_id, consumers);
     }
   }
-  return queries.flatMap((query) =>
-    affected.has(query.variable_id) ? [query.variable_id] : []
+  return compositionDependencyClosure(
+    queryIds,
+    consumersByVariable,
+    changedVariableIds,
   );
 };
 
