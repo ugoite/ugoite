@@ -34,14 +34,14 @@ policies:
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-001#rule.governance }]
   - id: POL-002
-    title: Rust Core as Canonical Logic Layer
-    summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
-    description: Adapters multiply over time across backend, CLI, and future integrations, while product meaning must stay singular. Concentrating durable logic in ugoite-core keeps every surface executing the same rules instead of drifting into incompatible implementations.
+    title: Canonical Rust Semantics and Adapter Boundaries
+    summary: Keep portable product meaning in Rust Domain/Core and authority enforcement in Rust Space/Identity implementations.
+    description: Domain owns pure product semantics, Core owns portable contracts, Iceberg owns authoritative Space operations, and Identity owns Node identity and recovery. CLI, Server, WASM, and Frontend may translate or schedule calls, but must not independently redefine the same durable rule. Local trusted and Remote authorized admission remain distinct trust boundaries.
     rules:
       - id: governance
         level: must
-        statement: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
-        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+        statement: Portable business meaning belongs to ugoite-domain and ugoite-core; authoritative Space execution belongs to ugoite-iceberg and Node identity to ugoite-identity. Browser, CLI, REST, MCP, and WASM adapters must call those rules instead of duplicating semantic decisions. Sharing execution must not erase the distinction between trusted Local admission and current authorized Remote scopes or their leases.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle, PHIL-003#principle.maintenance-sufficiency]
     bindings:
       - id: core-logic-boundary
         role: evidence
@@ -252,10 +252,11 @@ policies:
     title: Compatibility Through Explicit Evolution
     summary: Manage change using explicit deprecation and migration guidance across layers.
     description: >-
-      Change is inevitable; silent breakage is not. Explicit evolution through
-      visible deprecation and migration guidance keeps the semantic boundary
-      intact while encodings, APIs, and UI internals evolve, with the
-      compatibility review and canonical fixture evidence gating risky changes.
+      Change is inevitable; silent breakage is not. Explicit evolution protects
+      released Knowledge meaning and separately published versioned contracts,
+      not every unpublished implementation or obsolete UI shape. Use actual
+      released writer/reader evidence and the frozen semantic fixture to decide
+      which compatibility paths must remain.
     rules:
       - id: governance
         level: must
@@ -266,10 +267,15 @@ policies:
           recoverability, unique catalog authority, append-only Knowledge
           history, and thin adapter boundaries must survive later
           implementations. Physical encodings, crate APIs, and UI internals
-          are not frozen by that promise. Changes that can affect the semantic
-          boundary require the v0.1 Knowledge Compatibility Review and
-          canonical fixture evidence before merge.
-        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+          are not frozen by that promise. Preserve actual released Knowledge
+          and separately published versioned contracts using released
+          writer/reader or frozen-fixture evidence, never a guessed historical
+          surface. Unshipped adapters and rebuildable non-authoritative derived
+          state do not acquire compatibility guarantees by existing in main.
+          Changes that can affect the semantic boundary require the v0.1
+          Knowledge Compatibility Review and canonical fixture evidence before
+          merge.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle, PHIL-003#principle.maintenance-sufficiency]
     bindings:
       - id: compatibility-review-gate
         role: enforcement
