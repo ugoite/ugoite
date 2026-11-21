@@ -272,3 +272,118 @@ Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan al
     assertEquals(report.jobsSkipped, false);
   }
 });
+
+Deno.test("dependency and toolchain paths retain their required CI lanes", () => {
+  const fullLanes = [
+    "artifacts",
+    "cp1-acceptance",
+    "docsite-nav",
+    "rust-check",
+    "rust-test",
+    "web",
+  ];
+  const onlyGlobal = {
+    docs: false,
+    frontend: false,
+    rust: false,
+    global: true,
+    cp1Acceptance: false,
+  };
+  const cases = [
+    {
+      path: "deno.json",
+      categories: onlyGlobal,
+      scope: "all",
+      lanes: fullLanes,
+      jobsSkipped: false,
+    },
+    {
+      path: "deno.lock",
+      categories: onlyGlobal,
+      scope: "all",
+      lanes: fullLanes,
+      jobsSkipped: false,
+    },
+    {
+      path: "frontend/deno.json",
+      categories: {
+        docs: false,
+        frontend: true,
+        rust: false,
+        global: false,
+        cp1Acceptance: false,
+      },
+      scope: "scoped",
+      lanes: ["artifacts", "web"],
+      jobsSkipped: true,
+    },
+    {
+      path: "docsite/deno.json",
+      categories: {
+        docs: true,
+        frontend: false,
+        rust: false,
+        global: false,
+        cp1Acceptance: false,
+      },
+      scope: "scoped",
+      lanes: ["docsite-nav", "web"],
+      jobsSkipped: true,
+    },
+    // These manifests currently use the conservative unclassified-path fallback.
+    {
+      path: "tools/deno.json",
+      categories: onlyGlobal,
+      scope: "all",
+      lanes: fullLanes,
+      jobsSkipped: false,
+    },
+    {
+      path: "e2e/deno.json",
+      categories: onlyGlobal,
+      scope: "all",
+      lanes: fullLanes,
+      jobsSkipped: false,
+    },
+    {
+      path: "mise.toml",
+      categories: onlyGlobal,
+      scope: "all",
+      lanes: fullLanes,
+      jobsSkipped: false,
+    },
+    {
+      path: "Cargo.lock",
+      categories: {
+        docs: false,
+        frontend: false,
+        rust: true,
+        global: false,
+        cp1Acceptance: false,
+      },
+      scope: "scoped",
+      lanes: ["artifacts", "rust-check", "rust-test", "web"],
+      jobsSkipped: true,
+    },
+  ] as const;
+
+  for (const fixture of cases) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [fixture.path],
+    });
+    assertEquals(report.categories, fixture.categories, fixture.path);
+    assertEquals(report.scope, fixture.scope, fixture.path);
+    assertEquals(report.candidateLanes, fixture.lanes, fixture.path);
+    assertEquals(report.jobsSkipped, fixture.jobsSkipped, fixture.path);
+    if (fixture.path === "deno.lock") {
+      assertEquals(
+        report.candidateLanes,
+        fullLanes,
+        "shared Deno lockfile changes must keep every CI lane",
+      );
+    }
+  }
+});
