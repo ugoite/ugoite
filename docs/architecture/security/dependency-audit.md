@@ -2,87 +2,119 @@
 title: Dependency audit exceptions
 ---
 
-This page records where each dependency and toolchain version is decided,
-which areas Dependabot monitors, which pins are held manually, and which
-security exceptions are accepted. Version meaning lives in the manifests
-listed below; this page is the record, not a second authority.
+This page records update exceptions, their reasons, and the evidence needed to
+revisit them. It is not a version authority: manifests, lockfiles, toolchain
+files, and workflow configuration below decide the actual versions and update
+policy.
 
-## Authority: version meaning lives in manifests
+## Authorities and verification
 
-| Domain | Authority file | Notes |
+| Domain | Authority | Verification and notes |
 | --- | --- | --- |
-| Rust crates | `Cargo.toml` / `Cargo.lock` | `cargo ... --locked` is the enforced mode in CI and release builds. |
-| Deno workspace | `deno.json` (root + `frontend` / `docsite` / `e2e` / `tools`) + shared `deno.lock` | Frozen install is the enforced mode once the B3 lockfile gate lands; until then `deno.lock` is committed and CI restores it via cache. |
-| Rust compiler | `rust-toolchain.toml` (planned in B2; currently `mise.toml` `rust = "1.95.0"`) | Single compiler authority for dev, CI, WASM, and Docker source build. |
-| Deno runtime (dev/CI) | `mise.toml` (`tools.deno`) | Docker `denoland/deno:<version>` stays an explicit fixed tag and must match this authority while the same runtime is intended (parity gate planned in B3). |
-| Node (CI/release) | `.github/workflows/ci.yml`, `release-candidate.yml`, `release-publish.yml` | CI runs Node 24; release packaging still runs Node 20 until the B3 Node-24 proof lands. `packages/ugoite` `engines.node >= 20` is the distribution support floor, not the CI host version. |
+| Rust crates | Workspace `Cargo.toml` files and `Cargo.lock` | CI and release builds use locked Cargo operations. |
+| Deno dependencies | Root and member `deno.json` files plus the single root `deno.lock` | `mise run deps:deno:verify` runs `deno install --frozen --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp`. `setup`, the hosted Web lane, and artifact preparation call this task. The lockfile-hash cache is disposable; the frozen install verifies the manifest-to-lockfile boundary. Deno command and source imports use manifest aliases rather than embedding a second package version. |
+| Rust compiler | `rust-toolchain.toml` | The same channel and components are used by local development and CI. `mise.toml` enables mise's idiomatic Rust version file instead of duplicating a compiler pin. |
+| Development tools | `mise.toml` | This file pins Deno `2.9.8`, Helm `3.19.0`, nextest `cargo-nextest-0.9.143`, and the minimum mise version `2025.11.3`. Rust follows `rust-toolchain.toml`. |
+| Docker Deno runtime | `Dockerfile` | The frontend build image is explicitly pinned to `denoland/deno:2.9.8`, matching the development toolchain. |
+| Node runtime | `.github/workflows/ci.yml`, `release-candidate.yml`, and `release-publish.yml` | CI and release workflows use Node 24. `packages/ugoite/package.json` declares `engines.node >=20` as the package support floor. |
+| Update automation | `.github/dependabot.yml` | Dependabot is the automated update-PR generator. Deno monitors all five workspace directories weekly in one wildcard group with a regular update-PR limit of one. Security updates use GitHub's separate security-update handling. |
+| CI lane selection | `tools/ci-impact.ts` and the required CI workflow | Dependency manifests and lockfiles select the existing affected quality lanes. Unknown changes fall back to the full lane set. A Deno lockfile change selects all lanes. |
+| Accepted exceptions | This page | Record the reason, update trigger, and required verification here; do not use this page as a second version source. |
 
-`docs/architecture/security/dependency-audit.md` is the single record for
-exceptions. Scan reports are evidence, not a second authority.
+The monthly `Dependency Review` workflow and the matching local commands only
+report candidates. They do not edit dependency files, create branches, or
+open pull requests. CI caches and runner environments are rebuildable work;
+they are not dependency authorities.
 
-## Monitored by Dependabot (update PR generator)
+GitHub Actions, Cargo, Docker, the npm package under `/packages/ugoite`, and
+Dev Containers remain in the daily `all-dependencies` multi-ecosystem group.
+Cargo's Arrow stack also keeps its per-ecosystem group for eligible patch
+updates. Rust toolchain updates remain monthly.
 
-Dependabot is the only automated update-PR generator. No Renovate, no custom
-updater, no workflow that pushes dependency changes.
+## Deno update grouping evidence
 
-| Ecosystem | Scope | Cadence |
-| --- | --- | --- |
-| `github-actions` | `/` | daily (`all-dependencies` group) |
-| `cargo` | `/` | daily (`all-dependencies` group) |
-| `docker` | `/` | daily (`all-dependencies` group) |
-| `npm` | `/packages/ugoite` | daily (`all-dependencies` group) |
-| `devcontainers` | `/` | daily (`all-dependencies` group) |
-| `deno` | `/`, `/frontend`, `/docsite`, `/e2e`, `/tools` | weekly, independent frame (planned in B1) |
-| `rust-toolchain` | `/` | monthly (planned in B2 with the `rust-toolchain.toml` migration) |
+The five Deno manifests share the root `deno.lock`. Dependabot is configured
+to monitor those directories in one weekly wildcard version-update group with
+`open-pull-requests-limit: 1`. The initial run also produced a duplicate
+one-directory PR, which was closed after comparison; the next run must confirm
+that the policy now produces one grouped update. Exact compatibility holds
+are listed below; security updates remain independently visible.
 
-## Intentionally held outside Dependabot automation
+The first grouped update after the multi-directory policy,
+[PR #4994](https://github.com/ugoite/ugoite/pull/4994), included all five
+manifests and the shared lockfile. Frozen dependency verification passed, but
+required CI rejected three candidate/resolution pairs:
 
-| Target | Pinned state at B0 | Fixed reason | Update trigger | Required verification | Revisit |
-| --- | --- | --- | --- | --- | --- |
-| `arrow*` / `parquet` / `iceberg*` / `datafusion*` / `opendal*` major+minor | Dependabot `ignore` for `version-update:semver-major,minor`; patch stays grouped | Arrow concrete types are shared across the stack; single-crate bumps break compatibility | Upstream publishes a compatible stack | `iceberg` 2-crate same SHA, Arrow/Parquet/DataFusion/OpenDAL/Space compat, SQL + storage regression | quarterly |
-| `iceberg` + `iceberg-datafusion` Git revision | `rev=1ecd497` in `crates/ugoite-iceberg/Cargo.toml` | Git-revision-only upstream area; SHA rewrite is never automated | Upstream compatible revision | Saved-Space reopen, old-reader compat, bounded query, storage/API regression | monthly |
-| Mitase `0.2.5` + 4-target SHA256 (`tools/mitase.lock.toml`) | version + checksums pinned | Bootstrap and Mitase contract depend on exact bytes | New upstream release | version + all 4 checksums together, bootstrap + Mitase contract tests | monthly |
-| MinIO digest (`MINIO_IMAGE` in `ci.yml`) | `pgsty/minio@sha256:2b361...` | S3/ACL scenario depends on exact image | New upstream digest/release | S3/ACL scenario, cache + CI health | monthly |
-| sccache executed version (`v0.17.0` in `ci.yml`) | pinned action version | Cache + CI behavior depends on exact runner | New upstream release | Cache behavior + CI health | monthly |
-| `mise` Deno / Helm / nextest / mise minimum version | `mise.toml`: Deno `2.8.3`, Helm `3.19.0`, nextest `cargo-nextest-0.9.143`, `min_version 2025.11.3` | Dev/CI tool behavior baseline; mise itself has no Dependabot ecosystem | `mise outdated` shows a candidate | Affected `mise` task, dev/CI behavior | monthly |
-| Deno inline version specifiers | `npm:astro@...`, `npm:@playwright/test@...`, `npm:sharp@...` in tasks/sources | Dependabot does not track versions embedded in command strings or TS sources | `deno outdated --recursive` + known-duplicate check | `frontend`/`docsite`/E2E alias-vs-entity agreement | monthly |
-| Dev Container / OS packages | `devcontainer.json` base image + feature pins | Base image rebuild is periodic, not per-PR | Base image update + rebuild | devcontainer setup, shell quality, basic E2E | periodically |
-| RustSec advisories | `rsa 0.9.10` (`RUSTSEC-2023-0071`) unresolved; `event-listener` pinned at `5.4.2` | No patched upstream release at this boundary; see below | Patched `rsa` release or supported replacement | `cargo audit --locked --json` review | each graph/channel change |
+- Starlight `0.42.11` failed Docsite static rendering because Deno could not
+  resolve `astro:middleware`.
+- Playwright target `1.64.1` resolved to `1.65.1` in the lockfile; Docsite
+  navigation tests then loaded as CommonJS and failed on `import.meta`.
+- SolidStart target `2.2.2` resolved to `2.2.3` in the lockfile; frontend type
+  checking reported the missing `defineConfig` export.
 
-## Current RustSec exception detail
+[PR #4995](https://github.com/ugoite/ugoite/pull/4995) was titled as a
+one-directory update but changed the same five manifests and shared lockfile
+as #4994. It was closed as a duplicate after the manifest diffs were compared.
+The exact target and resolved versions from #4994 were added to the holds by
+[PR #4999](https://github.com/ugoite/ugoite/pull/4999), preserving the
+existing group policy and the earlier Starlight `0.43.0` / `0.43.1` and
+Playwright `1.65.0` / `1.65.1` observations recorded below.
 
-The current locked dependency graph has one unresolved RustSec advisory for
-`rsa 0.9.10` (RUSTSEC-2023-0071). No patched upstream release is available for
-the advisory at this version boundary.
+[Issue #4693](https://github.com/ugoite/ugoite/issues/4693) tracks verification
+of the next grouped update after those holds. Dependabot closed PR #4994 as no
+longer needed after #4999 landed; that closure does not verify any remaining
+updates from the group. The five-directory group and frozen boundary are
+exercised, but the one-open-PR behavior, absence of duplicate candidates, and
+required CI success still need evidence from a new grouped PR before the
+rollout is complete. Any remaining candidate PRs should be closed only after
+their updates are accounted for in a successful grouped PR.
 
-The dependency is transitive through two separately scoped surfaces:
+## Intentionally held updates and security exceptions
 
-- `openidconnect`, used by the server's supported OIDC protocol adapter;
-- OpenDAL/reqsign cloud backends, used by S3/GCS/Azure/OSS storage support.
+| Target | Current held state | Reason | Revisit trigger and verification |
+| --- | --- | --- | --- |
+| Arrow / Parquet / Iceberg / DataFusion / OpenDAL stack | Dependabot suppresses major and minor updates; patch updates remain eligible and grouped. | The stack shares concrete Arrow types; a single-crate major or minor update can break compatibility across the stack. | Propose a compatible stack update; validate the coordinated crates, Iceberg adapters, SQL, and storage regressions together. Review quarterly. |
+| `iceberg` and `iceberg-datafusion` Git dependencies | Revision `1ecd497` in `crates/ugoite-iceberg/Cargo.toml`. | This upstream area is consumed by Git revision, not a normal registry version update. | Review a compatible upstream revision and verify saved-Space reopen, bounded queries, storage, and API behavior monthly. |
+| Mitase bootstrap | Version `0.2.5` and four target SHA-256 values in `tools/mitase.lock.toml`. | Bootstrap and Mitase contracts depend on the exact downloaded bytes. | Update version and all four checksums together; run bootstrap and Mitase contract checks monthly. |
+| MinIO CI image | `pgsty/minio@sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9` in `.github/workflows/ci.yml`. | The S3 authorization scenario uses a specific image build. | For a new image digest, rerun the S3/ACL scenario and the affected CI lane. Review monthly. |
+| sccache action | `mozilla-actions/sccache-action` in `.github/workflows/ci.yml` is pinned to commit `fc920bf0ec8de6ee65d409111f7ec508035751ba` (upstream tag comment `v0.0.11`). The hosted runner reported sccache `0.17.0`. | The action and cache behavior affect CI execution. The action revision, rather than an independently installed binary version, is pinned. | On an action or runner change, verify cache setup and affected CI lanes. Review monthly. |
+| TypeScript major updates | Dependabot ignores semver-major updates for `typescript`; patch and minor updates remain eligible. | TypeScript 7 removes compiler APIs used by `tools/check_frontend_changed_types.ts`. | Remove the ignore after that consumer supports the new APIs; validate frontend changed-file type checking. |
+| Starlight | Dependabot holds `0.42.11`, `0.43.0`, and `0.43.1`. | Each observed grouped candidate failed static rendering because Deno could not resolve `astro:middleware`. | Revisit when a candidate is available; verify Docsite build and navigation tests. |
+| Playwright | Dependabot holds targets `1.64.1` and `1.65.0`, plus resolved version `1.65.1`. | The targets resolved to `1.65.1` and Docsite navigation tests loaded as CommonJS, where `import.meta` failed. | Revisit with a candidate that preserves module loading; verify Docsite navigation and E2E browser setup. |
+| SolidStart | Dependabot holds target `2.2.2` and resolved version `2.2.3`. | The target resolved to `2.2.3`, which removes `defineConfig` used by `frontend/app.config.ts`. | Revisit when a compatible candidate is available; verify frontend type checking, tests, and build. |
+| RustSec `rsa` advisory | The lockfile contains `rsa 0.9.10`, reported for `RUSTSEC-2023-0071`. | The crate is transitive through the OIDC adapter and OpenDAL cloud backends. Removing those optional protocol and storage surfaces is not an appropriate dependency-update workaround. | Rerun `cargo audit --locked --json` on graph changes and remove this exception when a patched release or supported replacement is available. |
+| Dev Container and OS packages | Base image and feature pins are in `.devcontainer/devcontainer.json`. | Base image and OS package updates are periodic environment changes rather than application dependency updates. | Review with a base-image update; verify container setup and the basic contributor workflow. |
 
-The package is not used by the local-first core data path. Removing it would
-require dropping those optional transport/authentication surfaces, so this
-release keeps the locked graph and records the exception rather than silently
-ignoring the audit result. `event-listener` is pinned through the lockfile at
-5.4.2, which removes its fixable advisory.
+The current frontend manifest resolves the Vitest runner and coverage provider
+to `5.0.5`, while its `vitest/config` and subpath aliases resolve to `4.1.8`.
+Docsite resolves Vitest to `4.1.8` and `@vitest/coverage-v8` to `5.0.5`.
+These version differences are not, by themselves, evidence of
+incompatibility: the hosted frontend coverage lane and the Docsite coverage
+task passed with the current aliases. When changing either package, run the
+corresponding coverage task and its normal test/build lane.
 
-Operators should rerun `cargo audit --locked --json` when the dependency graph
-or release channel changes. The exception must be removed as soon as an
-upstream patched `rsa` release or a supported replacement is available.
-Do not record this exception as resolved without re-running the audit.
+## RustSec exception detail
 
-## Monthly read-only check (no writes)
+The current lockfile contains `rsa 0.9.10`, reported under
+`RUSTSEC-2023-0071`. The dependency is transitive through `openidconnect` and
+OpenDAL/reqsign cloud backends used for S3, GCS, Azure, and OSS storage. It is
+not used by the local-first core path. Keep the finding visible in the
+read-only audit and remove this exception when a patched release or supported
+replacement is available; do not mark it resolved without rerunning the audit.
 
-The planned `dependency-review` workflow (B4) and the local commands below only
-report. They never create branches, PRs, issues, push, or edit dependency
-files.
+The current lockfile resolves `event-listener` to `5.4.2`; it is not a
+separately maintained exception. Re-run the audit when the Rust dependency
+graph changes.
+
+## Monthly read-only check
+
+The scheduled workflow and local commands below report only. Results appear
+in the Actions Job Summary; promote candidates through a normal change PR only
+after their affected verification passes.
 
 ```bash
-mise outdated
+mise outdated --bump
 deno outdated --recursive
 cargo audit --locked --json
 deno audit
 ```
-
-Results go to the Actions Job Summary. Promote only what passes its
-minimum gate in the table above through a normal change PR.
