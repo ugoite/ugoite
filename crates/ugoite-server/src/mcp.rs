@@ -1094,7 +1094,6 @@ async fn schema_for_entry(
 
 fn form_projection(form: &Value) -> Value {
     let name = sanitize_mcp_string(form.get("name").and_then(Value::as_str).unwrap_or_default());
-    let display_label = ugoite_domain::preview_label::safe_preview_label(&name);
     let fields = form
         .get("fields")
         .and_then(Value::as_object)
@@ -1114,7 +1113,7 @@ fn form_projection(form: &Value) -> Value {
                 .collect::<serde_json::Map<_, _>>()
         })
         .unwrap_or_default();
-    json!({"id":form.get("id").and_then(Value::as_str).unwrap_or_default(),"version":form.get("version").and_then(Value::as_i64).unwrap_or(1),"name":name,"display_label":display_label,"description":form.get("description").and_then(Value::as_str).map(sanitize_mcp_string),"fields":fields,"_untrusted_content":true})
+    json!({"id":form.get("id").and_then(Value::as_str).unwrap_or_default(),"version":form.get("version").and_then(Value::as_i64).unwrap_or(1),"name":name,"description":form.get("description").and_then(Value::as_str).map(sanitize_mcp_string),"fields":fields,"_untrusted_content":true})
 }
 
 #[allow(clippy::result_large_err)]
@@ -1945,7 +1944,6 @@ mod tests {
             .expect("schema resource text");
         let schema: Value = serde_json::from_str(schema_text).expect("schema resource JSON");
         assert_eq!(schema["name"], "Note");
-        assert_eq!(schema["display_label"], "Note");
         assert_eq!(schema["_untrusted_content"], true);
     }
 
