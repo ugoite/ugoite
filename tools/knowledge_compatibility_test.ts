@@ -44,7 +44,7 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
   );
   requireText(template, "Preserving implementation change", "PR template");
   requireText(template, "Breaking semantic change", "PR template");
-  requireText(validator, "knowledge_compatibility.ts", "PR validator");
+  requireText(validator, "pr_body_gate.ts", "PR validator");
   requireText(
     compatibilityValidator,
     "select exactly one valid classification",
