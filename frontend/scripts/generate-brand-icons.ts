@@ -1,4 +1,4 @@
-import sharp from "npm:sharp@0.34.5";
+import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { dirname, relative } from "node:path";
 
