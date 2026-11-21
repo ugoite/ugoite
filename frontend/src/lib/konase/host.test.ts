@@ -858,7 +858,7 @@ describe("Konase browser host", () => {
     expect(mcp.calls).toHaveLength(0);
   });
 
-  it("formats an existing Form name in Rust before approving a field-map replacement", async () => {
+  it("resolves an omitted Form name before approving a complete field-map replacement", async () => {
     const formName = "N".repeat(97);
     const schemaUri = "ugoite://entry/entry-7/schema";
     const argumentsValue = {
@@ -967,7 +967,7 @@ describe("Konase browser host", () => {
       {
         uri,
         content: JSON.stringify({
-          id: "form-7",
+          id: "",
           name: "Note",
           fields: {},
           _untrusted_content: true,
