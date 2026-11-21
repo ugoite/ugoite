@@ -249,6 +249,76 @@ Their generated updates and validation evidence are tracked in
 policy-triggered PR closure are not successful-update evidence; keep #4693 open
 until a generated update satisfies its acceptance criteria.
 
+The five-directory run generated [PR #5069](https://github.com/ugoite/ugoite/pull/5069).
+The root-only-source run generated [PR #5071](https://github.com/ugoite/ugoite/pull/5071).
+Both changed the five manifests and the shared `deno.lock`; manifest blobs and
+targets were identical, and the lockfiles resolved the same 1,342 npm package
+name/version pairs with different peer-resolution metadata. The runs were
+native Dependabot jobs on the same `68e060c` main SHA. The run records do not
+show why the root-only source was launched alongside the configured
+five-directory source.
+
+Both candidates targeted Starlight `0.42.1` and SolidStart `^2.0.0` (resolved
+to `2.2.3`); Playwright remained at `1.60.0`. Frozen verification passed in
+Web and artifact preparation, but Docsite navigation did not invoke the task.
+Both finished with `ci-required` failed and `codeql-required` passed. Artifact
+build and Docsite navigation failed static rendering with
+`Unsupported scheme "astro" for module "astro:middleware"`. Astro `7.4.12`
+was co-updated, so the individual package causing that failure is not isolated.
+Web stopped at `cargo fmt --all --check` on Rust import order before frontend
+type checking. [PR #5072](https://github.com/ugoite/ugoite/pull/5072) fixed that
+pre-existing format error; the merged-main validation run
+[44911295862](https://github.com/ugoite/ugoite/actions/runs/44911295862)
+passed. Rust check/test, CP1 fixtures, and shared S3 authorization also passed
+for the candidates; E2E lanes were skipped after required failures.
+
+PR #5071 was closed as a duplicate of #5069 after comparing manifests and
+resolved package versions. After the new exact holds landed in
+[PR #5076](https://github.com/ugoite/ugoite/pull/5076), Dependabot closed
+#5069. Neither closure is a passing-update result. #5076 added Starlight target
+`0.42.1` and SolidStart target `2.0.0` to the existing holds; its independent
+review and required CI passed before merge.
+
+Fresh native Dependabot runs [44913417528](https://github.com/ugoite/ugoite/actions/runs/44913417528)
+from the five-directory source and
+[44913419006](https://github.com/ugoite/ugoite/actions/runs/44913419006) from
+the root-only source ran on main `1c4735f`. The five-directory run generated
+[PR #5080](https://github.com/ugoite/ugoite/pull/5080), and the root-only run
+generated [PR #5082](https://github.com/ugoite/ugoite/pull/5082). Both changed
+the five Deno manifests and shared `deno.lock`; manifest blobs and targets are
+identical, and both lockfiles resolve the same 1,327 npm package name/version
+pairs with different peer-resolution metadata. The run records show both were
+native Dependabot jobs on the same main SHA; they were not manual dispatches.
+
+PR #5080 targeted Starlight `0.42.0`, SolidStart `^1.5.1` (resolved to
+`1.5.1`), SolidJS `^2.0.1` (resolved to `2.0.3`), and Vitest/coverage `5.1.1`;
+Playwright remained at `1.60.0`. Frozen verification passed in Web and artifact
+preparation; Docsite navigation did not invoke it. Artifact build and Docsite
+navigation failed with `Unsupported scheme "astro" for module
+"astro:middleware"`. Web passed frozen verification and formatting, then
+failed frontend coverage because SolidJS `2.0.3` does not export `./web`; the
+run also reported query-title, locale/date, and context assertions. Rust
+check/test, CP1 fixtures, shared S3 authorization, and CodeQL passed. E2E and
+CP1 query/export lanes were skipped after required failures. The aggregate
+`ci-required` failed in [run 44914551160](https://github.com/ugoite/ugoite/actions/runs/44914551160);
+`codeql-required` passed in [run 44914551156](https://github.com/ugoite/ugoite/actions/runs/44914551156).
+#5080 was closed as a duplicate of #5082 after comparing the identical
+manifests and 1,327 package name/version pairs. This closure is not a pass.
+
+PR #5082 has the same candidate targets and the same five manifests plus
+shared lockfile. Frozen verification passed in Web and artifact preparation;
+Docsite navigation did not invoke it. Artifact build and Docsite navigation
+failed with the same `astro:middleware` error. Web reported the same SolidJS
+`./web` export error and query-title, locale/date, and context assertions.
+Rust check/test, CP1 fixtures, and shared S3 authorization passed; E2E and CP1
+query/export lanes were skipped after required failures. The aggregate
+`ci-required` failed because Web, artifact build, and Docsite navigation failed in
+[run 44914775674](https://github.com/ugoite/ugoite/actions/runs/44914775674)
+and `codeql-required` passed in [run 44914775805](https://github.com/ugoite/ugoite/actions/runs/44914775805).
+The root-only candidate is the sole open Deno update PR and demonstrates
+coverage of all five manifests and the shared lockfile. Its selected policy's
+future generation and duplicate behavior remain to be verified in #5045.
+
 ## Intentionally held updates and security exceptions
 
 | Target | Current held state | Reason | Revisit trigger and verification |
@@ -259,9 +329,9 @@ until a generated update satisfies its acceptance criteria.
 | MinIO CI image | `pgsty/minio@sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9` in `.github/workflows/ci.yml`. | The S3 authorization scenario uses a specific image build. | For a new image digest, rerun the S3/ACL scenario and the affected CI lane. Review monthly. |
 | sccache action | `mozilla-actions/sccache-action` in `.github/workflows/ci.yml` is pinned to commit `fc920bf0ec8de6ee65d409111f7ec508035751ba` (upstream tag comment `v0.0.11`). The hosted runner reported sccache `0.17.0`. | The action and cache behavior affect CI execution. The action revision, rather than an independently installed binary version, is pinned. | On an action or runner change, verify cache setup and affected CI lanes. Review monthly. |
 | TypeScript major updates | Dependabot ignores semver-major updates for `typescript`; patch and minor updates remain eligible. | TypeScript 7 removes compiler APIs used by `tools/check_frontend_changed_types.ts`. | Remove the ignore after that consumer supports the new APIs; validate frontend changed-file type checking. |
-| Starlight | Dependabot holds targets `0.42.2`, `0.42.3`, `0.42.4`, `0.42.5`, `0.42.6`, `0.42.7`, `0.42.8`, `0.42.9`, `0.42.10`, `0.42.11`, `0.43.0`, and `0.43.1`. | Each observed grouped candidate failed static rendering because Deno could not resolve `astro:middleware`. | Revisit when a candidate is available; verify Docsite build and navigation tests. |
+| Starlight | Dependabot holds targets `0.42.1`, `0.42.2`, `0.42.3`, `0.42.4`, `0.42.5`, `0.42.6`, `0.42.7`, `0.42.8`, `0.42.9`, `0.42.10`, `0.42.11`, `0.43.0`, and `0.43.1`. | Grouped candidates with Starlight `0.42.1` and `0.42.2` failed static rendering because Deno could not resolve `astro:middleware`. Astro `7.4.12` was co-updated, so attribution is not isolated. | Revisit with Starlight held at the current version; test Astro `7.4.12` separately and verify Docsite build and navigation. |
 | Playwright | Dependabot holds targets `1.61.0`, `1.61.1`, `1.62.0`, `1.62.1`, `1.63.0`, `1.64.0`, `1.64.1`, and `1.65.0`, plus resolved version `1.65.1`. | The targets resolved to `1.65.1` and Docsite navigation tests loaded as CommonJS, where `import.meta` failed. | Revisit with a candidate that preserves module loading; verify Docsite navigation and E2E browser setup. |
-| SolidStart | Dependabot holds targets `2.0.1`, `2.0.2`, `2.0.3`, `2.0.4`, `2.0.5`, `2.0.6`, `2.1.0`, `2.2.0`, `2.2.1`, and `2.2.2`, plus resolved version `2.2.3`. | The targets resolved to `2.2.3`, which removes `defineConfig` used by `frontend/app.config.ts`. | Revisit when a compatible candidate is available; verify frontend type checking, tests, and build. |
+| SolidStart | Dependabot holds targets `2.0.0`, `2.0.1`, `2.0.2`, `2.0.3`, `2.0.4`, `2.0.5`, `2.0.6`, `2.1.0`, `2.2.0`, `2.2.1`, and `2.2.2`, plus resolved version `2.2.3`. | Earlier candidates resolving to `2.2.3` failed frontend type checking because `defineConfig` used by `frontend/app.config.ts` was missing. The latest `^2.0.0` candidate stopped at formatting before reaching type checking. | Revisit when a compatible candidate is available; verify frontend type checking, tests, and build. |
 | RustSec `rsa` advisory | The lockfile contains `rsa 0.9.10`, reported for `RUSTSEC-2023-0071`. | The crate is transitive through the OIDC adapter and OpenDAL cloud backends. Removing those optional protocol and storage surfaces is not an appropriate dependency-update workaround. | Rerun `cargo audit --locked --json` on graph changes and remove this exception when a patched release or supported replacement is available. |
 | Dev Container and OS packages | Base image and feature pins are in `.devcontainer/devcontainer.json`. | Base image and OS package updates are periodic environment changes rather than application dependency updates. | Review with a base-image update; verify container setup and the basic contributor workflow. |
 
