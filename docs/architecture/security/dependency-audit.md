@@ -61,12 +61,13 @@ existing group policy and the earlier Starlight `0.43.0` / `0.43.1` and
 Playwright `1.65.0` / `1.65.1` observations recorded below.
 
 [Issue #4693](https://github.com/ugoite/ugoite/issues/4693) tracks verification
-of the next grouped update after those holds. The five-directory group and
-frozen boundary are exercised, but the one-open-PR behavior, absence of
-duplicate candidates, and required CI success still need evidence from a new
-grouped PR before the rollout is complete. Existing update PRs should be
-closed only after their remaining candidates are accounted for in the
-successful grouped PR.
+of the next grouped update after those holds. Dependabot closed PR #4994 as no
+longer needed after #4999 landed; that closure does not verify any remaining
+updates from the group. The five-directory group and frozen boundary are
+exercised, but the one-open-PR behavior, absence of duplicate candidates, and
+required CI success still need evidence from a new grouped PR before the
+rollout is complete. Any remaining candidate PRs should be closed only after
+their updates are accounted for in a successful grouped PR.
 
 ## Intentionally held updates and security exceptions
 
