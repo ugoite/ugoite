@@ -610,45 +610,6 @@ export type SqlDocumentEditTransaction = {
   edits: SqlDocumentEdit[];
 };
 
-export type SqlDocumentSemanticIdentifier = {
-  value: string;
-  quote_style: string | null;
-};
-
-export type SqlDocumentSemanticBinaryOperator =
-  | "and"
-  | "or"
-  | "bitwise_and"
-  | "bitwise_or"
-  | "shift_left"
-  | "shift_right"
-  | "eq"
-  | "not_eq"
-  | "lt"
-  | "lte"
-  | "gt"
-  | "gte"
-  | "add"
-  | "subtract"
-  | "multiply"
-  | "divide"
-  | "modulo"
-  | "concat";
-
-export type SqlDocumentSetOperator = "union" | "intersect" | "except";
-export type SqlDocumentSetQuantifier =
-  | "default"
-  | "all"
-  | "distinct"
-  | "by_name"
-  | "all_by_name"
-  | "distinct_by_name";
-export type SqlDocumentAggregateFunction =
-  | "count"
-  | "sum"
-  | "avg"
-  | "min"
-  | "max";
 export type SqlDocumentGroupByMode =
   | "expressions"
   | "all"
@@ -656,54 +617,10 @@ export type SqlDocumentGroupByMode =
   | "cube"
   | "grouping_sets";
 
-export type SqlDocumentRelationFactor =
-  | {
-    kind: "table";
-    name: SqlDocumentIdentifier[];
-    alias: SqlDocumentIdentifier | null;
-  }
-  | {
-    kind: "derived";
-    query_node_id: number;
-    alias: SqlDocumentIdentifier;
-  }
-  | { kind: "existing_table_factor"; node_id: number };
-
-export type SqlDocumentJoinOperator =
-  | "inner"
-  | "left"
-  | "left_outer"
-  | "right"
-  | "right_outer"
-  | "full"
-  | "full_outer"
-  | "cross"
-  | "natural"
-  | "natural_inner"
-  | "natural_left"
-  | "natural_left_outer"
-  | "natural_right"
-  | "natural_right_outer"
-  | "natural_full"
-  | "natural_full_outer"
-  | "left_semi"
-  | "right_semi"
-  | "left_anti"
-  | "right_anti";
-
-export type SqlDocumentJoinConstraint =
-  | { kind: "none" }
-  | {
-    kind: "on";
-    expression_node_id: number;
-    expression_expected_kind: SqlDocumentNodeKind;
-  }
-  | { kind: "using"; columns: SqlDocumentIdentifier[] };
-
-export type SqlDocumentJoin = {
-  operator: SqlDocumentJoinOperator;
-  relation: SqlDocumentRelationFactor;
-  constraint: SqlDocumentJoinConstraint;
+export type SqlDocumentRelationFactor = {
+  kind: "table";
+  name: SqlDocumentIdentifier[];
+  alias: SqlDocumentIdentifier | null;
 };
 
 export type SqlDocumentSemanticEdit =
@@ -711,13 +628,13 @@ export type SqlDocumentSemanticEdit =
   | {
     kind: "replace_table_factor";
     node_id: number;
-    expected_kind: "table_factor";
+    expected_kind: SqlDocumentNodeKind;
     factor: SqlDocumentRelationFactor;
   }
   | {
     kind: "add_from_relation";
     node_id: number;
-    expected_kind: "select";
+    expected_kind: SqlDocumentNodeKind;
     factor: SqlDocumentRelationFactor;
   };
 
