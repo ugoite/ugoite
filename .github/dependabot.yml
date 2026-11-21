@@ -75,10 +75,8 @@ updates:
       interval: "daily"
 
   # Keep Deno updates in an independent weekly frame. The five manifests share
-  # one deno.lock, so group version updates across all monitored directories.
-  # The temporary limit allows the current 11 individual candidates plus one
-  # grouped replacement to coexist until their coverage is verified. Lower it
-  # to 1 after the existing candidates have been carried into that PR.
+  # one deno.lock, so group version updates across all monitored directories
+  # and allow only one regular Deno update PR at a time.
   - package-ecosystem: "deno"
     directories:
       - "/"
@@ -88,7 +86,7 @@ updates:
       - "/tools"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 12
+    open-pull-requests-limit: 1
     groups:
       deno-workspace:
         patterns:
