@@ -232,9 +232,9 @@ failed Docsite static rendering because Deno could not resolve
 `astro:middleware`; SolidStart target `^2.0.1` resolved to `2.2.3`, whose
 missing `defineConfig` export failed frontend type checking. Playwright stayed
 at `1.60.0`, and the navigation failure followed the Starlight render error.
-Rust check/test, S3 authorization, CP1 fixtures, and CodeQL passed; E2E lanes
-were skipped after required failures. Both PRs finished with `ci-required`
-failed and `codeql-required` passed. These exact target holds were added by
+Rust check/test, S3 authorization, CP1 fixtures, and CodeQL passed; E2E and CP1
+query/export lanes were skipped after required failures. Both PRs finished with
+`ci-required` failed and `codeql-required` passed. These exact target holds were added by
 [PR #5060](https://github.com/ugoite/ugoite/pull/5060). Dependabot closed #5053
 and #5056 after that policy change; those closures do not show that the
 remaining updates passed.
