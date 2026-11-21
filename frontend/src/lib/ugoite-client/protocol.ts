@@ -628,13 +628,13 @@ export type SqlDocumentSemanticEdit =
   | {
     kind: "replace_table_factor";
     node_id: number;
-    expected_kind: SqlDocumentNodeKind;
+    expected_kind: "table_factor";
     factor: SqlDocumentRelationFactor;
   }
   | {
     kind: "add_from_relation";
     node_id: number;
-    expected_kind: SqlDocumentNodeKind;
+    expected_kind: "select";
     factor: SqlDocumentRelationFactor;
   };
 
