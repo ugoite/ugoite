@@ -375,6 +375,7 @@ test.describe("Saved SQL route", () => {
       waitUntil: "domcontentloaded",
     });
     const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+    await expect(editor).toHaveText("SELECT 1");
     const sql = "SELECT ARRAY[4, 9] AS values";
     await editor.fill(sql);
     await expect(editor).toHaveText(sql);
