@@ -219,11 +219,11 @@ After #5050 merged at `c971889`, comparison runs
 [44903552130](https://github.com/ugoite/ugoite/actions/runs/44903552130) for
 the five configured directories and
 [44903556271](https://github.com/ugoite/ugoite/actions/runs/44903556271) for a
-root-only configuration were started on the same main commit. At the latest
-check on 2026-11-21, both jobs remained in the Dependabot execution step and no
-new grouped Deno PR was visible. This is pending evidence, not proof that either
-configuration found no candidates or covered all workspace members. Keep
-#4693 open until the generated update and its required CI can be inspected.
+root-only configuration were started from the same main commit. Their generated
+update and validation evidence is tracked in [issue #5045](https://github.com/ugoite/ugoite/issues/5045).
+This page does not treat run launch or a policy-triggered bot PR closure as a
+successful update; keep #4693 open until a generated update satisfies its
+acceptance criteria.
 
 ## Intentionally held updates and security exceptions
 
