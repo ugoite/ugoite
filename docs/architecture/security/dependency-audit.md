@@ -191,7 +191,7 @@ close remaining candidates only after their updates are accounted for in a
 successful grouped PR.
 
 [PR #5040](https://github.com/ugoite/ugoite/pull/5040), generated after #5037,
-reported five directories and 62 updates. Its diff included all five Deno
+reported one directory and 62 updates, but its diff included all five Deno
 manifests and the shared `deno.lock`. Frozen verification passed in Web and
 artifact preparation. Required CI rejected Starlight target `0.42.4` because
 Docsite static rendering could not resolve `astro:middleware`, and SolidStart
