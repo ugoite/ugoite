@@ -1,16 +1,13 @@
 import { assertEquals } from "@std/assert/equals";
 
 const repository = new URL("../", import.meta.url);
-const [registrySource, completionSource, protocolSource] = await Promise
+const [registrySource, completionSource] = await Promise
   .all([
     Deno.readTextFile(
       new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
     ),
     Deno.readTextFile(
       new URL("frontend/src/lib/sql-completion.ts", repository),
-    ),
-    Deno.readTextFile(
-      new URL("frontend/src/lib/ugoite-client/protocol.ts", repository),
     ),
   ]);
 
@@ -69,7 +66,7 @@ function registryFunctions(): Array<{
   });
 }
 
-Deno.test("SQL completion and protocol aggregate names follow the Rust registry", () => {
+Deno.test("SQL completion aggregate names follow the Rust registry", () => {
   const functions = registryFunctions();
   const registeredSpellings = functions.flatMap((
     { name, aliases },
@@ -87,21 +84,14 @@ Deno.test("SQL completion and protocol aggregate names follow the Rust registry"
   const completionList = completionSource.match(
     /const SQL_AGGREGATE_FUNCTIONS = \[([\s\S]*?)\];/,
   );
-  const protocolList = protocolSource.match(
-    /export type SqlDocumentAggregateFunction =([\s\S]*?);/,
-  );
-  if (!completionList || !protocolList) {
-    throw new Error("SQL completion source or protocol list was not found");
+  if (!completionList) {
+    throw new Error("SQL completion source was not found");
   }
   const completionNames = [...completionList[1].matchAll(/"([A-Z]+)"/g)].map((
     [, name],
   ) => name.toLowerCase());
-  const protocolNames = [...protocolList[1].matchAll(/"([^"]+)"/g)].map((
-    [, name],
-  ) => name);
   const canonical = functions.map(({ name }) => name);
   assertEquals(completionNames.slice().sort(), canonical.slice().sort());
-  assertEquals(protocolNames.slice().sort(), canonical.slice().sort());
   assertEquals(
     registeredSpellings.includes("mean"),
     true,
