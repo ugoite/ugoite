@@ -282,24 +282,28 @@ async fn null_sort_values_order_across_cursor_continuation() -> Result<()> {
     let form = form_id(&service, &space_id, "Task").await?;
     let nickname = property_ref(&service, &space_id, "Task", "Nickname").await?;
 
-    for index in 0..5 {
-        create_task(
-            &service,
-            &space_id,
-            &format!("nick-{index:02}"),
-            task_fields(Some("open"), Some(index), Some(&format!("name-{index:02}"))),
-        )
-        .await?;
-    }
-    for index in 0..5 {
-        create_task(
-            &service,
-            &space_id,
-            &format!("nonull-{index:02}"),
-            task_fields(Some("open"), Some(100 + index), None),
-        )
-        .await?;
-    }
+    seed_task_fixtures(
+        &service,
+        &space_id,
+        (0..5)
+            .map(|index| {
+                (
+                    format!("nick-{index:02}"),
+                    "open".to_owned(),
+                    index,
+                    Some(format!("name-{index:02}")),
+                )
+            })
+            .chain((0..5).map(|index| {
+                (
+                    format!("nonull-{index:02}"),
+                    "open".to_owned(),
+                    100 + index,
+                    None,
+                )
+            })),
+    )
+    .await?;
     let query = EntryQuery {
         scope: EntryQueryScope::Form { form_id: form },
         text: None,
@@ -337,38 +341,32 @@ async fn multi_column_sort_survives_page_boundaries() -> Result<()> {
     let form = form_id(&service, &space_id, "Task").await?;
     let status = property_ref(&service, &space_id, "Task", "Status").await?;
 
-    // Interleave statuses so the first sort key flips mid-traversal, and bump
-    // one entry per status so `updated_at` differs inside each group.
-    for (index, entry_status) in ["open", "closed", "open", "closed", "open", "closed"]
-        .iter()
-        .enumerate()
-    {
-        create_task(
-            &service,
-            &space_id,
-            &format!("multi-{index:02}"),
-            task_fields(Some(entry_status), Some(index as i64), None),
-        )
-        .await?;
-    }
-    for entry_id in ["multi-00", "multi-01"] {
-        let current = service.get_entry(&space_id, entry_id).await?;
-        let revision = current["revision_id"].as_str().context("entry revision")?;
-        let mut fields = task_fields(None, None, None);
-        fields.insert("Status".to_string(), Value::String("open".to_string()));
-        fields.insert("Priority".to_string(), json!(99));
-        service
-            .update_structured_entry(
-                &space_id,
-                entry_id,
-                Some("Task".to_string()),
-                fields,
-                BTreeMap::new(),
-                Some(revision),
-                "owner",
+    // Interleave source rows, then seed the final values in one publication:
+    // Status groups differ, UpdatedAt descends inside each group, and the top
+    // two open rows tie so hidden stable identity resolves their order.
+    seed_task_fixtures_with_timestamps(
+        &service,
+        &space_id,
+        [
+            ("multi-00", "open", 99, None, 1_000_005),
+            ("multi-01", "open", 99, None, 1_000_005),
+            ("multi-02", "open", 2, None, 1_000_002),
+            ("multi-03", "closed", 3, None, 1_000_003),
+            ("multi-04", "open", 4, None, 1_000_004),
+            ("multi-05", "closed", 5, None, 1_000_005),
+        ]
+        .into_iter()
+        .map(|(id, status, priority, nickname, updated_at)| {
+            (
+                id.to_owned(),
+                status.to_owned(),
+                priority,
+                nickname.map(str::to_owned),
+                updated_at,
             )
-            .await?;
-    }
+        }),
+    )
+    .await?;
     let query = EntryQuery {
         scope: EntryQueryScope::Form { form_id: form },
         text: None,
@@ -391,37 +389,13 @@ async fn multi_column_sort_survives_page_boundaries() -> Result<()> {
         paged, one_shot,
         "paged traversal must match the single-shot order"
     );
+    assert_eq!(
+        paged,
+        ["multi-05", "multi-03", "multi-00", "multi-01", "multi-04", "multi-02"],
+        "page-boundary order must apply Status, UpdatedAt, then stable identity"
+    );
 
-    // The first key groups statuses; inside a group `updated_at` never rises.
-    let page = service
-        .query_entry_page(&space_id, page_request(query, 1_000, None))
-        .await?;
-    let mut group_status = String::new();
-    let mut group_updated: Option<i64> = None;
-    for row in &page.rows {
-        let status_value = row_status(&service, &space_id, &row.id).await?;
-        if status_value != group_status {
-            group_status = status_value;
-            group_updated = None;
-        }
-        if let Some(previous) = group_updated {
-            assert!(
-                row.updated_at_micros <= previous,
-                "updated_at must not rise inside one Status group"
-            );
-        }
-        group_updated = Some(row.updated_at_micros);
-    }
     Ok(())
-}
-
-async fn row_status(service: &UgoiteService, space_id: &str, entry_id: &str) -> Result<String> {
-    let entry = service.get_entry(space_id, entry_id).await?;
-    entry
-        .pointer("/fields/Status")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .context("test entry is missing its Status")
 }
 
 /// A cursor pins its immutable publication: live create/update/delete between
@@ -632,6 +606,46 @@ async fn seed_tasks(
     space_id: &str,
     entries: impl Iterator<Item = (String, i64)>,
 ) -> Result<()> {
+    seed_task_fixtures_with_timestamps(
+        service,
+        space_id,
+        entries.enumerate().map(|(index, (external_id, priority))| {
+            (
+                external_id,
+                "open".to_owned(),
+                priority,
+                None,
+                1_000_000 + index as i64,
+            )
+        }),
+    )
+    .await
+}
+
+/// Seed the richer sorting fixtures through the same single-publication
+/// revision batch path as `seed_tasks`, including explicitly tied sort tuples.
+async fn seed_task_fixtures(
+    service: &UgoiteService,
+    space_id: &str,
+    entries: impl Iterator<Item = (String, String, i64, Option<String>)>,
+) -> Result<()> {
+    seed_task_fixtures_with_timestamps(
+        service,
+        space_id,
+        entries
+            .enumerate()
+            .map(|(index, (id, status, priority, nickname))| {
+                (id, status, priority, nickname, 1_000_000 + index as i64)
+            }),
+    )
+    .await
+}
+
+async fn seed_task_fixtures_with_timestamps(
+    service: &UgoiteService,
+    space_id: &str,
+    entries: impl Iterator<Item = (String, String, i64, Option<String>, i64)>,
+) -> Result<()> {
     use ugoite_domain::change::ChangeCommand;
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::id::{EntryId, FieldId};
@@ -646,61 +660,64 @@ async fn seed_tasks(
         .into_iter()
         .find(|form| form.name == "Task")
         .context("Task form")?;
-    let priority_field = form
+    let field_ids = form
         .fields
         .iter()
-        .find(|field| field.name == "Priority")
-        .context("Priority field")?;
-    let status_field = form
-        .fields
-        .iter()
-        .find(|field| field.name == "Status")
-        .context("Status field")?;
+        .map(|field| {
+            (
+                field.name.as_str(),
+                FieldId::new(field.id.get()).expect("field id"),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let revisions = entries
         .enumerate()
-        .map(|(index, (external_id, priority))| {
-            let micros = 1_000_000 + index as i64;
-            EntryRevision {
-                form_id: form.id,
-                entry_id: EntryId::from(Uuid::from_u128(500_000 + index as u128)),
-                revision_id: Uuid::from_u128(600_000 + index as u128).into(),
-                parent_revision_id: None,
-                entry_version: 1,
-                change_id: "traversal-seed".to_owned(),
-                expected_version: None,
-                operation: EntryOperation::Upsert,
-                committed_at_micros: micros,
-                author_id: "owner".to_owned(),
-                form_version: form.version,
-                source_kind: "test".to_owned(),
-                source_id: None,
-                entry: EntryMetadata {
-                    external_id,
-                    created_at_micros: micros,
-                    updated_at_micros: micros,
-                    updated_by: "owner".to_owned(),
-                    ..EntryMetadata::default()
-                },
-                values: BTreeMap::from([
-                    (
-                        FieldId::new(status_field.id.get()).expect("field id"),
-                        FieldValue::String("open".to_owned()),
-                    ),
-                    (
-                        FieldId::new(priority_field.id.get()).expect("field id"),
-                        FieldValue::Integer(priority),
-                    ),
-                ]),
-                extra_attributes: BTreeMap::new(),
-                extension_metadata: BTreeMap::new(),
-            }
-        })
+        .map(
+            |(index, (external_id, status, priority, nickname, updated_at))| {
+                let values = BTreeMap::from([
+                    (field_ids["Status"], FieldValue::String(status)),
+                    (field_ids["Priority"], FieldValue::Integer(priority)),
+                ]);
+                let values = if let Some(nickname) = nickname {
+                    let mut values = values;
+                    values.insert(field_ids["Nickname"], FieldValue::String(nickname));
+                    values
+                } else {
+                    values
+                };
+                EntryRevision {
+                    form_id: form.id,
+                    entry_id: EntryId::from(Uuid::from_u128(700_000 + index as u128)),
+                    revision_id: Uuid::from_u128(800_000 + index as u128).into(),
+                    parent_revision_id: None,
+                    entry_version: 1,
+                    change_id: "traversal-fixture-seed".to_owned(),
+                    expected_version: None,
+                    operation: EntryOperation::Upsert,
+                    committed_at_micros: updated_at,
+                    author_id: "owner".to_owned(),
+                    form_version: form.version,
+                    source_kind: "test".to_owned(),
+                    source_id: None,
+                    entry: EntryMetadata {
+                        external_id,
+                        created_at_micros: updated_at,
+                        updated_at_micros: updated_at,
+                        updated_by: "owner".to_owned(),
+                        ..EntryMetadata::default()
+                    },
+                    values,
+                    extra_attributes: BTreeMap::new(),
+                    extension_metadata: BTreeMap::new(),
+                }
+            },
+        )
         .collect::<Vec<_>>();
     let command = ChangeCommand {
-        change_id: "traversal-seed".to_owned(),
+        change_id: "traversal-fixture-seed".to_owned(),
         run_id: None,
         actor_principal_id: "owner".to_owned(),
-        message: Some("seed traversal fixture".to_owned()),
+        message: Some("seed traversal sorting fixture".to_owned()),
         reverts_change_id: None,
         created_at_micros: 1,
     };
