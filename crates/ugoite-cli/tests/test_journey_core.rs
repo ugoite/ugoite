@@ -14,6 +14,7 @@
 
 use std::process::Command;
 use std::process::Output;
+use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 
 const BASIC_COMPOSITION_FIXTURE: &str = r#"format: ugoite.composition
 format_version: 1
@@ -1468,49 +1469,74 @@ fn test_cli_entry_list_canonical_query_options() {
 
 #[test]
 fn test_cli_sql_query_and_count_use_stateless_local_contract() {
-    let space = setup_parity_space(r#"{"Status":{"type":"string"}}"#);
+    use ugoite_iceberg::service::UgoiteService;
 
-    let form = stdout_json(
-        &run_cli(&space.config_path, &["form", "get", space.form_name]),
-        "local SQL form lookup",
-    );
+    let dir = tempfile::tempdir().expect("local SQL fixture directory");
+    let root = dir.path().to_string_lossy().into_owned();
+    let config_path = dir.path().join("cli-config.toml");
+    let form_name = "SqlQueryForm";
+    let service =
+        UgoiteService::new_without_background_refresh(&root).expect("open SQL fixture service");
+    let runtime = tokio::runtime::Runtime::new().expect("create fixture runtime");
+    let space_uid = runtime
+        .block_on(service.ensure_operator_space_with_name("sql-query-space", "SQL query"))
+        .expect("create SQL fixture Space")
+        .space_id();
+    let space_id = space_uid.to_string();
+    runtime
+        .block_on(service.upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": form_name,
+                "version": 1,
+                "template": format!("# {form_name}"),
+                "fields": {"Status": {"type": "string"}}
+            }),
+        ))
+        .expect("seed SQL fixture Form");
+    for (entry_id, status) in [("sql-local-entry", "open"), ("sql-local-entry-2", "closed")] {
+        runtime
+            .block_on(service.create_structured_entry_with_receipt(
+                &space_id,
+                entry_id,
+                form_name.to_owned(),
+                Vec::new(),
+                std::collections::BTreeMap::from([(
+                    "Status".to_owned(),
+                    serde_json::json!(status),
+                )]),
+                std::collections::BTreeMap::new(),
+                "sql-stateless-test",
+            ))
+            .expect("seed SQL fixture Entry");
+    }
+    let form = runtime
+        .block_on(service.get_form(&space_id, form_name))
+        .expect("read SQL fixture Form");
     let form_id = form["id"].as_str().expect("form id").replace('-', "");
     let relation = format!("form_{form_id}");
     let sql = format!("SELECT _ugoite_id FROM \"{relation}\" ORDER BY _ugoite_id");
-    let created = run_cli(
-        &space.config_path,
-        &[
-            "entry",
-            "create",
-            "--id",
-            "sql-local-entry",
-            "--form",
-            space.form_name,
-            "--field",
-            "Status=open",
-        ],
+    let mut config = ConfigFile::empty();
+    config
+        .connections
+        .insert("local".to_owned(), ConnectionConfig::Core { root });
+    config.contexts.insert(
+        "local".to_owned(),
+        ContextConfig {
+            connection: "local".to_owned(),
+            space_uid,
+            credential: None,
+        },
     );
-    assert!(created.status.success(), "local SQL entry setup failed");
-    let created = run_cli(
-        &space.config_path,
-        &[
-            "entry",
-            "create",
-            "--id",
-            "sql-local-entry-2",
-            "--form",
-            space.form_name,
-            "--field",
-            "Status=closed",
-        ],
-    );
-    assert!(
-        created.status.success(),
-        "second local SQL entry setup failed"
-    );
+    config.current_context = Some("local".to_owned());
+    std::fs::write(
+        &config_path,
+        toml::to_string_pretty(&config).expect("serialize local SQL config"),
+    )
+    .expect("write local SQL config");
 
     let page = stdout_json(
-        &run_cli(&space.config_path, &["sql", "query", &sql, "--limit", "1"]),
+        &run_cli(&config_path, &["sql", "query", &sql, "--limit", "1"]),
         "local stateless SQL query",
     );
     assert_eq!(page["columns"].as_array().map(Vec::len), Some(1));
@@ -1524,7 +1550,7 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
 
     let next_page = stdout_json(
         &run_cli(
-            &space.config_path,
+            &config_path,
             &[
                 "sql",
                 "query",
@@ -1542,7 +1568,7 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
     assert_ne!(next_page["rows"][0]["_ugoite_id"], first_id);
 
     let unordered = run_cli(
-        &space.config_path,
+        &config_path,
         &[
             "sql",
             "query",
@@ -1559,7 +1585,7 @@ fn test_cli_sql_query_and_count_use_stateless_local_contract() {
     );
 
     let count = stdout_json(
-        &run_cli(&space.config_path, &["sql", "count", &sql]),
+        &run_cli(&config_path, &["sql", "count", &sql]),
         "local stateless SQL count",
     );
     assert_eq!(count["count"], 2);
