@@ -97,25 +97,29 @@ updates:
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
-      # Grouped runs with Starlight 0.42.11, 0.43.0, and 0.43.1 failed
-      # static rendering because Deno cannot resolve astro:middleware.
+      # Grouped runs with Starlight 0.42.10, 0.42.11, 0.43.0, and 0.43.1
+      # failed static rendering because Deno cannot resolve astro:middleware.
       - dependency-name: "@astrojs/starlight"
         versions:
+          - "0.42.10"
           - "0.42.11"
           - "0.43.0"
           - "0.43.1"
-      # The 1.64.1 and 1.65.0 manifest updates resolve 1.65.1 in the lockfile;
-      # navigation tests then load as CommonJS, where import.meta fails. Hold
-      # each observed update target and the resolved version.
+      # The 1.64.0, 1.64.1, and 1.65.0 manifest updates resolve 1.65.1 in the
+      # lockfile; navigation tests then load as CommonJS, where import.meta
+      # fails. Hold each observed update target and the resolved version.
       - dependency-name: "@playwright/test"
         versions:
+          - "1.64.0"
           - "1.64.1"
           - "1.65.0"
           - "1.65.1"
-      # The 2.2.2 manifest target resolves to 2.2.3, which removes defineConfig
-      # used by frontend/app.config.ts. Hold both target and resolved versions.
+      # The 2.2.1 and 2.2.2 manifest targets resolve to 2.2.3, which removes
+      # defineConfig used by frontend/app.config.ts. Hold each target and the
+      # resolved version.
       - dependency-name: "@solidjs/start"
         versions:
+          - "2.2.1"
           - "2.2.2"
           - "2.2.3"
   # Rust compiler updates arrive as normal PRs against the single
