@@ -74,12 +74,11 @@ updates:
     schedule:
       interval: "daily"
 
-  # Deno is monitored in an independent weekly frame so Deno PRs stay
-  # reviewable on their own. The five manifests share one deno.lock; keep
-  # updates in that single lockfile and do not introduce a custom updater.
-  # If multi-directory detection misbehaves for the shared lock, fall back
-  # to monitoring only "/" and rely on `deno outdated --recursive` for
-  # full-workspace coverage.
+  # Keep Deno updates in an independent weekly frame. The five manifests share
+  # one deno.lock, so group version updates across all monitored directories.
+  # The temporary limit allows the current 11 individual candidates plus one
+  # grouped replacement to coexist until their coverage is verified. Lower it
+  # to 1 after the existing candidates have been carried into that PR.
   - package-ecosystem: "deno"
     directories:
       - "/"
@@ -89,7 +88,11 @@ updates:
       - "/tools"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 12
+    groups:
+      deno-workspace:
+        patterns:
+          - "*"
   # Rust compiler updates arrive as normal PRs against the single
   # rust-toolchain.toml authority (monthly cadence).
   - package-ecosystem: "rust-toolchain"
