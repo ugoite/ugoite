@@ -1244,7 +1244,7 @@ Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", as
   const mise = await Deno.readTextFile("mise.toml");
   assertEquals(
     frontendTasks.tasks.coverage,
-    "deno run -A npm:vitest run --coverage --maxWorkers=1",
+    "deno run -A vitest run --coverage --maxWorkers=1",
   );
   assertContainsAll(
     frontendConfig,
@@ -1286,7 +1286,7 @@ Deno.test("REQ-OPS-024: docsite coverage remains developer convenience", async (
   const mise = await Deno.readTextFile("mise.toml");
   assertEquals(
     docsiteTasks.tasks.coverage,
-    "deno run -A npm:vitest@4.1.8 run --coverage --maxWorkers=1",
+    "deno run -A vitest run --coverage --maxWorkers=1",
   );
   assertContainsAll(
     docsiteConfig,
