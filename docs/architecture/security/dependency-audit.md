@@ -173,10 +173,10 @@ reproduced the three compatibility failures with lower manifest targets:
   reported that `defineConfig` is missing from the package export.
 
 `ci-impact-plan`, `ci-pr-context-report`, Rust check, S3 authorization, and
-CP1 fixture lanes passed. E2E and CP1 query/export were skipped after required
-lanes failed. Rust test was still running when this evidence was recorded;
-the three failed required lanes are enough to keep this group unaccepted. The
-new target holds are not yet present in the merged policy.
+CP1 fixture and Rust test lanes passed. E2E and CP1 query/export were skipped
+after required lanes failed, and `ci-required` failed. CodeQL run
+[44891845615](https://github.com/ugoite/ugoite/actions/runs/44891845615)
+passed. The new target holds are not yet present in the merged policy.
 
 [Issue #4693](https://github.com/ugoite/ugoite/issues/4693) tracks verification
 of grouped update PR #5033. Workspace coverage, the one-open-PR limit, and the
