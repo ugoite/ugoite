@@ -28,30 +28,45 @@ they are not dependency authorities.
 
 GitHub Actions, Cargo, Docker, the npm package under `/packages/ugoite`, and
 Dev Containers remain in the daily `all-dependencies` multi-ecosystem group.
-Rust toolchain updates remain monthly.
+Cargo's Arrow stack also keeps its per-ecosystem group for eligible patch
+updates. Rust toolchain updates remain monthly.
 
 ## Deno update grouping evidence
 
-The five Deno manifests share the root `deno.lock`. Dependabot now keeps those
-directories in one weekly wildcard version-update group and limits regular
-Deno update PRs to one open PR. Exact compatibility holds are listed below;
-security updates remain independently visible.
+The five Deno manifests share the root `deno.lock`. Dependabot is configured
+to monitor those directories in one weekly wildcard version-update group with
+`open-pull-requests-limit: 1`. The initial run also produced a duplicate
+one-directory PR, which was closed after comparison; the next run must confirm
+that the policy now produces one grouped update. Exact compatibility holds
+are listed below; security updates remain independently visible.
 
-The first generated grouped update, [PR #4984](https://github.com/ugoite/ugoite/pull/4984),
-included the five manifests and shared lockfile but failed the Docsite build
-with Starlight `0.43.1` and Docsite navigation tests with Playwright `1.65.1`.
-A later grouped update, [PR #4989](https://github.com/ugoite/ugoite/pull/4989),
-also exposed failures with Starlight `0.43.0`, Playwright `1.65.0` (resolved
-to `1.65.1` in the lockfile), and SolidStart `2.2.3`. The observed failures
-and the exact holds are recorded below; they do not justify suppressing other
-versions or all major updates.
+The first grouped update after the multi-directory policy,
+[PR #4994](https://github.com/ugoite/ugoite/pull/4994), included all five
+manifests and the shared lockfile. Frozen dependency verification passed, but
+required CI rejected three candidate/resolution pairs:
+
+- Starlight `0.42.11` failed Docsite static rendering because Deno could not
+  resolve `astro:middleware`.
+- Playwright target `1.64.1` resolved to `1.65.1` in the lockfile; Docsite
+  navigation tests then loaded as CommonJS and failed on `import.meta`.
+- SolidStart target `2.2.2` resolved to `2.2.3` in the lockfile; frontend type
+  checking reported the missing `defineConfig` export.
+
+[PR #4995](https://github.com/ugoite/ugoite/pull/4995) was titled as a
+one-directory update but changed the same five manifests and shared lockfile
+as #4994. It was closed as a duplicate after the manifest diffs were compared.
+The exact target and resolved versions from #4994 were added to the holds by
+[PR #4999](https://github.com/ugoite/ugoite/pull/4999), preserving the
+existing group policy and the earlier Starlight `0.43.0` / `0.43.1` and
+Playwright `1.65.0` / `1.65.1` observations recorded below.
 
 [Issue #4693](https://github.com/ugoite/ugoite/issues/4693) tracks verification
-of the next Dependabot-generated grouped update. The grouping policy is in
-place, but workspace coverage, a consistent shared lockfile, frozen
-verification, and required CI still need to be evidenced on an actual update
-PR before this rollout is considered complete. Existing update PRs should be
-closed only after their candidates are accounted for in the grouped PR.
+of the next grouped update after those holds. The five-directory group and
+frozen boundary are exercised, but the one-open-PR behavior, absence of
+duplicate candidates, and required CI success still need evidence from a new
+grouped PR before the rollout is complete. Existing update PRs should be
+closed only after their remaining candidates are accounted for in the
+successful grouped PR.
 
 ## Intentionally held updates and security exceptions
 
@@ -60,12 +75,12 @@ closed only after their candidates are accounted for in the grouped PR.
 | Arrow / Parquet / Iceberg / DataFusion / OpenDAL stack | Dependabot suppresses major and minor updates; patch updates remain eligible and grouped. | The stack shares concrete Arrow types; a single-crate major or minor update can break compatibility across the stack. | Propose a compatible stack update; validate the coordinated crates, Iceberg adapters, SQL, and storage regressions together. Review quarterly. |
 | `iceberg` and `iceberg-datafusion` Git dependencies | Revision `1ecd497` in `crates/ugoite-iceberg/Cargo.toml`. | This upstream area is consumed by Git revision, not a normal registry version update. | Review a compatible upstream revision and verify saved-Space reopen, bounded queries, storage, and API behavior monthly. |
 | Mitase bootstrap | Version `0.2.5` and four target SHA-256 values in `tools/mitase.lock.toml`. | Bootstrap and Mitase contracts depend on the exact downloaded bytes. | Update version and all four checksums together; run bootstrap and Mitase contract checks monthly. |
-| MinIO CI image | `pgsty/minio@sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9` in `ci.yml`. | The S3 authorization scenario uses a specific image build. | For a new image digest, rerun the S3/ACL scenario and the affected CI lane. Review monthly. |
-| sccache action | `mozilla-actions/sccache-action` is pinned to commit `fc920bf0ec8de6ee65d409111f7ec508035751ba` (upstream tag comment `v0.0.11`). The hosted runner reported sccache `0.17.0`. | The action and cache behavior affect CI execution. The action revision, rather than an independently installed binary version, is pinned. | On an action or runner change, verify cache setup and affected CI lanes. Review monthly. |
+| MinIO CI image | `pgsty/minio@sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9` in `.github/workflows/ci.yml`. | The S3 authorization scenario uses a specific image build. | For a new image digest, rerun the S3/ACL scenario and the affected CI lane. Review monthly. |
+| sccache action | `mozilla-actions/sccache-action` in `.github/workflows/ci.yml` is pinned to commit `fc920bf0ec8de6ee65d409111f7ec508035751ba` (upstream tag comment `v0.0.11`). The hosted runner reported sccache `0.17.0`. | The action and cache behavior affect CI execution. The action revision, rather than an independently installed binary version, is pinned. | On an action or runner change, verify cache setup and affected CI lanes. Review monthly. |
 | TypeScript major updates | Dependabot ignores semver-major updates for `typescript`; patch and minor updates remain eligible. | TypeScript 7 removes compiler APIs used by `tools/check_frontend_changed_types.ts`. | Remove the ignore after that consumer supports the new APIs; validate frontend changed-file type checking. |
-| Starlight | Dependabot holds only `0.43.0` and `0.43.1`. | Both observed candidates failed static rendering because Deno could not resolve `astro:middleware`. | Revisit when a candidate is available; verify Docsite build and navigation tests. |
-| Playwright | Dependabot holds update target `1.65.0` and resolved version `1.65.1`. | The update caused Docsite navigation tests to load as CommonJS, where `import.meta` failed. | Revisit with a candidate that preserves module loading; verify Docsite navigation and E2E browser setup. |
-| SolidStart | Dependabot holds only `2.2.3`. | That release removes `defineConfig`, which `frontend/app.config.ts` uses. | Revisit when a compatible candidate is available; verify frontend type checking, tests, and build. |
+| Starlight | Dependabot holds `0.42.11`, `0.43.0`, and `0.43.1`. | Each observed grouped candidate failed static rendering because Deno could not resolve `astro:middleware`. | Revisit when a candidate is available; verify Docsite build and navigation tests. |
+| Playwright | Dependabot holds targets `1.64.1` and `1.65.0`, plus resolved version `1.65.1`. | The targets resolved to `1.65.1` and Docsite navigation tests loaded as CommonJS, where `import.meta` failed. | Revisit with a candidate that preserves module loading; verify Docsite navigation and E2E browser setup. |
+| SolidStart | Dependabot holds target `2.2.2` and resolved version `2.2.3`. | The target resolved to `2.2.3`, which removes `defineConfig` used by `frontend/app.config.ts`. | Revisit when a compatible candidate is available; verify frontend type checking, tests, and build. |
 | RustSec `rsa` advisory | The lockfile contains `rsa 0.9.10`, reported for `RUSTSEC-2023-0071`. | The crate is transitive through the OIDC adapter and OpenDAL cloud backends. Removing those optional protocol and storage surfaces is not an appropriate dependency-update workaround. | Rerun `cargo audit --locked --json` on graph changes and remove this exception when a patched release or supported replacement is available. |
 | Dev Container and OS packages | Base image and feature pins are in `.devcontainer/devcontainer.json`. | Base image and OS package updates are periodic environment changes rather than application dependency updates. | Review with a base-image update; verify container setup and the basic contributor workflow. |
 
