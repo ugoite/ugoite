@@ -289,9 +289,9 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-012#criterion.devcontainer-change-detection
-          - id: devcontainer-dependency-updates
+          - id: dependency-update-policy
             adapter: declared
-            path: .github/dependabot.yml
+            path: renovate.json
             selector: { kind: file }
             claims:
               - kind: evidences

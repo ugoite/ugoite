@@ -373,7 +373,7 @@ Deno.test("release path does not reference removed runtimes", async () => {
     "e2e/scripts/run-e2e-compose.sh",
     ".devcontainer/devcontainer.json",
     ".vscode/settings.json",
-    ".github/dependabot.yml",
+    "renovate.json",
   ];
 
   for (const path of paths) {

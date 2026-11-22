@@ -2,16 +2,9 @@ name: Renovate
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Select a read-only Renovate dry-run mode
-        type: choice
-        options:
-          - extract
-          - lookup
-          - full
-        default: extract
-        required: true
+  schedule:
+    # 01:17 JST daily; GitHub Actions cron uses UTC.
+    - cron: "17 16 * * *"
 
 permissions:
   contents: read
@@ -71,7 +64,7 @@ jobs:
             --silent >/dev/null
           echo "Dependabot alerts API: accessible"
 
-      - name: Run pinned Renovate CLI in dry-run mode
+      - name: Run pinned Renovate CLI
         uses: renovatebot/github-action@acdd6bda8b035c99ce59d5675816af2aa65a1774 # v46.3.14
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -84,5 +77,4 @@ jobs:
           RENOVATE_PLATFORM_COMMIT: enabled
           RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_ALLOW_PLUGINS: "false"
-          RENOVATE_DRY_RUN: ${{ inputs.dry_run }}
           LOG_LEVEL: info
