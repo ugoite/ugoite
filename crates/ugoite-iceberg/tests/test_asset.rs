@@ -508,33 +508,34 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
     }
     let final_bytes = store.read_exact_head().await?.expect("space Head").bytes;
     let final_head: serde_json::Value = serde_json::from_slice(&final_bytes)?;
-    let initial_keys = initial_head
-        .as_object()
-        .expect("Catalog Head object")
-        .keys()
-        .collect::<Vec<_>>();
-    let final_keys = final_head
-        .as_object()
-        .expect("Catalog Head object")
-        .keys()
-        .collect::<Vec<_>>();
-    assert_eq!(final_keys, initial_keys, "Head shape must stay stable");
-    for key in [
-        "format_version",
-        "space_id",
-        "namespace",
-        "form_registry_generation",
-        "tables",
-        "pins",
-        "authorization_snapshot",
-    ] {
-        assert_eq!(final_head[key], initial_head[key], "Head {key} is stable");
-    }
-    assert_eq!(
-        final_head["publication_command_id"],
-        format!("asset-delete:{}", references[2].asset_id),
-        "only the latest deletion command remains in Head"
+    let final_command_id = format!("asset-delete:{}", references[2].asset_id);
+    let expected_generation = initial_head["generation"]
+        .as_u64()
+        .expect("Catalog Head generation")
+        + references.len() as u64;
+    let expected_publication_location =
+        store.publication_path(expected_generation, &final_command_id);
+
+    let final_text = String::from_utf8(final_bytes.clone())?;
+    let checksum = final_head["checksum"]
+        .as_str()
+        .expect("Catalog Head checksum");
+    assert_eq!(checksum.len(), 64, "Head checksum remains a SHA-256 digest");
+    assert!(
+        checksum.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "Head checksum remains hexadecimal"
     );
+
+    let mut expected_head = initial_head.clone();
+    expected_head["generation"] = serde_json::json!(expected_generation);
+    expected_head["publication_command_id"] = serde_json::json!(final_command_id);
+    expected_head["publication_location"] = serde_json::json!(expected_publication_location);
+    expected_head["checksum"] = serde_json::json!(checksum);
+    assert_eq!(
+        final_head, expected_head,
+        "Head changes only to the latest deletion publication and its checksum"
+    );
+
     let mut head_without_current_publication = final_head.clone();
     let head_fields = head_without_current_publication
         .as_object_mut()
@@ -548,7 +549,6 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
             "Head fields must not retain Asset IDs"
         );
     }
-    let final_text = String::from_utf8(final_bytes.clone())?;
     for (index, reference) in references.iter().enumerate() {
         assert!(
             !final_text.contains(&format!("asset-history-{index}.bin")),
@@ -569,12 +569,6 @@ async fn asset_deletions_keep_catalog_head_bounded() -> anyhow::Result<()> {
             );
         }
     }
-    assert!(
-        final_bytes.len() <= initial.len() + 64,
-        "Catalog Head grew from {} to {} bytes across three deletions",
-        initial.len(),
-        final_bytes.len()
-    );
     Ok(())
 }
 
