@@ -155,6 +155,7 @@ async fn journey_cli_remote_locate_recover_reaches_durable_outcome() {
 struct RemoteFixture {
     config_path: std::path::PathBuf,
     space_id: String,
+    principal_id: uuid::Uuid,
     storage_root: String,
     api_base: String,
     access_token: String,
@@ -261,6 +262,7 @@ async fn setup_remote() -> RemoteFixture {
     RemoteFixture {
         config_path,
         space_id: access.space_uid.to_string(),
+        principal_id: access.principal_id,
         storage_root,
         api_base,
         access_token: access.access_token,
@@ -297,35 +299,46 @@ async fn journey_cli_remote_locate_recover() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Multiple Form-backed Entries.
-    for (entry_id, status, priority) in
-        [("locate-task-a", "open", 3), ("locate-task-b", "closed", 7)]
-    {
-        let priority = priority.to_string();
-        let status_field = format!("status={status}");
-        let priority_field = format!("priority={priority}");
-        let output = run_cli(
-            config_path,
-            &[
-                "entry",
-                "create",
-                "--id",
-                entry_id,
-                "--form",
-                form_name,
-                "--field",
-                &status_field,
-                "--field",
-                &priority_field,
-            ],
+    // Create the target Entry through the authenticated CLI. The closed
+    // decoy exists only to make the structured filter narrow to one Entry.
+    let target_create = run_cli(
+        config_path,
+        &[
+            "entry",
+            "create",
+            "--id",
+            "locate-task-a",
+            "--form",
+            form_name,
+            "--field",
+            "status=open",
+            "--field",
+            "priority=3",
+        ],
+    )
+    .await;
+    assert!(
+        target_create.status.success(),
+        "entry create failed: {}",
+        String::from_utf8_lossy(&target_create.stderr)
+    );
+
+    let service = UgoiteService::new(fixture.storage_root.clone()).unwrap();
+    service
+        .create_structured_entry_with_receipt(
+            &fixture.space_id,
+            "locate-task-b",
+            form_name.to_string(),
+            Vec::new(),
+            std::collections::BTreeMap::from([
+                ("status".to_string(), json!("closed")),
+                ("priority".to_string(), json!(7)),
+            ]),
+            std::collections::BTreeMap::new(),
+            &fixture.principal_id.to_string(),
         )
-        .await;
-        assert!(
-            output.status.success(),
-            "entry create failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+        .await
+        .expect("seed closed search decoy");
 
     // EntryQuery text search discovers the target.
     let results = stdout_json(
@@ -413,7 +426,6 @@ async fn journey_cli_remote_locate_recover() {
 
     // Seed one committed Change with two targets through the same Space store,
     // then exercise cursor forwarding through the authenticated remote CLI.
-    let service = UgoiteService::new(fixture.storage_root.clone()).unwrap();
     let workspace = native_workspace(
         service.operator(),
         &service.workspace_path(&fixture.space_id),
