@@ -1,0 +1,105 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":enableVulnerabilityAlerts"
+  ],
+  "timezone": "Asia/Tokyo",
+  "dependencyDashboard": {
+    "enabled": true
+  },
+  "automerge": false,
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "major": {
+    "dependencyDashboardApproval": true
+  },
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "enabledManagers": [
+    "cargo",
+    "deno",
+    "npm",
+    "github-actions",
+    "dockerfile",
+    "docker-compose",
+    "devcontainer",
+    "rust-toolchain",
+    "mise",
+    "renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "Group routine ecosystem updates into a bounded daily proposal",
+      "matchManagers": [
+        "github-actions",
+        "cargo",
+        "dockerfile",
+        "docker-compose",
+        "devcontainer",
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "schedule": ["* 0-4 * * *"],
+      "groupName": "all-dependencies"
+    },
+    {
+      "description": "Group the shared Deno workspace lockfile updates weekly",
+      "matchManagers": ["deno"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "schedule": ["* 0-4 * * 1"],
+      "groupName": "deno-workspace"
+    },
+    {
+      "description": "Review Rust compiler updates monthly",
+      "matchManagers": ["rust-toolchain"],
+      "schedule": ["* 0-4 1 * *"]
+    },
+    {
+      "description": "Group mise-managed development tool updates monthly",
+      "matchManagers": ["mise"],
+      "schedule": ["* 0-4 1 * *"],
+      "groupName": "development-tools"
+    },
+    {
+      "description": "Keep the installer package Node.js support range under human review",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["engines"],
+      "matchPackageNames": ["node"],
+      "enabled": false
+    },
+    {
+      "description": "Keep coordinated Arrow stack changes visible for review",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": [
+        "arrow*",
+        "parquet",
+        "iceberg*",
+        "datafusion*",
+        "opendal*"
+      ],
+      "matchUpdateTypes": ["major", "minor"],
+      "groupName": "rust-arrow-stack",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Require dashboard approval for potentially breaking zero-major minor updates",
+      "matchCurrentVersion": "<1.0.0",
+      "matchUpdateTypes": ["minor"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
