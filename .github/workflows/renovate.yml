@@ -1,0 +1,88 @@
+name: Renovate
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Select a read-only Renovate dry-run mode
+        type: choice
+        options:
+          - extract
+          - lookup
+          - full
+        default: extract
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-ugoite-main
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    if: ${{ github.repository == 'ugoite/ugoite' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Issue single-repository App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ugoite
+          repositories: ugoite
+          permission-administration: read
+          permission-checks: write
+          permission-contents: write
+          permission-issues: write
+          permission-members: read
+          permission-pull-requests: write
+          permission-statuses: write
+          permission-vulnerability-alerts: read
+          permission-workflows: write
+
+      - name: Verify App slug matches the PR gate
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          RENOVATE_APP_SLUG: ${{ vars.RENOVATE_APP_SLUG }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APP_SLUG}" || -z "${RENOVATE_APP_SLUG}" || "${APP_SLUG}" != "${RENOVATE_APP_SLUG}" ]]; then
+            echo "::error::The installed GitHub App slug does not match RENOVATE_APP_SLUG."
+            exit 1
+          fi
+          echo "GitHub App identity matches the PR gate configuration."
+
+      - name: Verify Dependabot alerts API access without printing alert data
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api --method GET \
+            'repos/ugoite/ugoite/dependabot/alerts?per_page=1' \
+            --silent >/dev/null
+          echo "Dependabot alerts API: accessible"
+
+      - name: Run pinned Renovate CLI in dry-run mode
+        uses: renovatebot/github-action@acdd6bda8b035c99ce59d5675816af2aa65a1774 # v46.3.14
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          renovate-version: "44.257.9" # renovate: datasource=github-releases depName=renovatebot/renovate
+        env:
+          RENOVATE_PLATFORM: github
+          RENOVATE_REPOSITORIES: ugoite/ugoite
+          RENOVATE_AUTODISCOVER: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          RENOVATE_PLATFORM_COMMIT: enabled
+          RENOVATE_ALLOW_SCRIPTS: "false"
+          RENOVATE_ALLOW_PLUGINS: "false"
+          RENOVATE_DRY_RUN: ${{ inputs.dry_run }}
+          LOG_LEVEL: info
