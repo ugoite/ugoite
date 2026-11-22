@@ -359,6 +359,7 @@ inventory:
         - docs/spec/requirements/security.yaml
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
+        - .github/workflows/renovate.yml
         - .github/workflows/release-candidate.yml
         - .github/workflows/release-publish.yml
         - Cargo.lock
@@ -518,6 +519,7 @@ inventory:
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
         - .github/workflows/pr-require-close-issue.yml
+        - .github/workflows/renovate.yml
         - .github/workflows/release-candidate.yml
         - .github/workflows/release-publish.yml
         - .github/pull_request_template.md

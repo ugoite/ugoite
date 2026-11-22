@@ -17,7 +17,11 @@ permissions:
 jobs:
   require-close-issue-link:
     runs-on: ubuntu-slim
-    if: ${{ github.event_name == 'merge_group' || (!github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'renovate[bot]') }}
+    if: >-
+      ${{ github.event_name == 'merge_group' ||
+      (!github.event.pull_request.draft &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != format('{0}[bot]', vars.RENOVATE_APP_SLUG)) }}
     steps:
       - name: Check out trusted gate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,4 +41,5 @@ jobs:
       - name: Validate PR body matches required template
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RENOVATE_APP_SLUG: ${{ vars.RENOVATE_APP_SLUG }}
         run: deno run --allow-read --allow-env --allow-net=api.github.com tools/pr_body_gate.ts

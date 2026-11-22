@@ -27,7 +27,19 @@
     "devcontainer",
     "rust-toolchain",
     "mise",
-    "renovate-config"
+    "renovate-config",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the pinned Renovate CLI used by the self-hosted workflow",
+      "managerFilePatterns": ["/^\\.github\\/workflows\\/renovate\\.yml$/"],
+      "matchStrings": [
+        "renovate-version:\\s*[\\\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)[\\\"']?\\s*# renovate: datasource=(?<datasource>github-releases) depName=(?<depName>[^\\s]+)"
+      ],
+      "versioningTemplate": "semver"
+    }
   ],
   "packageRules": [
     {
@@ -47,7 +59,6 @@
         "pin",
         "pinDigest"
       ],
-      "schedule": ["* 0-4 * * *"],
       "groupName": "all-dependencies"
     },
     {
@@ -60,19 +71,30 @@
         "pin",
         "pinDigest"
       ],
-      "schedule": ["* 0-4 * * 1"],
+      "schedule": ["* * * * 1"],
       "groupName": "deno-workspace"
     },
     {
       "description": "Review Rust compiler updates monthly",
       "matchManagers": ["rust-toolchain"],
-      "schedule": ["* 0-4 1 * *"]
+      "schedule": ["* * 1-7 * *"]
     },
     {
       "description": "Group mise-managed development tool updates monthly",
       "matchManagers": ["mise"],
-      "schedule": ["* 0-4 1 * *"],
+      "schedule": ["* * 1-7 * *"],
       "groupName": "development-tools"
+    },
+    {
+      "description": "Review Renovate CLI updates monthly during the first week",
+      "matchManagers": ["custom.regex"],
+      "schedule": ["* * 1-7 * *"]
+    },
+    {
+      "description": "Track the Renovate CLI pin through its GitHub release version",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["ghcr.io/renovatebot/renovate"],
+      "enabled": false
     },
     {
       "description": "Keep the installer package Node.js support range under human review",

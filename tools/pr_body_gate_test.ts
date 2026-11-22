@@ -168,13 +168,15 @@ Deno.test("pr_body_gate extracts sections case-insensitively", () => {
   assertEquals(sectionText("no headings", "Summary"), "");
 });
 
-Deno.test("pr_body_gate exempts only the trusted dependency update bots", () => {
-  assertEquals(isExemptAuthor("dependabot[bot]"), true);
-  assertEquals(isExemptAuthor("renovate[bot]"), true);
-  assertEquals(isExemptAuthor("tohboeh5"), false);
-  assertEquals(isExemptAuthor("renovatebot[bot]"), false);
-  assertEquals(isExemptAuthor("renovate[bot]-fork"), false);
-  assertEquals(isExemptAuthor(undefined), false);
+Deno.test("pr_body_gate exempts Dependabot and the configured Renovate App", () => {
+  const appSlug = "ugoite-renovate";
+  assertEquals(isExemptAuthor("dependabot[bot]", appSlug), true);
+  assertEquals(isExemptAuthor("ugoite-renovate[bot]", appSlug), true);
+  assertEquals(isExemptAuthor("renovate[bot]", appSlug), false);
+  assertEquals(isExemptAuthor("ugoite-renovate-extra[bot]", appSlug), false);
+  assertEquals(isExemptAuthor("tohboeh5", appSlug), false);
+  assertEquals(isExemptAuthor(undefined, appSlug), false);
+  assertEquals(isExemptAuthor("[bot]", undefined), false);
 });
 
 Deno.test("pr_body_gate parses merge-group refs for PR numbers", () => {
@@ -219,7 +221,7 @@ Deno.test("pr_body_gate yields an empty body without a merge-group PR number", a
   assertEquals(validatePrBody(pointer.body).length > 0, true);
 });
 
-Deno.test("pr_body_gate resolves the Renovate author from a merge group", async () => {
+Deno.test("pr_body_gate resolves the configured App author from a merge group", async () => {
   const pointer = await resolvePullRequestPointer({
     GITHUB_EVENT_NAME: "merge_group",
     GITHUB_REF: "refs/heads/gh-readonly-queue/main/pr-2462-abc123",
@@ -229,14 +231,14 @@ Deno.test("pr_body_gate resolves the Renovate author from a merge group", async 
     new Response(
       JSON.stringify({
         body: "generated dependency update body",
-        user: { login: "renovate[bot]" },
+        user: { login: "ugoite-renovate[bot]" },
       }),
       { status: 200 },
     ));
 
   assertEquals(pointer, {
     body: "generated dependency update body",
-    author: "renovate[bot]",
+    author: "ugoite-renovate[bot]",
   });
-  assertEquals(isExemptAuthor(pointer.author), true);
+  assertEquals(isExemptAuthor(pointer.author, "ugoite-renovate"), true);
 });

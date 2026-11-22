@@ -8,15 +8,17 @@ export const requiredSections = [
   "## Testing",
 ];
 
-export const exemptUpdateBotAuthors = [
-  "dependabot[bot]",
-  "renovate[bot]",
-] as const;
+export const dependabotAuthor = "dependabot[bot]";
 
-export function isExemptAuthor(author: string | undefined): boolean {
-  return exemptUpdateBotAuthors.some((trustedAuthor) =>
-    trustedAuthor === author
-  );
+export function isExemptAuthor(
+  author: string | undefined,
+  renovateAppSlug: string | undefined,
+): boolean {
+  if (author === dependabotAuthor) return true;
+  if (!renovateAppSlug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(renovateAppSlug)) {
+    return false;
+  }
+  return author === `${renovateAppSlug}[bot]`;
 }
 
 export function sectionText(body: string, heading: string): string {
@@ -173,7 +175,7 @@ export async function resolvePullRequestPointer(
 
 if (import.meta.main) {
   const pointer = await resolvePullRequestPointer(Deno.env.toObject());
-  if (isExemptAuthor(pointer.author)) {
+  if (isExemptAuthor(pointer.author, Deno.env.get("RENOVATE_APP_SLUG"))) {
     console.log(
       "Dependency update bot pull requests use generated bodies; skipping the human PR template gate.",
     );
