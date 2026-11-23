@@ -98,7 +98,7 @@
       "@vinxi/server-components": "npm:@vinxi/server-components@^0.5.0",
       "msw": "npm:msw@^2.14.6",
       "vinxi": "npm:vinxi@^0.5.11",
-      "vitest": "npm:vitest@^4.1.8"
+      "vitest/config": "npm:vitest@^4.1.8/config"
     },
     "./tools/": {
       "@std/assert": "jsr:@std/assert@1"
