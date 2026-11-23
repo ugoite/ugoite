@@ -9,7 +9,7 @@
   },
   "imports": {
     "@astrojs/check": "npm:@astrojs/check@0.9.9",
-    "@astrojs/internal-helpers/": "npm:/@astrojs/internal-helpers@0.10.0/",
+    "@astrojs/internal-helpers/": "npm:@astrojs/internal-helpers@0.10.0/",
     "@astrojs/markdown-satteri": "npm:@astrojs/markdown-satteri@0.3.2",
     "@astrojs/starlight": "npm:@astrojs/starlight@0.41.0",
     "@astrojs/starlight/schema": "npm:@astrojs/starlight@0.41.0/schema",
