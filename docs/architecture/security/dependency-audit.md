@@ -105,9 +105,9 @@ cannot independently read that repository setting.
 The lookup, full dry-run, and live run reported that Renovate could not
 determine a digest for the manually managed `iceberg-rust` Git tag because the
 upstream tag has a `v` prefix. The full dry-run and live run also logged four
-Cargo/Docker grouped-update collisions. These warnings did not fail either
-run. The Iceberg revision remains manually managed; do not mark these
-diagnostics as a passed dependency update.
+Cargo/Docker grouped-update collisions. These diagnostics were non-fatal in
+each run in which they appeared. The Iceberg revision remains manually managed;
+do not mark these diagnostics as a passed dependency update.
 
 ## Monthly read-only check
 
