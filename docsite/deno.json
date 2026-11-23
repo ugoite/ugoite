@@ -11,16 +11,10 @@
     "@astrojs/check": "npm:@astrojs/check@0.9.9",
     "@astrojs/internal-helpers/": "npm:@astrojs/internal-helpers@0.10.0/",
     "@astrojs/markdown-satteri": "npm:@astrojs/markdown-satteri@0.3.2",
-    "@astrojs/starlight": "npm:@astrojs/starlight@0.41.0",
-    "@astrojs/starlight/schema": "npm:@astrojs/starlight@0.41.0/schema",
     "@oslojs/encoding": "npm:@oslojs/encoding@1.1.0",
-    "@tailwindcss/node": "npm:@tailwindcss/node@4.3.0",
-    "@tailwindcss/node/require-cache": "npm:@tailwindcss/node@4.3.0/require-cache",
     "@tailwindcss/oxide": "npm:@tailwindcss/oxide@4.3.3",
     "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.3",
     "@vitest/coverage-v8": "npm:@vitest/coverage-v8@5.0.5",
-    "astro": "npm:astro@7.0.2",
-    "astro/": "npm:astro@7.0.2/",
     "clsx": "npm:clsx@2.1.1",
     "cookie": "npm:cookie@1.0.2",
     "devalue": "npm:devalue@5.6.3",
@@ -42,8 +36,6 @@
     "unstorage": "npm:unstorage@1.17.6",
     "vite": "npm:vite@8.1.0",
     "vitest": "npm:vitest@4.1.8",
-    "yaml": "npm:yaml@2.9.0",
-    "zod": "npm:zod@4.4.3",
-    "zod/v4": "npm:zod@4.4.3/v4"
+    "yaml": "npm:yaml@2.9.0"
   }
 }
