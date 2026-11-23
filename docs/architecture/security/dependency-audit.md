@@ -102,11 +102,12 @@ cannot independently read that repository setting.
 | App-backed full dry-run | [run 45161915530](https://github.com/ugoite/ugoite/actions/runs/45161915530), same main SHA | Success; no repository writes. |
 | First live writer run | [run 45191937781](https://github.com/ugoite/ugoite/actions/runs/45191937781), cutover SHA `e7a3006bed006b5ad1976431930a725ef46ea0c4` | Success; App alert access succeeded and Renovate created [Dependency Dashboard #5099](https://github.com/ugoite/ugoite/issues/5099). No update PR was created because proposals await human approval or their configured schedule. Generated-PR CI remains unobserved; follow-up [#5100](https://github.com/ugoite/ugoite/issues/5100) tracks it. |
 
-The lookup and live run reported that Renovate could not determine a digest
-for the manually managed `iceberg-rust` Git tag because the upstream tag has
-a `v` prefix. The live run also logged Cargo/Docker grouped-update collisions.
-Neither warning failed the run. The Iceberg revision remains manually managed;
-do not mark these diagnostics as a passed dependency update.
+The lookup, full dry-run, and live run reported that Renovate could not
+determine a digest for the manually managed `iceberg-rust` Git tag because the
+upstream tag has a `v` prefix. The full dry-run and live run also logged four
+Cargo/Docker grouped-update collisions. These warnings did not fail either
+run. The Iceberg revision remains manually managed; do not mark these
+diagnostics as a passed dependency update.
 
 ## Monthly read-only check
 
