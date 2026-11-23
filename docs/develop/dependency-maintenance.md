@@ -5,12 +5,27 @@ sidebar:
   order: 6
 ---
 
-Dependabot is the only automated update-PR generator. The monthly
-`Dependency Review` workflow and the commands below only report candidates;
-they never create branches, PRs, or issues, and never edit dependency files.
-Promote a candidate only through a normal change PR after its minimum gate
-passes. The single record for held pins and accepted exceptions is the
-[dependency audit](../architecture/security/dependency-audit.md).
+The pinned Renovate CLI in GitHub Actions is the regular automated
+update-PR writer. `renovate.json` is the policy authority; the Ugoite-owned
+GitHub App is scoped to this repository. Renovate runs daily and can also be
+dispatched manually. It does not auto-merge. The [Dependency Dashboard](https://github.com/ugoite/ugoite/issues/5099)
+lists proposals and holds updates that require human approval or await their
+configured schedule.
+
+GitHub Dependency graph and Dependabot alerts are independent of update-PR
+generation and remain enabled. Dependabot security-update PR generation is a
+separate repository setting and was confirmed disabled at the Renovate
+cutover. The monthly `Dependency Review` workflow and the commands below only
+report candidates; they never create branches, PRs, or issues, and never edit
+dependency files. Promote a candidate only after its minimum quality gate
+passes. Held versions, reasons, and the evidence limits for the cutover live in
+the [dependency audit](../architecture/security/dependency-audit.md).
+
+The first live Renovate run completed successfully and created the Dashboard,
+but no update PR was created because proposals are waiting for human approval
+or their configured schedule. The first generated-PR verification remains
+open in [#5100](https://github.com/ugoite/ugoite/issues/5100); dry-run success
+does not count as generated-PR CI evidence.
 
 ```bash
 mise outdated --bump
