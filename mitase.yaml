@@ -524,7 +524,7 @@ inventory:
         - .github/workflows/release-publish.yml
         - .github/pull_request_template.md
         - .github/required-status-checks.json
-        - .github/dependabot.yml
+        - renovate.json
         - .devcontainer/devcontainer.json
         - Cargo.toml
         - mise.toml

@@ -75,6 +75,21 @@
       "groupName": "deno-workspace"
     },
     {
+      "description": "Hold known failing Starlight releases until Docsite resolves astro:middleware",
+      "matchPackageNames": ["@astrojs/starlight"],
+      "allowedVersions": "!/^(?:0\\.42\\.(?:[1-9]|1[01])|0\\.43\\.[01])$/"
+    },
+    {
+      "description": "Hold Playwright releases that break Docsite module loading",
+      "matchPackageNames": ["@playwright/test"],
+      "allowedVersions": "!/^(?:1\\.(?:61\\.[01]|62\\.[01]|63\\.0|64\\.[01]|65\\.[01]))$/"
+    },
+    {
+      "description": "Hold SolidStart releases that remove the app config API",
+      "matchPackageNames": ["@solidjs/start"],
+      "allowedVersions": "!/^(?:2\\.0\\.[0-6]|2\\.1\\.0|2\\.2\\.[0-3])$/"
+    },
+    {
       "description": "Review Rust compiler updates monthly",
       "matchManagers": ["rust-toolchain"],
       "schedule": ["* * 1-7 * *"]
