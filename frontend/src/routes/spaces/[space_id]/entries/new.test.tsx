@@ -51,8 +51,8 @@ vi.mock("~/lib/ugoite-client", () => ({
 }));
 
 const forms: Form[] = [
-  { name: "Notes", version: 1, template: "", fields: {} },
-  { name: "Meeting", version: 1, template: "", fields: {} },
+  { name: "Notes", version: 1, template: "", fields: {}, allow_extra_attributes: "deny" as const },
+  { name: "Meeting", version: 1, template: "", fields: {}, allow_extra_attributes: "deny" as const },
   {
     name: "Typed",
     version: 1,
@@ -61,6 +61,7 @@ const forms: Form[] = [
       Status: { type: "string", required: true },
       Count: { type: "integer", required: true },
     },
+    allow_extra_attributes: "deny" as const,
   },
 ];
 const space: Space = {

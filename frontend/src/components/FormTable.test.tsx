@@ -59,6 +59,7 @@ function canonicalForm(form: Record<string, any>): Form {
   if (cached) return cached;
   const canonical: Form = {
     ...form,
+    name: form.name,
     id: form.id ?? `form-${form.name}`,
     version: form.version ?? 1,
     template: form.template ?? "",
@@ -85,6 +86,7 @@ function canonicalForm(form: Record<string, any>): Form {
         }] as const;
       }),
     ),
+    allow_extra_attributes: form.allow_extra_attributes ?? "deny",
   };
   canonicalForms.set(form, canonical);
   return canonical;

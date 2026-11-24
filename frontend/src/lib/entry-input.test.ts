@@ -24,6 +24,7 @@ describe("structured entry draft", () => {
         Body: { type: "string", required: true },
         Done: { type: "boolean", required: false },
       },
+      allow_extra_attributes: "deny" as const,
     };
     const fields = buildStructuredEntryFields(formDef, {
       Body: "hello",
@@ -47,6 +48,7 @@ describe("structured entry draft", () => {
         Tags: { type: "list", required: false },
         Rows: { type: "object_list", required: false },
       },
+      allow_extra_attributes: "deny" as const,
     };
     const fields = buildStructuredEntryFields(formDef, {
       Body: "  hello  ",

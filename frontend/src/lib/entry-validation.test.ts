@@ -24,6 +24,7 @@ const testForm = (): Form => ({
     Tags: { id: 105, type: "list", required: false },
     Counts: { id: 106, type: "list", required: false, items: { type: "long" } },
   },
+  allow_extra_attributes: "deny" as const,
 });
 
 describe("entry-validation", () => {
@@ -82,12 +83,14 @@ describe("entry-validation", () => {
       toRustFormDefinition({
         ...testForm(),
         id: undefined,
+        allow_extra_attributes: "deny" as const,
       })
     ).toThrowError(/missing its stable FormId/);
     expect(() =>
       toRustFormDefinition({
         ...testForm(),
         fields: { Body: { type: "string", required: true } },
+        allow_extra_attributes: "deny" as const,
       })
     ).toThrowError(/missing its stable FieldId/);
   });
@@ -99,6 +102,7 @@ describe("entry-validation", () => {
       version: 1,
       template: "# Project",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     };
     const source: Form = {
       id: "00000000-0000-0000-0000-000000000003",
@@ -113,6 +117,7 @@ describe("entry-validation", () => {
           target_form: "Project",
         },
       },
+      allow_extra_attributes: "deny" as const,
     };
     const rust = toRustFormDefinition(source, [target]) as {
       id: string;
@@ -136,6 +141,7 @@ describe("entry-validation", () => {
           target_form: "MissingForm",
         },
       },
+      allow_extra_attributes: "deny" as const,
     };
     expect(() => toRustFormDefinition(form)).toThrow(UgoiteApiError);
     try {
@@ -232,6 +238,7 @@ describe("lane1 parity fixture", () => {
         items: { type: "asset_reference" },
       },
     },
+    allow_extra_attributes: "deny" as const,
   });
 
   it("converges on the same invalid codes and fields as the fixture", async () => {

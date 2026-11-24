@@ -127,6 +127,7 @@ describe("SQL Form completion", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
     ]);
     const query = "SELECT * FROM 1";
@@ -153,6 +154,7 @@ describe("SQL Form completion", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
     ]);
     const query = "SELECT * FROM __";

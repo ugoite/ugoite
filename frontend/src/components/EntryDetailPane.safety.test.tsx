@@ -84,6 +84,7 @@ const notesForm: Form = {
   fields: {
     Notes: { id: 100, type: "string", required: false },
   },
+  allow_extra_attributes: "deny" as const,
 };
 
 const markdownForm: Form = {
@@ -94,6 +95,7 @@ const markdownForm: Form = {
   fields: {
     Body: { id: 101, type: "markdown", required: false },
   },
+  allow_extra_attributes: "deny" as const,
 };
 
 const storedEntry = (overrides: Record<string, unknown> = {}) => ({

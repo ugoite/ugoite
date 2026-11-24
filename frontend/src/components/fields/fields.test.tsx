@@ -20,6 +20,7 @@ const projectForms = [{
   fields: {
     Title: { type: "string", required: false },
   },
+  allow_extra_attributes: "deny" as const,
 }];
 
 const projectEntry = (overrides?: Partial<Entry>): Entry => ({
@@ -348,6 +349,7 @@ describe("shared RowReferenceSelect", () => {
           version: 1,
           template: "",
           fields: {},
+          allow_extra_attributes: "deny" as const,
         }]}
       />
     ));
@@ -637,6 +639,7 @@ describe("list<row_reference> rows", () => {
           version: 1,
           template: "",
           fields: {},
+          allow_extra_attributes: "deny" as const,
         }]}
       />
     ));

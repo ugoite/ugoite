@@ -376,6 +376,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       version: 1,
       template: "# Expense\n",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     });
     seedSqlEntry("default", {
       id: "saved-query",
@@ -430,6 +431,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       version: 1,
       template: "# Entry\n",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     });
     seedSqlEntry("default", {
       id: "saved-query",

@@ -18,12 +18,14 @@ describe("ListPanel", () => {
       version: 1,
       fields: { date: { type: "date" }, attendees: { type: "string" } },
       template: "",
+      allow_extra_attributes: "deny" as const,
     },
     {
       name: "Task",
       version: 1,
       fields: { status: { type: "string" } },
       template: "",
+      allow_extra_attributes: "deny" as const,
     },
   ];
 

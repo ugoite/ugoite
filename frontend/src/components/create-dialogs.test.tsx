@@ -539,18 +539,20 @@ describe("CreateEntryDialog", () => {
   it("REQ-FE-037: requires form selection before creating an entry", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
-    const forms = [
+    const forms: Form[] = [
       {
         name: "Meeting",
         version: 1,
         fields: { Date: { type: "date", required: true } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
       {
         name: "Task",
         version: 1,
         fields: { Status: { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -580,12 +582,13 @@ describe("CreateEntryDialog", () => {
 
   it("allows an empty title after selecting a form", async () => {
     const onSubmit = vi.fn();
-    const forms = [
+    const forms: Form[] = [
       {
         name: "Notes",
         version: 1,
         fields: {},
         template: "# Notes\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -624,6 +627,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Status: { type: "string", required: true } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -659,6 +663,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Summary: { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -695,6 +700,7 @@ describe("CreateEntryDialog", () => {
           Count: { type: "integer", required: true },
         },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -735,6 +741,7 @@ describe("CreateEntryDialog", () => {
           RetiredAt: { type: "date", required: true, deprecated: true },
         },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -780,6 +787,7 @@ describe("CreateEntryDialog", () => {
           },
         },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -819,6 +827,7 @@ describe("CreateEntryDialog", () => {
           StartedAt: { type: "timestamp_tz", required: false },
         },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -869,6 +878,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Summary: { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -907,6 +917,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { "Due Date / ETA": { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -936,6 +947,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { "!!!": { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -974,6 +986,7 @@ describe("CreateEntryDialog", () => {
           },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1045,6 +1058,7 @@ describe("CreateEntryDialog", () => {
           },
         },
         template: "# Task",
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "form-project",
@@ -1054,6 +1068,7 @@ describe("CreateEntryDialog", () => {
           Name: { type: "string", required: true },
         },
         template: "# Project",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1111,6 +1126,7 @@ describe("CreateEntryDialog", () => {
           Summary: { type: "string", required: true },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1154,6 +1170,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Status: { type: "string", required: false } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1192,6 +1209,7 @@ describe("CreateEntryDialog", () => {
           Done: { type: "boolean", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1240,6 +1258,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1295,6 +1314,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1354,6 +1374,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1392,6 +1413,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1428,6 +1450,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1463,6 +1486,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1511,6 +1535,7 @@ describe("CreateEntryDialog", () => {
           Notes: { type: "markdown", required: false },
         },
         template: "# Task\n\n## Summary\n",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1557,6 +1582,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Status: { type: "string", required: true } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1589,7 +1615,7 @@ describe("CreateEntryDialog", () => {
   it("REQ-FE-037: permits an ordinary user form named Assets", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
-    const forms = [
+    const forms: Form[] = [
       {
         name: "Assets",
         version: 1,
@@ -1597,12 +1623,14 @@ describe("CreateEntryDialog", () => {
           link: { type: "string", required: true },
         },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
       {
         name: "Meeting",
         version: 1,
         fields: { Date: { type: "date", required: true } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1653,6 +1681,7 @@ describe("CreateEntryDialog", () => {
         version: 1,
         fields: { Date: { type: "date", required: true } },
         template: "",
+        allow_extra_attributes: "deny" as const,
       },
     ];
 
@@ -1685,6 +1714,7 @@ describe("EditFormDialog", () => {
     fields: {
       field1: { type: "string", required: false },
     },
+    allow_extra_attributes: "deny" as const,
   };
 
   it("REQ-UX-ENTRY-001: renders edit-form fields as plain FieldStack rows without card sections", () => {
@@ -1783,6 +1813,7 @@ describe("EditFormDialog", () => {
           target_form: "Project",
         },
       },
+      allow_extra_attributes: "deny" as const,
     };
 
     render(() => (
@@ -1813,6 +1844,7 @@ describe("EditFormDialog", () => {
           items: { type: "row_reference", target_form: "Project" },
         },
       },
+      allow_extra_attributes: "deny" as const,
     };
 
     render(() => (
@@ -1850,6 +1882,7 @@ describe("EditFormDialog", () => {
       fields: {
         retired: { type: "string", required: true, deprecated: true },
       },
+      allow_extra_attributes: "deny" as const,
     };
 
     render(() => (
@@ -2038,6 +2071,7 @@ describe("EditFormDialog", () => {
       fields: {
         time: { type: "timestamp", required: false },
       },
+      allow_extra_attributes: "deny" as const,
     };
 
     render(() => (
@@ -2074,6 +2108,7 @@ describe("EditFormDialog", () => {
           items: { type: "string" },
         },
       },
+      allow_extra_attributes: "deny" as const,
     };
 
     render(() => (

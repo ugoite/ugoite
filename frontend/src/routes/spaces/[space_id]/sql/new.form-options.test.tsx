@@ -8,6 +8,7 @@ import {
 } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 import SpaceQueryCreateRoute from "./new";
 
 const {
@@ -64,14 +65,7 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
   });
 
   it("offers resolved Form names directly without the SQL relation tree", async () => {
-    let resolveForms!: (forms: {
-      id: string;
-      name: string;
-      sql_relation: string;
-      version: number;
-      template: string;
-      fields: Record<string, never>;
-    }[]) => void;
+    let resolveForms!: (forms: Form[]) => void;
     formApiListMock.mockReturnValue(
       new Promise((resolve) => {
         resolveForms = resolve;
@@ -92,6 +86,7 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
       version: 1,
       template: "# Orders\n",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     }]);
 
     parseSqlDocumentMock.mockResolvedValueOnce({

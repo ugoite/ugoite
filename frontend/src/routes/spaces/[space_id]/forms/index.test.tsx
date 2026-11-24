@@ -73,16 +73,19 @@ const noteForm: Form = {
     title: { type: "string", required: true },
     body: { type: "markdown", required: false },
   },
+  allow_extra_attributes: "deny" as const,
 };
 const spacedForm: Form = {
   ...noteForm,
   name: "My Form",
+  allow_extra_attributes: "deny" as const,
 };
 const metadataForm: Form = {
   name: "SQL",
   version: 1,
   template: "",
   fields: {},
+  allow_extra_attributes: "deny" as const,
 };
 function renderPage(forms: Form[], formsError?: unknown, spaceId = "default") {
   const [list] = createSignal(forms);
@@ -157,7 +160,7 @@ describe("Forms list", () => {
     );
   });
   it("shares one list DOM between mobile and desktop", () => {
-    renderPage([noteForm, { ...noteForm, name: "Projects" }]);
+    renderPage([noteForm, { ...noteForm, name: "Projects", allow_extra_attributes: "deny" as const }]);
     expect(document.querySelector(".mobileFormPicker")).toBeNull();
     expect(document.querySelector(".desktopFormPicker")).toBeNull();
     expect(document.querySelector("select")).toBeNull();
@@ -165,7 +168,7 @@ describe("Forms list", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
   it("filters the list with the shared search field", () => {
-    renderPage([noteForm, { ...noteForm, name: "Projects" }]);
+    renderPage([noteForm, { ...noteForm, name: "Projects", allow_extra_attributes: "deny" as const }]);
     fireEvent.input(screen.getByRole("searchbox", { name: "Find a Form" }), {
       target: { value: "Proj" },
     });

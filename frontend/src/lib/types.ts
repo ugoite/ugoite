@@ -310,8 +310,8 @@ export interface Form {
   template: string;
   fields: Record<string, FormField>;
   defaults?: Record<string, unknown>;
-  /** Transport-preserved server policy; omitted only by legacy test fixtures. */
-  allow_extra_attributes?: FormExtraAttributesPolicy;
+  /** Transport-preserved server policy. */
+  allow_extra_attributes: FormExtraAttributesPolicy;
 }
 
 export interface FormCreatePayload {

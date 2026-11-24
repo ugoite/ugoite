@@ -519,13 +519,21 @@ describe("KonasePanel Space authority", () => {
   it("REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
       {
         id: "form-unnamed",
         name: "form-unnamed",
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
     ]);
     queryEntriesMock.mockResolvedValueOnce({
@@ -863,7 +871,14 @@ describe("KonasePanel Space authority", () => {
       preview: "Shared preview",
     });
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
     ]);
     queryEntriesMock.mockResolvedValueOnce({
       rows: [candidate("entry-a"), candidate("entry-b")],
@@ -929,7 +944,14 @@ describe("KonasePanel Space authority", () => {
       preview: "Shared preview",
     });
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
     ]);
     queryEntriesMock.mockResolvedValueOnce({
       rows: [candidate("entry-a"), candidate("entry-b")],
@@ -1010,7 +1032,14 @@ describe("KonasePanel Space authority", () => {
   it("restores keyboard focus to the preview trigger when the preview is cancelled", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
     ]);
     render(() => <KonasePanel spaceId="space-a" />);
     fireEvent.input(screen.getByLabelText("Model API key"), {
@@ -1060,7 +1089,14 @@ describe("KonasePanel Space authority", () => {
   it("moves focus to the new Space connection action when an open preview is invalidated", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
     ]);
     const [spaceId, setSpaceId] = createSignal("space-a");
     render(() => <KonasePanel spaceId={spaceId()} />);
@@ -1107,7 +1143,14 @@ describe("KonasePanel Space authority", () => {
   it("drops a late Context preview when the Panel moves to another Space", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
-      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-a",
+        name: "Note",
+        version: 1,
+        template: "",
+        fields: {},
+        allow_extra_attributes: "deny",
+      },
     ]);
     const [spaceId, setSpaceId] = createSignal("space-a");
     render(() => (

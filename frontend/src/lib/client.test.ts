@@ -1128,6 +1128,7 @@ describe("error paths", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       }),
     ).rejects.toThrow("Failed to save form");
   });

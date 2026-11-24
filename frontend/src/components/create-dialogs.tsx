@@ -15,7 +15,11 @@ import { FieldInput, fieldValueToText } from "~/components/fields";
 import { FormTargetSelect } from "~/components/FormTargetSelect";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
-import type { Form, FormCreatePayload, StructuredEntryFields } from "~/lib/types";
+import type {
+  Form,
+  FormCreatePayload,
+  StructuredEntryFields,
+} from "~/lib/types";
 import {
   isReservedMetadataColumn,
   RESERVED_METADATA_COLUMNS,
@@ -1558,8 +1562,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name: props.entryForm.name,
         template,
         fields: fieldRecord,
-        allow_extra_attributes: props.entryForm.allow_extra_attributes ??
-          "deny",
+        allow_extra_attributes: props.entryForm.allow_extra_attributes,
       });
     } catch (error) {
       setSubmitError(

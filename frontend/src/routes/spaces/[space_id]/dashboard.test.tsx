@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { compositionApi } from "~/lib/composition-api";
 import { formApi, protocolFetch } from "~/lib/ugoite-client";
+import type { Form } from "~/lib/types";
 import SpaceDashboardRoute from "./dashboard";
 
 const navigate = vi.fn();
@@ -70,6 +71,7 @@ describe("v5 space Home", () => {
       version: 1,
       template: "",
       fields: { body: { type: "markdown", required: false } },
+      allow_extra_attributes: "deny" as const,
     }]);
     render(() => <SpaceDashboardRoute />);
     expect(await screen.findByRole("heading", { name: "Home" }))
@@ -277,6 +279,7 @@ describe("v5 space Home", () => {
       version: 1,
       template: "",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     }]);
     render(() => <SpaceDashboardRoute />);
     const button = (await screen.findAllByRole("button", { name: /Entry/ }))[0];
@@ -302,14 +305,7 @@ describe("v5 space Home", () => {
   });
   it("shows a loading state and keeps entry creation disabled until forms are ready", async () => {
     let resolveForms: (
-      forms: Array<
-        {
-          name: string;
-          version: number;
-          template: string;
-          fields: Record<string, never>;
-        }
-      >,
+      forms: Form[],
     ) => void;
     vi.mocked(formApi.list).mockReturnValue(
       new Promise((resolve) => {
@@ -322,7 +318,13 @@ describe("v5 space Home", () => {
     );
     expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeDisabled();
 
-    resolveForms!([{ name: "Notes", version: 1, template: "", fields: {} }]);
+    resolveForms!([{
+      name: "Notes",
+      version: 1,
+      template: "",
+      fields: {},
+      allow_extra_attributes: "deny",
+    }]);
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeEnabled();
     });
