@@ -2267,6 +2267,43 @@ mod tests {
     }
 
     #[test]
+    fn literal_json_value_preserves_portable_scalar_values() {
+        let cases = [
+            (
+                VariableGraphLiteral::String("text".into()),
+                serde_json::json!("text"),
+            ),
+            (VariableGraphLiteral::Boolean(true), serde_json::json!(true)),
+            (
+                VariableGraphLiteral::Integer(i64::MAX),
+                serde_json::json!(i64::MAX),
+            ),
+            (VariableGraphLiteral::Float(1.25), serde_json::json!(1.25)),
+            (
+                VariableGraphLiteral::Decimal("9007199254740993.01".into()),
+                serde_json::json!("9007199254740993.01"),
+            ),
+            (
+                VariableGraphLiteral::Date("2026-11-24".into()),
+                serde_json::json!("2026-11-24"),
+            ),
+            (
+                VariableGraphLiteral::Timestamp("2026-11-24T12:00:00Z".into()),
+                serde_json::json!("2026-11-24T12:00:00Z"),
+            ),
+            (
+                VariableGraphLiteral::Json(serde_json::json!({"nested": [1, null]})),
+                serde_json::json!({"nested": [1, null]}),
+            ),
+            (VariableGraphLiteral::Null, serde_json::Value::Null),
+        ];
+
+        for (literal, expected) in cases {
+            assert_eq!(literal.to_json_value(), expected);
+        }
+    }
+
+    #[test]
     fn integer_literal_wire_rejects_values_outside_signed_i64() {
         assert!(serde_json::from_str::<VariableGraphLiteral>(
             r#"{"kind":"integer","value":9223372036854775808}"#

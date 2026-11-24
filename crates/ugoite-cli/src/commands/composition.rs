@@ -818,7 +818,7 @@ fn local_composition_evaluation_response(
         draft_fingerprint = draft;
         variable_values = values
             .into_iter()
-            .map(|(id, value)| (id, composition_literal_to_json(&value)))
+            .map(|(id, value)| (id, value.to_json_value()))
             .collect();
         (queries, component_bindings) =
             composition_queries_and_bindings(core_queries, core_bindings)?;
@@ -931,20 +931,6 @@ fn local_composition_evaluation_response(
         diagnostics,
         query_diagnostics,
     })
-}
-
-fn composition_literal_to_json(value: &VariableGraphLiteral) -> Value {
-    match value {
-        VariableGraphLiteral::String(value)
-        | VariableGraphLiteral::Date(value)
-        | VariableGraphLiteral::Timestamp(value)
-        | VariableGraphLiteral::Decimal(value) => json!(value),
-        VariableGraphLiteral::Boolean(value) => json!(value),
-        VariableGraphLiteral::Integer(value) => json!(value),
-        VariableGraphLiteral::Float(value) => json!(value),
-        VariableGraphLiteral::Json(value) => value.clone(),
-        VariableGraphLiteral::Null => Value::Null,
-    }
 }
 
 fn composition_scalar_descriptor(

@@ -11171,23 +11171,8 @@ fn api_composition_variable_definition(
         id: variable.id.clone(),
         value_type: api_composition_scalar_descriptor(*value_type),
         required: *required,
-        default: default.as_ref().map(api_composition_literal),
+        default: default.as_ref().map(VariableGraphLiteral::to_json_value),
     })
-}
-
-fn api_composition_literal(value: &VariableGraphLiteral) -> serde_json::Value {
-    use serde_json::json;
-    match value {
-        VariableGraphLiteral::String(value)
-        | VariableGraphLiteral::Date(value)
-        | VariableGraphLiteral::Timestamp(value)
-        | VariableGraphLiteral::Decimal(value) => json!(value),
-        VariableGraphLiteral::Boolean(value) => json!(value),
-        VariableGraphLiteral::Integer(value) => json!(value),
-        VariableGraphLiteral::Float(value) => json!(value),
-        VariableGraphLiteral::Json(value) => value.clone(),
-        VariableGraphLiteral::Null => serde_json::Value::Null,
-    }
 }
 
 fn api_composition_scalar_descriptor(
@@ -11271,7 +11256,7 @@ fn api_composition_evaluation_response(
         draft_fingerprint = draft;
         variable_values = values
             .into_iter()
-            .map(|(id, value)| (id, api_composition_literal(&value)))
+            .map(|(id, value)| (id, value.to_json_value()))
             .collect();
         (queries, component_bindings) =
             api_composition_queries_and_bindings(core_queries, core_bindings)?;
@@ -11395,7 +11380,7 @@ fn composition_preview_success_response(
     let variable_values = plan
         .variable_values
         .into_iter()
-        .map(|(id, value)| (id, api_composition_literal(&value)))
+        .map(|(id, value)| (id, value.to_json_value()))
         .collect();
     let (queries, component_bindings) =
         api_composition_queries_and_bindings(plan.queries, plan.component_bindings)?;
