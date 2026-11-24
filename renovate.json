@@ -8,12 +8,14 @@
   "dependencyDashboard": {
     "enabled": true
   },
+  "dependencyDashboardApproval": false,
+  "prCreation": "immediate",
   "automerge": false,
-  "prConcurrentLimit": 4,
-  "prHourlyLimit": 2,
-  "major": {
-    "dependencyDashboardApproval": true
-  },
+  "separateMajorMinor": false,
+  "separateMinorPatch": false,
+  "groupSingleUpdates": true,
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "lockFileMaintenance": {
     "enabled": false
   },
@@ -33,8 +35,10 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update the pinned Renovate CLI used by the self-hosted workflow",
-      "managerFilePatterns": ["/^\\.github\\/workflows\\/renovate\\.yml$/"],
+      "description": "Update pinned self-hosted Renovate CLI version",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/renovate\\.yml$/"
+      ],
       "matchStrings": [
         "renovate-version:\\s*[\\\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)[\\\"']?\\s*# renovate: datasource=(?<datasource>github-releases) depName=(?<depName>[^\\s]+)"
       ],
@@ -43,84 +47,122 @@
   ],
   "packageRules": [
     {
-      "description": "Group routine ecosystem updates into a bounded daily proposal",
+      "description": "One daily update group for the Rust Cargo workspace ecosystem",
       "matchManagers": [
-        "github-actions",
-        "cargo",
+        "cargo"
+      ],
+      "groupName": "cargo-workspace",
+      "groupSlug": "cargo-workspace"
+    },
+    {
+      "description": "One daily update group for the Deno workspace (all five deno.json files and root deno.lock) ecosystem",
+      "matchManagers": [
+        "deno"
+      ],
+      "groupName": "deno-workspace",
+      "groupSlug": "deno-workspace"
+    },
+    {
+      "description": "One daily update group for the GitHub Actions ecosystem",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "One daily update group for the Dockerfile and Docker Compose ecosystem",
+      "matchManagers": [
         "dockerfile",
-        "docker-compose",
-        "devcontainer",
+        "docker-compose"
+      ],
+      "groupName": "docker",
+      "groupSlug": "docker"
+    },
+    {
+      "description": "One daily update group for the Dev Containers ecosystem",
+      "matchManagers": [
+        "devcontainer"
+      ],
+      "groupName": "devcontainers",
+      "groupSlug": "devcontainers"
+    },
+    {
+      "description": "One daily update group for the npm package ecosystem",
+      "matchManagers": [
         "npm"
       ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest",
-        "pin",
-        "pinDigest"
-      ],
-      "groupName": "all-dependencies"
+      "groupName": "npm",
+      "groupSlug": "npm"
     },
     {
-      "description": "Group the shared Deno workspace lockfile updates weekly",
-      "matchManagers": ["deno"],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest",
-        "pin",
-        "pinDigest"
+      "description": "One daily update group for the mise tools ecosystem",
+      "matchManagers": [
+        "mise"
       ],
-      "schedule": ["* * * * 1"],
-      "groupName": "deno-workspace"
+      "groupName": "mise-tools",
+      "groupSlug": "mise-tools"
     },
     {
-      "description": "Hold known failing Starlight releases until Docsite resolves astro:middleware",
-      "matchPackageNames": ["@astrojs/starlight"],
+      "description": "One daily update group for the Rust toolchain ecosystem",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "groupName": "rust-toolchain",
+      "groupSlug": "rust-toolchain"
+    },
+    {
+      "description": "One daily update group for the Renovate CLI self update ecosystem",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "groupName": "renovate-cli",
+      "groupSlug": "renovate-cli"
+    },
+    {
+      "description": "One daily update group for the Renovate configuration ecosystem",
+      "matchManagers": [
+        "renovate-config"
+      ],
+      "groupName": "renovate-config",
+      "groupSlug": "renovate-config"
+    },
+    {
+      "description": "Exclude only observed Starlight versions failing astro:middleware",
+      "matchPackageNames": [
+        "@astrojs/starlight"
+      ],
       "allowedVersions": "!/^(?:0\\.42\\.(?:[1-9]|1[01])|0\\.43\\.[01])$/"
     },
     {
-      "description": "Hold Playwright releases that break Docsite module loading",
-      "matchPackageNames": ["@playwright/test"],
+      "description": "Exclude observed Playwright versions breaking module loading",
+      "matchPackageNames": [
+        "@playwright/test"
+      ],
       "allowedVersions": "!/^(?:1\\.(?:61\\.[01]|62\\.[01]|63\\.0|64\\.[01]|65\\.[01]))$/"
     },
     {
-      "description": "Hold SolidStart releases that remove the app config API",
-      "matchPackageNames": ["@solidjs/start"],
+      "description": "Exclude observed SolidStart versions lacking defineConfig",
+      "matchPackageNames": [
+        "@solidjs/start"
+      ],
       "allowedVersions": "!/^(?:2\\.0\\.[0-6]|2\\.1\\.0|2\\.2\\.[0-3])$/"
     },
     {
-      "description": "Review Rust compiler updates monthly",
-      "matchManagers": ["rust-toolchain"],
-      "schedule": ["* * 1-7 * *"]
-    },
-    {
-      "description": "Group mise-managed development tool updates monthly",
-      "matchManagers": ["mise"],
-      "schedule": ["* * 1-7 * *"],
-      "groupName": "development-tools"
-    },
-    {
-      "description": "Review Renovate CLI updates monthly during the first week",
-      "matchManagers": ["custom.regex"],
-      "schedule": ["* * 1-7 * *"]
-    },
-    {
-      "description": "Track the Renovate CLI pin through its GitHub release version",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["ghcr.io/renovatebot/renovate"],
+      "description": "Preserve Dependabot policy: TypeScript major updates remain blocked until frontend compiler API support is proven",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "enabled": false
     },
     {
-      "description": "Keep the installer package Node.js support range under human review",
-      "matchManagers": ["npm"],
-      "matchDepTypes": ["engines"],
-      "matchPackageNames": ["node"],
-      "enabled": false
-    },
-    {
-      "description": "Keep coordinated Arrow stack changes visible for review",
-      "matchManagers": ["cargo"],
+      "description": "Preserve Dependabot policy: Arrow/Parquet/Iceberg/DataFusion/OpenDAL major or minor coordinated upgrades are held; patches join Cargo group",
+      "matchManagers": [
+        "cargo"
+      ],
       "matchPackageNames": [
         "arrow*",
         "parquet",
@@ -128,15 +170,47 @@
         "datafusion*",
         "opendal*"
       ],
-      "matchUpdateTypes": ["major", "minor"],
-      "groupName": "rust-arrow-stack",
-      "dependencyDashboardApproval": true
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
     },
     {
-      "description": "Require dashboard approval for potentially breaking zero-major minor updates",
-      "matchCurrentVersion": "<1.0.0",
-      "matchUpdateTypes": ["minor"],
-      "dependencyDashboardApproval": true
+      "description": "Keep the manually pinned Iceberg Git source revision outside automated updates",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "https://github.com/apache/iceberg-rust.git"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Preserve node engines support floor as a product contract, not a routine tool update",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDepTypes": [
+        "engines"
+      ],
+      "matchPackageNames": [
+        "node"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Do not double track pinned Renovate container via github-actions manager",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/renovatebot/renovate"
+      ],
+      "enabled": false
     }
   ]
 }
