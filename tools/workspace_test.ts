@@ -92,6 +92,20 @@ Deno.test("toolchain authorities stay consistent across manifests", async () => 
   const channel = toolchain.match(/^channel\s*=\s*"([^"]+)"/m)?.[1];
   assertEquals(typeof channel, "string");
   assertEquals(dockerfile.includes("rust-toolchain.toml"), true);
+  const rustBuildStage =
+    dockerfile.split(/^FROM /m).find((stage) =>
+      /^rust:\S+\s+AS rust-build/m.test(stage)
+    ) ?? "";
+  const rustToolchainCopyIndex = rustBuildStage.indexOf(
+    "COPY rust-toolchain.toml ./",
+  );
+  const rustBuildCommandIndex = rustBuildStage.indexOf("RUN cargo build");
+  assertEquals(
+    rustToolchainCopyIndex >= 0 &&
+      rustBuildCommandIndex > rustToolchainCopyIndex,
+    true,
+    "Docker rust-build stage must use rust-toolchain.toml before compiling",
+  );
   assertEquals(
     /--default-toolchain \d+\.\d+/.test(dockerfile),
     false,
