@@ -267,6 +267,22 @@
       "enabled": false
     },
     {
+      "description": "Hold non-vulnerability rmcp minor updates until transport error bodies remain visible in CLI errors",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "rmcp"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Keep the manually pinned Iceberg Git source revision outside automated updates",
       "matchManagers": [
         "cargo"
