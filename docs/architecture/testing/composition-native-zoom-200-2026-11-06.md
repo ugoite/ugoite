@@ -45,7 +45,7 @@ bounding box did not intersect the Studio tabs; browser hit testing at the Input
 control returned the actual Input element, and the Metric hit test returned its
 rendered heading.
 
-![Headed Chromium screenshot at native 200% zoom](evidence/composition-native-zoom-200.png)
+![Headed Chromium screenshot at native 200% zoom](https://raw.githubusercontent.com/ugoite/ugoite/de36ef3a5b2d373d75919e7d4d6060862fb74315/docs/architecture/testing/evidence/composition-native-zoom-200.png)
 
 The screenshot is a full-viewport CDP capture after the saved Design reopened.
 It shows the Studio tabs, Input control, and Metric result together at the 640px
