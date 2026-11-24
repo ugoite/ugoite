@@ -5,9 +5,12 @@ sidebar:
   order: 4
 ---
 
-This page keeps four time horizons apart. Current documentation describes what
-ships. Planned pages carry a Planned badge. North Star describes direction.
-Not-promised work is named so it cannot be mistaken for a roadmap commitment.
+This page keeps four time horizons apart. Current documentation describes the
+implementation represented by this documentation build and may include
+unreleased changes. Planned pages carry a Planned badge. North Star describes
+direction. Not-promised work is named so it cannot be mistaken for a roadmap
+commitment. The [release-scope page](../architecture/release/release-scope.md)
+defines the Current and Stable documentation boundary.
 
 ## Current
 
@@ -66,9 +69,12 @@ state, or an application-specific authorization authority.
 ## Not promised
 
 Browser-local persistence and optional synchronization, View and Application
-definitions, renderers, low-code composition, a general application builder, and
-an arbitrary code runtime are not shipped. No general application builder or
-arbitrary code runtime is claimed as current.
+definitions, general Knowledge-to-tools renderers, a general-purpose low-code
+application builder, and an arbitrary code runtime are not shipped. Here,
+low-code means general-purpose application building; it does not mean the
+Text-first Composition editor/runtime described in the
+[release scope](../architecture/release/release-scope.md).
+No general application builder or arbitrary code runtime is claimed as current.
 
 See [The Ugoite Vision](index.md) for the promise and
 [Design History](design-history.md) for why Vision stays separate from

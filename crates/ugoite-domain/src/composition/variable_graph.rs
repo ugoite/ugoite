@@ -732,10 +732,10 @@ pub fn variable_graph_literal_matches(
             decimal_text_is_valid(value)
         }
         (VariableGraphScalarType::Date, VariableGraphLiteral::Date(value)) => {
-            super::valid_variable_date(value)
+            super::is_valid_composition_variable_date(value)
         }
         (VariableGraphScalarType::Timestamp, VariableGraphLiteral::Timestamp(value)) => {
-            super::valid_variable_timestamp(value)
+            super::is_valid_composition_variable_timestamp(value)
         }
         (VariableGraphScalarType::Json, VariableGraphLiteral::Json(value)) => !value.is_null(),
         _ => false,

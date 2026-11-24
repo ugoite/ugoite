@@ -9,17 +9,17 @@ use crate::sql_query::{
     SqlFormBindingGuard, SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
     MAX_SQL_SCALAR_PROBE_ROWS,
 };
-use chrono::{DateTime, Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    compile_variable_graph, validate_variable_graph_result, variable_graph_literal_matches,
-    CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
-    VariableGraphDiagnostic, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
-    VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
-    MAX_COMPOSITION_COLLECTION_ITEMS,
+    compile_variable_graph, is_valid_composition_variable_date,
+    is_valid_composition_variable_timestamp, validate_variable_graph_result,
+    variable_graph_literal_matches, CompiledVariableGraph, VariableGraph,
+    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
+    VariableGraphResultDiagnostic, VariableGraphResultType, VariableGraphScalarDescriptor,
+    VariableGraphScalarType, VariableGraphValidatedResult, MAX_COMPOSITION_COLLECTION_ITEMS,
 };
 use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::sql_document::{
@@ -1460,10 +1460,10 @@ fn literal_matches_descriptor(
             !value.trim().is_empty()
         }
         (VariableGraphScalarType::Date, VariableGraphLiteral::Date(value)) => {
-            is_canonical_date(value)
+            is_valid_composition_variable_date(value)
         }
         (VariableGraphScalarType::Timestamp, VariableGraphLiteral::Timestamp(value)) => {
-            is_valid_timestamp(value)
+            is_valid_composition_variable_timestamp(value)
         }
         (VariableGraphScalarType::Json, VariableGraphLiteral::Json(value)) => !value.is_null(),
         _ => false,
@@ -1494,91 +1494,17 @@ fn bind_literal(
             Number::from_f64(*value).map(Value::Number)
         }
         (VariableGraphScalarType::Date, VariableGraphLiteral::Date(value))
-            if is_canonical_date(value) =>
+            if is_valid_composition_variable_date(value) =>
         {
             Some(Value::String(value.clone()))
         }
         (VariableGraphScalarType::Timestamp, VariableGraphLiteral::Timestamp(value))
-            if DateTime::parse_from_rfc3339(value).is_ok() =>
+            if is_valid_composition_variable_timestamp(value) =>
         {
             Some(Value::String(value.clone()))
         }
         _ => None,
     }
-}
-
-fn is_canonical_date(value: &str) -> bool {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .ok()
-        .is_some_and(|date| {
-            (1..=9999).contains(&date.year()) && date.format("%Y-%m-%d").to_string() == value
-        })
-}
-
-fn is_valid_timestamp(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if !(20..=35).contains(&bytes.len())
-        || !value.is_ascii()
-        || bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || bytes[10] != b'T'
-        || bytes[13] != b':'
-        || bytes[16] != b':'
-        || !is_canonical_date(&value[..10])
-    {
-        return false;
-    }
-
-    let zone_start = if bytes.last() == Some(&b'Z') {
-        bytes.len() - 1
-    } else {
-        if bytes.len() < 25 {
-            return false;
-        }
-        let zone_start = bytes.len() - 6;
-        if !matches!(bytes[zone_start], b'+' | b'-') || bytes[zone_start + 3] != b':' {
-            return false;
-        }
-        let hour = decimal_pair(bytes[zone_start + 1], bytes[zone_start + 2]);
-        let minute = decimal_pair(bytes[zone_start + 4], bytes[zone_start + 5]);
-        if hour.is_none_or(|hour| hour > 23)
-            || minute.is_none_or(|minute| minute > 59)
-            || (bytes[zone_start] == b'-' && hour == Some(0) && minute == Some(0))
-        {
-            return false;
-        }
-        zone_start
-    };
-
-    let local = &bytes[..zone_start];
-    if local.len() < 19
-        || ![11, 12, 14, 15, 17, 18]
-            .iter()
-            .all(|index| local[*index].is_ascii_digit())
-    {
-        return false;
-    }
-    let hour = decimal_pair(local[11], local[12]);
-    let minute = decimal_pair(local[14], local[15]);
-    let second = decimal_pair(local[17], local[18]);
-    if hour.is_none_or(|hour| hour > 23)
-        || minute.is_none_or(|minute| minute > 59)
-        || second.is_none_or(|second| second > 59)
-    {
-        return false;
-    }
-    if local.len() > 19
-        && (local[19] != b'.'
-            || !(1..=9).contains(&(local.len() - 20))
-            || !local[20..].iter().all(u8::is_ascii_digit))
-    {
-        return false;
-    }
-    DateTime::parse_from_rfc3339(value).is_ok()
-}
-
-fn decimal_pair(tens: u8, ones: u8) -> Option<u8> {
-    (tens.is_ascii_digit() && ones.is_ascii_digit()).then_some((tens - b'0') * 10 + (ones - b'0'))
 }
 
 #[cfg(test)]
