@@ -64,19 +64,13 @@ is guaranteed.
 
 ### 4. Design and Variables are the authoring modes
 
-Studio opens in Design and offers Text, Table, and Input placement. Text is
-edited at its canvas position with a compact Title, Heading, Body, or Caption
-control. Variables is a focused list and editor; SQL remains one authored
-document with local lint, authorized schema check, and explicit execution. A
-missing Table query is created and edited in Variables; after Check confirms
-its table schema, Use returns to the original Design position without running
-the query. A new Input requested from Design or an SQL marker opens the same
-Variables editor for name, type, required, and default before Use commits its
-first component; SQL marker creation also commits its explicit binding.
-Creation from Variables places the component and stays in Variables.
-Cancelling a pending operation restores the previous draft. Readers see the
-shared renderer without authoring controls. Ugoite's UI policy governs labels,
-layout, focus, keyboard operation, and narrow-screen behavior.
+Studio separates presentation placement from variable definitions, SQL
+bindings, and query authoring. This keeps the canvas focused on the Composition
+while graph and query work remain in the Variables workspace.
+
+Browser modes, editing and creation flows, cancellation behavior, and Reader
+controls are specified by REQ-FE-083 and the applicable UI policies. This ADR
+records the separation rationale rather than a second interaction contract.
 
 ### 5. Persistence and authority are unchanged
 
