@@ -230,6 +230,130 @@ Deno.test("older-CLI preservation skips only clearly unrelated scoped PRs", () =
   );
 });
 
+Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", () => {
+  for (
+    const path of [
+      "Dockerfile",
+      ".dockerignore",
+      "rust-toolchain.toml",
+      "Cargo.toml",
+      "Cargo.lock",
+      "crates/ugoite-core/Cargo.toml",
+      "crates/ugoite-core/build.rs",
+      "vendor/reqsign/Cargo.toml",
+    ]
+  ) {
+    assertEquals(
+      makeImpactReport({
+        event: "pull_request",
+        baseSha,
+        headSha,
+        paths: [path],
+      })
+        .runDockerRustSourceBuild,
+      true,
+      path,
+    );
+  }
+
+  const unrelatedRustSource = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["crates/ugoite-core/src/lib.rs"],
+  });
+  assertEquals(unrelatedRustSource.scope, "scoped");
+  assertEquals(unrelatedRustSource.runDockerRustSourceBuild, false);
+
+  for (
+    const report of [
+      makeImpactReport({ event: "pull_request" }),
+      makeImpactReport({ event: "pull_request", baseSha, headSha, paths: [] }),
+      makeImpactReport({
+        event: "pull_request",
+        baseSha,
+        headSha: "0".repeat(40),
+        paths: ["docs/guide.md"],
+      }),
+      makeImpactReport({
+        event: "pull_request",
+        baseSha,
+        headSha,
+        paths: ["mise.toml"],
+      }),
+      makeImpactReport({
+        event: "pull_request",
+        baseSha: "invalid",
+        headSha,
+        paths: [],
+      }),
+      makeImpactReport({
+        event: "pull_request",
+        baseSha,
+        headSha,
+        diffError: "git failed",
+      }),
+      makeImpactReport({
+        event: "pull_request",
+        baseSha,
+        headSha,
+        paths: Array.from({ length: 101 }, (_, index) => `docs/${index}.md`),
+      }),
+      makeImpactReport({ event: "merge_group" }),
+      makeImpactReport({
+        event: "merge_group",
+        baseSha: "invalid",
+        headSha,
+        paths: ["docs/guide.md"],
+      }),
+      makeImpactReport({
+        event: "merge_group",
+        baseSha,
+        headSha,
+        diffError: "git failed",
+      }),
+      makeImpactReport({
+        event: "merge_group",
+        baseSha,
+        headSha,
+        paths: Array.from({ length: 101 }, (_, index) => `docs/${index}.md`),
+      }),
+    ]
+  ) {
+    assertEquals(report.runDockerRustSourceBuild, true);
+  }
+
+  assertEquals(
+    makeImpactReport({
+      event: "merge_group",
+      baseSha,
+      headSha,
+      paths: ["crates/ugoite-core/src/lib.rs"],
+    }).runDockerRustSourceBuild,
+    false,
+    "a resolved unrelated merge-group diff skips the Docker source build",
+  );
+
+  assertEquals(
+    makeImpactReport({
+      event: "push",
+      baseSha,
+      headSha,
+      paths: ["docs/guide.md"],
+    }).runDockerRustSourceBuild,
+    false,
+  );
+  assertEquals(
+    makeImpactReport({
+      event: "push",
+      baseSha,
+      headSha,
+      paths: ["Cargo.lock"],
+    }).runDockerRustSourceBuild,
+    true,
+  );
+});
+
 Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan all", () => {
   const cases = [
     makeImpactReport({ event: "merge_group" }),

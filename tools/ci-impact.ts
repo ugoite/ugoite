@@ -19,6 +19,7 @@ export type ImpactReport = {
   executionMode: "selective-pr" | "all-lanes";
   jobsSkipped: boolean;
   runOlderCliPreservation: boolean;
+  runDockerRustSourceBuild: boolean;
 };
 
 const ALL_LANES = [
@@ -52,6 +53,15 @@ function affectsOlderCliPreservation(path: string): boolean {
       ? path.startsWith(sensitivePath)
       : path === sensitivePath
   );
+}
+
+function affectsDockerRustSourceBuild(path: string): boolean {
+  return path === "Dockerfile" ||
+    path === "rust-toolchain" || path === "rust-toolchain.toml" ||
+    path === "Cargo.toml" || path === "Cargo.lock" ||
+    path === ".dockerignore" ||
+    /^crates\/.+\/(Cargo\.toml|build\.rs)$/.test(path) ||
+    path === "vendor" || path.startsWith("vendor/");
 }
 
 export function classifyPaths(paths: string[]): ImpactCategories {
@@ -220,6 +230,14 @@ export function makeImpactReport(input: {
   const canSkipOlderCliPreservation = event === "pull_request" &&
     scope === "scoped" && paths !== undefined &&
     !paths.some(affectsOlderCliPreservation);
+  const dockerDiffIsCertain = (event === "pull_request" && scope === "scoped" ||
+    event === "merge_group" || event === "push") &&
+    paths !== undefined && paths.length > 0 && !diffError &&
+    Boolean(baseSha && headSha && SHA.test(baseSha) && SHA.test(headSha)) &&
+    !ZERO_SHA.test(baseSha ?? "") && !ZERO_SHA.test(headSha ?? "") &&
+    paths.length <= MAX_DIFF_FILES;
+  const runDockerRustSourceBuild = !dockerDiffIsCertain ||
+    paths.some(affectsDockerRustSourceBuild);
 
   return {
     schemaVersion: 1,
@@ -234,6 +252,7 @@ export function makeImpactReport(input: {
     executionMode: jobsSkipped ? "selective-pr" : "all-lanes",
     jobsSkipped,
     runOlderCliPreservation: !canSkipOlderCliPreservation,
+    runDockerRustSourceBuild,
   };
 }
 
@@ -321,9 +340,7 @@ export async function runImpactCli(args = Deno.args): Promise<ImpactReport> {
   const headSha = Deno.env.get("CI_IMPACT_HEAD_SHA") ?? flags.head;
   let report: ImpactReport;
 
-  if (event === "merge_group") {
-    report = makeImpactReport({ event });
-  } else if (baseSha && headSha) {
+  if (baseSha && headSha) {
     try {
       const resolvedBaseSha = await resolveCommit(baseSha);
       const resolvedHeadSha = await resolveCommit(headSha);
@@ -357,7 +374,7 @@ export async function runImpactCli(args = Deno.args): Promise<ImpactReport> {
             report.candidateLanes.includes(lane)
           }`
         ).join("\n")
-      }\nplan_older_cli_knowledge_preservation=${report.runOlderCliPreservation}\nreport_json=${json}\n`,
+      }\nplan_older_cli_knowledge_preservation=${report.runOlderCliPreservation}\nplan_docker_rust_source_build=${report.runDockerRustSourceBuild}\nreport_json=${json}\n`,
       { append: true },
     );
   }
