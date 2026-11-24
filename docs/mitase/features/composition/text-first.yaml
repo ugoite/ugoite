@@ -106,7 +106,7 @@ features:
           - id: evaluation-response-query-projection
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: api_composition_queries_and_bindings }
+            selector: { kind: symbol, name: api_composition_evaluation_response }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
@@ -209,7 +209,7 @@ features:
           - id: cli-composition-response-projection
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
-            selector: { kind: symbol, name: composition_queries_and_bindings }
+            selector: { kind: symbol, name: local_composition_evaluation_response }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.inline-sql-typed-graph }
           - id: cli-raw-inspection
