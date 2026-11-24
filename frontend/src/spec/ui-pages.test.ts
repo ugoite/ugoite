@@ -510,10 +510,7 @@ describe("UI spec YAML registry", () => {
     );
 
     expect(studioContract).toContain(
-      "**Status: Text-first Composition authoring is the current target.**",
-    );
-    expect(studioContract).toContain(
-      "[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md)",
+      "**Role: visual hierarchy and labels.**",
     );
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
