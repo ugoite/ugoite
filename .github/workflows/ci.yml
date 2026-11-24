@@ -341,6 +341,9 @@ jobs:
     needs: impact
     if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: read
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"

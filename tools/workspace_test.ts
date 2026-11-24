@@ -641,6 +641,17 @@ Deno.test("Pages promotes only verified successful main CI artifacts", async () 
     ".github/workflows/docsite-pages.yml",
   );
 
+  const artifactBuild = ciWorkflow.split("  artifact-build:")[1].split(
+    "\n  e2e-smoke-mobile:",
+  )[0];
+  assertEquals(
+    artifactBuild.includes(
+      "permissions:\n      contents: read\n      pages: read",
+    ),
+    true,
+    "artifact build needs read access to Pages metadata",
+  );
+
   for (
     const required of [
       "continue-on-error: true",
