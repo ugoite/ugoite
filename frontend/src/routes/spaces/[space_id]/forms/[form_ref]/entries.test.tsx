@@ -90,6 +90,7 @@ const noteForm: Form = {
       },
     },
   },
+  allow_extra_attributes: "deny" as const,
 };
 
 describe("/spaces/:space_id/forms/:form_ref/entries", () => {

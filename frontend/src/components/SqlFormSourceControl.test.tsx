@@ -36,6 +36,7 @@ const expensesForm: Form = {
       },
     },
   },
+  allow_extra_attributes: "deny" as const,
 };
 
 function setup(sql: string, forms: readonly Form[]) {
@@ -107,6 +108,7 @@ describe("SQL Form source control", () => {
       version: 1,
       template: "",
       fields: {},
+      allow_extra_attributes: "deny" as const,
     }]);
 
     fireEvent.click(screen.getByRole("button", { name: "Form" }));

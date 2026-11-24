@@ -44,6 +44,7 @@ const typedForm = (): Form => ({
       items: { type: "asset_reference" },
     },
   },
+  allow_extra_attributes: "deny" as const,
 });
 
 const taskForm = (): Form => ({
@@ -52,6 +53,7 @@ const taskForm = (): Form => ({
   version: 1,
   template: "# Task",
   fields: {},
+  allow_extra_attributes: "deny" as const,
 });
 
 describe("draft-values", () => {
@@ -128,6 +130,7 @@ describe("draft-values", () => {
         Count: { id: 110, type: "list", required: false, items: { type: "integer" } },
         Flags: { id: 111, type: "list", required: false, items: { type: "boolean" } },
       },
+      allow_extra_attributes: "deny" as const,
     };
     const transported = toTransportFields(form, {
       Count: [1, "", "  ", "9007199254740993"],

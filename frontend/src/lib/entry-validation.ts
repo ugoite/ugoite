@@ -79,8 +79,7 @@ export const toRustFormDefinition = (
   knownForms: readonly Form[] = [],
 ): Record<string, unknown> => {
   const entries = Object.entries(form.fields || {});
-  const policy: FormExtraAttributesPolicy = form.allow_extra_attributes ??
-    "deny";
+  const policy: FormExtraAttributesPolicy = form.allow_extra_attributes;
   // Canonical-on-write: field types pass through verbatim so Rust rejects
   // legacy aliases (`number`, `text`) instead of silently coercing them.
   const toRustFieldType = (type: string) => type;

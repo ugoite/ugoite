@@ -244,6 +244,7 @@ describe("sql helpers", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
     ]);
     expect(Object.keys(schema.tables ?? {})).toContain("__proto__");
@@ -267,6 +268,7 @@ describe("sql helpers", () => {
         fields: {
           Date: { type: "date", required: false, sql_column: "field_104" },
         },
+        allow_extra_attributes: "deny" as const,
       },
     ];
     const schema = buildSqlSchema(forms);

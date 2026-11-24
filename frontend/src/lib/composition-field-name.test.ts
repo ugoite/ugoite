@@ -8,6 +8,7 @@ const form = (field: Record<string, unknown>): Form => ({
   version: 1,
   template: "entry",
   fields: { amount: field as never },
+  allow_extra_attributes: "deny" as const,
 });
 
 describe("compositionFormFieldName", () => {
@@ -101,6 +102,7 @@ describe("compositionFormFieldName", () => {
           fields: {
             "101": { id: 1, type: "number", required: false } as never,
           },
+          allow_extra_attributes: "deny" as const,
         }],
         "form-1",
         1,

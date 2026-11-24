@@ -76,6 +76,7 @@ describe("space history list", () => {
     setLocale("en");
     vi.mocked(formApi.list).mockResolvedValue([{
       id: "form-1", name: "Expenses", version: 1, template: "", fields: { purpose: { id: 1, type: "string", required: false } },
+      allow_extra_attributes: "deny" as const,
     }]);
     vi.mocked(spaceApi.listMembers).mockResolvedValue([{
       principal: { principal_id: "human:editor", display_name: "Ada Example", kind: "human", state: "active" },

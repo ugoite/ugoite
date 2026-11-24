@@ -1879,6 +1879,7 @@ describe("CompositionStudio graph surface", () => {
             1,
           ),
         },
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "form-id-b",
@@ -1893,6 +1894,7 @@ describe("CompositionStudio graph surface", () => {
             1,
           ),
         },
+        allow_extra_attributes: "deny" as const,
       },
     ];
     const draft = draftWithTable();

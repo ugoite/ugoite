@@ -22,7 +22,9 @@ export function createFormStore(spaceId: () => string) {
     }
   }
 
-  async function createForm(payload: FormCreatePayload): Promise<Form> {
+  async function createForm(
+    payload: FormCreatePayload,
+  ): Promise<FormCreatePayload> {
     setError(null);
     const created = await formApi.save(spaceId(), payload);
     await loadForms();

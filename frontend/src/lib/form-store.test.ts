@@ -39,6 +39,7 @@ describe("createFormStore", () => {
         version: 1,
         template: "# Meeting\n",
         fields: { Date: { type: "date", required: true } },
+        allow_extra_attributes: "deny" as const,
       });
       expect(created.name).toBe("Meeting");
       expect(store.forms()).toHaveLength(1);
@@ -54,6 +55,7 @@ describe("createFormStore", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       });
       const form = await store.getForm("Task");
       expect(form.name).toBe("Task");

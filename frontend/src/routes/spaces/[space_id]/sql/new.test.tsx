@@ -147,6 +147,7 @@ describe("/spaces/:space_id/sql/new", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "user-form",
@@ -155,6 +156,7 @@ describe("/spaces/:space_id/sql/new", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "group-form",
@@ -163,6 +165,7 @@ describe("/spaces/:space_id/sql/new", () => {
         version: 1,
         template: "",
         fields: {},
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "form-1",
@@ -188,6 +191,7 @@ describe("/spaces/:space_id/sql/new", () => {
             },
           },
         },
+        allow_extra_attributes: "deny" as const,
       },
       {
         id: "review-form",
@@ -244,6 +248,7 @@ describe("/spaces/:space_id/sql/new", () => {
             },
           },
         },
+        allow_extra_attributes: "deny" as const,
       },
     ]);
     sqlCreateMock.mockResolvedValue({ id: "query-1", revisionId: "rev-1" });
