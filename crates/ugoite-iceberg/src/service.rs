@@ -1690,14 +1690,10 @@ impl UgoiteService {
         };
         let marker: SpaceSlugClaim = serde_json::from_slice(&bytes)
             .map_err(|error| anyhow!("invalid Space slug commit marker for {slug}: {error}"))?;
-        if marker.slug != slug
-            || marker.space_id != claim.space_id
-            || marker.claim_id != claim.claim_id
-            || marker.state != "committed"
-        {
-            return Ok(false);
-        }
-        Ok(true)
+        Ok(marker.slug == slug
+            && marker.space_id == claim.space_id
+            && marker.claim_id == claim.claim_id
+            && marker.state == "committed")
     }
 
     async fn read_space_slug_claim(&self, slug: &str) -> Result<Option<SpaceSlugClaim>> {
