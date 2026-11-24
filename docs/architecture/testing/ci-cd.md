@@ -174,9 +174,9 @@ read-only for pull requests and merge queues and writes only on successful
 and are refreshed only after successful pushes to `main`. Successful `main` runs
 upload the verified artifact set using the logical names
 `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and
-`ugoite-artifact-manifest`. The docsite is built and verified on `main` but is
-not uploaded for promotion; Pages deploys stable docs only from published
-release tags (see below).
+`ugoite-artifact-manifest`. When Pages is configured, the CI run also uploads
+`ugoite-docsite-pages`; the Pages workflow promotes that exact artifact only
+when the originating run is a successful push to this repository's `main`.
 
 Every browser lane pins `ubuntu-24.04` and the Playwright browser/runtime
 versions in `e2e/deno.json` plus `deno.lock`, and times its OS-dependency
@@ -373,11 +373,11 @@ Compose assets, publishes `@ugoite/ugoite` to GitHub Packages, publishes
 `ghcr.io/ugoite/ugoite:<version>`, and pushes the Helm chart to
 `oci://ghcr.io/ugoite/charts`.
 
-`.github/workflows/docsite-pages.yml` renders and deploys stable docs only from
-a published release tag. It checks out the exact tag bytes, verifies that
-`version.txt` and the versioned release note at that tag match the tag, builds
-the docsite with the current Pages origin/base metadata, validates the static
-output, then deploys. Main-branch CI never deploys to the site root.
+`.github/workflows/docsite-pages.yml` promotes the docsite artifact from the
+successful `main` push CI run that produced it. It validates the run identity,
+artifact manifest, Pages origin/base, file inventory, and checksums before
+uploading the Pages artifact and deploying it. Failed or cancelled CI runs are
+skipped, and repositories without configured Pages skip promotion.
 
 Build reuse and test-result caching are different concepts. `sources`/`outputs`
 may skip deterministic `build:*` work when inputs are unchanged, but they are

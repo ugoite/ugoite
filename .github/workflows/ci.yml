@@ -341,6 +341,9 @@ jobs:
     needs: impact
     if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: read
     timeout-minutes: 75
     env:
       CARGO_INCREMENTAL: "0"
@@ -525,6 +528,17 @@ jobs:
           path: |
             target/artifacts/manifest.json
             target/artifacts/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload docsite Pages artifact
+        id: upload-docsite-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pages.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ugoite-docsite-pages
+          path: target/artifacts/docsite/site/
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

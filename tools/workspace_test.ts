@@ -635,63 +635,80 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
   );
 });
 
-Deno.test("Pages deploys stable docs from published releases only", async () => {
-  const ciWorkflow = await Deno.readTextFile(
-    ".github/workflows/ci.yml",
-  );
+Deno.test("Pages promotes only verified successful main CI artifacts", async () => {
+  const ciWorkflow = await Deno.readTextFile(".github/workflows/ci.yml");
   const workflow = await Deno.readTextFile(
     ".github/workflows/docsite-pages.yml",
+  );
+
+  const artifactBuild = ciWorkflow.split("  artifact-build:")[1].split(
+    "\n  e2e-smoke-mobile:",
+  )[0];
+  assertEquals(
+    artifactBuild.includes(
+      "permissions:\n      contents: read\n      pages: read",
+    ),
+    true,
+    "artifact build needs read access to Pages metadata",
   );
 
   for (
     const required of [
       "continue-on-error: true",
       "PAGE_CONFIGURED: ${{ steps.pages.outcome == 'success' }}",
-      "GitHub Pages is not configured; using the non-production docsite build configuration.",
-      'docsite_origin="https://example.invalid"',
+      "name: ugoite-docsite-pages",
+      "path: target/artifacts/docsite/site/",
+      "steps.pages.outcome == 'success'",
     ]
   ) {
     assertEquals(ciWorkflow.includes(required), true, required);
   }
-  assertEquals(
-    ciWorkflow.includes("name: ugoite-docsite-pages"),
-    false,
-    "main CI must not stage a Pages deployment artifact",
-  );
 
   for (
-    const forbidden of [
-      "workflow_run:",
-      "pull_request_target:",
-      "ci_run_id",
-      "download-artifact",
-    ]
-  ) {
-    assertEquals(workflow.includes(forbidden), false, forbidden);
-  }
-  for (
     const required of [
-      "release:",
-      "published",
+      "workflow_run:",
+      "workflows:",
+      "- CI",
+      "branches:",
+      "main",
       "workflow_dispatch:",
+      "ci_run_id",
       "permissions: {}",
+      "actions: read",
       "contents: read",
       "pages: write",
       "id-token: write",
-      "environment:",
       "name: github-pages",
-      "GITHUB_TOKEN: ${{ github.token }}",
-      'gh release view "${tag}"',
-      "does not match release tag",
-      "docs/version/releases/v${version}.md",
-      "mise run build:docsite",
+      'conclusion != "success"',
+      'head_branch != "main"',
+      "upstream run must come from",
+      "ugoite-docsite-pages",
+      "ugoite-artifact-manifest",
+      "continue-on-error: true",
       "pages_configured: ${{ steps.pages.outcome == 'success' }}",
-      "GitHub Pages is not configured; skipping stable docsite deployment.",
+      "if: steps.resolve-run.outputs.skip != 'true' && steps.pages.outcome == 'success'",
+      "GitHub Pages is not configured; skipping docsite promotion.",
       "if: steps.pages.outcome == 'success'",
-      "if: needs.build.outputs.pages_configured == 'true'",
-      "forbidden origin text",
+      "if: needs.prepare.outputs.pages_configured == 'true'",
+      "manifest source_sha",
+      "checksum mismatch",
     ]
   ) {
     assertEquals(workflow.includes(required), true, required);
+  }
+  assertEquals(
+    workflow.indexOf("name: Resolve Pages metadata") <
+      workflow.indexOf("name: Download docsite artifact"),
+    true,
+    "Pages configuration must be checked before downloading optional artifacts",
+  );
+  for (
+    const forbidden of [
+      "release:",
+      "gh release view",
+      "Checkout release tag bytes",
+    ]
+  ) {
+    assertEquals(workflow.includes(forbidden), false, forbidden);
   }
 });
