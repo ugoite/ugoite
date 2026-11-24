@@ -94,7 +94,7 @@ features:
           - id: append-only-save
             adapter: rust
             path: crates/ugoite-iceberg/src/service/composition_local_save.rs
-            selector: { kind: symbol, name: save_composition_local_with_work }
+            selector: { kind: symbol, name: save_composition_local_with_operation_id }
             claims:
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.append-only-save-history }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.current-shape-save-validation }

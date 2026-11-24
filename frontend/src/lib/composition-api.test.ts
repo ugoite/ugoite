@@ -102,8 +102,6 @@ describe("compositionApi", () => {
       {
         compositionId: "tool-1",
         baseRevisionId: "revision-1",
-        variables: { month: "2026-10" },
-        unset_variables: ["optional_note"],
       },
       signal,
     );
@@ -116,8 +114,6 @@ describe("compositionApi", () => {
         yaml: "canonical graph yaml",
         composition_id: "tool-1",
         base_revision_id: "revision-1",
-        variables: { month: "2026-10" },
-        unset_variables: ["optional_note"],
       },
       { signal },
     );

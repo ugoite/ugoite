@@ -5354,38 +5354,14 @@ impl UgoiteService {
         .await
     }
 
-    /// Create or update one Composition Entry using a caller-stable operation
-    /// identity. The operation identity is scoped by the Space and is checked
-    /// against the canonical request at the Catalog publication boundary.
-    pub async fn save_composition_authorized_for_principals_with_operation_id(
-        &self,
-        space_id: &str,
-        request: composition::CompositionSaveRequest,
-        author: &str,
-        principal_ids: &[Uuid],
-        operation_id: &str,
-    ) -> Result<composition::CompositionSaveResult> {
-        self.save_composition_authorized_for_principals_with_work(
-            space_id,
-            request,
-            author,
-            principal_ids,
-            operation_id,
-            composition::CompositionSaveWork::default(),
-        )
-        .await
-    }
-
-    // Save preflight holds query results and an authorization lease across
-    // publication; keep that large future off adapter and test worker stacks.
-    pub fn save_composition_authorized_for_principals_with_work<'a>(
+    // Save preflight holds the authorization lease across publication; keep that large future off adapter and test worker stacks.
+    pub fn save_composition_authorized_for_principals_with_operation_id<'a>(
         &'a self,
         space_id: &'a str,
         request: composition::CompositionSaveRequest,
         author: &'a str,
         principal_ids: &'a [Uuid],
         operation_id: &'a str,
-        work: composition::CompositionSaveWork,
     ) -> BoxFuture<'a, Result<composition::CompositionSaveResult>> {
         Box::pin(async move {
             let mut request = request;
@@ -5498,7 +5474,6 @@ impl UgoiteService {
                 &request_yaml,
                 author,
                 operation_id,
-                &work,
             )
             .await?
             {
@@ -5641,7 +5616,7 @@ impl UgoiteService {
             }
             let result = crate::authorization::with_authorization_write_fence(
                 authorization_lease.write_fence(),
-                composition::save_composition_with_work_and_head_proof(
+                composition::save_composition_with_head_proof(
                     &self.operator,
                     space_id,
                     &workspace,
@@ -5651,7 +5626,6 @@ impl UgoiteService {
                     author,
                     operation_id,
                     &request_yaml,
-                    &work,
                     Some(&exact_head_proof),
                 ),
             )

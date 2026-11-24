@@ -1532,7 +1532,7 @@ spec:
     );
     let document = parse_composition_yaml(&yaml).expect("parse seeded Composition");
     let saved = service
-        .save_composition_authorized_for_principals_with_work(
+        .save_composition_authorized_for_principals_with_operation_id(
             &fixture.space_id,
             CompositionSaveRequest {
                 entry_id: None,
@@ -1542,15 +1542,6 @@ spec:
             &fixture.owner_principal_id.to_string(),
             &[fixture.owner_principal_id],
             "seed-cli-parity-composition",
-            ugoite_iceberg::composition::CompositionSaveWork {
-                variables: [
-                    ("month_start".to_owned(), json!("2026-01-01")),
-                    ("month_end".to_owned(), json!("2026-02-01")),
-                ]
-                .into_iter()
-                .collect(),
-                unset_variables: Vec::new(),
-            },
         )
         .await
         .expect("seed Composition");
@@ -1571,7 +1562,7 @@ spec:
     let revised_document =
         parse_composition_yaml(&revised_yaml).expect("parse newer Composition revision");
     let latest = service
-        .save_composition_authorized_for_principals_with_work(
+        .save_composition_authorized_for_principals_with_operation_id(
             &fixture.space_id,
             CompositionSaveRequest {
                 entry_id: Some(saved.entry_id),
@@ -1581,15 +1572,6 @@ spec:
             &fixture.owner_principal_id.to_string(),
             &[fixture.owner_principal_id],
             "publish-newer-cli-parity-composition",
-            ugoite_iceberg::composition::CompositionSaveWork {
-                variables: [
-                    ("month_start".to_owned(), json!("2026-01-01")),
-                    ("month_end".to_owned(), json!("2026-02-01")),
-                ]
-                .into_iter()
-                .collect(),
-                unset_variables: Vec::new(),
-            },
         )
         .await
         .expect("publish newer Composition revision");

@@ -31,8 +31,6 @@ pub use composition::{
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MAX_COMPOSITION_SAVE_WORK_BYTES: usize = 1024 * 1024;
-pub const MAX_COMPOSITION_SAVE_WORK_ITEMS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -1339,9 +1337,6 @@ pub fn prepare_request(
             let payload = body.ok_or_else(|| {
                 ApiProtocolError::invalid_arguments(operation, "operation requires a JSON body")
             })?;
-            if operation == "composition.save" {
-                validate_composition_save_work(operation, payload)?;
-            }
             let serialized = serde_json::to_string(payload).map_err(|error| {
                 ApiProtocolError::invalid_arguments(
                     operation,
@@ -1464,80 +1459,6 @@ pub fn prepare_request(
         body: serialized_body,
         body_kind: spec.body_kind,
     })
-}
-
-fn validate_composition_save_work(
-    operation: &str,
-    payload: &Value,
-) -> Result<(), ApiProtocolError> {
-    let object = payload.as_object().ok_or_else(|| {
-        ApiProtocolError::invalid_arguments(operation, "request body must be a JSON object")
-    })?;
-    let empty_variables = Map::new();
-    let empty_unset_variables = Vec::new();
-    let variables = match object.get("variables") {
-        None => &empty_variables,
-        Some(Value::Object(variables)) => variables,
-        Some(_) => {
-            return Err(ApiProtocolError::invalid_arguments(
-                operation,
-                "variables must be a JSON object",
-            ));
-        }
-    };
-    let unset_variables = match object.get("unset_variables") {
-        None => &empty_unset_variables,
-        Some(Value::Array(unset_variables)) => unset_variables,
-        Some(_) => {
-            return Err(ApiProtocolError::invalid_arguments(
-                operation,
-                "unset_variables must be a JSON array",
-            ));
-        }
-    };
-    if variables.len().saturating_add(unset_variables.len()) > MAX_COMPOSITION_SAVE_WORK_ITEMS {
-        return Err(ApiProtocolError::invalid_arguments(
-            operation,
-            "Composition save Work supports at most 256 set and unset variable IDs combined",
-        ));
-    }
-
-    let mut names = std::collections::BTreeSet::new();
-    for name in variables.keys() {
-        names.insert(name.as_str());
-    }
-    for unset in unset_variables {
-        let name = unset.as_str().ok_or_else(|| {
-            ApiProtocolError::invalid_arguments(
-                operation,
-                "unset_variables entries must be strings",
-            )
-        })?;
-        if !names.insert(name) {
-            return Err(ApiProtocolError::invalid_arguments(
-                operation,
-                "Composition save Work contains a duplicate or conflicting variable ID",
-            ));
-        }
-    }
-
-    let work = json!({
-        "variables": variables,
-        "unset_variables": unset_variables,
-    });
-    let work_bytes = serde_json::to_vec(&work).map_err(|error| {
-        ApiProtocolError::invalid_arguments(
-            operation,
-            format!("Composition save Work is not serializable JSON: {error}"),
-        )
-    })?;
-    if work_bytes.len() > MAX_COMPOSITION_SAVE_WORK_BYTES {
-        return Err(ApiProtocolError::invalid_arguments(
-            operation,
-            "Composition save Work exceeds the 1 MiB limit",
-        ));
-    }
-    Ok(())
 }
 
 /// Decode one transport response with the same semantics in CLI and browser.
@@ -2587,23 +2508,19 @@ mod tests {
             composition_id: None,
             base_revision_id: None,
             yaml: SQL_FIRST_COMPOSITION_YAML.to_owned(),
-            variables: variables.clone(),
-            unset_variables: vec!["optional_note".to_owned()],
         };
         let save_wire = serde_json::to_value(&save_request).expect("save request DTO");
-        assert_variable_wire_shape(save_wire.clone());
-        assert_eq!(save_wire["unset_variables"], json!(["optional_note"]));
+        assert!(save_wire.get("variables").is_none());
+        assert!(save_wire.get("unset_variables").is_none());
         assert_eq!(
             serde_json::from_value::<CompositionSaveRequest>(save_wire)
                 .expect("save request round-trips"),
             save_request
         );
-        let empty_save = serde_json::from_value::<CompositionSaveRequest>(json!({
+        serde_json::from_value::<CompositionSaveRequest>(json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML
         }))
-        .expect("empty transient Work");
-        assert!(empty_save.variables.is_empty());
-        assert!(empty_save.unset_variables.is_empty());
+        .expect("save request with document only");
         assert!(serde_json::from_value::<CompositionPreviewRequest>(json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML,
             "parameters": {"month": "2026-10"}
@@ -2779,11 +2696,7 @@ mod tests {
             json!({"yaml": SQL_FIRST_COMPOSITION_YAML})
         );
 
-        let save_body = json!({
-            "yaml": SQL_FIRST_COMPOSITION_YAML,
-            "variables": {"month": "2026-10"},
-            "unset_variables": ["optional_note"]
-        });
+        let save_body = json!({"yaml": SQL_FIRST_COMPOSITION_YAML});
         let save_create = prepare_request(
             "composition.save",
             &json!({"space_id": "demo", "idempotency_key": "composition-attempt-create"}),
@@ -2800,85 +2713,6 @@ mod tests {
                 .expect("save request JSON"),
             save_body
         );
-        let legacy_save = prepare_request(
-            "composition.save",
-            &json!({"space_id":"demo", "idempotency_key":"composition-attempt-legacy"}),
-            Some(&json!({"yaml": SQL_FIRST_COMPOSITION_YAML})),
-        )
-        .expect("save omits transient Work");
-        assert_eq!(
-            serde_json::from_str::<Value>(legacy_save.body.as_deref().expect("legacy save body"))
-                .expect("legacy save body JSON"),
-            json!({"yaml": SQL_FIRST_COMPOSITION_YAML})
-        );
-
-        let conflicting_work = json!({
-            "yaml": SQL_FIRST_COMPOSITION_YAML,
-            "variables": {"month": "2026-10"},
-            "unset_variables": ["month"]
-        });
-        let conflict = prepare_request(
-            "composition.save",
-            &json!({"space_id":"demo", "idempotency_key":"composition-attempt-conflict"}),
-            Some(&conflicting_work),
-        )
-        .expect_err("set and unset variable IDs cannot conflict");
-        assert!(conflict.message.contains("duplicate or conflicting"));
-
-        let combined_limit_work = json!({
-            "yaml": SQL_FIRST_COMPOSITION_YAML,
-            "variables": (0..128).map(|index| (format!("set_{index}"), json!(index))).collect::<Map<_, _>>(),
-            "unset_variables": (0..129).map(|index| format!("unset_{index}")).collect::<Vec<_>>()
-        });
-        let too_many_work = prepare_request(
-            "composition.save",
-            &json!({"space_id":"demo", "idempotency_key":"composition-attempt-count"}),
-            Some(&combined_limit_work),
-        )
-        .expect_err("set and unset IDs share one 256-item limit");
-        assert!(too_many_work.message.contains("at most 256"));
-
-        let work_base_bytes = serde_json::to_vec(&json!({
-            "variables": {"value": ""},
-            "unset_variables": []
-        }))
-        .expect("serialized empty Work value")
-        .len();
-        let maximum_value = "x".repeat(MAX_COMPOSITION_SAVE_WORK_BYTES - work_base_bytes);
-        let maximum_work_body = json!({
-            "yaml": SQL_FIRST_COMPOSITION_YAML,
-            "variables": {"value": maximum_value},
-            "unset_variables": []
-        });
-        let maximum_work = json!({
-            "variables": maximum_work_body["variables"],
-            "unset_variables": maximum_work_body["unset_variables"]
-        });
-        assert_eq!(
-            serde_json::to_vec(&maximum_work)
-                .expect("serialize maximum Work")
-                .len(),
-            MAX_COMPOSITION_SAVE_WORK_BYTES
-        );
-        prepare_request(
-            "composition.save",
-            &json!({"space_id":"demo", "idempotency_key":"composition-attempt-max-bytes"}),
-            Some(&maximum_work_body),
-        )
-        .expect("maximum documented Work envelope is accepted");
-
-        let oversized_work = json!({
-            "yaml": SQL_FIRST_COMPOSITION_YAML,
-            "variables": {"month": "x".repeat(MAX_COMPOSITION_SAVE_WORK_BYTES)},
-            "unset_variables": []
-        });
-        let too_large_work = prepare_request(
-            "composition.save",
-            &json!({"space_id":"demo", "idempotency_key":"composition-attempt-bytes"}),
-            Some(&oversized_work),
-        )
-        .expect_err("serialized typed Work is bounded");
-        assert!(too_large_work.message.contains("1 MiB limit"));
 
         let save_retry = prepare_request(
             "composition.save",

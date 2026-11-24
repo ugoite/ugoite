@@ -1022,40 +1022,6 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     expect(response.receipt.snapshot_id).toBe(42);
   });
 
-  it("sends signed 64-bit Composition save inputs as exact JSON integers", async () => {
-    server.use(
-      http.post(
-        testApiUrl("/spaces/demo/compositions"),
-        async ({ request }) => {
-          const body = await request.text();
-          expect(body).toContain('"max":9223372036854775807');
-          expect(body).toContain('"min":-9223372036854775808');
-          return HttpResponse.json({
-            composition_id: "tool-1",
-            revision_id: "revision-2",
-            canonical_yaml: "canonical yaml",
-            receipt: {
-              command_id: "command-1",
-              catalog_generation: 4,
-              snapshot_id: 42,
-              committed_revision_ids: ["revision-2"],
-              committed_at_micros: 1,
-              data_file_count: 1,
-            },
-          });
-        },
-      ),
-    );
-
-    await compositionApi.save("demo", "canonical yaml", "attempt-1", {
-      variables: {
-        max: "9223372036854775807",
-        min: "-9223372036854775808",
-      },
-      integerVariableIds: ["max", "min"],
-    });
-  });
-
   it("short-circuits fetch when a signal is aborted during WASM preparation", async () => {
     const controller = new AbortController();
     controller.abort();

@@ -1,11 +1,11 @@
 /**
- * Browser-memory Work state for retrying an uncertain Composition save.
+ * Browser-memory state for retrying an uncertain Composition save.
  * These attempts survive route unmounts in the current tab, but are not
  * persisted to browser storage or shared across server requests.
  */
 export interface PendingCompositionSaveAttempt {
   spaceId: string;
-  /** Authenticated owner of this in-memory Work; never an auth credential. */
+  /** Authenticated owner of this in-memory attempt; never an auth credential. */
   principalId: string;
   /** Saved-SQL route identity. EntryQuery saves identify by routePath only. */
   sqlId?: string;
@@ -13,11 +13,6 @@ export interface PendingCompositionSaveAttempt {
   saveTarget: CompositionSaveTarget;
   name: string;
   yaml: string;
-  /** Frozen typed Work paired with yaml for uncertain-outcome retries. */
-  variables?: Record<string, unknown>;
-  /** Input ids whose values must remain exact signed i64 tokens on retry. */
-  integerVariableIds?: string[];
-  unset_variables?: string[];
   idempotencyKey: string;
 }
 

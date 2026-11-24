@@ -10567,11 +10567,9 @@ async fn list_compositions(
     Ok(Json(composition_raw_list_page_response(page)))
 }
 
-// Work may consume 1 MiB and YAML may expand sixfold when JSON-escaped.
-// The small extra allowance covers the request envelope and target IDs.
-const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize = ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
-    + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
-    + 4096;
+// Bound the JSON envelope and worst-case escaped canonical YAML.
+const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize =
+    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 4096;
 
 async fn save_composition(
     State(state): State<AppState>,
@@ -10644,33 +10642,6 @@ async fn save_composition(
                 }),
             )
         })?;
-    let work = ugoite_iceberg::composition::CompositionSaveWork {
-        variables: request.variables,
-        unset_variables: request.unset_variables,
-    };
-    if work
-        .variables
-        .len()
-        .saturating_add(work.unset_variables.len())
-        > ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_ITEMS
-    {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            json!({"code":"INVALID_INPUT","message":"Composition save input Work exceeds the supported variable count"}),
-        ));
-    }
-    let work_bytes = serde_json::to_vec(&work).map_err(|error| {
-        ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            json!({"code":"INVALID_INPUT","message":error.to_string()}),
-        )
-    })?;
-    if work_bytes.len() > ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES {
-        return Err(ApiError::new(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            json!({"code":"REQUEST_TOO_LARGE","message":"Composition save input Work exceeds the 1 MiB limit"}),
-        ));
-    }
     let operation_id = required_composition_command_id(&headers, "composition-save")?;
 
     let action = if entry_id.is_some() {
@@ -10693,7 +10664,7 @@ async fn save_composition(
         resource,
         |principal_id, principals| async move {
             service
-                .save_composition_authorized_for_principals_with_work(
+                .save_composition_authorized_for_principals_with_operation_id(
                     &space_id_for_write,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id,
@@ -10703,7 +10674,6 @@ async fn save_composition(
                     &principal_id.to_string(),
                     &principals,
                     &operation_id,
-                    work,
                 )
                 .await
                 .map_err(ApiError::from_core)

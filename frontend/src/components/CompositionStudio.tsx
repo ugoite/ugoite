@@ -800,19 +800,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
           ? {
             compositionId: attempt.saveTarget.compositionId,
             baseRevisionId: attempt.saveTarget.baseRevisionId,
-            variables: attempt.variables ?? {},
-            ...(attempt.integerVariableIds?.length
-              ? { integerVariableIds: attempt.integerVariableIds }
-              : {}),
-            unset_variables: attempt.unset_variables ?? [],
           }
-          : {
-            variables: attempt.variables ?? {},
-            ...(attempt.integerVariableIds?.length
-              ? { integerVariableIds: attempt.integerVariableIds }
-              : {}),
-            unset_variables: attempt.unset_variables ?? [],
-          },
+          : undefined,
       );
       if (!isCurrentSaveIdentity(attempt)) {
         clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
@@ -866,11 +855,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSaveError(t("composition.studioInvalidDocument"));
       return;
     }
-    const inputSnapshot = getSaveInputSnapshot();
-    if (!inputSnapshot) {
-      setSaveError(t("composition.queryFailed"));
-      return;
-    }
     const saveRouteIdentity = routeIdentity();
     const saveScope = editorScope();
     const invocationId = ++nextSaveInvocationId;
@@ -911,14 +895,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
         principalId: owner,
         name: current.name.trim(),
         yaml: "",
-        variables: { ...inputSnapshot.variables },
-        integerVariableIds: current.variables.flatMap((node) =>
-          node.kind === "input" &&
-            node.value_type.scalar_type === "integer"
-            ? [node.id]
-            : []
-        ),
-        unset_variables: [...inputSnapshot.unset_variables],
         idempotencyKey: crypto.randomUUID(),
       };
       pendingSave = attempt;
