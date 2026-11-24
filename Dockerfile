@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.29@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
-FROM denoland/deno:2.9.8 AS frontend-build
+FROM denoland/deno:2.9.8@sha256:a0d88a7fcbd44f062cba2748e19df67d30290ad12aa203c7c1e0b12462c483f0 AS frontend-build
 WORKDIR /repo
 ARG UGOITE_SOURCE_SHA=unknown
 ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
@@ -32,7 +32,7 @@ RUN deno run -A frontend/scripts/generate-static-index.ts \
   frontend/.output/public/_build/.vite/manifest.json \
   frontend/.output/public/index.html
 
-FROM rust:1.99-bookworm AS rust-build
+FROM rust:1.100-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS rust-build
 WORKDIR /repo
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
@@ -40,7 +40,7 @@ COPY vendor ./vendor
 RUN cargo build -p ugoite-server --release --locked
 RUN cargo build -p ugoite-cli --release --locked
 
-FROM ubuntu:26.04 AS runtime-base
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS runtime-base
 WORKDIR /app
 ARG UGOITE_SOURCE_SHA=unknown
 ENV UGOITE_SOURCE_SHA=${UGOITE_SOURCE_SHA}
