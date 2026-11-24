@@ -191,7 +191,7 @@
       "enabled": false
     },
     {
-      "description": "Hold keyring major updates until the CLI no longer requests the removed apple-native feature",
+      "description": "Hold non-vulnerability keyring major updates until the CLI no longer requests the removed apple-native feature",
       "matchManagers": [
         "cargo"
       ],
@@ -200,6 +200,9 @@
       ],
       "matchUpdateTypes": [
         "major"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
       ],
       "enabled": false
     },
