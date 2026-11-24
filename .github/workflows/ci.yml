@@ -44,6 +44,7 @@ jobs:
       plan_docsite_nav: ${{ steps.plan.outputs.plan_docsite_nav }}
       plan_cp1_acceptance: ${{ steps.plan.outputs.plan_cp1_acceptance }}
       plan_older_cli_knowledge_preservation: ${{ steps.plan.outputs.plan_older_cli_knowledge_preservation }}
+      plan_docker_rust_source_build: ${{ steps.plan.outputs.plan_docker_rust_source_build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,8 +62,8 @@ jobs:
         id: plan
         env:
           CI_IMPACT_EVENT: ${{ github.event_name }}
-          CI_IMPACT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          CI_IMPACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CI_IMPACT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          CI_IMPACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: mise run ci:impact
 
   rust-check:
@@ -420,6 +421,7 @@ jobs:
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       - name: Verify Docker Rust source build
+        if: needs.impact.outputs.plan_docker_rust_source_build != 'false'
         run: docker buildx build --target rust-build --tag ugoite:rust-source-check --load .
 
       - name: Resolve production Pages metadata
