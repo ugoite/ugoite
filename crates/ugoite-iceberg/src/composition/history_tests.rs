@@ -2,8 +2,8 @@ use crate::{composition, iceberg_store, publication_context_for_change, service:
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::composition::parse_composition_yaml;
 use ugoite_domain::composition::{
-    VariableGraphNode, VariableGraphNodeKind, VariableGraphScalarDescriptor,
-    VariableGraphScalarType,
+    VariableGraphArgumentBinding, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::entry::{EntryOperation, EntryRevisionDraft};
 use ugoite_domain::id::RevisionId;
@@ -339,13 +339,39 @@ async fn save_accepts_required_input_without_current_work() -> anyhow::Result<()
         id: "required_input".to_owned(),
         kind: VariableGraphNodeKind::Input {
             value_type: VariableGraphScalarDescriptor {
-                scalar_type: VariableGraphScalarType::Date,
+                scalar_type: VariableGraphScalarType::Integer,
                 nullable: false,
             },
             required: true,
             default: None,
         },
     });
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("expected scalar query variable")
+    };
+    let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+        &mut query.definition;
+    *sql = "SELECT $required_input AS total".to_owned();
+    query.arguments = vec![VariableGraphArgumentBinding {
+        name: "required_input".to_owned(),
+        variable: "required_input".to_owned(),
+    }];
+    document
+        .spec
+        .components
+        .push(ugoite_domain::composition::CompositionComponent::Input {
+            id: "required_input_component".to_owned(),
+            variable: "required_input".to_owned(),
+        });
+    document.spec.layout.rows[0]
+        .items
+        .push(ugoite_domain::composition::FlowItem::Component {
+            component: "required_input_component".to_owned(),
+        });
+    assert!(
+        ugoite_domain::composition::canonicalize_composition(&document).is_ok(),
+        "required input test document should be canonicalizable"
+    );
     let saved = service
         .save_composition_authorized_for_principals_with_operation_id(
             &space_id,
