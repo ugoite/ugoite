@@ -38,6 +38,11 @@ const ZERO_SHA = /^0{40}$/;
 const SHA = /^[0-9a-f]{40}$/i;
 const MAX_DIFF_FILES = 100;
 
+function isCrateTestPath(path: string): boolean {
+  return /^crates\/[^/]+\/tests\/.+/.test(path) ||
+    /^crates\/.+_tests\.rs$/.test(path);
+}
+
 const OLDER_CLI_PRESERVATION_PATHS = [
   "Cargo.toml",
   "Cargo.lock",
@@ -205,7 +210,12 @@ export function makeImpactReport(input: {
       candidateLanes.add("artifacts");
     }
     if (categories.rust) {
-      for (const lane of ["rust-check", "rust-test", "web", "artifacts"]) {
+      const testOnlyRust = paths !== undefined && paths.length > 0 &&
+        paths.every(isCrateTestPath);
+      const rustLanes = testOnlyRust
+        ? ["rust-check", "rust-test"]
+        : ["rust-check", "rust-test", "web", "artifacts"];
+      for (const lane of rustLanes) {
         candidateLanes.add(lane);
       }
     }

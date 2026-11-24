@@ -29,8 +29,8 @@ Tests are organized around the shared Rust core and thin adapters.
   reopening with the current implementation preserves both histories. It does
   not resolve, preview, execute, or rewrite the Composition with the older CLI.
   `mise run test:older-cli-knowledge-preservation` downloads and verifies the release
-  manifest and platform archive digest; `mise run test:rust` includes this
-  check.
+  manifest and platform archive digest; the hosted `ci:lane:rust-test` task runs
+  this check conditionally, while `mise run test:rust` excludes it.
 - `xtask` checks OpenAPI drift, architectural dependency rules, and stale
   current-stack documentation.
 - Required acceptance lanes prove boundedness properties (paged reads with
