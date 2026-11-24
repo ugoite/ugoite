@@ -32,5 +32,5 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-UX-DASH-001#criterion.recent-count-bound
-                covers: [FEAT-UX-016#binding.dashboard-recent-list/target.dashboard-recent-surface]
+                covers: [FEAT-UX-016#binding.dashboard-recent-list/target.dashboard-recent-surface, FEAT-FE-013#binding.frontend/target.page-space-dashboard]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-DASH-001: limits Recent entries after duplicate suppression" } }

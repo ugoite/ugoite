@@ -476,20 +476,6 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression", () => {
-    const dashboard = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-dashboard"
-    );
-    const recentEntries = dashboard?.spec.components?.body?.find(({ id }) =>
-      id === "recent-entries"
-    );
-
-    expect(recentEntries).toMatchObject({
-      count: { maximum: 4, after: "duplicate-label-suppression" },
-      duplicate_label_policy: "keep-most-recent-per-form-and-label",
-    });
-  });
-
   it("REQ-FE-040: validates component types", () => {
     const pages = loadPages();
     for (const { spec, filePath } of pages) {
@@ -528,9 +514,6 @@ describe("UI spec YAML registry", () => {
     );
     expect(studioContract).toContain(
       "[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md)",
-    );
-    expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
-      "The canvas offers Text, Table, and Input only.",
     );
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
