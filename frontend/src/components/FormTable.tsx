@@ -43,7 +43,8 @@ import {
 
 interface FormTableProps {
   spaceId: string;
-  entryForm: Form;
+  // Form drafts may omit an ID, but FormTable queries persisted Forms only.
+  entryForm: Form & { id: string };
   onEntryClick: (entryId: string) => void;
   onAddRow?: () => void;
 }
@@ -322,10 +323,7 @@ export function FormTable(props: FormTableProps) {
 
   const formScope = createMemo(() => ({
     kind: "form" as const,
-    // Form ids are durable semantic identity. Name is only a fixture fallback
-    // for incomplete client-side definitions; server responses always carry
-    // the stable id.
-    form_id: props.entryForm.id ?? props.entryForm.name,
+    form_id: props.entryForm.id,
   }));
 
   const capabilities = createMemo<EntryQueryCapabilities>(() => ({
