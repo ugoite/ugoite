@@ -355,8 +355,6 @@ inventory:
         - AGENTS.md
         - frontend/src/app.css
         - docs/spec/index.md
-        - docs/spec/requirements/ops.yaml
-        - docs/spec/requirements/security.yaml
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
         - .github/workflows/renovate.yml
