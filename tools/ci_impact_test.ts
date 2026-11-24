@@ -336,6 +336,33 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
   assertEquals(unrelatedRustSource.runDockerRustSourceBuild, false);
 
   for (
+    const path of [
+      "docs/architecture/contracts/decisions.md",
+      "docs/mitase/requirements/ops/quality-gates.yaml",
+      "tools/ci-impact.ts",
+      "tools/ci_impact_test.ts",
+    ]
+  ) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [path],
+    });
+    assertEquals(report.scope, "all", path);
+    assertEquals(report.runDockerRustSourceBuild, false, path);
+  }
+
+  const architectureDocsWithDockerInput = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["docs/architecture/contracts/decisions.md", "Cargo.lock"],
+  });
+  assertEquals(architectureDocsWithDockerInput.scope, "all");
+  assertEquals(architectureDocsWithDockerInput.runDockerRustSourceBuild, true);
+
+  for (
     const report of [
       makeImpactReport({ event: "pull_request" }),
       makeImpactReport({ event: "pull_request", baseSha, headSha, paths: [] }),
