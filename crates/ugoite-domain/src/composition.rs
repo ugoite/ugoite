@@ -277,7 +277,8 @@ fn valid_variable_string(value: &str) -> bool {
             .all(|character| !character.is_control() || matches!(character, '\t' | '\n' | '\r'))
 }
 
-fn valid_variable_date(value: &str) -> bool {
+/// Check that a Composition date is canonical `YYYY-MM-DD` with a valid year.
+pub fn is_valid_composition_variable_date(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 10
         || !value.is_ascii()
@@ -298,7 +299,9 @@ fn valid_variable_date(value: &str) -> bool {
         })
 }
 
-fn valid_variable_timestamp(value: &str) -> bool {
+/// Check that a Composition timestamp is a valid RFC 3339 timestamp in the
+/// canonical shape accepted for Composition variable values.
+pub fn is_valid_composition_variable_timestamp(value: &str) -> bool {
     let bytes = value.as_bytes();
     if !(20..=35).contains(&bytes.len())
         || !value.is_ascii()
@@ -307,7 +310,7 @@ fn valid_variable_timestamp(value: &str) -> bool {
         || bytes[10] != b'T'
         || bytes[13] != b':'
         || bytes[16] != b':'
-        || !valid_variable_date(&value[..10])
+        || !is_valid_composition_variable_date(&value[..10])
     {
         return false;
     }
