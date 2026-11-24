@@ -57,13 +57,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.registry-shape
-          - id: account-security-contract-reference
-            adapter: declared
-            path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.registry-shape
           - id: page-space-assets
             adapter: declared
             path: docs/spec/ui/pages/space-assets.yaml
@@ -138,8 +131,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
           - id: page-space-entry-new
             adapter: declared
             path: docs/spec/ui/pages/space-entry-new.yaml
@@ -158,10 +149,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
           - id: page-space-form-grid
             adapter: declared
             path: docs/spec/ui/pages/space-form-grid.yaml
@@ -252,13 +239,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-          - id: space-chrome
-            adapter: declared
-            path: docs/spec/ui/components/space-shell.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.shared-chrome
           - id: global-shell-account-entry
             adapter: declared
             path: docs/spec/ui/components/global-shell.yaml
