@@ -1285,6 +1285,16 @@ Deno.test("REQ-OPS-021: frontend coverage remains a required hosted test gate", 
     false,
     "canonical test task must leave frontend coverage to the hosted web gate",
   );
+  assertContainsAll(
+    taskBlock(mise, "test:low-memory"),
+    ['{ task = "test:frontend" }'],
+    "low-memory test task must run the normal frontend suite",
+  );
+  assertEquals(
+    taskBlock(mise, "test:low-memory").includes("test:frontend:coverage"),
+    false,
+    "low-memory test task must leave frontend coverage to the hosted web gate",
+  );
 });
 
 Deno.test("REQ-OPS-024: docsite coverage remains developer convenience", async () => {
