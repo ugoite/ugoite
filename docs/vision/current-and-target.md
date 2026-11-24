@@ -72,8 +72,8 @@ Browser-local persistence and optional synchronization, View and Application
 definitions, general Knowledge-to-tools renderers, a general-purpose low-code
 application builder, and an arbitrary code runtime are not shipped. Here,
 low-code means general-purpose application building; it does not mean the
-Text-first Composition editor/runtime, which is current-main work targeting
-unreleased v0.2.2 (see [release scope](../architecture/release/release-scope.md)).
+Text-first Composition editor/runtime described in the
+[release scope](../architecture/release/release-scope.md).
 No general application builder or arbitrary code runtime is claimed as current.
 
 See [The Ugoite Vision](index.md) for the promise and
