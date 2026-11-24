@@ -113,11 +113,12 @@ connected Reader and does not push revocation notifications.
 
 ## Studio and Reader
 
-Browser authoring and Reader behavior are defined by
-[REQ-FE-083](../../mitase/requirements/frontend/composition-text-first.yaml) and
-the [Composition Studio UI specification](../../spec/ui/components/composition-studio.yaml).
-They use the graph and execution semantics above; this contract does not define
-the editor's interaction flow or layout.
+Browser authoring and Reader behavior are defined by REQ-FE-083
+(`docs/mitase/requirements/frontend/composition-text-first.yaml`). Composition
+Studio's visual hierarchy and labels are described in
+`docs/spec/ui/components/composition-studio.yaml`. They use the graph and
+execution semantics above; this contract does not define the editor's
+interaction flow or layout.
 
 ## Compatibility and recovery
 

@@ -22,7 +22,7 @@ result tables, including their use in Composition revisions, is in
 `components/result-table.yaml`.
 The shared SQL editing, parameter, preview, and result contract is in
 `components/sql-workspace.yaml`. Composition Studio's visual hierarchy and
-canvas placement reference is in `components/composition-studio.yaml`; current
+labels are described in `components/composition-studio.yaml`; current
 interaction behavior is defined by its linked Mitase requirements. Device and
 screen-reader validation is recorded separately and is not implied by these
 files.

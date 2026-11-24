@@ -17,7 +17,3 @@ heading. Variables shows meaningful names with kind icons beside one focused
 editor. Names, types, SQL output aliases, field names, and Text content appear
 where they carry meaning. UUIDs and explanatory row copy are not primary-path
 labels.
-
-## Canvas
-
-Insert components directly in the canvas without opening a second Inspector.

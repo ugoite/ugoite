@@ -25,15 +25,6 @@ features:
               - { kind: documents, anchor: REQ-COMP-010#criterion.current-shape-save-validation }
               - { kind: documents, anchor: REQ-COMP-010#criterion.append-only-save-history }
               - { kind: documents, anchor: REQ-COMP-010#criterion.raw-history-remains-readable }
-              - { kind: documents, anchor: REQ-FE-083#criterion.design-and-variables-modes }
-              - { kind: documents, anchor: REQ-FE-083#criterion.text-is-edited-in-place }
-              - { kind: documents, anchor: REQ-FE-083#criterion.reader-table-scroll-stays-local }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
-              - { kind: documents, anchor: REQ-FE-083#criterion.input-creation-places-once }
-              - { kind: documents, anchor: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variable-name-is-suggested }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
-              - { kind: documents, anchor: REQ-FE-083#criterion.sql-arguments-bind-locally }
       - id: core
         role: implementation
         facet: core
