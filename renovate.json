@@ -294,7 +294,7 @@
       "matchManagers": [
         "github-actions"
       ],
-      "matchPackageNames": [
+      "matchDepNames": [
         "node"
       ],
       "matchUpdateTypes": [
