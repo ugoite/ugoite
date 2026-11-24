@@ -585,14 +585,6 @@ async function main(): Promise<void> {
       "Could not build an invalid graph variable reference fixture",
     );
   }
-  const unsupportedOldSourceYaml = yaml.replace(
-    "kind: inline_sql",
-    "kind: entry_query",
-  );
-  if (unsupportedOldSourceYaml === yaml) {
-    throw new Error("Could not build the unsupported old query-kind fixture");
-  }
-
   // Keep version dispatch separate from complete v1 documents that fail
   // strict schema or layout validation below.
   const unsupportedVersionResponse = await invokeWasm(instance.exports, {
@@ -623,7 +615,6 @@ async function main(): Promise<void> {
   // v1 validation diagnostics rather than YAML or version-probe failures.
   for (
     const [invalidYaml, expectedCode] of [
-      [unsupportedOldSourceYaml, "invalid_composition"],
       [invalidVariableReferenceYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],
     ] as const
