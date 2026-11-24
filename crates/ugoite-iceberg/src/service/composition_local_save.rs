@@ -50,33 +50,13 @@ impl UgoiteService {
             .await
     }
 
-    /// Local CLI save with an optional caller-stable retry identity. Callers
-    /// that may retry after an uncertain process outcome can reuse the same
-    /// identity and canonical request to recover the original receipt.
+    /// Local CLI save with a caller-stable retry identity.
     pub async fn save_composition_local_with_operation_id(
-        &self,
-        space_id: &str,
-        request: composition::CompositionSaveRequest,
-        author: &str,
-        operation_id: &str,
-    ) -> Result<composition::CompositionSaveResult> {
-        self.save_composition_local_with_work(
-            space_id,
-            request,
-            author,
-            operation_id,
-            composition::CompositionSaveWork::default(),
-        )
-        .await
-    }
-
-    pub async fn save_composition_local_with_work(
         &self,
         space_id: &str,
         mut request: composition::CompositionSaveRequest,
         author: &str,
         operation_id: &str,
-        work: composition::CompositionSaveWork,
     ) -> Result<composition::CompositionSaveResult> {
         composition::validate_operation_id(operation_id)?;
         if request.entry_id.is_some() != request.base_revision_id.is_some() {
@@ -109,7 +89,6 @@ impl UgoiteService {
             &request_yaml,
             author,
             operation_id,
-            &work,
         )
         .await?
         {
@@ -231,7 +210,7 @@ impl UgoiteService {
             validate_storage_id(validate_revision_id(&base_revision_id.to_string()))?;
         }
 
-        let result = composition::save_composition_with_work_and_head_proof(
+        let result = composition::save_composition_with_head_proof(
             &self.operator,
             space_id,
             &self.workspace_path(space_id),
@@ -241,7 +220,6 @@ impl UgoiteService {
             author,
             operation_id,
             &request_yaml,
-            &work,
             Some(&exact_head_proof),
         )
         .await?;

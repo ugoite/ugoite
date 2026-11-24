@@ -13,9 +13,8 @@ pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
-const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize = ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
-    + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
-    + 4096;
+const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize =
+    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 4096;
 const MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES: usize =
     MAX_COMPOSITION_SAVE_REQUEST_BYTES + 1024;
 // JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
@@ -122,8 +121,8 @@ struct KonaseEffectRequest {
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
         // Bound JSON decoding before inspecting the action. Only documented
-        // SQL Document transactions and Composition save Work can exceed the
-        // ordinary protocol request cap.
+        // SQL Document transactions and Composition save documents can exceed
+        // the ordinary protocol request cap.
         let max_special_request_bytes = MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES
             .max(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
             .max(MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES);

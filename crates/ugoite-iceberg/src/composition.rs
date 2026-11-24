@@ -8,7 +8,6 @@ use chrono::Utc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
@@ -103,15 +102,6 @@ pub struct CompositionSaveRequest {
     pub document: CompositionDocument,
 }
 
-/// Transient, typed input Work supplied for one strict save preflight. Only a
-/// digest is included in the durable command identity; values are never added
-/// to the Composition carrier or history.
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct CompositionSaveWork {
-    pub variables: BTreeMap<String, Value>,
-    pub unset_variables: Vec<String>,
-}
-
 /// Result of one committed Composition publication.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompositionSaveResult {
@@ -178,24 +168,12 @@ pub(crate) fn validate_operation_id(operation_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn composition_work_fingerprint(work: &CompositionSaveWork) -> Result<String> {
-    // Unset order has no execution meaning. Sort it so equivalent retries
-    // share an operation identity while preserving duplicates for request
-    // validation to reject rather than silently normalizing them away.
-    let mut unset_variables = work.unset_variables.clone();
-    unset_variables.sort();
-    Ok(hex::encode(Sha256::digest(serde_json::to_vec(&(
-        &work.variables,
-        unset_variables,
-    ))?)))
-}
-
 /// Recover a completed save before resolving current SQL descriptors. The
 /// caller must already have checked current authorization. Reusing an
-/// operation ID with changed definition or Work is rejected by the durable
+/// operation ID with changed definition is rejected by the durable
 /// publication digest.
 // Keep these publication inputs explicit at the recovery boundary so the
-// durable identity is checked against the exact request and evaluated Work.
+// durable identity is checked against the exact request.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn recover_published_composition_save(
     operator: &Operator,
@@ -205,7 +183,6 @@ pub(crate) async fn recover_published_composition_save(
     request_yaml: &str,
     author: &str,
     operation_id: &str,
-    work: &CompositionSaveWork,
 ) -> Result<Option<CompositionSaveResult>> {
     validate_operation_id(operation_id)?;
     let entry_id = request
@@ -213,14 +190,12 @@ pub(crate) async fn recover_published_composition_save(
         .unwrap_or_else(|| composition_entry_id_for_operation(space_id, operation_id));
     let revision_id = composition_revision_id_for_operation(space_id, operation_id);
     let command_id = composition_command_id_for_operation(space_id, operation_id);
-    let work_fingerprint = composition_work_fingerprint(work)?;
     let identity = CompositionSaveIdentity {
         space_id,
         entry_id,
         is_create: request.entry_id.is_none(),
         base_revision_id: request.base_revision_id,
         request_yaml,
-        work_fingerprint: &work_fingerprint,
         actor: author,
     };
     let publication =
@@ -306,7 +281,6 @@ struct CompositionSaveIdentity<'a> {
     is_create: bool,
     base_revision_id: Option<RevisionId>,
     request_yaml: &'a str,
-    work_fingerprint: &'a str,
     actor: &'a str,
 }
 
@@ -494,7 +468,7 @@ pub(crate) async fn save_composition(
     operation_id: &str,
 ) -> Result<CompositionSaveResult> {
     let request_yaml = canonical.yaml.clone();
-    save_composition_with_work(
+    save_composition_with_head_proof(
         operator,
         space_id,
         workspace_path,
@@ -504,43 +478,13 @@ pub(crate) async fn save_composition(
         author,
         operation_id,
         &request_yaml,
-        &CompositionSaveWork::default(),
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-pub(crate) async fn save_composition_with_work(
-    operator: &Operator,
-    space_id: &str,
-    workspace_path: &str,
-    request: CompositionSaveRequest,
-    entry_id: EntryId,
-    canonical: CanonicalComposition,
-    author: &str,
-    operation_id: &str,
-    request_yaml: &str,
-    work: &CompositionSaveWork,
-) -> Result<CompositionSaveResult> {
-    save_composition_with_work_and_head_proof(
-        operator,
-        space_id,
-        workspace_path,
-        request,
-        entry_id,
-        canonical,
-        author,
-        operation_id,
-        request_yaml,
-        work,
         None,
     )
     .await
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn save_composition_with_work_and_head_proof(
+pub(crate) async fn save_composition_with_head_proof(
     operator: &Operator,
     space_id: &str,
     workspace_path: &str,
@@ -550,7 +494,6 @@ pub(crate) async fn save_composition_with_work_and_head_proof(
     author: &str,
     operation_id: &str,
     request_yaml: &str,
-    work: &CompositionSaveWork,
     exact_head_proof: Option<&crate::ExactCatalogHeadProof>,
 ) -> Result<CompositionSaveResult> {
     validate_operation_id(operation_id)?;
@@ -563,14 +506,12 @@ pub(crate) async fn save_composition_with_work_and_head_proof(
     }
     let command_id = composition_command_id_for_operation(space_id, operation_id);
     let revision_id = composition_revision_id_for_operation(space_id, operation_id);
-    let work_fingerprint = composition_work_fingerprint(work)?;
     let identity = CompositionSaveIdentity {
         space_id,
         entry_id,
         is_create: request.entry_id.is_none(),
         base_revision_id: request.base_revision_id,
         request_yaml,
-        work_fingerprint: &work_fingerprint,
         actor: author,
     };
     let publication =

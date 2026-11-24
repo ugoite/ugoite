@@ -89,9 +89,6 @@ export interface CompositionRestoreResponse {
 export interface CompositionSaveOptions {
   compositionId?: string;
   baseRevisionId?: string;
-  variables?: Record<string, unknown>;
-  integerVariableIds?: readonly string[];
-  unset_variables?: string[];
 }
 
 /** Authorized graph query metadata returned by the existing preview operation. */
@@ -281,15 +278,6 @@ export const compositionApi = {
         ...(opts?.baseRevisionId === undefined
           ? {}
           : { base_revision_id: opts.baseRevisionId }),
-        ...(opts?.variables === undefined ? {} : {
-          variables: markExactIntegerVariableValues(
-            opts.variables,
-            opts.integerVariableIds ?? [],
-          ),
-        }),
-        ...(opts?.unset_variables === undefined
-          ? {}
-          : { unset_variables: opts.unset_variables }),
       },
       { signal },
     );
