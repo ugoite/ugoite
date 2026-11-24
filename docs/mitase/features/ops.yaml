@@ -11,7 +11,7 @@ features:
       - id: documentation
         role: documentation
         facet: documentation
-        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, version declarations, and empty legacy registries connected as repository documentation artifacts. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
+        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, and version declarations connected as repository documentation artifacts. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
         targets:
           - id: operations-guide
             adapter: declared
@@ -72,25 +72,6 @@ features:
             claims:
               - kind: documents
                 anchor: REQ-OPS-004#criterion.milestone-status
-      - id: registries
-        role: implementation
-        facet: documentation
-        responsibility: Keep the empty legacy Operations and Security category shells as exact targets for the taxonomy-integrity test, which checks that all requirement records have migrated to Mitase.
-        targets:
-          - id: remaining-operations-requirements
-            adapter: declared
-            path: docs/spec/requirements/ops.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-003#criterion.taxonomy-integrity
-          - id: remaining-security-requirements
-            adapter: declared
-            path: docs/spec/requirements/security.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-003#criterion.taxonomy-integrity
       - id: versions
         role: implementation
         facet: documentation
@@ -205,7 +186,7 @@ features:
       - id: migrated-ops-tail
         role: evidence
         facet: operations
-        responsibility: Connect the next migrated Operations requirements to generic repository artifacts and exact verification evidence. Remaining legacy Operations records continue as migration evidence until later slices complete the domain.
+        responsibility: Connect migrated Operations requirements to generic repository artifacts and exact verification evidence.
         targets:
           - id: pull-request-template
             adapter: declared
@@ -323,7 +304,7 @@ features:
       - id: migrated-ops-verification
         role: implementation
         facet: operations-verification
-        responsibility: Connect the exact frontend configuration and compatibility-gate tests to the generic implementation artifacts they verify.
+        responsibility: Connect the exact frontend configuration, compatibility gate, and requirement-integrity test to the generic implementation artifacts they verify.
         targets:
           - id: frontend-proxy
             adapter: typescript
@@ -339,6 +320,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
+          - id: specification-integrity
+            adapter: typescript
+            path: tools/spec_integrity_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
       - id: migrated-ops-coverage
         role: implementation
         facet: quality-gates
