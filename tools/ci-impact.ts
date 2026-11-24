@@ -69,6 +69,15 @@ function affectsDockerRustSourceBuild(path: string): boolean {
     path === "vendor" || path.startsWith("vendor/");
 }
 
+function isKnownDockerRustSourceBuildUnrelatedGlobalPath(
+  path: string,
+): boolean {
+  return path.startsWith("docs/architecture/") ||
+    path.startsWith("docs/mitase/") ||
+    path === "tools/ci-impact.ts" ||
+    path === "tools/ci_impact_test.ts";
+}
+
 export function classifyPaths(paths: string[]): ImpactCategories {
   const categories: ImpactCategories = {
     docs: false,
@@ -241,7 +250,10 @@ export function makeImpactReport(input: {
   const canSkipOlderCliPreservation = event === "pull_request" &&
     scope === "scoped" && paths !== undefined &&
     !paths.some(affectsOlderCliPreservation);
-  const dockerDiffIsCertain = (event === "pull_request" && scope === "scoped" ||
+  const pullRequestDockerDiffIsCertain = event === "pull_request" &&
+    (scope === "scoped" || paths !== undefined && paths.length > 0 &&
+        paths.every(isKnownDockerRustSourceBuildUnrelatedGlobalPath));
+  const dockerDiffIsCertain = (pullRequestDockerDiffIsCertain ||
     event === "merge_group" || event === "push") &&
     paths !== undefined && paths.length > 0 && !diffError &&
     Boolean(baseSha && headSha && SHA.test(baseSha) && SHA.test(headSha)) &&
