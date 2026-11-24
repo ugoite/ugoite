@@ -21,10 +21,11 @@ The shared visual and accessibility contract for source-native Entry and SQL
 result tables, including their use in Composition revisions, is in
 `components/result-table.yaml`.
 The shared SQL editing, parameter, preview, and result contract is in
-`components/sql-workspace.yaml`. Composition-specific graph, canvas, and
-reader behavior is in `components/composition-studio.yaml`. These are current
-contracts; device and screen-reader validation is recorded separately and is
-not implied by their presence.
+`components/sql-workspace.yaml`. Composition-specific canvas layout and reader
+behavior is in `components/composition-studio.yaml`; normative product
+requirements are defined by its linked Mitase requirements. Device and
+screen-reader validation is recorded separately and is not implied by these
+files.
 
 The current browser is server-backed and authenticated. Shared navigation and
 the Browser Konase panel reference are described in

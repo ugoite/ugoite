@@ -11,8 +11,9 @@ SQL template normalization and optional Form seeds remain in REQ-FE-082.
 
 ## Modes and variables
 
-Studio opens in Design. Its only modes are Design and Variables; the selected
-mode control owns its name, and the panel does not repeat it as a heading.
+The selected mode control owns its name, and the panel does not repeat it as a
+heading. The supported modes and component types are defined by the linked
+Mitase requirements.
 
 Variables lists a meaningful variable name with a kind icon beside one focused
 editor. Variables are typed constants, inputs, or inline SQL query results.
@@ -42,9 +43,8 @@ user must create a current-shape Composition to execute it.
 
 ## Design canvas
 
-The canvas offers Text, Table, and Input only. Insertion is completed in the
-canvas without opening a second Inspector. The two mode controls are Design
-and Variables; Metric and Saved SQL binding pickers are not offered.
+Insertion is completed in the canvas without opening a second Inspector.
+Component and picker availability is defined by the linked Mitase requirements.
 
 - Text starts editable in its placed position. Its plain template uses
   `{{variable_id}}`; a compact adjacent control selects Title, Heading, Body,
