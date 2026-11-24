@@ -132,7 +132,7 @@
       "matchPackageNames": [
         "@astrojs/starlight"
       ],
-      "allowedVersions": "!/^(?:0\\.42\\.(?:[1-9]|1[01])|0\\.43\\.[01])$/"
+      "allowedVersions": "!/^(?:0\\.42\\.(?:[0-9]|1[01])|0\\.43\\.[01])$/"
     },
     {
       "description": "Exclude observed Playwright versions breaking module loading",
