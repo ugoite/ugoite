@@ -2762,10 +2762,7 @@ impl DerivedRelationHeadStore {
         // publisher may have swapped Head while this listing was in flight;
         // keep maintenance alive so the next pass observes the new detached
         // build instead of treating a stale scan as idle.
-        if self.current_build_id().await? != observed_current_build_id {
-            return Ok(true);
-        }
-        Ok(false)
+        Ok(self.current_build_id().await? != observed_current_build_id)
     }
 
     /// Runs GC while the caller already owns the relation-local single-process
