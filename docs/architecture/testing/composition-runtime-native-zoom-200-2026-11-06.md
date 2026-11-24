@@ -48,13 +48,13 @@ reported `640x556` viewport.
 
 The run emitted these artifacts:
 
-- ![First Input at native 200% zoom](evidence/composition-runtime-native-zoom-200-first-input.png)
-- ![Second Input at native 200% zoom](evidence/composition-runtime-native-zoom-200-second-input.png)
-- ![Metric view at native 200% zoom](evidence/composition-runtime-native-zoom-200-metric.png)
-- ![640x556 viewport screenshot after scrolling to the Metric](evidence/composition-runtime-native-zoom-200-metric-viewport.png)
-- ![Device-scale viewport screenshot after scrolling to the Metric](evidence/composition-runtime-native-zoom-200-metric-viewport-device.png)
-- ![Metric result container after ordinary scroll](evidence/composition-runtime-native-zoom-200-metric-result.png)
-- ![Device-scale Metric result container](evidence/composition-runtime-native-zoom-200-metric-result-device.png)
+- ![First Input at native 200% zoom](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-first-input.png)
+- ![Second Input at native 200% zoom](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-second-input.png)
+- ![Metric view at native 200% zoom](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-metric.png)
+- ![640x556 viewport screenshot after scrolling to the Metric](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-metric-viewport.png)
+- ![Device-scale viewport screenshot after scrolling to the Metric](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-metric-viewport-device.png)
+- ![Metric result container after ordinary scroll](https://raw.githubusercontent.com/ugoite/ugoite/d401863a0db285bc48ff9ef79f1126cea2b392f5/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-metric-result.png)
+- ![Device-scale Metric result container](https://raw.githubusercontent.com/ugoite/ugoite/6aaf8069188f893d32221f63cdbd7db59ba0299c/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-metric-result-device.png)
 
 The selector scopes the value assertion to `.compositionGraphMetric strong`,
 waits two animation frames after ordinary scrolling, then captures both the
@@ -96,7 +96,7 @@ To identify the actual displayed value, the test temporarily captured the
 DOM `6` assertion, before any Playwright screenshots. That capture shows both
 Inputs (`4` and `2`) and the Metric labeled `total` displaying `6`:
 
-![Synchronous Xvfb root-window capture after scrolling to the Metric](evidence/composition-runtime-native-zoom-200-xvfb-root.png)
+![Synchronous Xvfb root-window capture after scrolling to the Metric](https://raw.githubusercontent.com/ugoite/ugoite/7b9e094794a499c0681bda1e56f5e21b918ff2ec/docs/architecture/testing/evidence/composition-runtime-native-zoom-200-xvfb-root.png)
 
 This establishes that the visible Metric was `6` in this run. Playwright's
 result-element screenshot still showed `4`, and its viewport screenshots omitted

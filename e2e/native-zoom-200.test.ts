@@ -201,7 +201,7 @@ test("U-04 partial evidence: Composition Design remains usable at native 200% zo
   await expect(page.getByRole("textbox", { name: "zoom_input" }))
     .toBeInViewport({ ratio: 0.9 });
 
-  const evidenceDir = "../docs/architecture/testing/evidence";
+  const evidenceDir = "test-results/native-zoom-200-evidence";
   await Deno.mkdir(evidenceDir, { recursive: true });
   const screenshot = `${evidenceDir}/composition-native-zoom-200.png`;
   const resultRow = page.locator(".compositionGraphCanvasRow").filter({
@@ -479,7 +479,7 @@ test("U-04 partial evidence: Composition runtime remains usable at native 200% z
   await expect(secondInput).toBeInViewport({ ratio: 0.9 });
   const textIntersection = await assertIntersectsViewport(text);
 
-  const evidenceDir = "../docs/architecture/testing/evidence";
+  const evidenceDir = "test-results/native-zoom-200-evidence";
   await Deno.mkdir(evidenceDir, { recursive: true });
   const screenshots = {
     firstInput:
