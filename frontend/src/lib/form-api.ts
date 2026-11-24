@@ -4,7 +4,9 @@ import { protocolFetch } from "./ugoite-client/protocol";
 /** Form API client backed by the shared Rust/WASM protocol. */
 export const formApi = {
   async listTypes(spaceId: string): Promise<string[]> {
-    return await protocolFetch<string[]>("form.list_types", { space_id: spaceId });
+    return await protocolFetch<string[]>("form.list_types", {
+      space_id: spaceId,
+    });
   },
 
   async list(spaceId: string): Promise<Form[]> {
@@ -18,7 +20,14 @@ export const formApi = {
     });
   },
 
-  async save(spaceId: string, payload: FormCreatePayload): Promise<Form> {
-    return await protocolFetch<Form>("form.upsert", { space_id: spaceId }, payload);
+  async save(
+    spaceId: string,
+    payload: FormCreatePayload,
+  ): Promise<FormCreatePayload> {
+    return await protocolFetch<FormCreatePayload>(
+      "form.upsert",
+      { space_id: spaceId },
+      payload,
+    );
   },
 };
