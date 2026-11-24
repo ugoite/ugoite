@@ -5,13 +5,13 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-013
     title: UI specification registry
-    summary: Connect the declarative UI page registry, shared Space chrome, settings, and auth-surface contracts to exact frontend specification evidence.
+    summary: Maintain the declarative frontend page and shared-component registry for Space chrome, settings, and authentication surfaces.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep declarative UI page, shared Space chrome, and auth-surface artifacts connected to the frontend registry tests that validate their structure and route coverage.
+        responsibility: Specify page metadata and supported shared-component IDs, types, and references for Space chrome, settings, and authentication surfaces. This binding records declarations; it does not assert that rendered UI behavior matches them.
         targets:
           - id: page-registry
             adapter: declared

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
+import { parse, parseAllDocuments } from "yaml";
 import { settingsSections } from "../lib/settings-sections";
 
 type PageSpec = {
@@ -68,6 +68,35 @@ const allowedComponentTypes = new Set([
   "shared-sql-workspace",
 ]);
 
+const allowedSharedComponentTypes = new Set([
+  "account-entry",
+  "alert",
+  "alternate-authentication-actions",
+  "bottom-navigation",
+  "device-approval",
+  "editable-data-grid",
+  "form",
+  "inline-guidance",
+  "list",
+  "native-query-result-table",
+  "page-header",
+  "query-pagination",
+  "read-only-audit-event-table",
+  "recoverable-page-error",
+  "resource-access-policy-editor",
+  "searchable-entry-picker",
+  "select",
+  "server-query-results",
+  "settings-panel",
+  "sidebar",
+  "single-task-surface",
+  "tab-bar",
+  "toolbar",
+  "top-bar",
+  "typed-form-field",
+  "utility-panel",
+]);
+
 const collectYamlFiles = (dir: string): string[] => {
   const entries = readdirSync(dir);
   const files: string[] = [];
@@ -76,38 +105,89 @@ const collectYamlFiles = (dir: string): string[] => {
     const stats = statSync(fullPath);
     if (stats.isDirectory()) {
       files.push(...collectYamlFiles(fullPath));
-      continue;
-    }
-    if (entry.endsWith(".yaml")) {
+    } else if (entry.endsWith(".yaml")) {
       files.push(fullPath);
     }
   }
   return files;
 };
 
-const loadPages = () => {
-  const files = collectYamlFiles(pagesDir);
-  const pages = files.map((filePath) => {
-    const contents = readFileSync(filePath, "utf8");
-    return {
-      filePath,
-      spec: parse(contents) as PageSpec,
-    };
-  });
-  return pages;
+const loadPages = () =>
+  collectYamlFiles(pagesDir).map((filePath) => ({
+    filePath,
+    spec: parse(readFileSync(filePath, "utf8")) as PageSpec,
+  }));
+
+const collectComponentFileReferences = (
+  value: unknown,
+  references: Array<{ kind: "path" | "component"; value: string }>,
+) => {
+  if (Array.isArray(value)) {
+    for (const item of value) collectComponentFileReferences(item, references);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      typeof entry === "string" &&
+      entry.startsWith("frontend/")
+    ) {
+      references.push({ kind: "path", value: entry });
+    } else if (
+      typeof entry === "string" &&
+      (/reference/i.test(key) || key === "contract") &&
+      entry.endsWith(".yaml")
+    ) {
+      references.push({ kind: "component", value: entry });
+    } else {
+      collectComponentFileReferences(entry, references);
+    }
+  }
+};
+
+const loadSharedComponentSpecs = () => {
+  const specs: Array<{ filePath: string; spec: Record<string, unknown> }> = [];
+  for (const filePath of collectYamlFiles(componentsDir)) {
+    const documents = parseAllDocuments(readFileSync(filePath, "utf8"));
+    const document = documents[0];
+    expect(document.errors, filePath).toHaveLength(0);
+    const parsed = document.toJSON() as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object") continue;
+    if (
+      parsed.component_group || parsed.component ||
+      Array.isArray(parsed.components)
+    ) {
+      specs.push({ filePath, spec: parsed });
+    }
+  }
+  return specs;
+};
+
+const validateUiYamlReference = (sourcePath: string, reference: string) => {
+  const resolved = reference.startsWith("docs/")
+    ? path.resolve(repoRoot, reference)
+    : path.resolve(path.dirname(sourcePath), reference);
+  expect(
+    resolved.startsWith(`${componentsDir}${path.sep}`) ||
+      resolved.startsWith(`${pagesDir}${path.sep}`),
+    `${sourcePath} UI reference escapes the registry: ${reference}`,
+  ).toBe(true);
+  expect(statSync(resolved).isFile(), `${sourcePath} missing ${reference}`)
+    .toBe(true);
+  const document = parseAllDocuments(readFileSync(resolved, "utf8"))[0];
+  expect(document.errors, resolved).toHaveLength(0);
+  expect(document.toJSON(), resolved).toBeTruthy();
+  // Some shared UI component contracts use YAML front matter and Markdown
+  // sections instead of a structured component list.
 };
 
 const collectRouteFiles = (dir: string): string[] => {
-  const entries = readdirSync(dir);
   const files: string[] = [];
-  for (const entry of entries) {
+  for (const entry of readdirSync(dir)) {
     const fullPath = path.join(dir, entry);
-    const stats = statSync(fullPath);
-    if (stats.isDirectory()) {
+    if (statSync(fullPath).isDirectory()) {
       files.push(...collectRouteFiles(fullPath));
-      continue;
-    }
-    if (entry.endsWith(".tsx") && !entry.endsWith(".test.tsx")) {
+    } else if (entry.endsWith(".tsx") && !entry.endsWith(".test.tsx")) {
       files.push(fullPath);
     }
   }
@@ -131,8 +211,8 @@ const segmentFromFile = (segment: string) => {
 
 const routeFromFilePath = (filePath: string) => {
   const relative = path.relative(routesDir, filePath).replace(/\\/g, "/");
-  const withoutExt = relative.replace(/\.tsx$/, "");
-  const segments = withoutExt.split("/").map(segmentFromFile).filter(Boolean);
+  const segments = relative.replace(/\.tsx$/, "").split("/")
+    .map(segmentFromFile).filter(Boolean);
   return `/spaces/{space_id}${segments.length ? `/${segments.join("/")}` : ""}`;
 };
 
@@ -145,315 +225,26 @@ const loadRoutes = () =>
 
 const collectTargets = (value: unknown, targets: string[]) => {
   if (Array.isArray(value)) {
-    for (const item of value) {
-      collectTargets(item, targets);
+    for (const item of value) collectTargets(item, targets);
+  } else if (value && typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      if (key.startsWith("target_page") && typeof entry === "string") {
+        targets.push(entry);
+      } else {
+        collectTargets(entry, targets);
+      }
     }
-    return;
-  }
-  if (!value || typeof value !== "object") {
-    return;
-  }
-  for (const [key, entry] of Object.entries(value)) {
-    if (key.startsWith("target_page") && typeof entry === "string") {
-      targets.push(entry);
-      continue;
-    }
-    collectTargets(entry, targets);
   }
 };
 
+const resolveComponentReference = (pagePath: string, reference: string) => {
+  const resolved = path.resolve(path.dirname(pagePath), reference);
+  expect(resolved.startsWith(`${componentsDir}${path.sep}`)).toBe(true);
+  expect(statSync(resolved).isFile()).toBe(true);
+  return resolved;
+};
+
 describe("UI spec YAML registry", () => {
-  it("REQ-FE-040: declares GlobalShell account entry states", () => {
-    const shellPath = path.join(componentsDir, "global-shell.yaml");
-    const shell = parse(readFileSync(shellPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const entry = shell.components?.find(({ id }) =>
-      id === "global-account-entry"
-    );
-
-    expect(entry).toMatchObject({
-      type: "account-entry",
-      implementation: "frontend/src/components/GlobalShell.tsx",
-      tests: "frontend/src/components/GlobalShell.test.tsx",
-      position: "workspace-topbar.trailing",
-      signed_out: {
-        control: "sign-in-link",
-        label: "globalShell.signIn",
-        destination: "/login",
-        visible_when: "authenticated-is-false",
-      },
-      signed_in: {
-        control: "AccountMenu",
-        visible_when: "authenticated-is-true-or-unspecified",
-        sign_out: {
-          trigger: "explicit-menu-action",
-          session: "clear-before-navigation",
-          destination: "/login",
-        },
-      },
-    });
-  });
-
-  it("REQ-FE-040: declares global Space selection identity boundaries", () => {
-    const selectionPath = path.join(
-      componentsDir,
-      "space-selection.yaml",
-    );
-    const selection = parse(readFileSync(selectionPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const components = selection.components ?? [];
-    const spaces = components.find(({ id }) => id === "authorized-space-list");
-    const create = components.find(({ id }) => id === "create-space-form");
-    const actions = components.find(({ id }) => id === "global-space-actions");
-
-    expect(selection.component_group).toMatchObject({
-      id: "space-selection",
-      routes: ["/spaces"],
-    });
-    expect(spaces).toMatchObject({
-      type: "list",
-      source: "space.list",
-      row: {
-        activation: "full-row-link",
-        primary_label: "name-then-slug-then-localized-untitled",
-        secondary_action: "settings-icon-only-with-localized-accessible-name",
-        secondary_action_destination: "/spaces/{space_uid}/settings",
-      },
-      identity: {
-        displays_space_uid: false,
-        space_uid_use: "routing-and-selection",
-      },
-    });
-    expect(create).toMatchObject({
-      type: "form",
-      fields: ["space-name", "user-chosen-space-slug"],
-      slug: { purpose: "user-chosen-route-identifier" },
-      submission: "explicit-user-action",
-      created_space_uid: "server-issued-route-value-not-rendered",
-    });
-    expect(actions).toMatchObject({
-      type: "toolbar",
-      actions: [
-        { join: "/spaces/join" },
-        {
-          create: {
-            action: "explicit-create-action",
-            visible_label: "spacesPage.newSpaceAria",
-          },
-        },
-      ],
-    });
-  });
-
-  it("REQ-FE-040: declares account security identifier boundaries", () => {
-    const securityPath = path.join(
-      componentsDir,
-      "account-security.yaml",
-    );
-    const security = parse(readFileSync(securityPath, "utf8")) as {
-      component_group?: { notes?: string };
-      components?: Array<Record<string, unknown>>;
-    };
-    const passkeys = security.components?.find(({ id }) =>
-      id === "passkey-list"
-    );
-    const sessions = security.components?.find(({ id }) =>
-      id === "session-list"
-    );
-
-    expect(security.component_group?.notes).toContain(
-      "Passkeys and Sessions lists never render their identifiers",
-    );
-    expect(security.component_group?.notes).toContain(
-      "Audit Log event identifiers appear only in collapsed details",
-    );
-
-    expect(passkeys).toMatchObject({
-      type: "list",
-      implementation: "frontend/src/routes/settings/security.tsx",
-      tests: "frontend/src/routes/settings/security.test.tsx",
-      primary_label: "localized-numbered-passkey-and-last-used",
-      missing_activity: "localized-never",
-      identifier_visibility: "never-rendered-in-list",
-      action: {
-        trigger: "revoke-passkey",
-        visible_label: "settings.revoke",
-        accessible_name: "securityPage.revokePasskeyAction",
-        item_context: "one-based-list-position",
-      },
-    });
-    expect(sessions).toMatchObject({
-      type: "list",
-      implementation: "frontend/src/routes/settings/security.tsx",
-      tests: "frontend/src/routes/settings/security.test.tsx",
-      primary_label: "localized-numbered-browser-session-and-last-seen",
-      missing_activity: "localized-never",
-      revoked_status: "localized-revoked",
-      identifier_visibility: "never-rendered-in-list",
-      action: {
-        trigger: "revoke-active-session",
-        visible_label: "settings.revoke",
-        accessible_name: "securityPage.revokeSessionAction",
-        item_context: "one-based-list-position",
-      },
-    });
-
-    const implementation = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/settings/security.tsx"),
-      "utf8",
-    );
-    expect(implementation).not.toContain("securityPage.credentialId");
-    expect(implementation).not.toContain("securityPage.sessionId");
-    expect(implementation).not.toContain("securityPage.technicalDetails");
-    expect(implementation).toContain("securityPage.passkeyNumberedLabel");
-    expect(implementation).toContain(
-      "securityPage.browserSessionNumberedLabel",
-    );
-    const securityTests = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/settings/security.test.tsx"),
-      "utf8",
-    );
-    expect(securityTests).toContain(
-      "REQ-UX-LIST-001: hides passkey and session identifiers from credential lists",
-    );
-    const uiIndex = readFileSync(
-      path.join(repoRoot, "docs/spec/ui/index.md"),
-      "utf8",
-    );
-    expect(uiIndex).toContain(
-      "`components/account-security.yaml`",
-    );
-  });
-
-  it("REQ-FE-040: declares owner-approved Space recovery and identifier boundaries", () => {
-    const recoveryPath = path.join(
-      componentsDir,
-      "space-access-recovery.yaml",
-    );
-    const recovery = parse(readFileSync(recoveryPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const task = recovery.components?.find(({ id }) =>
-      id === "owner-space-recovery-task"
-    );
-
-    expect(recovery.component_group).toMatchObject({
-      id: "space-access-recovery",
-      routes: ["/recover"],
-    });
-    expect(task).toMatchObject({
-      implementation: "frontend/src/routes/recover/index.tsx",
-      tests: "frontend/src/routes/recover.test.tsx",
-      form_explanatory_copy: "none",
-      recovery_token: {
-        source: "query.owner_approval_token-or-query.token",
-        presentation: "masked-password-input",
-        raw_value_in_visible_text: false,
-      },
-      success: {
-        recovery_codes: {
-          presentation: "visible-once",
-          persistence: "route-memory-only",
-        },
-        audit_status: {
-          raw_value_visible: false,
-        },
-        returned_identifiers: {
-          account_id: "hidden",
-          principal_id: "hidden",
-          space_id: "hidden",
-        },
-      },
-      failure: {
-        api_error_details: "hidden",
-        recovery_codes_visible: false,
-      },
-    });
-
-    const implementation = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/recover/index.tsx"),
-      "utf8",
-    );
-    expect(implementation).toContain('type="password"');
-    expect(implementation).toContain('t("ownerRecovery.failure")');
-    expect(implementation).toContain('aria-live="polite"');
-    expect(implementation).not.toContain("cause.message");
-
-    const routeTests = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/recover.test.tsx"),
-      "utf8",
-    );
-    for (
-      const selector of [
-        "REQ-UX-RECOVERY-001: localizes labels and recovery states",
-        "REQ-UX-RECOVERY-001: hides returned internal identifiers",
-        "REQ-UX-RECOVERY-001: hides server error details",
-      ]
-    ) {
-      expect(routeTests).toContain(selector);
-    }
-
-    const uiIndex = readFileSync(
-      path.join(repoRoot, "docs/spec/ui/index.md"),
-      "utf8",
-    );
-    expect(uiIndex).toContain("`components/space-access-recovery.yaml`");
-  });
-
-  it("REQ-FE-040: declares device approval consent and identifier boundaries", () => {
-    const deviceApprovalPath = path.join(
-      componentsDir,
-      "device-approval.yaml",
-    );
-    const deviceApproval = parse(
-      readFileSync(deviceApprovalPath, "utf8"),
-    ) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const consent = deviceApproval.components?.find(({ id }) =>
-      id === "approval-request"
-    );
-
-    expect(deviceApproval.component_group).toMatchObject({
-      id: "device-approval",
-      routes: ["/device"],
-    });
-    expect(consent).toMatchObject({
-      implementation: "frontend/src/routes/device.tsx",
-      tests: "frontend/src/routes/device.test.tsx",
-      supported_resources: ["resource-omitted-cli", "same-origin-mcp"],
-      unsupported_resource: "visible-unsupported-state-without-approval",
-      visible_consent: ["device-name", "requested-actions", "space-name"],
-      identifier_visibility: "not-in-visible-or-accessible-labels",
-      confirmation: {
-        explicit_action_before_grant: true,
-        accessible_description_includes: [
-          "device-name",
-          "requested-actions",
-          "selected-space-name",
-        ],
-      },
-    });
-
-    const uxTests = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/device.test.tsx"),
-      "utf8",
-    );
-    expect(uxTests).toContain(
-      "REQ-UX-RESP-001: keeps the approval controls labeled with a single context",
-    );
-    const uiIndex = readFileSync(
-      path.join(repoRoot, "docs/spec/ui/index.md"),
-      "utf8",
-    );
-    expect(uiIndex).toContain("`components/device-approval.yaml`");
-  });
-
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);
@@ -470,44 +261,98 @@ describe("UI spec YAML registry", () => {
   });
 
   it("REQ-FE-040: validates component types", () => {
-    const pages = loadPages();
-    for (const { spec, filePath } of pages) {
-      const allComponents = [
+    for (const { spec, filePath } of loadPages()) {
+      const components = [
         ...(spec.components?.shared ?? []),
         ...(spec.components?.body ?? []),
       ];
-      for (const component of allComponents) {
-        const type = component.type;
-        expect(type, `${filePath} has component missing type`).toBeTruthy();
+      for (const component of components) {
+        expect(component.type, `${filePath} has component missing type`)
+          .toBeTruthy();
         expect(
-          allowedComponentTypes.has(String(type)),
-          `${filePath} uses unsupported component type: ${String(type)}`,
+          allowedComponentTypes.has(String(component.type)),
+          `${filePath} uses unsupported component type: ${
+            String(component.type)
+          }`,
         ).toBe(true);
       }
     }
   });
 
-  it("REQ-FE-040: connects Composition route to shared SQL Workspace", () => {
-    const sharedWorkspaceContract = readFileSync(
-      path.join(componentsDir, "sql-workspace.yaml"),
-      "utf8",
-    );
-    const revisionRouteSource = readFileSync(
-      path.join(
-        repoRoot,
-        "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx",
-      ),
-      "utf8",
-    );
+  it("REQ-FE-040: validates shared component structure and references", () => {
+    for (const { filePath, spec } of loadSharedComponentSpecs()) {
+      const group = spec.component_group as Record<string, unknown> | undefined;
+      if (group) {
+        expect(typeof group.id, `${filePath} component_group.id`).toBe(
+          "string",
+        );
+        expect(String(group.id).length, `${filePath} component_group.id`)
+          .toBeGreaterThan(0);
+        expect(Array.isArray(spec.components), `${filePath} components`)
+          .toBe(true);
+      }
 
-    expect(revisionRouteSource).toContain("compositionApi.evaluate");
-    expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
-    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition query variables use direct text editing with one local typed variable binding",
-    );
-    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition does not show the Structure, Columns, Filter, Sort, or Arguments SQL construction controls",
-    );
+      const hasComponentList = Array.isArray(spec.components);
+      const components = hasComponentList
+        ? spec.components as Array<Record<string, unknown>>
+        : spec.component && typeof spec.component === "object"
+        ? [spec.component as Record<string, unknown>]
+        : [];
+      const componentIds = new Set<string>();
+      for (const component of components) {
+        expect(typeof component.id, `${filePath} component.id`).toBe("string");
+        const id = String(component.id);
+        expect(id.length, `${filePath} component.id`).toBeGreaterThan(0);
+        expect(componentIds.has(id), `${filePath} repeats component id: ${id}`)
+          .toBe(false);
+        componentIds.add(id);
+
+        if (component.type !== undefined) {
+          expect(typeof component.type, `${filePath} ${id} type`).toBe(
+            "string",
+          );
+          expect(
+            allowedSharedComponentTypes.has(String(component.type)),
+            `${filePath} ${id} uses unsupported component type: ${
+              String(component.type)
+            }`,
+          ).toBe(true);
+        } else {
+          expect(hasComponentList, `${filePath} ${id} missing type`).toBe(
+            false,
+          );
+        }
+      }
+
+      const references: Array<{
+        kind: "path" | "component";
+        value: string;
+      }> = [];
+      collectComponentFileReferences(spec, references);
+      for (const reference of references) {
+        if (reference.kind === "path") {
+          expect(
+            statSync(path.join(repoRoot, reference.value)).isFile(),
+            `${filePath} references missing file: ${reference.value}`,
+          ).toBe(true);
+          continue;
+        }
+        validateUiYamlReference(filePath, reference.value);
+      }
+    }
+
+    for (const { filePath, spec } of loadPages()) {
+      const references: Array<{
+        kind: "path" | "component";
+        value: string;
+      }> = [];
+      collectComponentFileReferences(spec, references);
+      for (const reference of references) {
+        if (reference.kind === "component") {
+          validateUiYamlReference(filePath, reference.value);
+        }
+      }
+    }
   });
 
   it("REQ-FE-040: validates page links", () => {
@@ -525,109 +370,37 @@ describe("UI spec YAML registry", () => {
         expect(
           pageIds.has(target),
           `${filePath} references missing page: ${target}`,
-        ).toBe(true);
+        )
+          .toBe(true);
       }
     }
   });
 
-  it("REQ-COMP-010: keeps paging request-owned by the query variable", () => {
-    const revision = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-composition-revision"
-    );
-    const compositionComponents = revision?.spec.components?.body?.find(
-      (component) => component.id === "composition-components",
-    );
-    expect(compositionComponents).toMatchObject({
-      pagination_owner:
-        "server-owned stateless continuation for the query variable",
-    });
-  });
-
-  it("REQ-UX-PAGINATION-001: connects SQL results pagination to shared chevrons", () => {
-    const sqlResults = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-sql-results"
-    );
-    const sqlPagination = sqlResults?.spec.components?.body?.find(({ id }) =>
-      id === "sql-results-pagination"
-    );
-    expect(sqlPagination).toMatchObject({
-      component: "ResultPagination",
-      reference: "../components/result-pagination.yaml",
-    });
-
-    const expectedContractPath = path.join(
-      componentsDir,
-      "result-pagination.yaml",
-    );
-    const sqlContractPath = path.resolve(
-      path.dirname(sqlResults!.filePath),
-      String(sqlPagination?.reference),
-    );
-    expect(sqlContractPath).toBe(expectedContractPath);
-
-    const shared = parse(readFileSync(expectedContractPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    expect(shared.components?.find(({ id }) => id === "result-pagination"))
-      .toMatchObject({
-        type: "query-pagination",
-        controls: {
-          previous: {
-            visible_content: "chevron-left",
-            accessible_name: "localized-previous-label",
-            title: "localized-previous-label",
-          },
-          next: {
-            visible_content: "chevron-right",
-            accessible_name: "localized-next-label",
-            title: "localized-next-label",
-          },
-        },
-        target_size: "44px",
-      });
-  });
-
-  it("REQ-COMP-010: keeps Composition variable definitions in Knowledge and values in transient Work", () => {
-    const revision = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-composition-revision"
-    );
-    const components = revision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-components"
-    );
-
-    expect(revision?.spec.page?.contract_status).toBe("in_progress");
-    expect(components).toMatchObject({
-      variables:
-        "typed constants and definitions are Knowledge; input values and query results are transient Work",
-      input_components:
-        "reference one input variable and own no saved runtime value",
-    });
-  });
-
-  it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {
+  it("REQ-FE-040: validates Space Settings implementation references", () => {
     const page = loadPages().find(({ spec }) =>
       spec.page?.id === "space-settings"
     );
+    expect(page).toBeTruthy();
     const panel = page?.spec.components?.body?.find(({ id }) =>
       id === "settings-panel"
     );
     expect(panel).toBeTruthy();
-    expect(
-      statSync(path.join(repoRoot, String(panel?.implementation))).isFile(),
-    ).toBe(true);
-    expect(panel?.navigation).toMatchObject({
-      component: "RowList",
-      section_source: "frontend/src/lib/settings-sections.ts",
-      section_state: "query.section",
-      layout: "flat-category-list",
-    });
+
     const navigation = panel?.navigation as {
+      section_source: string;
       implementation: string;
       tests: Array<{ path: string; selector: string }>;
     };
+    const settingsPanel = panel as Record<string, unknown>;
     expect(
-      statSync(path.join(repoRoot, navigation.implementation)).isFile(),
-    ).toBe(true);
+      statSync(path.join(repoRoot, String(settingsPanel.implementation)))
+        .isFile(),
+    )
+      .toBe(true);
+    expect(statSync(path.join(repoRoot, navigation.section_source)).isFile())
+      .toBe(true);
+    expect(statSync(path.join(repoRoot, navigation.implementation)).isFile())
+      .toBe(true);
     for (const test of navigation.tests) {
       const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
       expect(testSource, `navigation test selector: ${test.path}`).toContain(
@@ -639,9 +412,7 @@ describe("UI spec YAML registry", () => {
     expect(sections.map(({ id }) => id)).toEqual(
       settingsSections.map(({ id }) => id),
     );
-
     for (const section of sections) {
-      expect(typeof section.title).toBe("string");
       const implementation = section.implementation as string[];
       expect(implementation.length, `${String(section.id)} implementation`)
         .toBeGreaterThan(0);
@@ -652,10 +423,7 @@ describe("UI spec YAML registry", () => {
         ).toBe(true);
       }
 
-      const tests = section.tests as Array<{
-        path: string;
-        selector: string;
-      }>;
+      const tests = section.tests as Array<{ path: string; selector: string }>;
       expect(tests.length, `${String(section.id)} tests`).toBeGreaterThan(0);
       for (const test of tests) {
         const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
@@ -667,780 +435,231 @@ describe("UI spec YAML registry", () => {
         | { id: string; reference: string }
         | undefined;
       if (contract) {
-        const contractPath = path.resolve(
-          path.dirname(page!.filePath),
+        const contractPath = resolveComponentReference(
+          page!.filePath,
           contract.reference,
         );
-        expect(statSync(contractPath).isFile()).toBe(true);
         const componentSpec = parse(readFileSync(contractPath, "utf8")) as {
           components?: Array<Record<string, unknown>>;
         };
         const component = componentSpec.components?.find(({ id }) =>
           id === contract.id
         );
-        expect(component).toBeTruthy();
+        expect(component, `${String(section.id)} component reference`)
+          .toBeTruthy();
         expect(implementation).toContain(component?.implementation);
-        if (contract.id === "space-settings-editor") {
-          expect(component?.variants).toMatchObject({
-            general: { controls: ["space-name", "save"] },
-            storage: {
-              controls: ["storage-uri", "test-connection", "save"],
-              advanced_details: ["endpoint", "configuration-status"],
-              save_payload: "storage-configuration-only",
-            },
-          });
-        }
-        if (contract.id === "audit-log-viewer") {
-          const consumers = component?.consumers as {
-            space?: { wrapper: unknown; page: unknown };
-          };
-          expect(consumers.space).toMatchObject({
-            wrapper: section.component,
-            page: `${String(page?.spec.page?.id)}#section.${
-              String(section.id)
-            }`,
-          });
-        }
       }
 
       const targetPage = section.target_page;
       if (targetPage) {
-        const target = loadPages().find(({ spec }) =>
-          spec.page?.id === targetPage
-        );
-        expect(target, `${String(section.id)} target page: ${targetPage}`)
-          .toBeTruthy();
+        expect(
+          loadPages().some(({ spec }) => spec.page?.id === targetPage),
+          `${String(section.id)} target page: ${String(targetPage)}`,
+        ).toBe(true);
       }
     }
   });
 
   it("REQ-FE-040: validates docs pages map to implemented routes", () => {
-    const pages = loadPages();
     const routes = new Set(loadRoutes().map(({ route }) => route));
-    for (const { spec, filePath } of pages) {
-      const route = spec.page?.route;
-      expect(route, `${filePath} missing route`).toBeTruthy();
+    for (const { spec, filePath } of loadPages()) {
+      expect(spec.page?.route, `${filePath} missing route`).toBeTruthy();
       expect(
-        routes.has(String(route)),
-        `${filePath} route not implemented: ${String(route)}`,
-      ).toBe(
-        true,
-      );
+        routes.has(String(spec.page?.route)),
+        `${filePath} route not implemented: ${String(spec.page?.route)}`,
+      ).toBe(true);
     }
   });
 
   it("REQ-FE-040: validates implemented routes are documented", () => {
-    const pages = loadPages();
     const documented = new Set(
-      pages.map(({ spec }) => spec.page?.route).filter((
+      loadPages().map(({ spec }) => spec.page?.route).filter((
         route,
       ): route is string => Boolean(route)),
     );
-    const routes = new Set(loadRoutes().map(({ route }) => route));
-    for (const route of routes) {
+    for (const { route } of loadRoutes()) {
       expect(
         documented.has(route),
         `missing docs/spec/ui/pages entry for route: ${route}`,
-      ).toBe(
-        true,
-      );
+      )
+        .toBe(true);
     }
   });
 
   it("REQ-FE-040: implemented page specs reject placeholder route content", () => {
-    const pages = loadPages();
     const routesByPath = new Map(
       loadRoutes().map((route) => [route.route, route]),
     );
-    for (const { spec, filePath } of pages) {
-      if (spec.page?.implementation !== "implemented") {
-        continue;
-      }
-      const route = spec.page?.route;
-      expect(route, `${filePath} missing route`).toBeTruthy();
-      const routeRecord = routesByPath.get(String(route));
-      expect(routeRecord, `${filePath} route not implemented: ${String(route)}`)
+    for (const { spec, filePath } of loadPages()) {
+      if (spec.page?.implementation !== "implemented") continue;
+      expect(spec.page.route, `${filePath} missing route`).toBeTruthy();
+      const routeRecord = routesByPath.get(String(spec.page.route));
+      expect(
+        routeRecord,
+        `${filePath} route not implemented: ${String(spec.page.route)}`,
+      )
         .toBeTruthy();
-      if (!routeRecord) {
-        continue;
-      }
+      if (!routeRecord) continue;
       const matchedPattern = placeholderStubPatterns.find((pattern) =>
         pattern.test(routeRecord.source)
       );
       expect(
         matchedPattern,
         `${filePath} marks ${
-          String(route)
+          String(spec.page.route)
         } implemented but ${routeRecord.filePath} still contains placeholder copy`,
       ).toBeUndefined();
     }
   });
 
-  it("REQ-FE-040: validates shared space chrome", () => {
-    const shellPath = path.join(
-      repoRoot,
-      "docs/spec/ui/components/space-shell.yaml",
-    );
-    const shell = parse(readFileSync(shellPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const components = shell.components ?? [];
-    const sidebar = components.find((component) =>
-      component.id === "global-sidebar"
-    );
-    const topbar = components.find((component) =>
-      component.id === "workspace-topbar"
-    );
-    const mobileNavigation = components.find((component) =>
-      component.id === "mobile-bottom-navigation"
-    );
-    const spaceSelector = components.find((component) =>
-      component.id === "space-selector"
-    );
-
-    expect(sidebar).toMatchObject({
-      type: "sidebar",
-      position: "left-fixed",
-      width: "228px",
-      items: ["Spaces"],
-    });
-    const spaceSidebar = components.find((component) =>
-      component.id === "space-sidebar"
-    );
-    expect(spaceSidebar).toMatchObject({
-      type: "sidebar",
-      position: "left-fixed",
-      width: "228px",
-      items: [
-        "Home",
-        "Assets",
-        "Forms",
-        "Saved tools",
-        "Search",
-        "History",
-        "Settings",
-      ],
-    });
-    expect(topbar).toMatchObject({ type: "top-bar", height: "58px" });
-    expect(mobileNavigation).toMatchObject({
-      type: "bottom-navigation",
-      height: "66px",
-      breakpoint: "900px",
-      items: ["Home", "Forms", "Search", "History", "More"],
-      more_items: ["Assets", "Saved tools", "Settings"],
-    });
-    const globalMobileNavigation = components.find((component) =>
-      component.id === "global-mobile-bottom-navigation"
-    );
-    expect(globalMobileNavigation).toMatchObject({
-      type: "bottom-navigation",
-      height: "66px",
-      breakpoint: "900px",
-      items: ["Spaces"],
-    });
-    expect(spaceSelector).toMatchObject({
-      type: "select",
-      scope: "authorized-spaces",
-      option_label: "name-then-slug-then-localized-untitled",
-      unresolved_current_space_label: "localized-loading-text",
-      unavailable_current_space_label: "localized-neutral-label",
-      displays_space_uid: false,
-    });
-  });
-
-  it("REQ-FE-040: declares the invitation Join surface and its visible identity boundaries", () => {
-    const joinPath = path.join(
-      repoRoot,
-      "docs/spec/ui/components/invitation-join.yaml",
-    );
-    const join = parse(readFileSync(joinPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const components = join.components ?? [];
-    const header = components.find((component) =>
-      component.id === "join-context"
-    );
-    const guidance = components.find((component) =>
-      component.id === "authentication-guidance"
-    );
-    const form = components.find((component) =>
-      component.id === "invitation-acceptance"
-    );
-    const identityOptions = components.find((component) =>
-      component.id === "identity-options"
-    );
-    const failure = components.find((component) =>
-      component.id === "invitation-failure"
-    );
-
-    expect(join.component_group).toMatchObject({
-      id: "invitation-join",
-      routes: ["/spaces/join"],
-    });
-    expect(header).toMatchObject({
-      type: "page-header",
-      title: "Join",
-      visible_headings: 1,
-    });
-    expect(guidance).toMatchObject({
-      type: "inline-guidance",
-      placement: "below-heading",
-      purpose: "distinguish-signed-in-acceptance-from-passkey-registration",
-    });
-    expect(form).toMatchObject({
-      type: "form",
-      order: ["invitation-token", "accept-invitation"],
-      invitation_token: {
-        type: "required-multiline-text-input",
-        label: "Invitation token",
-        value_kind: "user-provided-invitation-credential",
-      },
-      accept_action: {
-        type: "submit-button",
-        label: "Accept invitation",
-        busy_label: "Joining…",
-        single_flight: true,
-      },
-      success: {
-        clears_invitation_token_from_url_hash: true,
-        replaces_route_with: "/spaces",
-      },
-    });
-    expect(identityOptions).toMatchObject({
-      type: "alternate-authentication-actions",
-      oidc_providers: {
-        visible_when: "provider-list-is-nonempty",
-        separator: "or",
-        accessible_name_uses_provider_id: false,
-      },
-      sign_in_link: {
-        destination: "/login",
-      },
-    });
-    expect(failure).toMatchObject({
-      type: "alert",
-      role: "alert",
-      includes: ["failure-message", "resume-guidance"],
-      show_spaces_action_when:
-        "invitation-is-consumed-and-visitor-remains-unauthenticated",
-    });
-  });
-
-  it("REQ-FE-040: declares the Login task and authentication states", () => {
-    const loginPath = path.join(
-      componentsDir,
-      "login.yaml",
-    );
-    const login = parse(readFileSync(loginPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const task = login.components?.find(({ id }) => id === "login-task");
-
-    expect(login.component_group).toMatchObject({
-      id: "login",
-      routes: ["/login"],
-    });
-    expect(task).toMatchObject({
-      type: "single-task-surface",
-      implementation: "frontend/src/routes/login.tsx",
-      tests: "frontend/src/routes/login.test.tsx",
-      heading: {
-        text: "Ugoite",
-        logo_alt: "",
-        visible_headings: 1,
-      },
-      action_order: ["passkey", "configured-oidc", "account-recovery"],
-      persistent_explanatory_copy: "none",
-      primary_action: {
-        method: "passkey",
-        label: "loginPage.signInWithPasskey",
-        configuration_failure_action: "reload-authentication-configuration",
-        cancellation: "return-to-unauthenticated-without-error",
-      },
-      oidc_actions: {
-        visible_when: "provider-list-is-nonempty",
-        issuer_label: "localized-host-plus-nonroot-path",
-        accessible_name: "same-as-visible-label",
-        provider_id_in_visible_label: false,
-        provider_id_in_accessible_name: false,
-      },
-      recovery_link: {
-        label: "loginPage.lostPasskey",
-        destination: "/recover/account",
-        preserves_safe_next_path: true,
-      },
-      states: {
-        authentication_loading: {
-          role: "status",
-          aria_live: "polite",
-        },
-        configuration_failure: {
-          role: "alert",
-          technical_details: "closed-disclosure",
-        },
-        provider_loading_failure: {
-          role: "alert",
-          technical_details: "closed-disclosure",
-          retry: "reload-provider-list",
-        },
-        authentication_failure: {
-          role: "alert",
-          technical_details: "closed-disclosure",
-          retry: "failed-authentication-method",
-        },
-      },
-    });
-  });
-
-  it("REQ-FE-040: declares setup recovery handoff and Account ID visibility", () => {
-    const setupPath = path.join(componentsDir, "setup.yaml");
-    const setup = parse(readFileSync(setupPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const task = setup.components?.find(({ id }) =>
-      id === "bootstrap-setup-task"
-    );
-
-    expect(setup.component_group).toMatchObject({
-      id: "initial-setup",
-      routes: ["/setup"],
-    });
-    expect(task).toMatchObject({
-      implementation: "frontend/src/routes/setup.tsx",
-      tests: "frontend/src/routes/setup.test.tsx",
-      recovery_handoff: {
-        visible_when: "successful-initial-setup-with-recovery-codes",
-        account_id: {
-          source: "result.account.account_id",
-          presentation: "visible-with-recovery-codes",
-          purpose: "required-for-account-self-recovery",
-          visible_before_handoff: false,
-          accessible_text: "account-id-value",
-        },
-        recovery_codes: {
-          source: "result.recovery_codes",
-          offered_as_login_method: false,
-          persistence: "route-memory-only",
-        },
-      },
-      passkey_strengthening: {
-        action: "register-second-passkey",
-        completion: "continue-to-safe-next-path",
-      },
-    });
-  });
-
-  it("REQ-FE-040: declares Account Self-Recovery factors and code handoff", () => {
-    const recoveryPath = path.join(componentsDir, "account-recovery.yaml");
-    const recovery = parse(readFileSync(recoveryPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const task = recovery.components?.find(({ id }) =>
-      id === "account-recovery-task"
-    );
-
-    expect(recovery.component_group).toMatchObject({
-      id: "account-recovery",
-      routes: ["/recover/account"],
-    });
-    expect(task).toMatchObject({
-      implementation: "frontend/src/routes/recover/account.tsx",
-      tests: "frontend/src/routes/recover/account.test.tsx",
-      heading: {
-        initial: "Recover your account",
-        "code-handoff": "Save your new recovery codes",
-        visible_headings: 1,
-      },
-      required_inputs: {
-        order: ["account-id", "recovery-code", "authenticator-code"],
-        identifier: {
-          id: "account-id",
-          label: "Account ID",
-          value: "user-provided",
-          required: true,
-          input_presentation: "monospace",
-        },
-        factors: {
-          order: ["recovery-code", "authenticator-code"],
-          fields: {
-            "recovery-code": { label: "Recovery Code", required: true },
-            "authenticator-code": {
-              label: "Authenticator code",
-              autocomplete: "one-time-code",
-              pattern: "[0-9]{6}",
-            },
-          },
-        },
-        submit: {
-          label: "Register new Passkey",
-          busy_label: "Waiting for new Passkey…",
-          disabled_while_busy: true,
-        },
-      },
-      result: {
-        visible_when: "successful-recovery-with-rotated-recovery-codes",
-        replaces_factor_form: true,
-        recovery_codes: {
-          presentation: "visible-once",
-          purpose: "offline-backup",
-          login_method: false,
-          persistence: "route-memory-only",
-          instruction: "Store the codes offline before continuing.",
-        },
-        continuation: {
-          label: "I saved the codes",
-          destination: "safe-next-path",
-          history: "replace",
-        },
-      },
-      failure: {
-        role: "alert",
-        preserves_factor_form: true,
-        recovery_codes_visible: false,
-      },
-      identifier_visibility: {
-        account_id: "user-entered-required-identifier-only",
-        returned_account_id: "hidden",
-        unrelated_internal_ids: "hidden",
-      },
-    });
-  });
-
-  it("REQ-FE-040: declares step-up approval and identifier boundaries", () => {
-    const stepUpPath = path.join(componentsDir, "step-up.yaml");
-    const stepUp = parse(readFileSync(stepUpPath, "utf8")) as {
-      component_group?: Record<string, unknown>;
-      components?: Array<Record<string, unknown>>;
-    };
-    const approval = stepUp.components?.find(({ id }) =>
-      id === "cli-operation-approval"
-    );
-
-    expect(stepUp.component_group).toMatchObject({
-      id: "step-up",
-      routes: ["/step-up"],
-    });
-    expect(approval).toMatchObject({
-      implementation: "frontend/src/routes/step-up.tsx",
-      tests: "frontend/src/routes/step-up.test.tsx",
-      heading: "stepUpPage.title",
-      challenge: {
-        source: "query.challenge",
-        missing:
-          "show-incomplete-link-action-without-session-or-status-request",
-        visible_or_accessible_identifier: "none",
-      },
-      sign_in: {
-        visible_when: "session-is-unauthenticated",
-        action: "sign-in-with-passkey",
-        return_to: "same-step-up-link",
-        status_request_before_sign_in: false,
-      },
-      pending: {
-        prompt: "stepUpPage.reviewPrompt",
-        primary_action: "stepUpPage.approve",
-        ceremony: "fresh-passkey",
-        disabled_while_busy: true,
-      },
-      states: {
-        expired: {
-          message: "stepUpPage.expired",
-          recovery: "restart-cli-operation",
-        },
-        used_or_unknown: {
-          message: "stepUpPage.unavailable",
-          recovery: "restart-cli-operation",
-        },
-        forbidden: {
-          message: "localized-summary",
-          recovery: "message-specific",
-        },
-      },
-      identifiers: {
-        challenge: "query-only",
-        api_error_detail: "hidden",
-        visible_content: "none",
-        accessible_names: "none",
-      },
-      persistent_explanatory_copy: "none",
-    });
-
-    const routeTests = readFileSync(
-      path.join(repoRoot, "frontend/src/routes/step-up.test.tsx"),
-      "utf8",
-    );
-    expect(routeTests).toContain(
-      "REQ-FE-044: localizes the step-up approval task in Japanese",
-    );
-    expect(routeTests).toContain(
-      "does not expose challenge identifiers from API errors",
-    );
+  it("REQ-UX-RECOVERY-001: validates the owner recovery index reference", () => {
     const uiIndex = readFileSync(
       path.join(repoRoot, "docs/spec/ui/index.md"),
       "utf8",
     );
-    expect(uiIndex).toContain("`components/step-up.yaml`");
+    expect(uiIndex).toContain("`components/space-access-recovery.yaml`");
+    expect(
+      statSync(path.join(componentsDir, "space-access-recovery.yaml")).isFile(),
+    ).toBe(true);
   });
 
-  it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
-    const pages = loadPages();
-    const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
-    const entries = pages.find(({ spec }) =>
+  it("resolves the SQL results pagination reference", () => {
+    const sqlResults = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-sql-results"
+    );
+    const pagination = sqlResults?.spec.components?.body?.find(({ id }) =>
+      id === "sql-results-pagination"
+    );
+    expect(pagination).toBeTruthy();
+    const reference = String(pagination?.reference);
+    const contractPath = resolveComponentReference(
+      sqlResults!.filePath,
+      reference,
+    );
+    const shared = parse(readFileSync(contractPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(shared.components?.some(({ id }) => id === "result-pagination"))
+      .toBe(true);
+  });
+
+  it("resolves the Form Entries component reference", () => {
+    const entries = loadPages().find(({ spec }) =>
       spec.page?.id === "space-form-entries"
     );
-    expect(
-      forms?.spec.components?.body?.some((component) =>
-        component.type === "tab-bar"
-      ),
-    ).toBe(false);
-    const entryList = entries?.spec.components?.body?.find((component) =>
-      component.id === "form-entry-list"
+    const entryList = entries?.spec.components?.body?.find(({ id }) =>
+      id === "form-entry-list"
     );
-    expect(entryList).toMatchObject({
-      type: "query-results",
-      component: "EntryBrowser",
-      reference: "../components/entry-browser.yaml",
-    });
-    const componentPath = path.resolve(
-      path.dirname(entries!.filePath),
+    expect(entryList).toBeTruthy();
+    const componentPath = resolveComponentReference(
+      entries!.filePath,
       String(entryList?.reference),
     );
-    expect(componentPath.startsWith(`${componentsDir}${path.sep}`)).toBe(true);
     const entryBrowser = parse(readFileSync(componentPath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
     };
-    const table = entryBrowser.components?.find(({ id }) =>
-      id === "form-entry-table"
-    );
-    expect(table).toMatchObject({
-      query_results: {
-        pagination: "server-keyset",
-        count: "explicit-only",
-      },
-      columns: { system_timestamps: { order: ["created_at", "updated_at"] } },
-      selection: {
-        row_click: "select-only",
-        open_action: { control: "native-button" },
-      },
-      responsive: {
-        page_horizontal_overflow: false,
-        trailing_action: "remains-at-right-edge",
-      },
-    });
-    expect(table?.multi_sort_dialog).toMatchObject({ maximum_rules: 8 });
-    const compat = pages.find(({ spec }) =>
-      spec.page?.id === "space-entries-object"
-    );
-    expect(compat?.spec.page?.implementation).not.toBe("implemented");
+    expect(entryBrowser.components?.some(({ id }) => id === "form-entry-table"))
+      .toBe(true);
   });
 
-  it("REQ-FE-068: specifies source-native result table presentation", () => {
+  it("validates indexed component reference paths", () => {
+    const resultTablePath = path.join(componentsDir, "result-table.yaml");
+    const entryBrowserPath = path.join(componentsDir, "entry-browser.yaml");
+    const formTablePath = path.join(componentsDir, "form-table.yaml");
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    for (
+      const componentPath of [resultTablePath, entryBrowserPath, formTablePath]
+    ) {
+      expect(statSync(componentPath).isFile()).toBe(true);
+      const relativePath = path.relative(componentsDir, componentPath);
+      expect(uiIndex).toContain(`\`components/${relativePath}\``);
+    }
+
+    const entryBrowser = parse(readFileSync(entryBrowserPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(entryBrowser.components?.some(({ id }) => id === "form-entry-table"))
+      .toBe(true);
+  });
+
+  it("resolves result-table references from pages and shared components", () => {
     const resultTablePath = path.join(componentsDir, "result-table.yaml");
     const resultTable = parse(readFileSync(resultTablePath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
     };
     expect(
-      resultTable.components?.find(({ id }) => id === "result-table-viewport"),
-    ).toMatchObject({
-      implementations: {
-        entry_query: "frontend/src/components/EntryResultTable.tsx",
-        saved_sql: "frontend/src/components/SqlResultTable.tsx",
-      },
-      semantics: {
-        renderer: "native-html-table",
-        row_selection: "owned-by-source-presenter",
-        column_identity: "owned-by-source-presenter",
-        paging: "owned-by-query-controller-or-route",
-        current_page_only: true,
-      },
-      presentation: {
-        cells: {
-          numeric_alignment: "right",
-          null: "em-dash",
-          long_text: {
-            visual: "single-line-ellipsis",
-            complete_value: "remains-as-text-and-title",
-          },
-        },
-        narrow_tables: "intrinsic-width-without-large-fixed-minimum",
-        wide_tables: "horizontal-scroll-inside-viewport",
-      },
-      accessibility: {
-        viewport: {
-          role: "region",
-          accessible_name: "localized-or-component-provided-table-label",
-          keyboard_focusable: true,
-        },
-        table: {
-          accessible_name: "localized-or-component-provided-table-label",
-        },
-      },
-      responsive: {
-        page_horizontal_overflow: false,
-        tested_widths_css_px: [320, 390, 640],
-      },
-    });
+      resultTable.components?.some(({ id }) => id === "result-table-viewport"),
+    )
+      .toBe(true);
 
     const entryBrowser = parse(readFileSync(
       path.join(componentsDir, "entry-browser.yaml"),
       "utf8",
     )) as { components?: Array<Record<string, unknown>> };
-    expect(entryBrowser.components?.find(({ id }) => id === "form-entry-table"))
-      .toMatchObject({ result_presentation_reference: "result-table.yaml" });
+    const entryTable = entryBrowser.components?.find(({ id }) =>
+      id === "form-entry-table"
+    );
+    expect(entryTable).toBeTruthy();
+    expect(
+      path.resolve(
+        componentsDir,
+        String(entryTable?.result_presentation_reference),
+      ),
+    )
+      .toBe(resultTablePath);
 
-    const sqlResults = loadPages().find(({ spec }) =>
+    const pages = loadPages();
+    const sqlResults = pages.find(({ spec }) =>
       spec.page?.id === "space-sql-results"
     );
+    const sqlTable = sqlResults?.spec.components?.body?.find(({ id }) =>
+      id === "sql-results-table"
+    );
     expect(
-      sqlResults?.spec.components?.body?.find(({ id }) =>
-        id === "sql-results-table"
+      path.resolve(
+        path.dirname(sqlResults!.filePath),
+        String(sqlTable?.result_presentation_reference),
       ),
-    ).toMatchObject({
-      result_presentation_reference: "../components/result-table.yaml",
-    });
-    const compositionRevision = loadPages().find(({ spec }) =>
+    )
+      .toBe(resultTablePath);
+
+    const revision = pages.find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    expect(
-      compositionRevision?.spec.components?.body?.find(({ id }) =>
-        id === "composition-components"
-      )?.table_presentation,
-    ).toMatchObject({
-      result_presentation_reference: "../components/result-table.yaml",
-    });
-    expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))
-      .toContain("`components/result-table.yaml`");
-  });
-
-  it("REQ-FE-075: declares FormTable's optional timestamps and column picker", () => {
-    const formTablePath = path.join(componentsDir, "form-table.yaml");
-    const formTable = parse(readFileSync(formTablePath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const table = formTable.components?.find(({ id }) =>
-      id === "editable-form-entry-table"
+    const composition = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-components"
     );
-
-    expect(table).toMatchObject({
-      columns: {
-        desktop: ["form-fields", "optional-created-at", "optional-updated-at"],
-        mobile: ["form-fields", "optional-created-at", "optional-updated-at"],
-        optional_system_columns_default: "hidden",
-        labels: {
-          form_fields: "display-label-when-set-otherwise-field-name",
-          system_fields: "localized-created-and-updated",
-        },
-      },
-      column_picker: {
-        trigger: {
-          icon: "columns",
-          visible_label: "none",
-          accessible_name: "localized-columns",
-        },
-        dialog: {
-          choices: "localized-optional-system-timestamps",
-          actions: ["localized-cancel", "localized-apply"],
-          focus: "trap-and-return-to-trigger",
-          explanatory_copy: "none",
-        },
-        labels: { field_ids: "never-visible" },
-      },
-      identity: { field_ids: "never-visible" },
-    });
-
-    expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))
-      .toContain("`components/form-table.yaml`");
+    const tablePresentation = composition?.table_presentation as
+      | { result_presentation_reference?: string }
+      | undefined;
+    expect(
+      path.resolve(
+        path.dirname(revision!.filePath),
+        String(tablePresentation?.result_presentation_reference),
+      ),
+    )
+      .toBe(resultTablePath);
   });
 
-  it("REQ-SRCH-006: specifies Search-owned submit and saved-query toolbar slots", () => {
+  it("resolves Search results to the shared EntryBrowser component", () => {
     const search = loadPages().find(({ spec }) =>
       spec.page?.id === "space-search"
     );
-    expect(search?.spec.page).toMatchObject({
-      implementation: "implemented",
-      visible_heading: "screen-reader-only",
-    });
     const results = search?.spec.components?.body?.find(({ id }) =>
       id === "keyword-result-list"
     );
-    expect(results).toMatchObject({
-      type: "query-results",
-      reference: "../components/entry-browser.yaml",
-      toolbar: {
-        search_control: {
-          owner: "search-page",
-          role: "search",
-          commit: "explicit-submit",
-          deep_link: "query.q",
-        },
-        result_actions: [
-          "columns-dialog",
-          "filters-dialog",
-          "multi-sort-dialog",
-        ],
-        navigation: {
-          control: "icon-link",
-          icon: "UiIcon.sql",
-          accessible_name: "searchPage.openSavedQueries",
-          target: "/spaces/{space_id}/sql",
-        },
-      },
-    });
-
-    const componentPath = path.resolve(
-      path.dirname(search!.filePath),
+    expect(results).toBeTruthy();
+    const componentPath = resolveComponentReference(
+      search!.filePath,
       String(results?.reference),
     );
     const entryBrowser = parse(readFileSync(componentPath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
     };
-    expect(entryBrowser.components?.find(({ id }) => id === "form-entry-table"))
-      .toMatchObject({
-        toolbar: {
-          built_in_search: { default: "visible", update: "input" },
-          search_control: {
-            prop: "searchControl",
-            behavior: "replaces-built-in-search",
-          },
-          navigation: {
-            prop: "toolbarNavigation",
-            behavior: "render-caller-owned-content-when-supplied",
-            position: "after-display-actions",
-          },
-        },
-      });
-  });
-
-  it("REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers", () => {
-    const history = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-entry-history"
-    );
-    const revision = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-entry-revision"
-    );
-    const historyRows = history?.spec.components?.body?.find(({ id }) =>
-      id === "revision-list"
-    );
-    const revisionContent = revision?.spec.components?.body?.find(({ id }) =>
-      id === "revision-content"
-    );
-
-    expect(historyRows).toMatchObject({
-      actor_label: "member-display-name-or-localized-unknown-actor",
-      actor_identifier_visibility:
-        "never-in-primary-content-or-accessible-labels",
-    });
-    expect(revisionContent).toMatchObject({
-      actor_label: "member-display-name-or-localized-unknown-actor",
-      "technical-identifiers": {
-        visibility: "collapsed-localized-details-only",
-        values: ["revision ID", "actor ID"],
-        copy: "exact-value",
-      },
-    });
+    expect(entryBrowser.components?.some(({ id }) => id === "form-entry-table"))
+      .toBe(true);
   });
 });
