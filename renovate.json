@@ -207,6 +207,40 @@
       "enabled": false
     },
     {
+      "description": "Hold non-vulnerability rig-agent minor and major updates until the adapter has a behavior-verified migration",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "rig-agent"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Hold non-vulnerability sqlparser minor and major updates until the pinned Iceberg and DataFusion boundary can move together",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "sqlparser"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Keep the manually pinned Iceberg Git source revision outside automated updates",
       "matchManagers": [
         "cargo"
@@ -218,6 +252,16 @@
         "https://github.com/apache/iceberg-rust.git"
       ],
       "enabled": false
+    },
+    {
+      "description": "Exclude the observed Ubuntu 26.04 runner until the pinned Playwright browser tooling supports it",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "!/^(?:26\\.04)$/"
     },
     {
       "description": "Preserve node engines support floor as a product contract, not a routine tool update",
