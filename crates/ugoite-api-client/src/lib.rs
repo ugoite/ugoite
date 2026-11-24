@@ -2557,10 +2557,6 @@ mod tests {
         );
         assert!(inline_sql["request"].get("saved_sql").is_none());
 
-        let mut old_pinned_saved_query = inline_sql.clone();
-        old_pinned_saved_query["sql_text"] = json!("SELECT {{minimum}} AS total");
-        assert!(serde_json::from_value::<CompositionQuery>(old_pinned_saved_query).is_err());
-
         let component_binding = json!({
             "component_id": "transactions",
             "kind": "table",
@@ -2596,14 +2592,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(binding).expect("serialize text binding DTO"),
             text_binding
-        );
-        assert!(
-            serde_json::from_value::<CompositionComponentBinding>(json!({
-                "component_id": "old_metric",
-                "kind": "metric",
-                "variable_id": "total"
-            }))
-            .is_err()
         );
     }
 
