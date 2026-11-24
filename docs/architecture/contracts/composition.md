@@ -113,23 +113,11 @@ connected Reader and does not push revocation notifications.
 
 ## Studio and Reader
 
-Studio has two modes, `Design` and `Variables`, and opens in Design. Design
-offers Text, Table, and Input placement. Text is edited at its canvas position
-with a compact Title, Heading, Body, or Caption control. Variables presents the
-SQL source, graph bindings, type, and local diagnostics without a separate
-arguments page. Lint, authorized schema check, and explicit execution remain
-distinct actions.
-
-If Design needs a Table query, its name and SQL are edited in Variables. An
-authorized Check confirms the result schema; Use returns to the original
-Design position and places the Table without requiring a query run. Cancelling
-or failing leaves the prior component and draft intact. An Input requested
-from Design or a SQL marker uses the Variables name, type, required, and
-default editor before Use places its first component. SQL marker creation also
-commits its explicit binding. Creation from Variables places the component and
-stays in Variables. Reader uses the shared renderer without authoring modes,
-selection controls, or editing actions. UI layout, accessibility, focus, and
-responsive behavior follow the UI specifications and policies.
+Browser authoring and Reader behavior are defined by
+[REQ-FE-083](../../mitase/requirements/frontend/composition-text-first.yaml) and
+the [Composition Studio UI specification](../../spec/ui/components/composition-studio.yaml).
+They use the graph and execution semantics above; this contract does not define
+the editor's interaction flow or layout.
 
 ## Compatibility and recovery
 

@@ -214,7 +214,7 @@ was superseded. See [ADR-027](adr-027-text-first-composition.md) for the current
 
 ## ADR-018 — Composition preview and typed SQL result schema
 
-**Historical decision record; Composition grammar was superseded by ADR-024.**
+**Historical decision record; Composition grammar was superseded before release by ADR-027.**
 Composition preview remains a side-effect-free authoring path. SQL query pages
 carry the server-owned typed `result_schema`; its current column types, value
 encoding, and failure rules are defined in [SQL features](../../spec/features/sql.md)
@@ -223,7 +223,7 @@ specification.
 
 ## ADR-019 — Composition layout v1
 
-**Superseded by ADR-024 before release.** The prerelease `sections` layout and
+**Superseded by ADR-027 before release.** The prerelease `sections` layout and
 its interaction rules are historical. The current Composition document and
 layout contract is [ADR-027](adr-027-text-first-composition.md).
 
@@ -256,14 +256,6 @@ and variable semantics are specified in [Composition](composition.md),
 [SQL features](../../spec/features/sql.md), and the corresponding Mitase
 requirements. Earlier Metric source/component proposals in this ADR are
 historical and do not define the current Composition grammar.
-
-## ADR-023 — Composition typed reactive variables
-
-[ADR-023](adr-023-composition-reactive-variables.md) introduced typed reactive variables.
-
-## ADR-024 — SQL-first Composition sources and workspace
-
-[ADR-024](adr-024-composition-sql-first.md) unified execution on SQL.
 
 ## ADR-025 — Composition query variable graph and complete SQL Workspace
 
