@@ -138,6 +138,76 @@ Deno.test("docs and frontend diffs select only their required lanes", () => {
   assertEquals(frontendOnly.candidateLanes, ["artifacts", "web"]);
 });
 
+Deno.test("crate test-only Rust diffs keep Rust checks and skip artifacts", () => {
+  for (
+    const path of [
+      "crates/ugoite-iceberg/src/composition/history_tests.rs",
+      "crates/ugoite-core/tests/history_roundtrip.rs",
+    ]
+  ) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [path],
+    });
+    assertEquals(report.scope, "scoped", path);
+    assertEquals(report.candidateLanes, ["rust-check", "rust-test"], path);
+  }
+
+  const mixedRust = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: [
+      "crates/ugoite-iceberg/src/composition/history_tests.rs",
+      "crates/ugoite-iceberg/src/lib.rs",
+    ],
+  });
+  assertEquals(mixedRust.candidateLanes, [
+    "artifacts",
+    "rust-check",
+    "rust-test",
+    "web",
+  ]);
+
+  for (
+    const path of [
+      "crates/ugoite-core/src/tests/history.rs",
+      "crates/ugoite-core/src/composition/history.rs",
+      "crates/ugoite-core/tests.rs",
+      "crates/ugoite-core/Cargo.toml",
+      "Cargo.lock",
+    ]
+  ) {
+    const report = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: [path],
+    });
+    assertEquals(
+      report.candidateLanes,
+      ["artifacts", "rust-check", "rust-test", "web"],
+      path,
+    );
+  }
+
+  const cp1Acceptance = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["crates/ugoite-cli/tests/test_sql_stateless_cli.rs"],
+  });
+  assertEquals(cp1Acceptance.candidateLanes, [
+    "artifacts",
+    "cp1-acceptance",
+    "rust-check",
+    "rust-test",
+    "web",
+  ]);
+});
+
 Deno.test("main pushes retain every lane and merge groups remain unconditional", () => {
   const push = makeImpactReport({
     event: "push",
