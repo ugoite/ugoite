@@ -28,16 +28,11 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the UI overview and route inventory references for the single back control.
+        responsibility: Preserve the UI overview references for the single back control.
         targets:
           - id: ui-overview
             adapter: declared
             path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-UI-001#rule.governance }]
-          - id: route-inventory
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-001#rule.governance }]
   - id: POL-UI-005
@@ -100,16 +95,11 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the UI overview and route inventory references for advanced-only identifiers.
+        responsibility: Preserve the UI overview references for advanced-only identifiers.
         targets:
           - id: ui-overview
             adapter: declared
             path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-UI-005#rule.governance }]
-          - id: route-inventory
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-005#rule.governance }]
   - id: POL-UI-011
@@ -144,15 +134,10 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the UI overview and route inventory references for shell navigation ownership.
+        responsibility: Preserve the UI overview references for shell navigation ownership.
         targets:
           - id: ui-overview
             adapter: declared
             path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-UI-011#rule.governance }]
-          - id: route-inventory
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-011#rule.governance }]

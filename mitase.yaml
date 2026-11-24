@@ -513,7 +513,6 @@ inventory:
         - docs/spec/ui/components/account-security.yaml
         - docs/spec/ui/components/account-recovery.yaml
         - docs/spec/ui/components/step-up.yaml
-        - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
         - .github/workflows/pr-require-close-issue.yml

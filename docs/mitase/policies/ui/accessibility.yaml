@@ -28,15 +28,10 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the UI overview and route inventory references for accessible interaction.
+        responsibility: Preserve the UI overview references for accessible interaction.
         targets:
           - id: ui-overview
             adapter: declared
             path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-UI-007#rule.governance }]
-          - id: route-inventory
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-007#rule.governance }]

@@ -31,5 +31,5 @@ requirements:
         governed_by: [POL-011#rule.governance]
       - id: contract-index
         kind: behavior
-        statement: The owner-approved recovery component contract is linked from the UI spec index and route inventory and is covered by the UI contract registry test.
+        statement: The owner-approved recovery component contract is linked from the UI spec index and is covered by the UI contract registry test.
         governed_by: [POL-UI-002#rule.governance]
