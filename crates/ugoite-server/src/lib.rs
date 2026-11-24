@@ -56,19 +56,14 @@ use ugoite_api_client::{
     CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnostic as ApiCompositionDiagnostic,
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata,
-    CompositionEvaluationQueryDiagnostic as ApiCompositionEvaluationQueryDiagnostic,
-    CompositionEvaluationRequest as ApiCompositionEvaluationRequest,
-    CompositionEvaluationRequestDiagnostic as ApiCompositionEvaluationRequestDiagnostic,
-    CompositionEvaluationResponse as ApiCompositionEvaluationResponse,
-    CompositionEvaluationResultContractDiagnostic as ApiCompositionEvaluationResultContractDiagnostic,
-    CompositionEvaluationResultDiagnostic as ApiCompositionEvaluationResultDiagnostic,
-    CompositionFormBinding, CompositionHistoryPage, CompositionLintError, CompositionLintResponse,
-    CompositionLintValue, CompositionListItem, CompositionListPage, CompositionPreviewPlan,
-    CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
-    CompositionQuery, CompositionQueryResultType, CompositionRawRevision,
+    CompositionEntryMetadata, CompositionEvaluationRequest as ApiCompositionEvaluationRequest,
+    CompositionEvaluationResponse as ApiCompositionEvaluationResponse, CompositionFormBinding,
+    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
+    CompositionListItem, CompositionListPage, CompositionPreviewPlan, CompositionPreviewRequest,
+    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionQuery,
+    CompositionQueryResultType, CompositionRawRevision,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionResultColumn, CompositionRevisionMetadata,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
     CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
     CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
@@ -84,7 +79,6 @@ use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
     CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphLiteral,
     VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType, VariableGraphScalarType,
-    VariableGraphValidatedResult,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -107,8 +101,7 @@ use ugoite_iceberg::{
     },
     form, saved_sql,
     service::{
-        ApplyOperation, CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
-        CompositionPreviewSelection,
+        ApplyOperation, CompositionPreviewSelection,
         CompositionQueryEvaluationPage as CoreCompositionQueryEvaluationPage,
         CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
         CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget,
@@ -11204,141 +11197,14 @@ fn api_composition_text_template_part(
 fn api_composition_evaluation_response(
     response: CoreCompositionQueryEvaluationResponse,
 ) -> ApiResult<ApiCompositionEvaluationResponse> {
-    let mut composition_revision = None;
-    let mut draft_fingerprint = response.draft_fingerprint.clone();
-    let mut variable_values = BTreeMap::new();
-    let mut queries = Vec::new();
-    let mut component_bindings = Vec::new();
-    let mut dependencies = ApiCompositionDependencyIndex::default();
-    if let Some(plan) = response.plan {
-        let CoreCompositionGraphEvaluationPlan {
-            composition_revision: revision,
-            draft_fingerprint: draft,
-            variable_values: values,
-            queries: core_queries,
-            component_bindings: core_bindings,
-            dependencies: core_dependencies,
-        } = plan;
-        composition_revision = revision.map(|revision| CompositionRevisionReference {
-            entry_id: revision.entry_id.to_string(),
-            revision_id: revision.revision_id.to_string(),
-        });
-        draft_fingerprint = draft;
-        variable_values = values
-            .into_iter()
-            .map(|(id, value)| (id, value.to_json_value()))
-            .collect();
-        (queries, component_bindings) =
-            api_composition_queries_and_bindings(core_queries, core_bindings)?;
-        dependencies = api_composition_dependency_index(core_dependencies);
-    }
-    let query_results = response
-        .query_results
-        .into_iter()
-        .map(|(variable_id, result)| {
-            let exact_integer_rows = match &result.result {
-                VariableGraphValidatedResult::Table { rows, .. } => Some(
-                    rows.iter()
-                        .map(|row| {
-                            row.iter()
-                                .map(|cell| match cell {
-                                    VariableGraphLiteral::Integer(value) => Some(value.to_string()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>(),
-                ),
-                VariableGraphValidatedResult::Scalar { .. } => None,
-            };
-            let value = serde_json::to_value(&result.result).map_err(|error| {
-                ApiError::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    json!({
-                        "code": "INTERNAL_ERROR",
-                        "message": format!("Could not encode Composition query result: {error}"),
-                    }),
-                )
-            })?;
-            Ok((
-                variable_id,
-                ugoite_api_client::CompositionGraphQueryResult {
-                    value,
-                    has_more: result.has_more,
-                    next: result.next,
-                    count_snapshot: result.count_snapshot,
-                    exact_integer_rows,
-                },
-            ))
-        })
-        .collect::<ApiResult<BTreeMap<_, _>>>()?;
-    let diagnostics = response
-        .diagnostics
-        .into_iter()
-        .map(|diagnostic| {
-            Ok(ApiCompositionDiagnostic {
-                code: api_composition_diagnostic_code(diagnostic.code)?,
-                variable_id: diagnostic.variable_id,
-            })
-        })
-        .collect::<ApiResult<Vec<_>>>()?;
-    let query_diagnostics = response
-        .query_diagnostics
-        .into_iter()
-        .map(|diagnostic| ApiCompositionEvaluationQueryDiagnostic {
-            code: diagnostic.code.as_str().to_owned(),
-            variable_id: diagnostic.variable_id,
-            request_diagnostic: diagnostic.request_diagnostic.map(|request| {
-                ApiCompositionEvaluationRequestDiagnostic {
-                    code: request.code.as_str().to_owned(),
-                    argument_name: request.argument_name,
-                    reference_id: request.reference_id,
-                    domain_code: request.domain_code,
-                    cycle: request.cycle,
-                }
+    ugoite_iceberg::service::composition_evaluation_response(response).map_err(|error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({
+                "code": "INTERNAL_ERROR",
+                "message": error.to_string(),
             }),
-            result_diagnostic: diagnostic.result_diagnostic.map(|result| {
-                ApiCompositionEvaluationResultDiagnostic {
-                    code: result.code.as_str().to_owned(),
-                    variable_id: result.variable_id,
-                    column_name: result.column_name,
-                    result_diagnostic: result.result_diagnostic.map(|detail| {
-                        ApiCompositionEvaluationResultContractDiagnostic {
-                            code: detail.code.as_str().to_owned(),
-                            expected_count: detail.expected_count,
-                            observed_count: detail.observed_count,
-                            row_index: detail.row_index,
-                            column_index: detail.column_index,
-                            column_name: detail.column_name,
-                            expected_column_name: detail.expected_column_name,
-                            expected_value_type: detail
-                                .expected_value_type
-                                .map(api_composition_scalar_descriptor),
-                            observed_value_type: detail
-                                .observed_value_type
-                                .map(api_composition_scalar_descriptor),
-                        }
-                    }),
-                }
-            }),
-        })
-        .collect();
-    Ok(ApiCompositionEvaluationResponse {
-        evaluation_id: response.evaluation_id.to_string(),
-        ok: response.ok,
-        snapshot_fingerprint: response.snapshot_fingerprint,
-        publication_fingerprint: response.publication_fingerprint,
-        authorization_fingerprint: response.authorization_fingerprint,
-        composition_revision,
-        draft_fingerprint,
-        variable_values,
-        queries,
-        component_bindings,
-        dependencies,
-        query_results,
-        computed_query_ids: response.computed_query_ids,
-        diagnostics,
-        query_diagnostics,
+        )
     })
 }
 

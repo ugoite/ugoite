@@ -9,39 +9,21 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use ugoite_api_client::{
-    prepare_request, CompositionComponentBinding, CompositionComponentKind,
-    CompositionDeferredArgument, CompositionDependencyIndex,
-    CompositionDiagnostic as ApiCompositionDiagnostic,
-    CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionEvaluationQueryDiagnostic, CompositionEvaluationRequest,
-    CompositionEvaluationRequestDiagnostic, CompositionEvaluationResponse,
-    CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
-    CompositionEvaluationTarget, CompositionFormBinding,
-    CompositionGraphQueryResult as ApiCompositionGraphQueryResult, CompositionHistoryPage,
+    prepare_request, CompositionDiagnosticCode as ApiCompositionDiagnosticCode,
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionEvaluationRequest,
+    CompositionEvaluationResponse, CompositionEvaluationTarget, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionPublicationReceipt, CompositionQuery,
-    CompositionQueryResultType, CompositionRawRevision, CompositionRestoreRequest,
-    CompositionRestoreResponse, CompositionResultColumn, CompositionRevisionMetadata,
-    CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
-    CompositionSaveResponse, CompositionScalarCardinality, CompositionScalarDescriptor,
-    CompositionScalarType, CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
-    CompositionVariableConsumers,
-};
-use ugoite_core::composition::{
-    CompositionScalarCardinality as CoreCompositionScalarCardinality, ResolvedComponentKind,
-    ResolvedQueryRequest,
+    CompositionListPage, CompositionPublicationReceipt, CompositionRawRevision,
+    CompositionRestoreRequest, CompositionRestoreResponse, CompositionRevisionMetadata,
+    CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
 };
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, parse_variable_graph_input,
-    CanonicalComposition, CompositionDiagnosticCode,
-    CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphInputValue,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
-    MAX_COMPOSITION_YAML_BYTES,
+    CanonicalComposition, CompositionDiagnosticCode, VariableGraphInputValue, VariableGraphNode,
+    VariableGraphNodeKind, MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
 use ugoite_iceberg::service::{
-    CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
     CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
     CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget, UgoiteService,
 };
@@ -778,290 +760,12 @@ async fn query_composition_remote(
 fn local_composition_evaluation_response(
     response: CoreCompositionQueryEvaluationResponse,
 ) -> Result<CompositionEvaluationResponse> {
-    let mut composition_revision = None;
-    let mut draft_fingerprint = response.draft_fingerprint.clone();
-    let mut variable_values = BTreeMap::new();
-    let mut queries = Vec::new();
-    let mut component_bindings = Vec::new();
-    let mut dependencies = CompositionDependencyIndex::default();
-    if let Some(plan) = response.plan {
-        let CoreCompositionGraphEvaluationPlan {
-            composition_revision: revision,
-            draft_fingerprint: draft,
-            variable_values: values,
-            queries: core_queries,
-            component_bindings: core_bindings,
-            dependencies: core_dependencies,
-        } = plan;
-        composition_revision = revision.map(|revision| CompositionRevisionReference {
-            entry_id: revision.entry_id.to_string(),
-            revision_id: revision.revision_id.to_string(),
-        });
-        draft_fingerprint = draft;
-        variable_values = values
-            .into_iter()
-            .map(|(id, value)| (id, value.to_json_value()))
-            .collect();
-        (queries, component_bindings) =
-            composition_queries_and_bindings(core_queries, core_bindings)?;
-        dependencies = composition_dependency_index(core_dependencies);
+    let mut response = ugoite_iceberg::service::composition_evaluation_response(response)?;
+    // Local CLI output has historically omitted server-only result count snapshots.
+    for result in response.query_results.values_mut() {
+        result.count_snapshot = None;
     }
-
-    let query_results = response
-        .query_results
-        .into_iter()
-        .map(|(variable_id, result)| {
-            let exact_integer_rows = match &result.result {
-                VariableGraphValidatedResult::Table { rows, .. } => Some(
-                    rows.iter()
-                        .map(|row| {
-                            row.iter()
-                                .map(|cell| match cell {
-                                    VariableGraphLiteral::Integer(value) => Some(value.to_string()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>(),
-                ),
-                VariableGraphValidatedResult::Scalar { .. } => None,
-            };
-            let value = serde_json::to_value(&result.result)
-                .context("encode local Composition graph query result")?;
-            Ok((
-                variable_id,
-                ApiCompositionGraphQueryResult {
-                    value,
-                    has_more: result.has_more,
-                    next: result.next,
-                    count_snapshot: None,
-                    exact_integer_rows,
-                },
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>>>()?;
-
-    let diagnostics = response
-        .diagnostics
-        .into_iter()
-        .map(|diagnostic| {
-            let code = ApiCompositionDiagnosticCode::from_code(diagnostic.code.as_str()).context(
-                "local Composition diagnostic is missing from the portable API contract",
-            )?;
-            Ok(ApiCompositionDiagnostic {
-                code,
-                variable_id: diagnostic.variable_id,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let query_diagnostics = response
-        .query_diagnostics
-        .into_iter()
-        .map(|diagnostic| CompositionEvaluationQueryDiagnostic {
-            code: diagnostic.code.as_str().to_owned(),
-            variable_id: diagnostic.variable_id,
-            request_diagnostic: diagnostic.request_diagnostic.map(|request| {
-                CompositionEvaluationRequestDiagnostic {
-                    code: request.code.as_str().to_owned(),
-                    argument_name: request.argument_name,
-                    reference_id: request.reference_id,
-                    domain_code: request.domain_code,
-                    cycle: request.cycle,
-                }
-            }),
-            result_diagnostic: diagnostic.result_diagnostic.map(|result| {
-                CompositionEvaluationResultDiagnostic {
-                    code: result.code.as_str().to_owned(),
-                    variable_id: result.variable_id,
-                    column_name: result.column_name,
-                    result_diagnostic: result.result_diagnostic.map(|detail| {
-                        CompositionEvaluationResultContractDiagnostic {
-                            code: detail.code.as_str().to_owned(),
-                            expected_count: detail.expected_count,
-                            observed_count: detail.observed_count,
-                            row_index: detail.row_index,
-                            column_index: detail.column_index,
-                            column_name: detail.column_name,
-                            expected_column_name: detail.expected_column_name,
-                            expected_value_type: detail
-                                .expected_value_type
-                                .map(composition_scalar_descriptor),
-                            observed_value_type: detail
-                                .observed_value_type
-                                .map(composition_scalar_descriptor),
-                        }
-                    }),
-                }
-            }),
-        })
-        .collect();
-
-    Ok(CompositionEvaluationResponse {
-        evaluation_id: response.evaluation_id.to_string(),
-        ok: response.ok,
-        snapshot_fingerprint: response.snapshot_fingerprint,
-        publication_fingerprint: response.publication_fingerprint,
-        authorization_fingerprint: response.authorization_fingerprint,
-        composition_revision,
-        draft_fingerprint,
-        variable_values,
-        queries,
-        component_bindings,
-        dependencies,
-        query_results,
-        computed_query_ids: response.computed_query_ids,
-        diagnostics,
-        query_diagnostics,
-    })
-}
-
-fn composition_scalar_descriptor(
-    descriptor: VariableGraphScalarDescriptor,
-) -> CompositionScalarDescriptor {
-    CompositionScalarDescriptor {
-        scalar_type: match descriptor.scalar_type {
-            VariableGraphScalarType::String => CompositionScalarType::String,
-            VariableGraphScalarType::Boolean => CompositionScalarType::Boolean,
-            VariableGraphScalarType::Integer => CompositionScalarType::Integer,
-            VariableGraphScalarType::Float => CompositionScalarType::Float,
-            VariableGraphScalarType::Decimal => CompositionScalarType::Decimal,
-            VariableGraphScalarType::Date => CompositionScalarType::Date,
-            VariableGraphScalarType::Timestamp => CompositionScalarType::Timestamp,
-            VariableGraphScalarType::Json => CompositionScalarType::Json,
-        },
-        nullable: descriptor.nullable,
-    }
-}
-
-fn composition_query_result_type(returns: VariableGraphResultType) -> CompositionQueryResultType {
-    match returns {
-        VariableGraphResultType::Scalar { value_type } => CompositionQueryResultType::Scalar {
-            value_type: composition_scalar_descriptor(value_type),
-        },
-        VariableGraphResultType::Table { columns } => CompositionQueryResultType::Table {
-            columns: columns.into_iter().map(composition_result_column).collect(),
-        },
-    }
-}
-
-fn composition_result_column(
-    column: ugoite_domain::composition::VariableGraphColumn,
-) -> CompositionResultColumn {
-    CompositionResultColumn {
-        name: column.name,
-        value_type: composition_scalar_descriptor(column.value_type),
-    }
-}
-
-fn composition_text_template_part(
-    part: DomainCompositionTextTemplatePart,
-) -> ApiCompositionTextTemplatePart {
-    match part {
-        DomainCompositionTextTemplatePart::Literal { text } => {
-            ApiCompositionTextTemplatePart::Literal { text }
-        }
-        DomainCompositionTextTemplatePart::Variable { variable } => {
-            ApiCompositionTextTemplatePart::Variable { variable }
-        }
-    }
-}
-
-fn composition_dependency_index(
-    dependencies: ugoite_core::composition::CompositionDependencyIndex,
-) -> CompositionDependencyIndex {
-    CompositionDependencyIndex {
-        variable_consumers: dependencies
-            .variable_consumers
-            .into_iter()
-            .map(|(id, consumers)| {
-                (
-                    id,
-                    CompositionVariableConsumers {
-                        input_component_ids: consumers.input_component_ids,
-                        text_component_ids: consumers.text_component_ids,
-                        query_variable_ids: consumers.query_variable_ids,
-                        table_component_ids: consumers.table_component_ids,
-                    },
-                )
-            })
-            .collect(),
-    }
-}
-
-fn composition_queries_and_bindings(
-    core_queries: Vec<ResolvedQueryRequest>,
-    core_bindings: Vec<ugoite_core::composition::ResolvedComponentBinding>,
-) -> Result<(Vec<CompositionQuery>, Vec<CompositionComponentBinding>)> {
-    let queries = core_queries
-        .into_iter()
-        .map(|query| {
-            let request = query
-                .request
-                .map(serde_json::to_value)
-                .transpose()
-                .context("encode local Composition graph SQL request")?;
-            let form_bindings = query
-                .form_bindings
-                .into_iter()
-                .map(|binding| CompositionFormBinding {
-                    relation: binding.relation,
-                    form_id: binding.form_id.to_string(),
-                })
-                .collect();
-            let result_columns = query
-                .result_columns
-                .into_iter()
-                .map(composition_result_column)
-                .collect();
-            let scalar_cardinality =
-                query
-                    .scalar_cardinality
-                    .map(|cardinality| match cardinality {
-                        CoreCompositionScalarCardinality::ExactlyOneRow => {
-                            CompositionScalarCardinality::ExactlyOneRow
-                        }
-                    });
-            let deferred_arguments = query
-                .deferred_arguments
-                .into_iter()
-                .map(|argument| CompositionDeferredArgument {
-                    argument_name: argument.argument_name,
-                    variable_id: argument.variable_id,
-                    value_type: composition_scalar_descriptor(argument.value_type),
-                })
-                .collect();
-            Ok(CompositionQuery {
-                variable_id: query.variable_id,
-                request,
-                portable_sql: query.portable_sql,
-                deferred_arguments,
-                returns: composition_query_result_type(query.returns),
-                result_columns,
-                form_bindings,
-                schema_fingerprint: query.schema_fingerprint,
-                query_semantic_fingerprint: query.query_semantic_fingerprint,
-                scalar_cardinality,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let component_bindings = core_bindings
-        .into_iter()
-        .map(|binding| CompositionComponentBinding {
-            component_id: binding.component_id,
-            kind: match binding.kind {
-                ResolvedComponentKind::Input => CompositionComponentKind::Input,
-                ResolvedComponentKind::Tabular => CompositionComponentKind::Table,
-                ResolvedComponentKind::Text => CompositionComponentKind::Text,
-            },
-            variable_id: binding.variable_id,
-            text_segments: binding
-                .text_segments
-                .into_iter()
-                .map(composition_text_template_part)
-                .collect(),
-        })
-        .collect();
-    Ok((queries, component_bindings))
+    Ok(response)
 }
 
 fn parse_cli_variables(
@@ -1328,7 +1032,7 @@ mod tests {
         export_composition, lint_file, lint_yaml_bytes, list_compositions,
         local_composition_evaluation_response, local_raw_revision_to_api, parse_cli_variables,
         raw_spec_output, read_composition, read_composition_history, write_raw_spec_to_path,
-        CoreCompositionGraphEvaluationPlan, CoreCompositionQueryEvaluationResponse, RawSpecOutput,
+        CoreCompositionQueryEvaluationResponse, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1348,6 +1052,7 @@ mod tests {
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
     use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
+    use ugoite_iceberg::service::CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan;
     use uuid::Uuid;
 
     const SQL_FIRST_COMPOSITION: &str = include_str!(
@@ -1386,7 +1091,22 @@ mod tests {
                 }],
                 dependencies: ugoite_core::composition::CompositionDependencyIndex::default(),
             }),
-            query_results: BTreeMap::new(),
+            query_results: BTreeMap::from([(
+                "total".to_string(),
+                ugoite_iceberg::service::CompositionGraphQueryResult {
+                    result: ugoite_domain::composition::VariableGraphValidatedResult::Table {
+                        columns: Vec::new(),
+                        rows: vec![vec![
+                            ugoite_domain::composition::VariableGraphLiteral::Integer(
+                                9_007_199_254_740_993,
+                            ),
+                        ]],
+                    },
+                    has_more: false,
+                    next: None,
+                    count_snapshot: Some("server-only-snapshot".to_string()),
+                },
+            )]),
             computed_query_ids: Vec::new(),
             diagnostics: Vec::new(),
             query_diagnostics: Vec::new(),
@@ -1400,6 +1120,13 @@ mod tests {
             value["component_bindings"][0]["text_segments"],
             json!([{"kind": "variable", "variable": "total"}])
         );
+        assert_eq!(
+            value["query_results"]["total"]["exact_integer_rows"],
+            json!([["9007199254740993"]])
+        );
+        assert!(value["query_results"]["total"]
+            .get("count_snapshot")
+            .is_none());
         assert!(value.get("plan").is_none());
         assert!(value.get("metrics").is_none());
     }
