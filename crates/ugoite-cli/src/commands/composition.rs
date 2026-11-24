@@ -30,9 +30,8 @@ use ugoite_core::composition::{
 };
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, parse_variable_graph_input,
-    CanonicalComposition, CompositionDiagnosticCode,
-    CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphInputValue,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphValidatedResult,
+    CanonicalComposition, CompositionDiagnosticCode, VariableGraphInputValue, VariableGraphLiteral,
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphValidatedResult,
     MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
