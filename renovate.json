@@ -191,6 +191,22 @@
       "enabled": false
     },
     {
+      "description": "Hold non-vulnerability keyring major updates until the CLI no longer requests the removed apple-native feature",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "keyring"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Keep the manually pinned Iceberg Git source revision outside automated updates",
       "matchManagers": [
         "cargo"
