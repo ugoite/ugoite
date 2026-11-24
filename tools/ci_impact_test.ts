@@ -192,6 +192,20 @@ Deno.test("crate test-only Rust diffs keep Rust checks and skip artifacts", () =
       path,
     );
   }
+
+  const cp1Acceptance = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["crates/ugoite-cli/tests/test_sql_stateless_cli.rs"],
+  });
+  assertEquals(cp1Acceptance.candidateLanes, [
+    "artifacts",
+    "cp1-acceptance",
+    "rust-check",
+    "rust-test",
+    "web",
+  ]);
 });
 
 Deno.test("main pushes retain every lane and merge groups remain unconditional", () => {

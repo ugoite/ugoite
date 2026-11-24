@@ -210,7 +210,8 @@ export function makeImpactReport(input: {
       candidateLanes.add("artifacts");
     }
     if (categories.rust) {
-      const testOnlyRust = paths !== undefined && paths.length > 0 &&
+      const testOnlyRust = !categories.cp1Acceptance && paths !== undefined &&
+        paths.length > 0 &&
         paths.every(isCrateTestPath);
       const rustLanes = testOnlyRust
         ? ["rust-check", "rust-test"]
