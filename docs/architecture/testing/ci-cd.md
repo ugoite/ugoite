@@ -21,7 +21,7 @@ Root task composition:
   execute when called; focused frontend/docsite tasks remain useful during
   development;
 - `test`: the canonical non-E2E suite, including Rust and tooling tests, the
-  frontend coverage gate, and the normal docsite behavior/type suite;
+  normal frontend behavior suite, and the normal docsite behavior/type suite;
 - `test:rust`: the canonical Rust test interface; cargo-nextest runs unit,
   integration, binary, and library tests, followed by
   `cargo test --workspace --doc --locked` for doctests;
@@ -351,13 +351,9 @@ the PR body gate resolves the associated pull request from the temporary queue
 ref and keeps the existing Dependabot exemption, while CodeQL still analyzes the
 queued source but does not upload SARIF to the temporary ref.
 
-The root Mise graph is the repository quality contract: `ci` composes
-`fmt:check`, `lint`, `check`, and `test`; `lint` composes Rust and Deno lint
-tasks; `check` composes Rust, Deno, and repository contract checks. Hosted lane
-tasks are packing adapters only and are covered by
-`tools/coverage_gates_test.ts`, which explicitly asserts their semantic
-composition and workflow entrypoints. `mise run ci` and `mise run ci:merge`
-remain the developer-facing canonical interfaces. Frontend's unit coverage gate
+`mise run ci` and `mise run ci:merge` are the developer-facing aggregate
+interfaces. The root task and hosted workflow configuration may evolve while
+preserving the required validation outcomes. Frontend's unit coverage gate
 explicitly covers the portable Rust/WASM protocol boundary in
 `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains covered by
 behavior tests and E2E. The optional docsite coverage report includes authored
