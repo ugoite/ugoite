@@ -444,7 +444,7 @@ run = "bash scripts/measure-process-resources.sh target/cp1-profiling/xtask-buil
 [tasks.test]
 depends = ["build:wasm:debug"]
 description = "Run the authoritative non-E2E test suite"
-run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
+run = [{ tasks = ["test:rust", "test:tools", "test:older-cli-knowledge-preservation", "test:frontend", "test:docsite"] }]
 
 [tasks."test:low-memory"]
 depends = ["build:wasm:debug"]
@@ -453,6 +453,7 @@ env = { MISE_JOBS = "1", CARGO_BUILD_JOBS = "1" }
 run = [
   { task = "test:rust" },
   { task = "test:tools" },
+  { task = "test:older-cli-knowledge-preservation" },
   { task = "test:frontend" },
   { task = "test:docsite", args = ["--maxWorkers=1", "--no-file-parallelism"] },
 ]
