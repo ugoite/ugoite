@@ -9,7 +9,6 @@ components:
   - id: resource-access-editor
     type: resource-access-policy-editor
     implementation: frontend/src/components/AccessPolicyEditor.tsx
-    tests: frontend/src/components/AccessPolicyEditor.test.tsx
     inheritance:
       control: inherit-space-role
       default: enabled

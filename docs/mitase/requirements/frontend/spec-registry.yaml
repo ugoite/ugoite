@@ -19,13 +19,13 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: shared-chrome
         kind: behavior
-        statement: The shared Space chrome declaration keeps the sidebar, workspace top bar, and mobile navigation at the approved positions, dimensions, and destinations.
+        statement: The shared Space chrome declaration specifies the sidebar, workspace top bar, and mobile navigation positions, dimensions, and destinations. Runtime parity with those values remains unverified; this registry suite does not test rendered chrome.
         governed_by: [POL-006#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: ui-registry-verification
         role: verification
         facet: verification
-        responsibility: Verify the declarative UI page registry, route coverage, dashboard Recent count contract, placeholder guard, and shared Space chrome through exact frontend tests.
+        responsibility: Verify page metadata, page and shared-component IDs and types, component YAML references, page links, route coverage, placeholder handling, and implementation evidence references through exact frontend tests.
         targets:
           - id: page-metadata
             adapter: typescript
@@ -57,90 +57,6 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
-          - id: global-space-selection-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares global Space selection identity boundaries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.component-space-selection]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares global Space selection identity boundaries" } }
-          - id: entry-history-identity-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: {
-              kind: test,
-              name: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
-            }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
-                covers:
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-history
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
-                runner: {
-                  runner: frontend-vitest-file,
-                  arguments: {
-                    file: src/spec/ui-pages.test.ts,
-                    test: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
-                  },
-                }
-              - kind: verifies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
-                covers: [FEAT-FE-013#binding.frontend/target.page-space-entry-revision]
-                runner: {
-                  runner: frontend-vitest-file,
-                  arguments: {
-                    file: src/spec/ui-pages.test.ts,
-                    test: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
-                  },
-                }
-          - id: global-shell-account-entry-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares GlobalShell account entry states" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.global-shell-account-entry]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares GlobalShell account entry states" } }
-          - id: account-security-credential-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares account security identifier boundaries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.account-security-contract-reference]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares account security identifier boundaries" } }
-          - id: device-approval-consent-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares device approval consent and identifier boundaries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.component-device-approval]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares device approval consent and identifier boundaries" } }
-          - id: account-recovery-component-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares Account Self-Recovery factors and code handoff" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.component-account-recovery]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares Account Self-Recovery factors and code handoff" } }
-          - id: step-up-component-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares step-up approval and identifier boundaries" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.component-step-up]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares step-up approval and identifier boundaries" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -150,16 +66,24 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.page-registry]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates component types" } }
-          - id: composition-sql-contract-registry
+          - id: shared-component-structure
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: connects Composition route to shared SQL Workspace" }
+            selector: { kind: test, name: "REQ-FE-040: validates shared component structure and references" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers:
+                  - FEAT-FE-013#binding.frontend/target.component-invitation-join
+                  - FEAT-FE-013#binding.frontend/target.component-device-approval
+                  - FEAT-FE-013#binding.frontend/target.component-account-recovery
+                  - FEAT-FE-013#binding.frontend/target.component-step-up
+                  - FEAT-FE-013#binding.frontend/target.component-login
+                  - FEAT-FE-013#binding.frontend/target.global-shell-account-entry
+                  - FEAT-FE-013#binding.frontend/target.component-space-selection
+                  - FEAT-FE-013#binding.frontend/target.component-space-settings
                   - FEAT-FE-013#binding.frontend/target.component-shared-sql-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: connects Composition route to shared SQL Workspace" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates shared component structure and references" } }
           - id: page-links
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -172,14 +96,14 @@ requirements:
           - id: settings-contract
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" }
+            selector: { kind: test, name: "REQ-FE-040: validates Space Settings implementation references" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers:
                   - FEAT-FE-013#binding.frontend/target.page-space-settings
                   - FEAT-FE-013#binding.frontend/target.component-space-settings
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates Space Settings implementation references" } }
           - id: invitation-join-contract
             adapter: typescript
             path: frontend/src/routes/spaces/join.test.tsx
@@ -189,15 +113,6 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.component-invitation-join]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-FE-040: matches the invitation Join declaration to the rendered route" } }
-          - id: login-surface-contract
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares the Login task and authentication states" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.registry-shape
-                covers: [FEAT-FE-013#binding.frontend/target.component-login]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the Login task and authentication states" } }
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -274,12 +189,3 @@ requirements:
                 criterion: REQ-FE-040#criterion.route-coverage
                 covers: [FEAT-FE-013#binding.frontend/target.page-registry]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: implemented page specs reject placeholder route content" } }
-          - id: shared-space-chrome
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: validates shared space chrome" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.shared-chrome
-                covers: [FEAT-FE-013#binding.frontend/target.space-chrome]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates shared space chrome" } }

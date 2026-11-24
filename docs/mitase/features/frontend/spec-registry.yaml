@@ -5,13 +5,13 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-013
     title: UI specification registry
-    summary: Connect the declarative UI page registry, shared Space chrome, settings, and auth-surface contracts to exact frontend specification evidence.
+    summary: Maintain the declarative frontend page and shared-component registry for Space chrome, settings, and authentication surfaces.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep declarative UI page, shared Space chrome, and auth-surface artifacts connected to the frontend registry tests that validate their structure and route coverage.
+        responsibility: Specify page metadata and supported shared-component IDs, types, and references for Space chrome, settings, and authentication surfaces. This binding records declarations; it does not assert that rendered UI behavior matches them.
         targets:
           - id: page-registry
             adapter: declared
@@ -53,13 +53,6 @@ features:
           - id: component-login
             adapter: declared
             path: docs/spec/ui/components/login.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.registry-shape
-          - id: account-security-contract-reference
-            adapter: declared
-            path: docs/spec/ui/index.md
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -138,8 +131,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
           - id: page-space-entry-new
             adapter: declared
             path: docs/spec/ui/pages/space-entry-new.yaml
@@ -158,10 +149,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
           - id: page-space-form-grid
             adapter: declared
             path: docs/spec/ui/pages/space-form-grid.yaml
@@ -252,13 +239,6 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-          - id: space-chrome
-            adapter: declared
-            path: docs/spec/ui/components/space-shell.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.shared-chrome
           - id: global-shell-account-entry
             adapter: declared
             path: docs/spec/ui/components/global-shell.yaml

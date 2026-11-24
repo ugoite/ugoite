@@ -151,7 +151,7 @@ features:
             path: frontend/src/spec/ui-pages.test.ts
             selector: {
               kind: test,
-              name: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+              name: "REQ-UX-RECOVERY-001: validates the owner recovery index reference",
             }
             claims:
               - kind: verifies
@@ -163,30 +163,6 @@ features:
                   runner: frontend-vitest-file,
                   arguments: {
                     file: src/spec/ui-pages.test.ts,
-                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
-                  },
-                }
-              - kind: verifies
-                criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
-                covers: [
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
-                ]
-                runner: {
-                  runner: frontend-vitest-file,
-                  arguments: {
-                    file: src/spec/ui-pages.test.ts,
-                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
-                  },
-                }
-              - kind: verifies
-                criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
-                covers: [
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
-                ]
-                runner: {
-                  runner: frontend-vitest-file,
-                  arguments: {
-                    file: src/spec/ui-pages.test.ts,
-                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+                    test: "REQ-UX-RECOVERY-001: validates the owner recovery index reference",
                   },
                 }

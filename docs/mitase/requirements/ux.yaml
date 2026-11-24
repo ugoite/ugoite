@@ -753,11 +753,3 @@ requirements:
             claims: [{ kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior,
               covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination],
               runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" } } }]
-          - id: sql-results-pagination-spec
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-UX-PAGINATION-001: connects SQL results pagination to shared chevrons" }
-            claims:
-              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation,
-                  covers: [FEAT-UX-011#binding.frontend/target.sql-results-pagination-spec],
-                  runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-UX-PAGINATION-001: connects SQL results pagination to shared chevrons" } } }

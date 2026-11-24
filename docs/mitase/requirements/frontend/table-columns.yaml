@@ -30,27 +30,17 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-075#criterion.form-table-columns
-                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                covers:
+                  - FEAT-FE-005#binding.frontend/target.form-table
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: keeps Form fields as the default columns and lets users add timestamps } }
               - kind: verifies
                 criterion: REQ-FE-075#criterion.shared-column-picker
                 covers:
                   - FEAT-FE-015#binding.frontend/target.shared-column-picker
                   - FEAT-FE-005#binding.frontend/target.form-table
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: keeps Form fields as the default columns and lets users add timestamps } }
-          - id: form-table-specification
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-075: declares FormTable's optional timestamps and column picker" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-075#criterion.form-table-columns
-                covers: [FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-075: declares FormTable's optional timestamps and column picker" } }
-              - kind: verifies
-                criterion: REQ-FE-075#criterion.shared-column-picker
-                covers: [FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-075: declares FormTable's optional timestamps and column picker" } }
           - id: column-picker-focus-and-identifiers
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
@@ -58,11 +48,15 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-075#criterion.shared-column-picker
-                covers: [FEAT-FE-015#binding.frontend/target.shared-column-picker]
+                covers:
+                  - FEAT-FE-015#binding.frontend/target.shared-column-picker
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }
               - kind: verifies
                 criterion: REQ-FE-075#criterion.form-table-columns
-                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                covers:
+                  - FEAT-FE-005#binding.frontend/target.form-table
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }
           - id: form-field-labels-in-query-controls
             adapter: typescript
