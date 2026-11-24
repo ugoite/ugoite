@@ -5,9 +5,12 @@ sidebar:
   order: 4
 ---
 
-This page keeps four time horizons apart. Current documentation describes what
-ships. Planned pages carry a Planned badge. North Star describes direction.
-Not-promised work is named so it cannot be mistaken for a roadmap commitment.
+This page keeps four time horizons apart. Current documentation describes the
+implementation represented by this documentation build and may include
+unreleased changes. Planned pages carry a Planned badge. North Star describes
+direction. Not-promised work is named so it cannot be mistaken for a roadmap
+commitment. The [release-scope page](../architecture/release/release-scope.md)
+defines the Current and Stable documentation boundary.
 
 ## Current
 

@@ -7,7 +7,11 @@ description: The portable typed graph and execution boundaries for Composition.
 Text-first design. Current requirements and verification bindings are tracked
 in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
 REST behavior is implemented by `ugoite-server` and `/openapi.json` defines
-its contract.
+its contract. This is a current-main implementation description; Composition
+was not included in the published v0.2.1 release. The
+[release-scope page](../release/release-scope.md) defines the Current and Stable
+documentation boundary, and the [v0.2.1 release note](../../version/releases/v0.2.1.md)
+remains authoritative for that stable release.
 
 ## Canonical document
 
@@ -132,10 +136,10 @@ responsive behavior follow the UI specifications and policies.
 The v0.2.1 released CLI, REST/OpenAPI, and release notes do not define a
 Composition surface. The replaced shape was saveable on prerelease `main`; its
 records remain raw Knowledge but are not executable or restorable as the current
-Composition. v0.2.2 closes this unreleased-format change as a compatible patch
-without migration or dual read. Raw inspect, exact reads, export, and history
-remain available. Restore succeeds for current-shape revisions and rejects the
-replaced shape.
+Composition. The current-main implementation targets v0.2.2 as a compatible
+patch without migration or dual read; v0.2.2 is not yet a published release.
+Raw inspect, exact reads, export, and history remain available. Restore succeeds
+for current-shape revisions and rejects the replaced shape.
 
 Published Saved SQL API and CLI operations, the `SQL` system Form, Space/Entry/
 Form 0.1 semantics, EntryBrowser/FormTable controls, CI lanes, and merge queue
