@@ -451,7 +451,7 @@ requirements:
       - id: docsite-coverage-verification
         role: verification
         facet: docsite-test
-        responsibility: Verify the docsite suite's root and hosted wiring plus the optional coverage configuration, including the absence of hard thresholds, through one focused test.
+        responsibility: Verify only the optional docsite coverage configuration and the absence of hard thresholds. REQ-OPS-007 owns normal docsite suite wiring.
         targets:
           - id: docsite-coverage-test
             adapter: typescript
