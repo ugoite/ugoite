@@ -41,6 +41,7 @@ typetag = "0.2"
 unicode-normalization = "0.1"
 ugoite-domain = { path = "../ugoite-domain" }
 ugoite-core = { path = "../ugoite-core" }
+ugoite-api-client = { path = "../ugoite-api-client" }
 ugoite-storage = { path = "../ugoite-storage" }
 url = "2.5.0"
 uuid = { version = "1.23.2", features = ["v4", "v5", "v7", "serde"] }

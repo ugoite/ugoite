@@ -6718,6 +6718,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "typetag",
+ "ugoite-api-client",
  "ugoite-core",
  "ugoite-domain",
  "ugoite-iceberg",

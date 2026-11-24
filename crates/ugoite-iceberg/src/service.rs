@@ -163,12 +163,14 @@ use ugoite_storage::{
     SpaceCatalogStore, StorageBackend,
 };
 
+mod composition_api;
 mod composition_query_evaluation;
 mod composition_resolver;
 #[path = "service/composition_scalar_query.rs"]
 mod composition_scalar_query;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
+pub use composition_api::composition_evaluation_response;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub use composition_query_evaluation::{
