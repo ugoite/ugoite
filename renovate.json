@@ -149,6 +149,20 @@
       "allowedVersions": "!/^(?:2\\.0\\.[0-6]|2\\.1\\.0|2\\.2\\.[0-3])$/"
     },
     {
+      "description": "Hold observed SolidJS runtime and router major candidates until the frontend supports their changed exports and reactive behavior",
+      "matchManagers": [
+        "deno"
+      ],
+      "matchPackageNames": [
+        "solid-js",
+        "@solidjs/router"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Preserve Dependabot policy: TypeScript major updates remain blocked until frontend compiler API support is proven",
       "matchPackageNames": [
         "typescript"
