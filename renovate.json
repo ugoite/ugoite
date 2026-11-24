@@ -191,6 +191,19 @@
       "enabled": false
     },
     {
+      "description": "Hold keyring major updates until the CLI no longer requests the removed apple-native feature",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "keyring"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Keep the manually pinned Iceberg Git source revision outside automated updates",
       "matchManagers": [
         "cargo"
