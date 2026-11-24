@@ -143,15 +143,21 @@ impl UgoiteService {
                 "Composition query dependencies are invalid",
             )
         })?;
+        let variable_indexes = request
+            .document
+            .spec
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.id.clone(), index))
+            .collect::<BTreeMap<_, _>>();
         for variable_id in query_order {
-            let variables = request.document.spec.variables.clone();
-            let Some(node_index) = variables.iter().position(|node| node.id == variable_id) else {
+            let Some(node_index) = variable_indexes.get(&variable_id).copied() else {
                 continue;
             };
-            let source_for_planning = variables[node_index].clone();
-            let node = &mut request.document.spec.variables[node_index];
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
-                &mut node.kind
+            let source_for_planning = request.document.spec.variables[node_index].clone();
+            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
+                &source_for_planning.kind
             else {
                 continue;
             };
@@ -162,7 +168,7 @@ impl UgoiteService {
             let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
                 &query.definition;
             let bindings = composition_inline_form_bindings_for_save(
-                &node.id,
+                &source_for_planning.id,
                 sql,
                 &query.form_bindings,
                 previous_document.as_ref(),
@@ -173,7 +179,7 @@ impl UgoiteService {
                     space_id,
                     &source_for_planning,
                     Some(&bindings),
-                    &variables,
+                    &request.document.spec.variables,
                     None,
                     None,
                     None,
@@ -185,6 +191,12 @@ impl UgoiteService {
                         "Composition SQL query cannot be resolved",
                     )
                 })?;
+            let node = &mut request.document.spec.variables[node_index];
+            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
+                &mut node.kind
+            else {
+                continue;
+            };
             super::composition_resolver::reconcile_query_returns_with_schema(
                 returns,
                 &metadata.result_columns,
