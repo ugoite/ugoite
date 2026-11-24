@@ -19,13 +19,10 @@ use ugoite_api_client::{
     CompositionEvaluationTarget, CompositionFormBinding,
     CompositionGraphQueryResult as ApiCompositionGraphQueryResult, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionPublicationReceipt, CompositionQuery,
-    CompositionQueryResultType, CompositionRawRevision, CompositionRestoreRequest,
-    CompositionRestoreResponse, CompositionResultColumn, CompositionRevisionMetadata,
+    CompositionListPage, CompositionPublicationReceipt, CompositionQuery, CompositionRawRevision,
+    CompositionRestoreRequest, CompositionRestoreResponse, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
-    CompositionSaveResponse, CompositionScalarCardinality, CompositionScalarDescriptor,
-    CompositionScalarType, CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
-    CompositionVariableConsumers,
+    CompositionSaveResponse, CompositionScalarCardinality, CompositionVariableConsumers,
 };
 use ugoite_core::composition::{
     CompositionScalarCardinality as CoreCompositionScalarCardinality, ResolvedComponentKind,
@@ -35,8 +32,7 @@ use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, parse_variable_graph_input,
     CanonicalComposition, CompositionDiagnosticCode,
     CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphInputValue,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphValidatedResult,
     MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
@@ -901,12 +897,8 @@ fn local_composition_evaluation_response(
                             column_index: detail.column_index,
                             column_name: detail.column_name,
                             expected_column_name: detail.expected_column_name,
-                            expected_value_type: detail
-                                .expected_value_type
-                                .map(composition_scalar_descriptor),
-                            observed_value_type: detail
-                                .observed_value_type
-                                .map(composition_scalar_descriptor),
+                            expected_value_type: detail.expected_value_type,
+                            observed_value_type: detail.observed_value_type,
                         }
                     }),
                 }
@@ -931,57 +923,6 @@ fn local_composition_evaluation_response(
         diagnostics,
         query_diagnostics,
     })
-}
-
-fn composition_scalar_descriptor(
-    descriptor: VariableGraphScalarDescriptor,
-) -> CompositionScalarDescriptor {
-    CompositionScalarDescriptor {
-        scalar_type: match descriptor.scalar_type {
-            VariableGraphScalarType::String => CompositionScalarType::String,
-            VariableGraphScalarType::Boolean => CompositionScalarType::Boolean,
-            VariableGraphScalarType::Integer => CompositionScalarType::Integer,
-            VariableGraphScalarType::Float => CompositionScalarType::Float,
-            VariableGraphScalarType::Decimal => CompositionScalarType::Decimal,
-            VariableGraphScalarType::Date => CompositionScalarType::Date,
-            VariableGraphScalarType::Timestamp => CompositionScalarType::Timestamp,
-            VariableGraphScalarType::Json => CompositionScalarType::Json,
-        },
-        nullable: descriptor.nullable,
-    }
-}
-
-fn composition_query_result_type(returns: VariableGraphResultType) -> CompositionQueryResultType {
-    match returns {
-        VariableGraphResultType::Scalar { value_type } => CompositionQueryResultType::Scalar {
-            value_type: composition_scalar_descriptor(value_type),
-        },
-        VariableGraphResultType::Table { columns } => CompositionQueryResultType::Table {
-            columns: columns.into_iter().map(composition_result_column).collect(),
-        },
-    }
-}
-
-fn composition_result_column(
-    column: ugoite_domain::composition::VariableGraphColumn,
-) -> CompositionResultColumn {
-    CompositionResultColumn {
-        name: column.name,
-        value_type: composition_scalar_descriptor(column.value_type),
-    }
-}
-
-fn composition_text_template_part(
-    part: DomainCompositionTextTemplatePart,
-) -> ApiCompositionTextTemplatePart {
-    match part {
-        DomainCompositionTextTemplatePart::Literal { text } => {
-            ApiCompositionTextTemplatePart::Literal { text }
-        }
-        DomainCompositionTextTemplatePart::Variable { variable } => {
-            ApiCompositionTextTemplatePart::Variable { variable }
-        }
-    }
 }
 
 fn composition_dependency_index(
@@ -1026,11 +967,7 @@ fn composition_queries_and_bindings(
                     form_id: binding.form_id.to_string(),
                 })
                 .collect();
-            let result_columns = query
-                .result_columns
-                .into_iter()
-                .map(composition_result_column)
-                .collect();
+            let result_columns = query.result_columns;
             let scalar_cardinality =
                 query
                     .scalar_cardinality
@@ -1045,7 +982,7 @@ fn composition_queries_and_bindings(
                 .map(|argument| CompositionDeferredArgument {
                     argument_name: argument.argument_name,
                     variable_id: argument.variable_id,
-                    value_type: composition_scalar_descriptor(argument.value_type),
+                    value_type: argument.value_type,
                 })
                 .collect();
             Ok(CompositionQuery {
@@ -1053,7 +990,7 @@ fn composition_queries_and_bindings(
                 request,
                 portable_sql: query.portable_sql,
                 deferred_arguments,
-                returns: composition_query_result_type(query.returns),
+                returns: query.returns,
                 result_columns,
                 form_bindings,
                 schema_fingerprint: query.schema_fingerprint,
@@ -1072,11 +1009,7 @@ fn composition_queries_and_bindings(
                 ResolvedComponentKind::Text => CompositionComponentKind::Text,
             },
             variable_id: binding.variable_id,
-            text_segments: binding
-                .text_segments
-                .into_iter()
-                .map(composition_text_template_part)
-                .collect(),
+            text_segments: binding.text_segments,
         })
         .collect();
     Ok((queries, component_bindings))

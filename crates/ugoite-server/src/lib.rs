@@ -66,13 +66,12 @@ use ugoite_api_client::{
     CompositionFormBinding, CompositionHistoryPage, CompositionLintError, CompositionLintResponse,
     CompositionLintValue, CompositionListItem, CompositionListPage, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
-    CompositionQuery, CompositionQueryResultType, CompositionRawRevision,
+    CompositionQuery, CompositionRawRevision,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionRevisionMetadata, CompositionRevisionReference,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
-    CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
-    CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
-    CompositionVariableConsumers as ApiCompositionVariableConsumers, CompositionVariableDefinition,
+    CompositionScalarCardinality, CompositionVariableConsumers as ApiCompositionVariableConsumers,
+    CompositionVariableDefinition,
 };
 use ugoite_core::composition::{
     CompositionDependencyIndex as CoreCompositionDependencyIndex,
@@ -82,9 +81,7 @@ use ugoite_core::composition::{
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
-    CompositionTextTemplatePart as DomainCompositionTextTemplatePart, VariableGraphLiteral,
-    VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType, VariableGraphScalarType,
-    VariableGraphValidatedResult,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphValidatedResult,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11169,66 +11166,10 @@ fn api_composition_variable_definition(
     };
     Some(CompositionVariableDefinition {
         id: variable.id.clone(),
-        value_type: api_composition_scalar_descriptor(*value_type),
+        value_type: *value_type,
         required: *required,
         default: default.as_ref().map(VariableGraphLiteral::to_json_value),
     })
-}
-
-fn api_composition_scalar_descriptor(
-    descriptor: ugoite_domain::composition::VariableGraphScalarDescriptor,
-) -> CompositionScalarDescriptor {
-    CompositionScalarDescriptor {
-        scalar_type: match descriptor.scalar_type {
-            VariableGraphScalarType::String => CompositionScalarType::String,
-            VariableGraphScalarType::Boolean => CompositionScalarType::Boolean,
-            VariableGraphScalarType::Integer => CompositionScalarType::Integer,
-            VariableGraphScalarType::Float => CompositionScalarType::Float,
-            VariableGraphScalarType::Decimal => CompositionScalarType::Decimal,
-            VariableGraphScalarType::Date => CompositionScalarType::Date,
-            VariableGraphScalarType::Timestamp => CompositionScalarType::Timestamp,
-            VariableGraphScalarType::Json => CompositionScalarType::Json,
-        },
-        nullable: descriptor.nullable,
-    }
-}
-
-fn api_composition_query_result_type(
-    returns: VariableGraphResultType,
-) -> CompositionQueryResultType {
-    match returns {
-        VariableGraphResultType::Scalar { value_type } => CompositionQueryResultType::Scalar {
-            value_type: api_composition_scalar_descriptor(value_type),
-        },
-        VariableGraphResultType::Table { columns } => CompositionQueryResultType::Table {
-            columns: columns
-                .into_iter()
-                .map(api_composition_variable_column)
-                .collect(),
-        },
-    }
-}
-
-fn api_composition_variable_column(
-    column: ugoite_domain::composition::VariableGraphColumn,
-) -> CompositionResultColumn {
-    CompositionResultColumn {
-        name: column.name,
-        value_type: api_composition_scalar_descriptor(column.value_type),
-    }
-}
-
-fn api_composition_text_template_part(
-    part: DomainCompositionTextTemplatePart,
-) -> ApiCompositionTextTemplatePart {
-    match part {
-        DomainCompositionTextTemplatePart::Literal { text } => {
-            ApiCompositionTextTemplatePart::Literal { text }
-        }
-        DomainCompositionTextTemplatePart::Variable { variable } => {
-            ApiCompositionTextTemplatePart::Variable { variable }
-        }
-    }
 }
 
 fn api_composition_evaluation_response(
@@ -11341,12 +11282,8 @@ fn api_composition_evaluation_response(
                             column_index: detail.column_index,
                             column_name: detail.column_name,
                             expected_column_name: detail.expected_column_name,
-                            expected_value_type: detail
-                                .expected_value_type
-                                .map(api_composition_scalar_descriptor),
-                            observed_value_type: detail
-                                .observed_value_type
-                                .map(api_composition_scalar_descriptor),
+                            expected_value_type: detail.expected_value_type,
+                            observed_value_type: detail.observed_value_type,
                         }
                     }),
                 }
@@ -11468,11 +11405,7 @@ fn api_composition_queries_and_bindings(
                     form_id: binding.form_id.to_string(),
                 })
                 .collect();
-            let result_columns = query
-                .result_columns
-                .into_iter()
-                .map(api_composition_variable_column)
-                .collect();
+            let result_columns = query.result_columns;
             let scalar_cardinality =
                 query
                     .scalar_cardinality
@@ -11487,7 +11420,7 @@ fn api_composition_queries_and_bindings(
                 .map(|argument| CompositionDeferredArgument {
                     argument_name: argument.argument_name,
                     variable_id: argument.variable_id,
-                    value_type: api_composition_scalar_descriptor(argument.value_type),
+                    value_type: argument.value_type,
                 })
                 .collect();
             Ok(CompositionQuery {
@@ -11495,7 +11428,7 @@ fn api_composition_queries_and_bindings(
                 request,
                 portable_sql: query.portable_sql,
                 deferred_arguments,
-                returns: api_composition_query_result_type(query.returns),
+                returns: query.returns,
                 result_columns,
                 form_bindings,
                 schema_fingerprint: query.schema_fingerprint,
@@ -11514,11 +11447,7 @@ fn api_composition_queries_and_bindings(
                 ResolvedComponentKind::Text => CompositionComponentKind::Text,
             },
             variable_id: binding.variable_id,
-            text_segments: binding
-                .text_segments
-                .into_iter()
-                .map(api_composition_text_template_part)
-                .collect(),
+            text_segments: binding.text_segments,
         })
         .collect();
     Ok((queries, component_bindings))

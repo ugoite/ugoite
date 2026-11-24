@@ -2536,6 +2536,26 @@ mod tests {
             definition_wire["value_type"],
             json!({"scalar_type":"date","nullable":false})
         );
+        let result_type = CompositionQueryResultType::Table {
+            columns: vec![CompositionResultColumn {
+                name: "occurred_on".to_owned(),
+                value_type: CompositionScalarDescriptor {
+                    scalar_type: CompositionScalarType::Date,
+                    nullable: true,
+                },
+            }],
+        };
+        assert_eq!(
+            serde_json::to_value(result_type).expect("query result type DTO"),
+            json!({"kind":"table","columns":[{"name":"occurred_on","value_type":{"scalar_type":"date","nullable":true}}]})
+        );
+        assert_eq!(
+            serde_json::to_value(CompositionTextTemplatePart::Variable {
+                variable: "month".to_owned(),
+            })
+            .expect("template part DTO"),
+            json!({"kind":"variable","variable":"month"})
+        );
         assert!(definition_wire.get("label").is_none());
         assert!(
             serde_json::from_value::<CompositionVariableDefinition>(json!({

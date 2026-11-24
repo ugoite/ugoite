@@ -7,6 +7,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
+// These API names retain the portable wire vocabulary while sharing the
+// domain-owned semantic types and their serialization shape.
+pub use ugoite_domain::composition::{
+    CompositionTextTemplatePart, VariableGraphColumn as CompositionResultColumn,
+    VariableGraphResultType as CompositionQueryResultType,
+    VariableGraphScalarDescriptor as CompositionScalarDescriptor,
+    VariableGraphScalarType as CompositionScalarType,
+};
+
 /// Stable semantic diagnostic identifiers shared across Composition surfaces.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -492,26 +501,6 @@ pub struct CompositionVariableDefinition {
     pub default: Option<Value>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionScalarType {
-    String,
-    Boolean,
-    Integer,
-    Float,
-    Decimal,
-    Date,
-    Timestamp,
-    Json,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionScalarDescriptor {
-    pub scalar_type: CompositionScalarType,
-    pub nullable: bool,
-}
-
 /// Variable and component consumers derived by Core independently of layout
 /// order. The public variable input vocabulary remains unchanged in this
 /// adapter revision; the index is an additive plan capability.
@@ -550,13 +539,6 @@ pub enum CompositionComponentKind {
 }
 
 /// Rust-parsed plain text template segments used to render Text components.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionTextTemplatePart {
-    Literal { text: String },
-    Variable { variable: String },
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionComponentBinding {
@@ -608,17 +590,6 @@ pub struct CompositionDeferredArgument {
     pub value_type: CompositionScalarDescriptor,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionQueryResultType {
-    Scalar {
-        value_type: CompositionScalarDescriptor,
-    },
-    Table {
-        columns: Vec<CompositionResultColumn>,
-    },
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompositionScalarCardinality {
@@ -630,13 +601,6 @@ pub enum CompositionScalarCardinality {
 pub struct CompositionFormBinding {
     pub relation: String,
     pub form_id: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionResultColumn {
-    pub name: String,
-    pub value_type: CompositionScalarDescriptor,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

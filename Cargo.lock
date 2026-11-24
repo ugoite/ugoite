@@ -6614,6 +6614,7 @@ version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
+ "ugoite-domain",
  "url",
 ]
 
