@@ -49,12 +49,12 @@ Requirement IDs embedded in test names/source provide traceability. A
 requirement without a current test reference is labeled `untraced`; deleted
 paths are not retained as evidence.
 
-The focused `tools/coverage_gates_test.ts` contract tests keep the package
-coverage tasks, canonical root quality graph, Hosted CI lane wiring, required
-status aggregator, single-writer dependency/Deno caches, and
-`REQ-OPS-021`/`REQ-OPS-024` traceability aligned. Hosted lanes may repack
-semantic tasks for parallel runners, but they must not implement repository
-validation independently of Mise.
+Focused checks cover required-result gate behavior, changed-path impact
+selection, the frontend protocol coverage contract, and artifact provenance.
+The hosted workflow owns lane execution; these tests do not freeze its job
+layout, cache arrangement, or task ordering. Hosted lanes may package task
+execution for their runners, but repository validation remains owned by the
+root Mise tasks.
 
 Use focused crate/package tests while developing, then run `mise run ci` or the
 merge/release gates as appropriate.

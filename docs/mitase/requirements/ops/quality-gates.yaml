@@ -49,23 +49,23 @@ requirements:
     criteria:
       - id: repository-quality-gates
         kind: quality
-        statement: The root task graph and hosted CI lanes compose the repository formatting, lint, check, test, artifact, and required-result gates that are currently configured.
+        statement: Required CI validation for pull requests, merge-queue entries, and main pushes runs the repository's applicable formatting, lint, check, test, artifact, and required-result gates; uncertain or cross-cutting changes receive full validation.
         governed_by: [POL-008#rule.governance]
     bindings:
       - id: repository-quality-verification
         role: verification
         facet: repository-test
-        responsibility: Verify the root task and hosted lane composition through the exact repository coverage test. This checks the configured contract and does not claim that the tools execute successfully in every external environment.
+        responsibility: Verify the root quality entrypoints retain the main validation suites and hosted CI invokes their lanes. Runtime success remains owned by the required CI gate.
         targets:
-          - id: quality-gate-composition-test
+          - id: quality-entrypoint-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: file }
+            selector: { kind: test, name: "root quality entrypoints retain required validation suites" }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-005#criterion.repository-quality-gates
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "root quality entrypoints retain required validation suites" } }
 
   - id: REQ-OPS-006
     title: Rust Quality Gate Parity
@@ -75,7 +75,7 @@ requirements:
     criteria:
       - id: root-rust-gate
         kind: quality
-        statement: The root task graph and hosted Rust lanes retain the configured formatting, Clippy, check, test, and pinned-toolchain quality gate composition.
+        statement: Local and required hosted validation use the pinned Rust toolchain to run the applicable formatting, Clippy, check, and test suites; merge-queue entries and main pushes run the complete Rust validation.
         governed_by: [POL-002#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
       - id: cli-surface
         kind: behavior
@@ -84,18 +84,18 @@ requirements:
     bindings:
       - id: rust-quality-verification
         role: verification
-        facet: rust-and-task-tests
-        responsibility: Verify the configured root Rust gate with the repository composition test and verify the selected CLI configuration/help behavior with exact integration tests. These targets cover the selected surface only; complete Rust quality-gate execution remains owned by the root workflow.
+        facet: repository-test
+        responsibility: Verify the root Rust quality entrypoints retain workspace checks and focused CLI configuration/help behavior. Runtime success remains owned by Rust tests and the required CI gate.
         targets:
-          - id: rust-gate-composition-test
+          - id: rust-gate-entrypoint-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: file }
+            selector: { kind: test, name: "Rust quality gate retains workspace checks and tests" }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-006#criterion.root-rust-gate
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "Rust quality gate retains workspace checks and tests" } }
           - id: config-precedence-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
@@ -186,23 +186,23 @@ requirements:
     criteria:
       - id: docsite-gate
         kind: quality
-        statement: The root task graph and hosted web lane include the configured docsite type, build, and behavior test gates.
+        statement: The root quality checks and required hosted web validation execute the docsite type, build, and behavior tests.
         governed_by: [POL-006#rule.governance, POL-008#rule.governance]
     bindings:
-      - id: docsite-quality-verification
+      - id: docsite-gate-verification
         role: verification
         facet: repository-test
-        responsibility: Verify the configured docsite lane as part of the shared root task and hosted lane composition test. This records the gate contract without claiming a successful build in every environment.
+        responsibility: Verify that normal docsite behavior tests remain in the root and hosted web suites.
         targets:
-          - id: docsite-gate-composition-test
+          - id: docsite-gate-entrypoint-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: file }
+            selector: { kind: test, name: "docsite suite remains in root and hosted web validation" }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-007#criterion.docsite-gate
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "docsite suite remains in root and hosted web validation" } }
 
   - id: REQ-OPS-008
     title: PR Template Validation Gates
@@ -349,17 +349,17 @@ requirements:
       - id: base-ref-edit-verification
         role: verification
         facet: repository-test
-        responsibility: Verify that base-ref edits schedule the required workflows and metadata-only edits keep successful aggregate checks without running content-validation lanes. These source tests inspect event guards and aggregate behavior; hosted CI remains responsible for executing the workflows.
+        responsibility: Check that pull request base-ref edits retain validation scheduling while metadata-only changes remain isolated from content validation. `ci_gate_check_test.ts` and `ci_impact_test.ts` separately exercise the result gate and lane selection behavior; this focused source check covers workflow event routing.
         targets:
           - id: workflow-event-contract-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: test, name: "required CI workflows cover base-ref edits without cancelling content validation" }
+            selector: { kind: test, name: "base-ref edits remain in required validation workflows" }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-013#criterion.base-ref-edit-required-checks
                 covers: [FEAT-OPS-001#binding.automation/target.ci-workflow, FEAT-OPS-001#binding.automation/target.codeql-workflow]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "required CI workflows cover base-ref edits without cancelling content validation" } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "base-ref edits remain in required validation workflows" } }
 
   - id: REQ-OPS-020
     title: Portable Rust WASM Gates
@@ -369,23 +369,23 @@ requirements:
     criteria:
       - id: portable-wasm-gates
         kind: quality
-        statement: The root task graph includes locked wasm32-unknown-unknown checks for the portable Rust crates and hosted CI exercises that root gate composition.
+        statement: Root repository validation compiles ugoite-domain, ugoite-api-client, and ugoite-wasm for the locked wasm32-unknown-unknown target; the hosted Rust check executes that validation.
         governed_by: [POL-002#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
     bindings:
       - id: portable-wasm-gate-verification
         role: verification
         facet: repository-test
-        responsibility: Verify the exact root and hosted task composition that includes the portable WASM checks. The test records the configured gate; it does not move compilation or CI execution into Mitase.
+        responsibility: Verify that the root Rust quality entrypoint retains the workspace check and hosted CI invokes the Rust check lane. Compilation success is owned by that gate.
         targets:
-          - id: wasm-gate-composition-test
+          - id: wasm-gate-entrypoint-test
             adapter: typescript
             path: tools/coverage_gates_test.ts
-            selector: { kind: test, name: 'CI aggregate tasks own test coverage and lane scheduling' }
+            selector: { kind: test, name: "portable WASM crates remain in the Rust check gate" }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-020#criterion.portable-wasm-gates
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise, FEAT-OPS-001#binding.automation/target.ci-workflow]
-                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: CI aggregate tasks own test coverage and lane scheduling } }
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "portable WASM crates remain in the Rust check gate" } }
 
   - id: REQ-OPS-021
     title: Frontend Coverage Hard Gate
@@ -451,7 +451,7 @@ requirements:
       - id: docsite-coverage-verification
         role: verification
         facet: docsite-test
-        responsibility: Verify the docsite coverage configuration and root-task contract, including the absence of hard coverage thresholds, through the dedicated coverage test.
+        responsibility: Verify the docsite suite's root and hosted wiring plus the optional coverage configuration, including the absence of hard thresholds, through one focused test.
         targets:
           - id: docsite-coverage-test
             adapter: typescript
