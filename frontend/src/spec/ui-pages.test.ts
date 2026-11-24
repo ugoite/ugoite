@@ -402,13 +402,6 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
     expect(uiIndex).toContain("`components/space-access-recovery.yaml`");
-    const routeInventory = readFileSync(
-      path.join(repoRoot, "docs/spec/ui/ux-route-inventory.md"),
-      "utf8",
-    );
-    expect(routeInventory).toContain(
-      "Owner-approved Space recovery (see `components/space-access-recovery.yaml`)",
-    );
   });
 
   it("REQ-FE-040: declares device approval consent and identifier boundaries", () => {

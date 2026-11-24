@@ -5,13 +5,13 @@ category: Interaction structure, list, localization, responsive, and restore bas
 features:
   - id: FEAT-UX-001
     title: Navigation structure baseline
-    summary: Record the shipped shell, back-chain, context, and route-inventory surfaces satisfying the navigation criteria without changing UI behavior.
+    summary: Record the shipped shell, back-chain, and context behavior satisfying the navigation criteria without changing UI behavior.
     status: planned
     bindings:
       - id: navigation-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the navigation baseline connected to the shipped shells and the route inventory record.
+        responsibility: Keep the navigation baseline connected to the shipped shells.
         targets:
           - id: global-shell-surface
             adapter: typescript
@@ -47,17 +47,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-NAV-001#criterion.single-back-control
-              - kind: satisfies
-                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
-              - kind: satisfies
-                criterion: REQ-UX-NAV-001#criterion.single-shell-ownership
   - id: FEAT-UX-002
     title: Entry workspace baseline
     summary: Record the shared Entry workspace and list surfaces, including the Entry task identity, ordinary Form-defined fields, decoration rules, async states, and form-derived guidance.
@@ -66,7 +55,7 @@ features:
       - id: entry-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the current Entry detail and list surfaces connected to the route inventory, with Form-defined values remaining ordinary fields rather than Entry identities.
+        responsibility: Keep the current Entry detail and list surfaces connected, with Form-defined values remaining ordinary fields rather than Entry identities.
         targets:
           - id: entry-detail-surface
             adapter: typescript
@@ -86,17 +75,6 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
               - kind: satisfies
                 criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
   - id: FEAT-UX-003
     title: List interaction baseline
     summary: Record that Space, Entry, Asset, Browser Konase, account Security, approval, and audit surfaces keep opaque identifiers out of primary labels; the Passkeys and Sessions lists omit their IDs, while Audit Log event identifiers remain available only in collapsed details under the shared Audit Log Viewer contract.
@@ -184,17 +162,6 @@ features:
             path: frontend/src/components/ActionIconBar.tsx
             selector: { kind: file }
             claims:
-              - kind: satisfies
-                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-LIST-001#criterion.full-row-activation
-              - kind: satisfies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
               - kind: satisfies
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
       - id: dashboard-entry-identifier-verification
@@ -288,18 +255,11 @@ features:
       - id: locale-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the localization baseline connected to the shipped locale dictionary plus the route inventory record.
+        responsibility: Keep the localization baseline connected to the shipped locale dictionary.
         targets:
           - id: locale-dictionary
             adapter: typescript
             path: frontend/src/lib/i18n.ts
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-I18N-001#criterion.dictionary-copy
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -312,7 +272,7 @@ features:
       - id: responsive-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the responsive baseline connected to the shipped shell and control surfaces plus the route inventory record.
+        responsibility: Keep the responsive baseline connected to the shipped shell and control surfaces.
         targets:
           - id: global-shell-surface
             adapter: typescript
@@ -330,17 +290,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
-              - kind: satisfies
-                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
-              - kind: satisfies
-                criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
   - id: FEAT-UX-006
     title: Restore confirm baseline
     summary: Record the shipped single-revision restore action and history routes satisfying the restore confirm criterion without changing UI behavior.
@@ -349,7 +298,7 @@ features:
       - id: restore-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the restore baseline connected to the shipped single-revision restore action and history routes plus the route inventory record.
+        responsibility: Keep the restore baseline connected to the shipped single-revision restore action and history routes.
         targets:
           - id: restore-route
             adapter: typescript
@@ -361,13 +310,6 @@ features:
           - id: history-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-ENTRY-002#criterion.restore-confirm-cancel
-          - id: route-inventory-record
-            adapter: declared
-            path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims:
               - kind: satisfies
