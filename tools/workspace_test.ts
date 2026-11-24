@@ -649,6 +649,21 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
   );
 });
 
+Deno.test("artifact CI builds the Docker Rust source stage", async () => {
+  const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
+  const artifactBuild = workflow.split("  artifact-build:")[1].split(
+    "\n  e2e-smoke-mobile:",
+  )[0];
+
+  assertEquals(
+    artifactBuild.includes(
+      "docker buildx build --target rust-build --tag ugoite:rust-source-check --load .",
+    ),
+    true,
+    "artifact CI must compile the Docker Rust source stage",
+  );
+});
+
 Deno.test("Pages promotes only verified successful main CI artifacts", async () => {
   const ciWorkflow = await Deno.readTextFile(".github/workflows/ci.yml");
   const workflow = await Deno.readTextFile(
