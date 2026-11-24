@@ -16,7 +16,8 @@ const SQL_FIRST_COMPOSITION: &str =
     include_str!("../../tests/fixtures/composition-sql-first.ugcomp.yaml");
 
 #[tokio::test]
-async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyhow::Result<()> {
+async fn invalid_scalar_schema_first_save_does_not_publish_registry_or_entry() -> anyhow::Result<()>
+{
     let service = UgoiteService::new(format!(
         "memory://composition-invalid-first-save-{}",
         Uuid::now_v7()
@@ -29,8 +30,6 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
     let changes_before = service.list_changes(&space_id).await?;
     for (invalid_sql, fingerprinted_descriptor) in [
         ("SELECT FROM", false),
-        ("SELECT 1 AS total WHERE false", false),
-        ("SELECT 1 AS total UNION ALL SELECT 2 AS total", false),
         ("SELECT 'wrong-type' AS total", true),
     ] {
         let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
@@ -75,6 +74,45 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
         assert_eq!(service.list_changes(&space_id).await?, changes_before);
     }
 
+    // Current row cardinality belongs to evaluation, not declaration save.
+    for sql in [
+        "SELECT 1 AS total WHERE false",
+        "SELECT 1 AS total UNION ALL SELECT 2 AS total",
+    ] {
+        let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
+            .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+        let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind
+        else {
+            anyhow::bail!("expected scalar query variable")
+        };
+        let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql: source } =
+            &mut query.definition;
+        *source = sql.to_owned();
+        let saved = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &owner.to_string(),
+                &[owner],
+            )
+            .await?;
+        let history = service
+            .composition_history_authorized_for_principals_page(
+                &space_id,
+                &saved.entry_id.to_string(),
+                &[owner],
+                composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+                0,
+            )
+            .await?;
+        assert_eq!(history.total, 1, "save must append one revision for {sql}");
+        assert_eq!(history.revisions[0].revision.revision_id, saved.revision_id);
+    }
+
     // A rejected first save leaves the author able to correct the document
     // and publish one ordinary revision afterward.
     let repaired = service
@@ -108,7 +146,8 @@ async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyho
 }
 
 #[tokio::test]
-async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow::Result<()> {
+async fn invalid_scalar_schema_update_preserves_history_until_repaired_save() -> anyhow::Result<()>
+{
     let service = UgoiteService::new(format!(
         "memory://composition-invalid-scalar-update-{}",
         Uuid::now_v7()
@@ -138,7 +177,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
     };
     let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
         &mut query.definition;
-    *sql = "SELECT 1 AS total UNION ALL SELECT 2 AS total".to_owned();
+    *sql = "SELECT 'wrong-type' AS total".to_owned();
 
     let history_before_rejected_update = service
         .composition_history_authorized_for_principals_page(
@@ -169,7 +208,7 @@ async fn invalid_scalar_update_preserves_history_until_repaired_save() -> anyhow
             &[owner],
         )
         .await;
-    assert!(rejected.is_err(), "multirow scalar update must be rejected");
+    assert!(rejected.is_err(), "result schema mismatch must be rejected");
 
     let history_after_rejected_update = service
         .composition_history_authorized_for_principals_page(

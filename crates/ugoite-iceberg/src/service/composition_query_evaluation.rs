@@ -275,16 +275,12 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         yaml: &str,
-        variables: &BTreeMap<String, Value>,
-        unset_variables: &[String],
         authorization_state: &AuthorizationState,
     ) -> Result<crate::ExactCatalogHeadProof> {
         self.preflight_composition_save_with_access(
             space_id,
             Some(principal_ids),
             yaml,
-            variables,
-            unset_variables,
             Some(authorization_state),
         )
         .await
@@ -294,18 +290,9 @@ impl UgoiteService {
         &self,
         space_id: &str,
         yaml: &str,
-        variables: &BTreeMap<String, Value>,
-        unset_variables: &[String],
     ) -> Result<crate::ExactCatalogHeadProof> {
-        self.preflight_composition_save_with_access(
-            space_id,
-            None,
-            yaml,
-            variables,
-            unset_variables,
-            None,
-        )
-        .await
+        self.preflight_composition_save_with_access(space_id, None, yaml, None)
+            .await
     }
 
     async fn preflight_composition_save_with_access(
@@ -313,8 +300,6 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: Option<&[Uuid]>,
         yaml: &str,
-        variables: &BTreeMap<String, Value>,
-        unset_variables: &[String],
         authorization_state: Option<&AuthorizationState>,
     ) -> Result<crate::ExactCatalogHeadProof> {
         let workspace = iceberg_store::native_workspace_read_only(
@@ -329,45 +314,25 @@ impl UgoiteService {
                 space_id,
                 principal_ids,
                 yaml,
-                variables,
-                unset_variables,
                 authorization_state,
-                &bound_workspace,
             )
             .await?;
             return Ok(proof);
         }
-        let response = self
-            .evaluate_composition_graph(
+        let preview = self
+            .preview_composition_for_save_with_access(
                 space_id,
+                yaml,
                 principal_ids,
-                CompositionQueryEvaluationTarget::Draft {
-                    yaml: yaml.to_owned(),
-                },
-                Uuid::new_v4(),
-                None,
-                None,
-                variables,
-                unset_variables,
-                None,
-                None,
                 authorization_state,
-                publication,
+                publication.as_ref(),
             )
             .await?;
-        let plan = response.plan.as_ref();
-        if !response.ok
-            || plan.is_none()
-            || response.query_results.len() != plan.map_or(0, |plan| plan.queries.len())
-            || response.computed_query_ids.len() != plan.map_or(0, |plan| plan.queries.len())
-        {
-            let detail = response
+        if !preview.diagnostics.is_empty() || preview.plan.is_none() {
+            let detail = preview
                 .diagnostics
                 .iter()
                 .map(|diagnostic| format!("{:?} at {:?}", diagnostic.code, diagnostic.variable_id))
-                .chain(response.query_diagnostics.iter().map(|diagnostic| {
-                    format!("{:?} at {}", diagnostic.code, diagnostic.variable_id)
-                }))
                 .collect::<Vec<_>>()
                 .join(", ");
             return Err(AppError::invalid_input(
@@ -376,30 +341,25 @@ impl UgoiteService {
             )
             .into());
         }
-        let plan = response.plan.as_ref().expect("validated preflight plan");
+        let plan = preview.plan.expect("checked Composition save schema plan");
         Self::ensure_declared_query_returns_match(yaml, &plan.queries)?;
         Ok(proof)
     }
 
-    // This boundary threads one complete save-evaluation context into the
-    // resolver without reconstructing authorization or Work state.
-    #[allow(clippy::too_many_arguments)]
+    // Save proves that the declaration can be planned against the current
+    // authorized Form/schema snapshot. Query rows and transient input Work are
+    // checked only when the saved definition is evaluated.
     async fn preflight_unpublished_composition_queries(
         &self,
         space_id: &str,
         principal_ids: Option<&[Uuid]>,
         yaml: &str,
-        variables: &BTreeMap<String, Value>,
-        unset_variables: &[String],
         authorization_state: Option<&AuthorizationState>,
-        workspace: &crate::IcebergWorkspace,
     ) -> Result<()> {
         let preview = self
             .preview_composition_for_save_with_access(
                 space_id,
                 yaml,
-                variables,
-                unset_variables,
                 principal_ids,
                 authorization_state,
                 None,
@@ -420,15 +380,9 @@ impl UgoiteService {
         }
         let plan = preview.plan.expect("checked Composition preview plan");
         Self::ensure_declared_query_returns_match(yaml, &plan.queries)?;
-        let definitions = preview
-            .variable_definitions
-            .ok_or_else(|| anyhow!("Composition preview did not return variable definitions"))?;
-        let mut graph = VariableGraph {
-            variables: definitions,
-        };
-        apply_resolved_query_descriptors(&mut graph, &plan.queries)?;
-        remove_explicitly_unset_input_defaults(&mut graph, unset_variables);
-        for node in &graph.variables {
+        let document = ugoite_domain::composition::parse_composition_yaml(yaml)
+            .map_err(|diagnostic| anyhow!(diagnostic.as_str()))?;
+        for node in &document.spec.variables {
             let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
                 continue;
             };
@@ -446,113 +400,6 @@ impl UgoiteService {
                 )
                 .into());
             }
-        }
-        let input_values = plan
-            .variable_values
-            .iter()
-            .filter_map(|(id, value)| {
-                graph
-                    .variables
-                    .iter()
-                    .find(|node| node.id == *id)
-                    .is_some_and(|node| matches!(node.kind, VariableGraphNodeKind::Input { .. }))
-                    .then_some((id.clone(), value.clone()))
-            })
-            .collect::<BTreeMap<_, _>>();
-        let evaluation_id = Uuid::new_v4();
-        let mut evaluation = VariableGraphQueryEvaluation::new_for_queries(
-            &graph,
-            evaluation_id,
-            &input_values,
-            None,
-        )
-        .map_err(|diagnostics| {
-            AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                format!("Composition query planning failed: {diagnostics:?}"),
-            )
-        })?;
-        let context = workspace
-            .authorized_query_context(ugoite_core::query::AuthorizedQueryPolicy {
-                forms: BTreeMap::new(),
-                checkpoint: None,
-                limits: ugoite_core::query::QueryLimits {
-                    max_memory_bytes: crate::index::SQL_MAX_MEMORY_BYTES,
-                    max_rows: crate::index::SQL_MAX_OUTPUT_ROWS,
-                    timeout: std::time::Duration::from_secs(30),
-                    max_concurrency: 1,
-                    function_policy: ugoite_core::query::SqlFunctionPolicy::ReadOnlyAggregateV1,
-                },
-            })
-            .await?;
-        for variable_id in evaluation.selected_query_ids().to_vec() {
-            let request = evaluation
-                .compile_page_request(&variable_id, None)
-                .map_err(|diagnostics| {
-                    AppError::invalid_input(
-                        ErrorCode::InvalidInput,
-                        format!("Query {variable_id} request is invalid: {diagnostics:?}"),
-                    )
-                })?;
-            let prepared = super::sql_execution::prepare_sql_request(
-                self,
-                space_id,
-                &request,
-                match (principal_ids, authorization_state) {
-                    (Some(principal_ids), Some(state)) => {
-                        Some(super::sql_execution::SqlSourceAuthorization {
-                            state,
-                            principal_ids,
-                        })
-                    }
-                    _ => None,
-                },
-            )
-            .await?;
-            let result_schema = context
-                .stateless_result_schema(&prepared.normalized_sql, prepared.parameters.clone())
-                .await?;
-            let stateless_page = context
-                .execute_stateless_page(
-                    &prepared.normalized_sql,
-                    prepared.parameters,
-                    0,
-                    request.limit.saturating_add(1),
-                )
-                .await?;
-            let (mut rows, mut exact_integer_rows) =
-                crate::index::serialize_stateless_sql_page_for_validation(
-                    &stateless_page,
-                    request.include_exact_integer_values,
-                )?;
-            let has_more = rows.len() > request.limit;
-            rows.truncate(request.limit);
-            if let Some(exact_rows) = exact_integer_rows.as_mut() {
-                exact_rows.truncate(request.limit);
-            }
-            let page = SqlQueryPage {
-                columns: stateless_page.columns,
-                rows,
-                has_more,
-                next: has_more.then(|| "strict-save-more".to_owned()),
-                execution_id: request.execution_id,
-                request_fingerprint: Some(
-                    request
-                        .execution_fingerprint()
-                        .map_err(sql_query_contract_error)?,
-                ),
-                result_schema: Some(result_schema),
-                exact_integer_rows,
-                composition_count_snapshot: None,
-            };
-            evaluation
-                .accept_page(&variable_id, &request, &page)
-                .map_err(|diagnostics| {
-                    AppError::invalid_input(
-                        ErrorCode::InvalidInput,
-                        format!("Query {variable_id} result is invalid: {diagnostics:?}"),
-                    )
-                })?;
         }
         Ok(())
     }

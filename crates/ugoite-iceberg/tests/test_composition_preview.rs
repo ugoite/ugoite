@@ -572,9 +572,8 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
     }
 
     let saved = save_local_composition(&service, &space_id, document).await?;
-    // The strict save preflight validates every query against the current
-    // Publication. Change only the source rows afterward to exercise the
-    // runtime all-or-nothing result contract when one query no longer matches.
+    // Mutate only the source rows after save, so one selected query becomes
+    // empty at runtime while the saved declaration remains valid.
     service
         .delete_entry(&space_id, "composition-preview-00", "preview-test")
         .await?;
@@ -648,6 +647,69 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
             value: VariableGraphLiteral::Integer(2)
         })
     ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn zero_row_scalar_saves_and_fails_only_during_evaluation() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    document.spec.variables.push(VariableGraphNode {
+        id: "empty_value".to_owned(),
+        kind: VariableGraphNodeKind::Query {
+            returns: VariableGraphResultType::Scalar {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: true,
+                },
+            },
+            query: VariableGraphQuery {
+                definition: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT \"field_100\" AS value FROM \"Composition-Preview\" WHERE \"field_100\" = 'not-present'".to_owned(),
+                },
+                arguments: Vec::new(),
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
+            },
+        },
+    });
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let history = service
+        .composition_history_local_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            ugoite_iceberg::composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 1, "save must append one revision");
+    assert_eq!(history.revisions[0].revision.revision_id, saved.revision_id);
+
+    let response = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&["empty_value".to_owned()]),
+            None,
+        )
+        .await?;
+    assert!(!response.ok);
+    assert!(response.query_results.is_empty());
+    assert!(response.query_diagnostics.iter().any(|diagnostic| {
+        diagnostic.variable_id == "empty_value"
+            && diagnostic
+                .result_diagnostic
+                .as_ref()
+                .and_then(|result| result.result_diagnostic.as_ref())
+                .is_some_and(|result| result.code.as_str() == "scalar_no_rows")
+    }));
     Ok(())
 }
 
@@ -1748,10 +1810,7 @@ async fn parameterized_inline_sql_preview_and_save_uses_server_schema() -> Resul
             "owner",
             &principal_ids,
             &authorized_operation_id,
-            ugoite_iceberg::composition::CompositionSaveWork {
-                variables: BTreeMap::from([("minimum".to_owned(), json!(7))]),
-                unset_variables: Vec::new(),
-            },
+            ugoite_iceberg::composition::CompositionSaveWork::default(),
         )
         .await?;
     assert!(authorized.document.has_complete_query_descriptors());
@@ -1760,10 +1819,7 @@ async fn parameterized_inline_sql_preview_and_save_uses_server_schema() -> Resul
         &service,
         &space_id,
         document,
-        ugoite_iceberg::composition::CompositionSaveWork {
-            variables: BTreeMap::from([("minimum".to_owned(), json!(7))]),
-            unset_variables: Vec::new(),
-        },
+        ugoite_iceberg::composition::CompositionSaveWork::default(),
     )
     .await?;
     assert!(saved.document.has_complete_query_descriptors());
