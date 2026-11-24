@@ -212,50 +212,14 @@ Rust owns parsing, validation, canonicalization, and fingerprints for the
 portable Composition document. The [original prerelease grammar](https://github.com/ugoite/ugoite/blob/6bcb5426b937f7981fca1fb97ae70c035651da89/docs/architecture/contracts/decisions.md#adr-017--composition-semantics-use-a-restricted-yaml-contract)
 was superseded. See [ADR-027](adr-027-text-first-composition.md) for the current decision.
 
-## ADR-018 — Composition preview and typed SQL result schema
-
-**Historical decision record; Composition grammar was superseded before release by ADR-027.**
-Composition preview remains a side-effect-free authoring path. SQL query pages
-carry the server-owned typed `result_schema`; its current column types, value
-encoding, and failure rules are defined in [SQL features](../../spec/features/sql.md)
-and the corresponding Mitase requirements. This ADR is not a second SQL schema
-specification.
-
-## ADR-019 — Composition layout v1
-
-**Superseded by ADR-027 before release.** The prerelease `sections` layout and
-its interaction rules are historical. The current Composition document and
-layout contract is [ADR-027](adr-027-text-first-composition.md).
-
 ## ADR-020 — Bounded Composition scalar reads
 
-**Historical implementation decision; retained read invariants are current.**
-Composition scalar reads use the ordinary authorized SQL execution path with the
-exact Saved SQL revision selected by the Composition. The adapter consumes at
-most two rows to establish whether the result contains exactly one row; it
-never adds `LIMIT 1`, selects a prefix row, or materializes a full result merely
-to test scalar cardinality. Current Composition execution semantics are in
-[Composition](composition.md), and SQL revision semantics are in
-[SQL Form name resolution](sql-form-name-resolution.md).
-
-## ADR-021 — Typed-only Composition Metrics
-
-**Superseded by ADR-022 before Metric release.** The prerelease `definition`,
-`aggregate`, and `sql_scalar` Metric shapes are not a compatibility contract.
-The current grammar is defined by [ADR-027](adr-027-text-first-composition.md);
-no legacy reader or migration was required for these unreleased shapes.
-
-## ADR-022 — Composition uses Saved SQL results
-
-**Historical design ruling; its shared SQL boundary remains active.** SQL owns
-calculation semantics. Composition binds ordinary Saved SQL by Entry and exact
-revision, rechecks current authorization, and consumes the typed SQL result
-through the bounded scalar contract. Composition adds no query engine,
-aggregation authority, SQL rewrite, or implicit `LIMIT 1`. Current execution
-and variable semantics are specified in [Composition](composition.md),
-[SQL features](../../spec/features/sql.md), and the corresponding Mitase
-requirements. Earlier Metric source/component proposals in this ADR are
-historical and do not define the current Composition grammar.
+**Accepted current decision.** Composition scalar reads execute inline SQL
+through the ordinary authorized query path. The adapter consumes at most two
+rows to establish whether the result contains exactly one row; it never adds
+`LIMIT 1`, selects a prefix row, or materializes a full result merely to test
+scalar cardinality. Current Composition semantics and schema are defined by
+[ADR-027](adr-027-text-first-composition.md) and [SQL features](../../spec/features/sql.md).
 
 ## ADR-025 — Composition query variable graph and complete SQL Workspace
 
