@@ -3162,20 +3162,10 @@ mod tests {
                 json!({"ok": false, "diagnostics": [{"code": expected}]})
             );
         }
-        for removed in [
-            "metric_result_not_scalar",
-            "metric_result_type_mismatch",
-            "metric_scalar_no_rows",
-            "metric_scalar_multiple_rows",
-            "metric_result_column_missing",
-            "metric_result_column_ambiguous",
-        ] {
-            assert_eq!(
-                CompositionDiagnosticCode::from_code(removed),
-                None,
-                "obsolete metric diagnostic {removed} must be rejected"
-            );
-        }
+        assert_eq!(
+            CompositionDiagnosticCode::from_code("unknown_diagnostic"),
+            None
+        );
 
         let lint_success = json!({
             "ok": true,

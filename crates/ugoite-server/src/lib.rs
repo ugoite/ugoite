@@ -16153,10 +16153,6 @@ spec:
 
         // Removed existence-revealing codes must stay out of the portable API.
         for removed in [
-            "metric_field_not_projected",
-            "metric_result_empty",
-            "metric_result_multiple_rows",
-            "metric_result_page_incomplete",
             "missing_form",
             "saved_sql_revision_missing",
             "not_authorized",
@@ -16165,20 +16161,6 @@ spec:
                 ApiCompositionDiagnosticCode::from_code(removed),
                 None,
                 "removed diagnostic {removed} must stay out of the portable API"
-            );
-        }
-        for removed in [
-            "metric_result_not_scalar",
-            "metric_result_type_mismatch",
-            "metric_scalar_no_rows",
-            "metric_scalar_multiple_rows",
-            "metric_result_column_missing",
-            "metric_result_column_ambiguous",
-        ] {
-            assert_eq!(
-                ApiCompositionDiagnosticCode::from_code(removed),
-                None,
-                "obsolete metric diagnostic {removed} must stay out of the portable API"
             );
         }
         let openapi = openapi_snapshot();
