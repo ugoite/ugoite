@@ -340,11 +340,13 @@ async function assertAggregateWorkflow(
   );
   assertContainsAll(
     rustTest,
-    [
-      '{ task = "test:rust:core" }',
-      '{ task = "test:older-cli-knowledge-preservation" }',
-    ],
-    "canonical Rust test task preserves older-CLI compatibility by default",
+    ['{ task = "test:rust:core" }'],
+    "canonical Rust test task runs the workspace core suite",
+  );
+  assertEquals(
+    rustTest.includes('{ task = "test:older-cli-knowledge-preservation" }'),
+    false,
+    "canonical Rust test task leaves older-CLI preservation to the hosted lane",
   );
   assertContainsAll(
     rustTestCore,

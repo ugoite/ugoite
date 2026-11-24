@@ -346,10 +346,7 @@ run = "bash scripts/test-s3-storage.sh"
 
 [tasks."test:rust"]
 description = "Run workspace Rust tests with nextest and Cargo doctests"
-run = [
-  { task = "test:rust:core" },
-  { task = "test:older-cli-knowledge-preservation" },
-]
+run = [{ task = "test:rust:core" }]
 
 [tasks."test:rust:core"]
 description = "Run workspace Rust tests with nextest and Cargo doctests"
