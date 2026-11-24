@@ -59,6 +59,20 @@ Deno.test("required CI aggregator waits for every required lane", async () => {
     true,
     "required CI aggregator must wait for every required lane",
   );
+  const requiredStart = workflow.indexOf("\n  required:");
+  assertEquals(requiredStart >= 0, true, "required CI job must exist");
+  assertContainsAll(
+    workflow.slice(requiredStart),
+    [
+      "if: ${{ always() }}",
+      "IMPACT_RESULT: ${{ needs.impact.result }}",
+      "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
+      "PLAN_RUST_CHECK: ${{ needs.impact.outputs.plan_rust_check }}",
+      "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
+      "run: scripts/ci-gate-check.sh",
+    ],
+    "required CI job invokes the fail-closed gate with CI and plan results",
+  );
 });
 
 Deno.test("Rust quality gate retains workspace checks and tests", async () => {
@@ -232,6 +246,16 @@ Deno.test("REQ-OPS-021: frontend coverage remains a required hosted test gate", 
       "deno task frontend:coverage",
     ],
     "frontend root coverage task",
+  );
+  assertContainsAll(
+    taskBlock(mise, "test"),
+    ['"test:frontend"'],
+    "canonical test task keeps ordinary frontend behavior tests",
+  );
+  assertContainsAll(
+    taskBlock(mise, "test:low-memory"),
+    ['"test:frontend"'],
+    "low-memory test task keeps ordinary frontend behavior tests",
   );
   assertEquals(
     taskBlock(mise, "test").includes("test:frontend:coverage"),
