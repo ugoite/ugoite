@@ -494,9 +494,7 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts", () => {
-    const studioPath = path.join(componentsDir, "composition-studio.yaml");
-    const studioContract = readFileSync(studioPath, "utf8");
+  it("REQ-FE-040: connects Composition route to shared SQL Workspace", () => {
     const sharedWorkspaceContract = readFileSync(
       path.join(componentsDir, "sql-workspace.yaml"),
       "utf8",
@@ -509,12 +507,6 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
 
-    expect(studioContract).toContain(
-      "**Status: Text-first Composition authoring is the current target.**",
-    );
-    expect(studioContract).toContain(
-      "[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md)",
-    );
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(

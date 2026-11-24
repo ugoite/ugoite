@@ -2,92 +2,18 @@
 title: "Composition Studio"
 ---
 
-**Status: Text-first Composition authoring is the current target.** The browser
-uses the strict typed graph and SQL contract in
-[ADR-027](../../../architecture/contracts/adr-027-text-first-composition.md),
-[REQ-COMP-010](../../../mitase/requirements/composition/text-first-graph.yaml),
-and [REQ-FE-083](../../../mitase/requirements/frontend/composition-text-first.yaml).
-SQL template normalization and optional Form seeds remain in REQ-FE-082.
+**Role: visual hierarchy and labels.** Current interaction behavior is defined
+by [REQ-FE-083](../../../mitase/requirements/frontend/composition-text-first.yaml).
+Composition semantics and runtime behavior are defined by
+[REQ-COMP-010](../../../mitase/requirements/composition/text-first-graph.yaml).
+SQL editing and optional Form seeds follow
+[REQ-FE-082](../../../mitase/requirements/frontend/composition-sql-workspace.yaml).
+The UI policies govern accessibility, focus, and responsive behavior.
 
-## Modes and variables
+## Visual hierarchy
 
-The selected mode control owns its name, and the panel does not repeat it as a
-heading. The supported modes and component types are defined by the linked
-Mitase requirements.
-
-Variables lists a meaningful variable name with a kind icon beside one focused
-editor. Variables are typed constants, inputs, or inline SQL query results.
-Names, types, SQL output aliases, field names, and Text content appear only
+The selected mode control owns its name; the panel does not repeat it as a
+heading. Variables shows meaningful names with kind icons beside one focused
+editor. Names, types, SQL output aliases, field names, and Text content appear
 where they carry meaning. UUIDs and explanatory row copy are not primary-path
-labels. A query stores one SQL source with explicit typed graph bindings and a
-server-derived table or scalar result descriptor. Parameter diagnostics stay
-near the SQL or binding control; there is no separate Arguments page.
-
-The SQL editor is text-first. Rust owns SQL and `{{name}}` parameter
-normalization, parsing, and diagnostics. Lint, authorized schema check, and
-explicit execution are separate actions. Form is optional when creating a
-query; its starter uses explicit projectable user-data columns and never
-silently replaces authored SQL. Composition wildcard restrictions do not
-change ordinary SQL or published Saved SQL behavior.
-
-## Saved revisions and historical shapes
-
-Before saving, the server validates the current graph and derives query Form
-bindings and result descriptors from current authorized planning. It does not
-trust submitted bindings or schema fingerprints. Saves retain append-only
-history and their existing idempotent receipt and stale-revision conflict
-behavior. The replaced prerelease graph shape is not silently converted or
-restored as an executable Composition. Exact reads, raw inspection, export, and
-history remain available for those stored revisions without migration; the
-user must create a current-shape Composition to execute it.
-
-## Design canvas
-
-Insertion is completed in the canvas without opening a second Inspector.
-Component and picker availability is defined by the linked Mitase requirements.
-
-- Text starts editable in its placed position. Its plain template uses
-  `{{variable_id}}`; a compact adjacent control selects Title, Heading, Body,
-  or Caption. The Rust parser supplies literal and scalar-reference parts.
-- Table references one table query variable. Its SQL projection owns displayed
-  columns, aliases, and order. The component has no independent column
-  projection editor.
-- Input references one input variable. Its current value is transient Work,
-  not part of the Composition document.
-
-When Table needs a query, naming starts its editor in Variables. A selected
-Form may seed the SQL; after Lint and an authorized Check, Use returns to the
-same Design position and places the Table. Use does not run the query. The
-pending query cannot be saved and Cancel restores the previous draft. Existing
-table variables can be placed immediately; changing a Table reference keeps
-its component position. An Input requested from Design opens the Variables
-name, type, required, and default editor, then returns to its original Design
-position on Use. Creating one from an SQL marker uses the same editor and
-commits its explicit binding before returning to that SQL query. Creation from
-Variables places its first component and stays in Variables. These pending
-changes cannot be saved until complete; Cancel leaves no variable, component,
-binding, or layout change. Existing variables can be selected without changing
-their shared query definition.
-
-## Reader
-
-Reader and Design share the same result renderer. Reader does not show mode
-controls, component selection, Text editing, or style controls. Text is rendered
-as text, not HTML or evaluated markup. A stale, failed, unauthorized, or
-missing value is not replaced with an older result. Table paging remains
-bounded and server-owned; empty results keep their SQL result headings. When a
-Table exceeds the viewport width, its own region scrolls so every projected
-column remains reachable without widening the page. Scalar Text remains
-available while the Table is scrolled.
-
-## Responsive and accessible behavior
-
-Controls remain keyboard reachable with visible focus and useful accessible
-names. Text editing retains focus and supports multiline input. Variable lists
-and pickers fit narrow screens without page-level horizontal overflow. Reader
-tables scroll within their own region. Current implementation evidence is
-tracked by the Composition Studio feature and verification bindings. Required
-responsive, keyboard, and focus evidence comes from the automated checks linked
-by the current Mitase bindings. Physical-device Safari, actual native
-browser zoom, and manual screen-reader sessions are not v0.2.2 acceptance
-requirements.
+labels.

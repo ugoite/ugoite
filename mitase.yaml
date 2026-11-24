@@ -572,7 +572,6 @@ inventory:
         - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
         - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
         - docs/architecture/contracts/composition.md
-        - docs/architecture/contracts/adr-024-composition-sql-first.md
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml

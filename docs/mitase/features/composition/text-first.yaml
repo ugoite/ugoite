@@ -15,7 +15,7 @@ features:
         targets:
           - id: sql-first-semantic-contract
             adapter: declared
-            path: docs/spec/ui/components/composition-studio.yaml
+            path: docs/architecture/contracts/composition.md
             selector: { kind: file }
             claims:
               - { kind: documents, anchor: REQ-COMP-010#criterion.inline-sql-typed-graph }
@@ -25,18 +25,6 @@ features:
               - { kind: documents, anchor: REQ-COMP-010#criterion.current-shape-save-validation }
               - { kind: documents, anchor: REQ-COMP-010#criterion.append-only-save-history }
               - { kind: documents, anchor: REQ-COMP-010#criterion.raw-history-remains-readable }
-              - { kind: documents, anchor: REQ-FE-082#criterion.inline-template-parameters }
-              - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-projectable-columns }
-              - { kind: documents, anchor: REQ-FE-082#criterion.form-seed-without-projectable-columns }
-              - { kind: documents, anchor: REQ-FE-083#criterion.design-and-variables-modes }
-              - { kind: documents, anchor: REQ-FE-083#criterion.text-is-edited-in-place }
-              - { kind: documents, anchor: REQ-FE-083#criterion.reader-table-scroll-stays-local }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variable-creation-completes-pending-placement }
-              - { kind: documents, anchor: REQ-FE-083#criterion.input-creation-places-once }
-              - { kind: documents, anchor: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variable-name-is-suggested }
-              - { kind: documents, anchor: REQ-FE-083#criterion.variables-show-local-sql-diagnostics }
-              - { kind: documents, anchor: REQ-FE-083#criterion.sql-arguments-bind-locally }
       - id: core
         role: implementation
         facet: core
