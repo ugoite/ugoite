@@ -290,6 +290,22 @@
       "allowedVersions": "!/^(?:26\\.04)$/"
     },
     {
+      "description": "Hold routine GitHub Actions Node major updates until the CI toolchain authority supports them",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "node"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Preserve node engines support floor as a product contract, not a routine tool update",
       "matchManagers": [
         "npm"
