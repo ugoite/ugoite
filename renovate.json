@@ -55,6 +55,13 @@
       "groupSlug": "cargo-workspace"
     },
     {
+      "description": "Keep Cargo manifest ranges and update the shared Cargo.lock",
+      "matchManagers": [
+        "cargo"
+      ],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
       "description": "One daily update group for the Deno workspace (all five deno.json files and root deno.lock) ecosystem",
       "matchManagers": [
         "deno"
