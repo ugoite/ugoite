@@ -333,7 +333,7 @@ async function assertAggregateWorkflow(
     [
       "test:rust",
       "test:tools",
-      "test:frontend:coverage",
+      "test:frontend",
       "test:docsite",
     ],
     "canonical test task",
@@ -360,6 +360,11 @@ async function assertAggregateWorkflow(
     canonicalTest.includes("test:frontend:after-wasm"),
     false,
     "canonical test task must not run the focused frontend suite",
+  );
+  assertEquals(
+    canonicalTest.includes("test:frontend:coverage"),
+    false,
+    "canonical test task must not run frontend coverage instrumentation",
   );
   assertEquals(
     canonicalTest.includes('"test:docsite:coverage"'),
@@ -1240,7 +1245,7 @@ Deno.test("required CI workflows cover base-ref edits without cancelling content
   );
 });
 
-Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", async () => {
+Deno.test("REQ-OPS-021: frontend coverage remains a required hosted test gate", async () => {
   const frontendConfig = await Deno.readTextFile("frontend/vitest.config.ts");
   const rootDeno = await Deno.readTextFile("deno.json");
   const mise = await Deno.readTextFile("mise.toml");
@@ -1275,10 +1280,10 @@ Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", as
     ],
     "frontend root coverage task",
   );
-  assertContainsAll(
-    taskBlock(mise, "test"),
-    ["test:frontend:coverage"],
-    "canonical test task",
+  assertEquals(
+    taskBlock(mise, "test").includes("test:frontend:coverage"),
+    false,
+    "canonical test task must leave frontend coverage to the hosted web gate",
   );
 });
 
