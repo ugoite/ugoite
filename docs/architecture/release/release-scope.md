@@ -17,6 +17,13 @@ packaging, support, and product claims stay aligned with the implementation.
 The boundary below is the one this documentation build describes. Stable claims
 resolve to the versioned release note, not to this page.
 
+Current main includes the Text-first Composition authoring and runtime described
+in the [Composition contract](../contracts/composition.md), targeting unreleased
+v0.2.2. Composition was not shipped in v0.2.1; its
+[published release note](../../version/releases/v0.2.1.md) remains the stable
+source. The View/Application renderer exclusion below concerns general
+Knowledge-to-tools application rendering, not Text-first Composition.
+
 ## Included
 
 - local CLI core mode over operator-owned Spaces;
@@ -49,10 +56,11 @@ resolve to the versioned release note, not to this page.
   exposed; audit-event mutation/CRUD remains unavailable;
 - browser-local persistence, offline-first editing, and sync are not
   implemented; the current browser still requires the Rust server;
-- portable View/Application Definitions, Knowledge-to-tools renderers, and
-  general application-builder behavior are not implemented. v0.1 freezes their
-  authority boundary but does not ship a View DSL, low-code editor, arbitrary
-  code runtime, app-specific database, or parallel authorization authority;
+- portable View/Application Definitions, general Knowledge-to-tools renderers,
+  and general application-builder behavior are not implemented. v0.1 freezes
+  their authority boundary but does not ship a View DSL, general-purpose
+  application builder, arbitrary code runtime, app-specific database, or
+  parallel authorization authority;
 - Passkey/WebAuthn login, opaque browser sessions, Space membership/ACL
   enforcement, owner-approved Space access recovery, recovery-code +
   recovery-TOTP Account Self-Recovery, Remote CLI device authentication,

@@ -69,9 +69,12 @@ state, or an application-specific authorization authority.
 ## Not promised
 
 Browser-local persistence and optional synchronization, View and Application
-definitions, renderers, low-code composition, a general application builder, and
-an arbitrary code runtime are not shipped. No general application builder or
-arbitrary code runtime is claimed as current.
+definitions, general Knowledge-to-tools renderers, a general-purpose low-code
+application builder, and an arbitrary code runtime are not shipped. Here,
+low-code means general-purpose application building; it does not mean the
+Text-first Composition editor/runtime, which is current-main work targeting
+unreleased v0.2.2 (see [release scope](../architecture/release/release-scope.md)).
+No general application builder or arbitrary code runtime is claimed as current.
 
 See [The Ugoite Vision](index.md) for the promise and
 [Design History](design-history.md) for why Vision stays separate from
