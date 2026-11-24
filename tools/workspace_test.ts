@@ -92,6 +92,20 @@ Deno.test("toolchain authorities stay consistent across manifests", async () => 
   const channel = toolchain.match(/^channel\s*=\s*"([^"]+)"/m)?.[1];
   assertEquals(typeof channel, "string");
   assertEquals(dockerfile.includes("rust-toolchain.toml"), true);
+  const rustBuildStage =
+    dockerfile.split(/^FROM /m).find((stage) =>
+      /^rust:\S+\s+AS rust-build/m.test(stage)
+    ) ?? "";
+  const rustToolchainCopyIndex = rustBuildStage.indexOf(
+    "COPY rust-toolchain.toml ./",
+  );
+  const rustBuildCommandIndex = rustBuildStage.indexOf("RUN cargo build");
+  assertEquals(
+    rustToolchainCopyIndex >= 0 &&
+      rustBuildCommandIndex > rustToolchainCopyIndex,
+    true,
+    "Docker rust-build stage must use rust-toolchain.toml before compiling",
+  );
   assertEquals(
     /--default-toolchain \d+\.\d+/.test(dockerfile),
     false,
@@ -632,6 +646,21 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
       '"e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned"',
     ),
     true,
+  );
+});
+
+Deno.test("artifact CI builds the Docker Rust source stage", async () => {
+  const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
+  const artifactBuild = workflow.split("  artifact-build:")[1].split(
+    "\n  e2e-smoke-mobile:",
+  )[0];
+
+  assertEquals(
+    artifactBuild.includes(
+      "docker buildx build --target rust-build --tag ugoite:rust-source-check --load .",
+    ),
+    true,
+    "artifact CI must compile the Docker Rust source stage",
   );
 });
 

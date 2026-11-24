@@ -1099,7 +1099,6 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-composition-studio, e2e-owner-composition, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -1128,6 +1127,14 @@ async function assertAggregateWorkflow(
       "run: scripts/ci-gate-check.sh",
     ],
     "required CI aggregator",
+  );
+  assertEquals(
+    /needs:\s*\[\s*impact,\s*rust-check,\s*rust-test,\s*s3-shared-authorization,\s*web,\s*artifact-build,\s*e2e-smoke-mobile,\s*e2e-composition-studio,\s*e2e-owner-composition,\s*e2e-portable,\s*docsite-nav,\s*cp1-fixtures,\s*cp1-query,\s*cp1-export,\s*pr-context-report,?\s*\]/
+      .test(
+        requiredJob,
+      ),
+    true,
+    "required CI aggregator must wait for every required lane",
   );
   assertContainsAll(
     requiredJob,

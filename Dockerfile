@@ -34,6 +34,7 @@ RUN deno run -A frontend/scripts/generate-static-index.ts \
 
 FROM rust:1.99-bookworm AS rust-build
 WORKDIR /repo
+COPY rust-toolchain.toml ./
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY vendor ./vendor
