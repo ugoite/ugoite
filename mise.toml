@@ -570,7 +570,7 @@ run = [
 
 [tasks."test:composition-query"]
 description = "Run Composition query graph compilation and evaluation tests"
-run = "cargo nextest run -p ugoite-core --lib --locked -E 'test(composition_query::) | test(old_output_only_schema_fingerprints_remain_valid_when_form_sources_are_pinned)'"
+run = "cargo nextest run -p ugoite-core --lib --locked -E 'test(composition_query::)'"
 
 [tasks."test:sql-check"]
 description = "Verify local and remote SQL check use schema-only planning"
