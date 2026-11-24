@@ -36,7 +36,10 @@ Compose updates share the `docker` group. The five Deno manifests and root
 managers; `renovate.json` has no manager-specific schedule or Dashboard
 approval gate. Eligible updates are proposed immediately with no concurrent
 or hourly cap. Automatic merging remains disabled. Security alerts remain
-separate from the routine ecosystem groups.
+separate from the routine ecosystem groups. The final vulnerability-alert rule
+keeps routine compatibility holds and `allowedVersions` restrictions from
+suppressing security-fix candidates; those PRs still require the existing CI,
+CodeQL, review, and merge-queue checks.
 
 ## Deno grouped update status
 

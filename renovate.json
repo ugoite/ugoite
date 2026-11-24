@@ -160,6 +160,9 @@
       "matchUpdateTypes": [
         "major"
       ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
+      ],
       "enabled": false
     },
     {
@@ -169,6 +172,9 @@
       ],
       "matchUpdateTypes": [
         "major"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
       ],
       "enabled": false
     },
@@ -187,6 +193,9 @@
       "matchUpdateTypes": [
         "major",
         "minor"
+      ],
+      "matchJsonata": [
+        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
       ],
       "enabled": false
     },
@@ -302,6 +311,14 @@
         "ghcr.io/renovatebot/renovate"
       ],
       "enabled": false
+    },
+    {
+      "description": "Allow vulnerability alert fixes through routine compatibility holds and version restrictions",
+      "matchJsonata": [
+        "$exists(isVulnerabilityAlert) and isVulnerabilityAlert"
+      ],
+      "allowedVersions": "*",
+      "enabled": true
     }
   ]
 }
