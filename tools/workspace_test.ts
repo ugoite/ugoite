@@ -675,6 +675,7 @@ Deno.test("Pages promotes only verified successful main CI artifacts", async () 
       "ugoite-artifact-manifest",
       "continue-on-error: true",
       "pages_configured: ${{ steps.pages.outcome == 'success' }}",
+      "if: steps.resolve-run.outputs.skip != 'true' && steps.pages.outcome == 'success'",
       "GitHub Pages is not configured; skipping docsite promotion.",
       "if: steps.pages.outcome == 'success'",
       "if: needs.prepare.outputs.pages_configured == 'true'",
@@ -684,6 +685,12 @@ Deno.test("Pages promotes only verified successful main CI artifacts", async () 
   ) {
     assertEquals(workflow.includes(required), true, required);
   }
+  assertEquals(
+    workflow.indexOf("name: Resolve Pages metadata") <
+      workflow.indexOf("name: Download docsite artifact"),
+    true,
+    "Pages configuration must be checked before downloading optional artifacts",
+  );
   for (
     const forbidden of [
       "release:",
