@@ -156,7 +156,7 @@ impl UgoiteService {
                 continue;
             };
             let source_for_planning = request.document.spec.variables[node_index].clone();
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
+            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
                 &source_for_planning.kind
             else {
                 continue;
