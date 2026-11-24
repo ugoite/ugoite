@@ -451,15 +451,13 @@ run = [{ tasks = ["test:rust", "test:tools", "test:frontend:coverage", "test:doc
 
 [tasks."test:low-memory"]
 depends = ["build:wasm:debug"]
-description = "Sequential low-memory variant of the authoritative non-E2E test suite with the same assertions, coverage, type, and no-skip policy as test"
+description = "Sequential low-memory run of the authoritative non-E2E test tasks"
 env = { MISE_JOBS = "1", CARGO_BUILD_JOBS = "1" }
 run = [
-  "cargo -j1 nextest run --workspace --locked",
-  "cargo -j1 test --workspace --doc --locked",
-  "deno test -A tools/*_test.ts",
-  "bash scripts/activate-ugoite-wasm.sh debug",
-  "bash -lc 'cd frontend && deno run -A npm:vitest run --coverage --maxWorkers=1 --no-file-parallelism'",
-  "bash -lc 'cd docsite && deno run -A vitest run --maxWorkers=1 --no-file-parallelism'",
+  { task = "test:rust" },
+  { task = "test:tools" },
+  { task = "test:frontend:coverage" },
+  { task = "test:docsite", args = ["--maxWorkers=1", "--no-file-parallelism"] },
 ]
 
 [tasks."test:e2e"]
