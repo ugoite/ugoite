@@ -206,12 +206,7 @@ impl UgoiteService {
             })?;
 
         let exact_head_proof = self
-            .preflight_composition_save_local(
-                space_id,
-                &canonical.yaml,
-                &work.variables,
-                &work.unset_variables,
-            )
+            .preflight_composition_save_local(space_id, &canonical.yaml)
             .await?;
 
         let is_create = request.entry_id.is_none();

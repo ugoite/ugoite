@@ -163,27 +163,25 @@ impl OwnedCurrentQueryDescriptor {
 impl UgoiteService {
     // Keep save-specific authorization and publication context explicit at
     // the resolver boundary so callers cannot silently drop either value.
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn preview_composition_for_save_with_access(
         &self,
         space_id: &str,
         yaml: &str,
-        variables: &BTreeMap<String, Value>,
-        unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
         publication_override: Option<&crate::PublicationRef>,
     ) -> Result<CompositionPreview> {
+        let no_work = BTreeMap::new();
         self.preview_composition_from_yaml(
             space_id,
             yaml,
             CompositionPreviewOptions {
-                variables,
-                unset_variables,
+                variables: &no_work,
+                unset_variables: &[],
                 principal_ids,
                 base: None,
                 requested_queries: None,
-                allow_unset_inputs: false,
+                allow_unset_inputs: true,
                 authorization_state,
                 publication_override,
             },

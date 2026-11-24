@@ -2601,7 +2601,7 @@ mod tests {
         let empty_save = serde_json::from_value::<CompositionSaveRequest>(json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML
         }))
-        .expect("legacy save omits transient Work");
+        .expect("empty transient Work");
         assert!(empty_save.variables.is_empty());
         assert!(empty_save.unset_variables.is_empty());
         assert!(serde_json::from_value::<CompositionPreviewRequest>(json!({
@@ -2805,7 +2805,7 @@ mod tests {
             &json!({"space_id":"demo", "idempotency_key":"composition-attempt-legacy"}),
             Some(&json!({"yaml": SQL_FIRST_COMPOSITION_YAML})),
         )
-        .expect("legacy composition save omits transient Work");
+        .expect("save omits transient Work");
         assert_eq!(
             serde_json::from_str::<Value>(legacy_save.body.as_deref().expect("legacy save body"))
                 .expect("legacy save body JSON"),

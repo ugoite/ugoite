@@ -5613,8 +5613,6 @@ impl UgoiteService {
                     space_id,
                     principal_ids,
                     &canonical.yaml,
-                    &work.variables,
-                    &work.unset_variables,
                     &state,
                 )
                 .await?;
