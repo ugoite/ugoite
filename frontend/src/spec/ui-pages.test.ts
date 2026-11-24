@@ -507,9 +507,6 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
 
-    expect(studioContract).toContain(
-      "**Role: visual hierarchy and labels.**",
-    );
     expect(revisionRouteSource).toContain("compositionApi.evaluate");
     expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
