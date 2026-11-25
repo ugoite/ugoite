@@ -2,7 +2,7 @@
 //! These tests exercise named connections/contexts only.
 
 use base64::Engine;
-use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
+use p256::pkcs8::EncodePrivateKey;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -10,6 +10,8 @@ use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+#[path = "support/auth.rs"]
+mod auth_test_support;
 
 fn ugoite_bin() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -92,21 +94,11 @@ fn add_context(config: &Path, uid: &str, base_url: &str) {
 /// success paths carry a real ES256 session. The stub ignores auth headers;
 /// only the CLI-side gate and session binding observe it.
 fn seed_stub_credential(config: &Path, uid: &str, base_url: &str) {
-    let key = SigningKey::random(&mut OsRng);
-    let point = key.verifying_key().to_encoded_point(false);
+    let key = auth_test_support::test_signing_key();
     let session = serde_json::json!({
         "credential_id": uuid::Uuid::now_v7().to_string(),
         "device_name": "routing stub test",
-        "public_key_jwk": {
-            "kty": "EC",
-            "crv": "P-256",
-            "x": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-                point.x().expect("public key x"),
-            ),
-            "y": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-                point.y().expect("public key y"),
-            ),
-        },
+        "public_key_jwk": auth_test_support::public_jwk(&key),
         "private_key_pkcs8": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
             key.to_pkcs8_der().expect("encode test private key").as_bytes(),
         ),

@@ -10,11 +10,12 @@ use axum::{
     routing::any,
     Router,
 };
-use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng};
 use serde_json::json;
 use std::{process::Stdio, time::Duration};
 use tokio::{net::TcpListener, process::Command, task::JoinHandle};
 use ugoite_server::{app, AppState};
+#[path = "support/auth.rs"]
+mod auth_test_support;
 
 const CONFORMANCE_PACKAGE: &str = "@modelcontextprotocol/conformance@0.2.0-alpha.11";
 const MCP_VERSION: &str = "2026-07-28";
@@ -159,14 +160,7 @@ async fn mcp_rejects_wrong_resource_issuer_scope_and_space_selector() {
 }
 
 fn test_public_key_jwk() -> serde_json::Value {
-    let key = SigningKey::random(&mut OsRng);
-    let point = key.verifying_key().to_encoded_point(false);
-    json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(point.x().expect("x")),
-        "y": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(point.y().expect("y")),
-    })
+    auth_test_support::public_jwk(&auth_test_support::test_signing_key())
 }
 
 fn rpc_request(id: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
@@ -322,7 +316,3 @@ async fn forward_to_ugoite(
         .body(Body::from(body))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
-
-// This makes the base64 trait import local and keeps the test's credential
-// representation consistent with the server's test access helper.
-use base64::Engine as _;

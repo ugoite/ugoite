@@ -10,7 +10,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
-use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
+use p256::{ecdsa::SigningKey, pkcs8::EncodePrivateKey};
 use serde_json::json;
 use std::process::Output;
 use std::time::Duration;
@@ -21,6 +21,8 @@ use tokio::task::JoinHandle;
 use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 use ugoite_cli::config::AuthSession;
 use ugoite_domain::change::ChangeCommand;
+#[path = "support/auth.rs"]
+mod auth_test_support;
 use ugoite_iceberg::{
     entry::EntryDraftRequest, iceberg_store::native_workspace, integrity::RealIntegrityProvider,
     service::UgoiteService,
@@ -50,14 +52,8 @@ fn ugoite_bin() -> std::path::PathBuf {
 }
 
 fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
-    let key = SigningKey::random(&mut OsRng);
-    let point = key.verifying_key().to_encoded_point(false);
-    let jwk = json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(point.x().expect("public key x")),
-        "y": URL_SAFE_NO_PAD.encode(point.y().expect("public key y")),
-    });
+    let key = auth_test_support::test_signing_key();
+    let jwk = auth_test_support::public_jwk(&key);
     (key, jwk)
 }
 
