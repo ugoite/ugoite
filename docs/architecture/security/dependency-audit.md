@@ -10,17 +10,26 @@ policy.
 ## Operational status snapshot — 2026-11-25
 
 This snapshot records the latest successful Renovate writer run on source main SHA
-9e113d6c03c3efd1bf97e2fdaffed70a854158f4,
-[#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015). Main had
-advanced from cf1d670d80fee59e953aec896e8e191e8fe62c34 through PR #5269, whose only
-changed file was tools/sql_aggregate_registry_test.ts. This audit PR is based on
-9e113d6c and updates only this evidence record.
+`513c2fc4a718c65eab380ad498f65b6fb0e98ee8`,
+[#45635980726](https://github.com/ugoite/ugoite/actions/runs/45635980726). It completed
+successfully with the App identity and alerts API preflights passing. Main reached this
+source through PR #5271, which passed exact-head CI, `ci-required`, CodeQL, and the
+selected E2E lanes before normal merge-queue integration. Its files were limited to
+`e2e/composition-scalar-state-journey.test.ts`, `tools/ci-impact.ts`, and
+`tools/ci_impact_test.ts`; all five Deno manifests and `deno.lock` are unchanged from
+the previous writer source `9e113d6c`.
 
-The latest full main-push CI comparison
+The prior evidence update, PR #5237, was independently AI-reviewed against exact head
+`14c86615558540bd07646cf22ae1fc8e85d8201a` and merged through the normal merge queue as
+`7f3a7cc39a0c3ce599d3f3c91553dcfbe30537a4` after all current-head CI and CodeQL checks
+passed. This PR updates the diagnosis of the Deno candidate-generation gap and its
+narrowly scoped policy fix.
+
+The earlier full main-push CI comparison
 [#45623698788](https://github.com/ugoite/ugoite/actions/runs/45623698788) completed
-successfully on the immediately preceding source cf1d670d, including Composition Studio
-E2E and ci-required. PR #5269 changed only the SQL aggregate registry meta-test after
-that run. Cargo candidate PR #5262 merged through the normal merge queue at
+successfully on source `cf1d670d`, including Composition Studio E2E and `ci-required`.
+The later scalar E2E PR #5271 passed its exact-head CI and CodeQL checks before queue
+integration. Cargo candidate PR #5262 merged through the normal merge queue at
 c3ba4e1c7d5ca342bbbce0b731f9382c0048a55 from Renovate head
 c1ab600d486b4a5a153838ca0dc4de7fb2b01c1d. It changed the exact ugoite-domain sqlparser
 pin to 0.64.0 and the shared Cargo.lock, retaining 0.62.0 for DataFusion consumers.
@@ -144,19 +153,41 @@ validated separately and does not by itself exercise an in-range range update.
 
 All five Deno manifests are evaluated together and share the root deno.lock. PR #5115
 merged after exact-head CI/CodeQL; e2e/deno.json had no eligible change in that
-candidate. Latest writer run
-[#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015) ran against
-main SHA 9e113d6c03c3efd1bf97e2fdaffed70a854158f4 and detected all five Deno manifests
-plus deno.lock. It planned deno-workspace, with no approval check, no schedule, and
-unlimited PR/hour limits. Artifact generation completed, but no branch or PR was
-created; Dashboard #5099 still lists 11 updates under Other Branches. Extraction and
-successful artifact generation do not prove that a candidate lockfile or PR exists. The
-cause remains unresolved in [#5239](https://github.com/ugoite/ugoite/issues/5239).
+candidate. Writer run [#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015)
+on source main `9e113d6c03c3efd1bf97e2fdaffed70a854158f4` detected all five Deno
+manifests plus deno.lock and planned deno-workspace without an approval check, schedule,
+or PR/hour limit. It completed artifact generation but created no branch or PR; Dashboard
+#5099 still listed 11 updates under Other Branches.
 
-The frozen install remains mise run deps:deno:verify; preserve the five manifests and
-single shared lockfile. Keep #5239 open until an App-authored candidate is created,
-frozen-install verification passes, and its exact-head CI/CodeQL and queue integration
-complete.
+Debug writer run [#45631710195](https://github.com/ugoite/ugoite/actions/runs/45631710195)
+on the same source further narrowed this gap. It evaluated 11 Deno updates; the sampled
+`@codemirror/autocomplete` update selected 6.20.4 while preserving `newValue` as the
+existing `^6.20.2` range. Renovate marked the group updates as lockfile-only, ran Deno
+2.9.8 `deno install --frozen=false`, and exited successfully without creating a branch
+or PR. An isolated control on that source confirmed the same command leaves deno.lock
+unchanged while the manifest range is unchanged. Bumping only that manifest range to
+`^6.20.4` caused the command to update both the deno.lock specifier and resolved version;
+the frozen install with the repository's allowed-script list then passed. The Deno
+manifests and lockfile on current main `513c2fc4` are unchanged from the tested source.
+
+The latest current-main run [#45635980726](https://github.com/ugoite/ugoite/actions/runs/45635980726)
+also completed successfully on `513c2fc4`. No `renovate/deno-workspace` branch or open
+Deno PR exists, and Dashboard #5099 still lists the group. This confirms the gap on the
+latest main. The controlled updater behavior below supports the proposed correction;
+the pinned writer still needs to verify that it generates the candidate.
+
+This PR sets Deno-manager `rangeStrategy` to `bump` so Renovate's selected Deno updates
+produce a manifest diff and the existing artifact updater can refresh the shared lockfile.
+The group boundary, compatibility holds, writer, and scripts/plugins policy remain in
+place. Renovate CLI 44.260.3 strict validation accepted the rule; the pinned 44.262.2
+writer run and an App-authored candidate are still required to verify the configured
+path. Do not count a successful extraction, artifact command, or validation alone as
+candidate generation. Keep [#5239](https://github.com/ugoite/ugoite/issues/5239) open
+until an App-authored candidate includes the shared lockfile and passes frozen install,
+exact-head CI/CodeQL, independent AI review, and the normal merge queue.
+
+The candidate's frozen install remains `mise run deps:deno:verify`; preserve the five
+manifests and single shared lockfile.
 
 
 
