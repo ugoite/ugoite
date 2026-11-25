@@ -38,7 +38,7 @@ hex = "0.4"
 percent-encoding = "2.3"
 
 [dev-dependencies]
-p256 = { version = "0.13", features = ["ecdsa"] }
+p256 = { version = "0.14", features = ["ecdsa"] }
 tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
 tokio = { version = "1.52", features = ["net", "io-util"] }
