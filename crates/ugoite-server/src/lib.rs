@@ -4583,9 +4583,9 @@ fn normalized_oidc_issuer(issuer: &str) -> anyhow::Result<String> {
     let parsed = url::Url::parse(normalized).context("invalid OIDC issuer URL")?;
     let loopback_test_issuer = oidc_loopback_test_mode()
         && parsed.scheme() == "http"
-        && parsed
-            .host_str()
-            .is_some_and(|host| is_loopback_host(host) || is_e2e_mock_host(host));
+        && parsed.host_str().is_some_and(|host| {
+            ugoite_identity::node_identity::is_loopback_host(host) || is_e2e_mock_host(host)
+        });
     if (!loopback_test_issuer && parsed.scheme() != "https")
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()
@@ -4604,9 +4604,9 @@ fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
     // endpoints remain HTTPS-only.
     if (cfg!(test) || oidc_loopback_test_mode())
         && url.scheme() == "http"
-        && url
-            .host_str()
-            .is_some_and(|host| is_loopback_host(host) || is_e2e_mock_host(host))
+        && url.host_str().is_some_and(|host| {
+            ugoite_identity::node_identity::is_loopback_host(host) || is_e2e_mock_host(host)
+        })
     {
         return Ok(());
     }
@@ -4623,13 +4623,6 @@ fn oidc_loopback_test_mode() -> bool {
 fn is_e2e_mock_host(host: &str) -> bool {
     oidc_loopback_test_mode()
         && env::var("E2E_OIDC_MOCK_HOST").is_ok_and(|value| value.trim().eq_ignore_ascii_case(host))
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
 }
 
 fn validate_oidc_metadata(metadata: &CoreProviderMetadata) -> anyhow::Result<()> {

@@ -6917,6 +6917,7 @@ dependencies = [
  "ugoite-konase",
  "ugoite-konase-rig",
  "ugoite-server",
+ "ugoite-storage",
  "url",
  "uuid",
 ]
