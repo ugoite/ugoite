@@ -6,12 +6,7 @@ import path from "node:path";
 const repoRoot = path.resolve(Deno.cwd());
 Deno.test("REQ-OPS-003: legacy requirement directory contains no YAML records", async () => {
   const requirementDir = path.join(repoRoot, "docs/spec/requirements");
-  const yamlRecords: string[] = [];
-  for await (const entry of Deno.readDir(requirementDir)) {
-    if (entry.isFile && entry.name.endsWith(".yaml")) {
-      yamlRecords.push(entry.name);
-    }
-  }
+  const yamlRecords = await yamlFilesRecursively(requirementDir);
   assertEquals(
     yamlRecords,
     [],
