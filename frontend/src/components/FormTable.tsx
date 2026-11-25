@@ -43,7 +43,8 @@ import {
 
 interface FormTableProps {
   spaceId: string;
-  entryForm: Form;
+  // Form drafts may omit an ID, but FormTable queries persisted Forms only.
+  entryForm: Form & { id: string };
   onEntryClick: (entryId: string) => void;
   onAddRow?: () => void;
 }
@@ -151,7 +152,7 @@ export function chunkCsvRowsForExport(
   headers: readonly string[],
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
-): readonly (readonly string[])[][] {
+): readonly (readonly (readonly string[])[])[] {
   const chunks: (readonly (readonly string[])[])[] = [];
   let current: (readonly string[])[] = [];
   for (const row of dataRows) {
@@ -179,7 +180,7 @@ export function chunkCsvRowsForExport(
 export function chunkCsvDataRowsForExport(
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
-): readonly (readonly string[])[][] {
+): readonly (readonly (readonly string[])[])[] {
   const chunks: (readonly (readonly string[])[])[] = [];
   let current: (readonly string[])[] = [];
   for (const row of dataRows) {
@@ -322,10 +323,7 @@ export function FormTable(props: FormTableProps) {
 
   const formScope = createMemo(() => ({
     kind: "form" as const,
-    // Form ids are durable semantic identity. Name is only a fixture fallback
-    // for incomplete client-side definitions; server responses always carry
-    // the stable id.
-    form_id: props.entryForm.id ?? props.entryForm.name,
+    form_id: props.entryForm.id,
   }));
 
   const capabilities = createMemo<EntryQueryCapabilities>(() => ({

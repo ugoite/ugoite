@@ -54,10 +54,10 @@ function mockEntryQuery(entries: readonly QueryTestEntry[]) {
 
 const canonicalForms = new WeakMap<object, Form>();
 
-function canonicalForm(form: Record<string, any>): Form {
+function canonicalForm(form: Record<string, any>): Form & { id: string } {
   const cached = canonicalForms.get(form);
   if (cached) return cached;
-  const canonical: Form = {
+  const canonical: Form & { id: string } = {
     ...form,
     name: form.name,
     id: form.id ?? `form-${form.name}`,
