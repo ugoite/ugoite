@@ -152,7 +152,7 @@ export function chunkCsvRowsForExport(
   headers: readonly string[],
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
-): readonly (readonly string[])[][] {
+): readonly (readonly (readonly string[])[])[] {
   const chunks: (readonly (readonly string[])[])[] = [];
   let current: (readonly string[])[] = [];
   for (const row of dataRows) {
@@ -180,7 +180,7 @@ export function chunkCsvRowsForExport(
 export function chunkCsvDataRowsForExport(
   dataRows: readonly (readonly string[])[],
   limitBytes: number = CSV_EXPORT_WASM_JSON_LIMIT_BYTES,
-): readonly (readonly string[])[][] {
+): readonly (readonly (readonly string[])[])[] {
   const chunks: (readonly (readonly string[])[])[] = [];
   let current: (readonly string[])[] = [];
   for (const row of dataRows) {
