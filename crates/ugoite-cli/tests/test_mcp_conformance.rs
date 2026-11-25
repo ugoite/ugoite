@@ -14,7 +14,8 @@ use serde_json::json;
 use std::{process::Stdio, time::Duration};
 use tokio::{net::TcpListener, process::Command, task::JoinHandle};
 use ugoite_server::{app, AppState};
-mod support;
+#[path = "support/auth.rs"]
+mod auth_test_support;
 
 const CONFORMANCE_PACKAGE: &str = "@modelcontextprotocol/conformance@0.2.0-alpha.11";
 const MCP_VERSION: &str = "2026-07-28";
@@ -159,7 +160,7 @@ async fn mcp_rejects_wrong_resource_issuer_scope_and_space_selector() {
 }
 
 fn test_public_key_jwk() -> serde_json::Value {
-    support::public_jwk(&support::test_signing_key())
+    auth_test_support::public_jwk(&auth_test_support::test_signing_key())
 }
 
 fn rpc_request(id: &str, method: &str, params: serde_json::Value) -> serde_json::Value {

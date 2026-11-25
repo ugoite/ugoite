@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use support::Command;
 
+#[path = "support/auth.rs"]
+mod auth_test_support;
 mod support;
 
 fn ugoite_bin() -> PathBuf {
@@ -286,8 +288,8 @@ fn init_backend_config(config_path: &std::path::Path, url: &str, space_uid: &str
 /// carry a real ES256 session. The stub ignores auth headers; only the
 /// CLI-side gate and session binding observe it.
 fn seed_stub_credential(config_path: &std::path::Path, base_url: &str, space_uid: &str) {
-    let key = support::test_signing_key();
-    let public_key_jwk = support::public_jwk(&key);
+    let key = auth_test_support::test_signing_key();
+    let public_key_jwk = auth_test_support::public_jwk(&key);
     let session = serde_json::json!({
         "credential_id": uuid::Uuid::now_v7().to_string(),
         "device_name": "asset stub test",

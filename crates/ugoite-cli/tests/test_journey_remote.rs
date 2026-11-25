@@ -23,7 +23,8 @@ use tokio::task::JoinHandle;
 use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
-mod support;
+#[path = "support/auth.rs"]
+mod auth_test_support;
 
 const BASIC_COMPOSITION_FIXTURE: &str = r#"format: ugoite.composition
 format_version: 1
@@ -112,8 +113,8 @@ fn ugoite_bin() -> std::path::PathBuf {
 }
 
 fn test_key_and_jwk() -> (SigningKey, serde_json::Value) {
-    let key = support::test_signing_key();
-    let jwk = support::public_jwk(&key);
+    let key = auth_test_support::test_signing_key();
+    let jwk = auth_test_support::public_jwk(&key);
     (key, jwk)
 }
 
