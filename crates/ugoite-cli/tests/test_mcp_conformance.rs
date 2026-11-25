@@ -316,7 +316,3 @@ async fn forward_to_ugoite(
         .body(Body::from(body))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
-
-// This makes the base64 trait import local and keeps the test's credential
-// representation consistent with the server's test access helper.
-use base64::Engine as _;
