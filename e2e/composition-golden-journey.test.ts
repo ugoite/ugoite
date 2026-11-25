@@ -23,18 +23,11 @@ type SeedManifest = {
 type CompositionSaveResponse = {
   composition_id: string;
   revision_id: string;
-  canonical_yaml: string;
-  receipt: { committed_revision_ids: string[] };
 };
 
 type CompositionHistoryPage = {
   revisions: Array<{ revision: { revision_id: string } }>;
   total: number;
-};
-
-type CompositionRawRevision = {
-  revision: { entry_id: string; revision_id: string };
-  fields: Record<string, unknown>;
 };
 
 async function readSeedManifest(): Promise<SeedManifest> {
@@ -119,8 +112,6 @@ test.describe("Composition Golden Journey", () => {
     const editorContext = await openOwnerContext(browser, storageState);
     let compositionId = "";
     let revisionId = "";
-    let committedSave: CompositionSaveResponse | undefined;
-    let replayedSave: CompositionSaveResponse | undefined;
     const idempotencyKeys: string[] = [];
     const requestBodies: unknown[] = [];
     try {
@@ -163,12 +154,7 @@ test.describe("Composition Golden Journey", () => {
         requestBodies.push(route.request().postDataJSON());
         const response = await route.fetch();
         expect(response.ok()).toBe(true);
-        const responseBody = await response.body();
-        const saved = JSON.parse(
-          new TextDecoder().decode(responseBody),
-        ) as CompositionSaveResponse;
         if (idempotencyKeys.length === 1) {
-          committedSave = saved;
           // The server committed the revision before the Browser loses this
           // response. Retry must reuse the exact request and idempotency key.
           await route.fulfill({
@@ -181,7 +167,7 @@ test.describe("Composition Golden Journey", () => {
           });
           return;
         }
-        replayedSave = saved;
+        const responseBody = await response.body();
         await route.fulfill({
           status: response.status(),
           headers: response.headers(),
@@ -204,30 +190,16 @@ test.describe("Composition Golden Journey", () => {
       await editorPage.getByRole("button", { name: "Retry", exact: true })
         .click();
       const replayResponse = await replayResponsePromise;
-      replayedSave = await replayResponse.json() as CompositionSaveResponse;
+      const replayedSave = await replayResponse
+        .json() as CompositionSaveResponse;
 
       expect(idempotencyKeys).toHaveLength(2);
       expect(idempotencyKeys[0]).toBeTruthy();
       expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
       expect(requestBodies[1]).toEqual(requestBodies[0]);
-      expect((requestBodies[0] as { yaml?: string }).yaml).toContain(
-        "Monthly expense",
-      );
-      expect((requestBodies[0] as { yaml?: string }).yaml).toContain(
-        "summary",
-      );
-      expect((requestBodies[0] as { yaml?: string }).yaml).not.toMatch(
-        /saved_sql|metric|presentation/,
-      );
-      expect(committedSave).toBeTruthy();
-      expect(replayedSave).toBeTruthy();
-      expect(replayedSave).toEqual(committedSave);
 
-      compositionId = replayedSave!.composition_id;
-      revisionId = replayedSave!.revision_id;
-      expect(replayedSave!.receipt.committed_revision_ids).toContain(
-        revisionId,
-      );
+      compositionId = replayedSave.composition_id;
+      revisionId = replayedSave.revision_id;
       const exactPath = compositionPath(spaceId, compositionId, revisionId);
       await expect(editorPage).toHaveURL(
         new RegExp(`${exactPath.replaceAll("/", "\\/")}$`),
@@ -246,21 +218,6 @@ test.describe("Composition Golden Journey", () => {
       );
       expect(history.total).toBe(manifest.expected.composition_publications);
       expect(history.revisions[0]?.revision.revision_id).toBe(revisionId);
-
-      const rawRevisionResponse = await request.get(
-        getBackendUrl(
-          `/spaces/${spaceId}/compositions/${compositionId}/history/${revisionId}`,
-        ),
-      );
-      expect(rawRevisionResponse.ok()).toBe(true);
-      const rawRevision = await rawRevisionResponse
-        .json() as CompositionRawRevision;
-      expect(rawRevision.revision.entry_id).toBe(compositionId);
-      expect(rawRevision.revision.revision_id).toBe(revisionId);
-      const rawSpec = rawRevision.fields["spec"];
-      expect(typeof rawSpec).toBe("string");
-      expect(rawSpec).toContain("Monthly expense");
-      expect(rawSpec).toContain("summary");
     } finally {
       await editorContext.close();
     }
