@@ -18,7 +18,7 @@ pub struct SqlFormNameReferences {
     pub form_names: BTreeSet<String>,
     /// Every quoted single-part relation, including legacy opaque relations.
     pub quoted_relation_names: BTreeSet<String>,
-    /// Alias keys rewritten by [`resolve_form_name_references_in_statements`].
+    /// Alias keys rewritten by [`resolve_form_name_references_in_sql`].
     pub used_aliases: BTreeSet<String>,
     /// Whether any relation was rewritten.
     pub changed: bool,
@@ -36,7 +36,7 @@ pub fn is_legacy_sql_relation_name(name: &str) -> bool {
 /// Traverse parsed SQL statements with the same nested CTE visibility used by
 /// server binding. If `aliases` is non-empty, matching quoted Form names are
 /// rewritten to their stable relations after collecting their reference names.
-pub fn resolve_form_name_references_in_statements<'a>(
+fn resolve_form_name_references_in_statements<'a>(
     statements: impl IntoIterator<Item = &'a mut Statement>,
     aliases: &BTreeMap<String, String>,
 ) -> Result<SqlFormNameReferences, String> {

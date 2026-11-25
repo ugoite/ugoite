@@ -4446,6 +4446,9 @@ fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
             Token::Word(word) if nesting == 0 && word.quote_style.is_none() => {
                 let value = word.value.to_ascii_uppercase();
                 if value == "IN" {
+                    if has_non_in_predicate_operator_before(&tokens, index) {
+                        return None;
+                    }
                     let (target, rhs_open) = match (tokens.get(index + 1), tokens.get(index + 2)) {
                         (Some(Token::Word(word)), Some(Token::LParen))
                             if word.value.eq_ignore_ascii_case("UNNEST") =>
@@ -4498,6 +4501,42 @@ fn matching_parenthesis(tokens: &[Token], open: usize) -> Option<usize> {
         }
     }
     None
+}
+
+fn has_non_in_predicate_operator_before(tokens: &[Token], in_index: usize) -> bool {
+    let mut nesting = 0usize;
+    for (index, token) in tokens.iter().take(in_index).enumerate() {
+        match token {
+            Token::LParen | Token::LBracket => nesting += 1,
+            Token::RParen | Token::RBracket => nesting = nesting.saturating_sub(1),
+            Token::Word(word) if nesting == 0 && word.quote_style.is_none() => {
+                let value = word.value.to_ascii_uppercase();
+                if [
+                    "AND", "OR", "XOR", "IS", "LIKE", "ILIKE", "BETWEEN", "REGEXP", "RLIKE",
+                    "SIMILAR",
+                ]
+                .contains(&value.as_str())
+                    || (value == "NOT" && index + 1 != in_index)
+                {
+                    return true;
+                }
+            }
+            Token::DoubleEq
+            | Token::Eq
+            | Token::Neq
+            | Token::Lt
+            | Token::Gt
+            | Token::LtEq
+            | Token::GtEq
+            | Token::Spaceship
+                if nesting == 0 =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -4577,9 +4616,54 @@ mod tests {
             in_predicate_operator("value IN UNNEST(items) AND enabled"),
             None
         );
+        assert_eq!(in_predicate_operator("value OR other IN (1)"), None);
+        assert_eq!(
+            in_predicate_operator("value AND other NOT IN (SELECT id FROM t)"),
+            None
+        );
+        assert_eq!(in_predicate_operator("value = other IN (1)"), None);
         assert_eq!(
             in_predicate_operator("value NOT IN (SELECT id FROM t)"),
             Some(("in_subquery", true))
+        );
+    }
+
+    #[test]
+    fn compound_in_predicates_keep_the_parent_binary_operator_metadata() {
+        let document =
+            parse_sql_document("SELECT a OR b IN (1), c AND d NOT IN (SELECT id FROM t)");
+        assert_eq!(
+            document.status,
+            SqlDocumentStatus::Parsed,
+            "{:?}",
+            document.diagnostics
+        );
+
+        let operators = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node.semantic.as_ref() {
+                Some(SqlDocumentNodeData::BinaryOperator { operator }) => Some(operator.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(operators.contains(&"OR"), "{operators:?}");
+        assert!(operators.contains(&"AND"), "{operators:?}");
+
+        let predicates = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node.semantic.as_ref() {
+                Some(SqlDocumentNodeData::Predicate { operator, negated }) => {
+                    Some((operator.as_str(), *negated))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(predicates.contains(&("in", false)), "{predicates:?}");
+        assert!(
+            predicates.contains(&("in_subquery", true)),
+            "{predicates:?}"
         );
     }
 
