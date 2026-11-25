@@ -4,7 +4,7 @@ description: The portable typed graph and execution boundaries for Composition.
 ---
 
 [ADR-027](adr-027-text-first-composition.md) records the accepted
-Text-first design. [REQ-COMP-010](../../mitase/requirements/composition/text-first-graph.yaml)
+Text-first design. [REQ-COMP-010](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/composition/text-first-graph.yaml)
 is the behavior authority; current requirements and verification bindings are
 tracked in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
 REST behavior is implemented by `ugoite-server` and `/openapi.json` defines
