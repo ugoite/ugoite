@@ -78,8 +78,11 @@ if (backendUrl && useViteProxy) {
   );
 }
 
-export default defineConfig({
+const appConfig = {
   ssr: !staticSpa,
+  // SolidStart 1.4+ adds its own reload by default. Keep route-chunk recovery
+  // under Ugoite's existing bounded Vite preload recovery instead.
+  reloadOnRouteChunkError: false,
   server: {
     errorHandler: "~/error-handler",
   },
@@ -165,4 +168,6 @@ export default defineConfig({
       },
     },
   },
-});
+};
+
+export default defineConfig(appConfig);
