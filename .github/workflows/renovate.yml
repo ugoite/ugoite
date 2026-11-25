@@ -39,15 +39,12 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ugoite
           repositories: ugoite
-          permission-administration: read
           permission-checks: read
           permission-contents: read
           permission-issues: read
-          permission-members: read
           permission-pull-requests: read
           permission-statuses: read
           permission-vulnerability-alerts: read
-          permission-workflows: read
 
       - name: Issue single-repository writer App token
         if: ${{ !inputs.diagnostic }}
