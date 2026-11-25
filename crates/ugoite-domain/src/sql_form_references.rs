@@ -18,7 +18,7 @@ pub struct SqlFormNameReferences {
     pub form_names: BTreeSet<String>,
     /// Every quoted single-part relation, including legacy opaque relations.
     pub quoted_relation_names: BTreeSet<String>,
-    /// Alias keys rewritten by [`resolve_form_name_references_in_statements`].
+    /// Alias keys rewritten by [`resolve_form_name_references_in_sql`].
     pub used_aliases: BTreeSet<String>,
     /// Whether any relation was rewritten.
     pub changed: bool,
@@ -36,7 +36,7 @@ pub fn is_legacy_sql_relation_name(name: &str) -> bool {
 /// Traverse parsed SQL statements with the same nested CTE visibility used by
 /// server binding. If `aliases` is non-empty, matching quoted Form names are
 /// rewritten to their stable relations after collecting their reference names.
-pub fn resolve_form_name_references_in_statements<'a>(
+fn resolve_form_name_references_in_statements<'a>(
     statements: impl IntoIterator<Item = &'a mut Statement>,
     aliases: &BTreeMap<String, String>,
 ) -> Result<SqlFormNameReferences, String> {
@@ -175,6 +175,34 @@ pub fn resolve_form_name_references_in_statements<'a>(
     }
 }
 
+/// Resolve quoted Form references in SQL text without exposing this crate's
+/// parser AST to callers. Callers that use a different sqlparser version can
+/// exchange SQL strings across the crate boundary and parse the result with
+/// their own AST types.
+pub fn resolve_form_name_references_in_sql(
+    sql: &str,
+    aliases: &BTreeMap<String, String>,
+) -> Result<(String, SqlFormNameReferences), String> {
+    let dialect = GenericDialect {};
+    let mut statements = Parser::new(&dialect)
+        .with_recursion_limit(256)
+        .try_with_sql(sql)
+        .map_err(|error| error.to_string())?
+        .parse_statements()
+        .map_err(|error| error.to_string())?;
+    let result = resolve_form_name_references_in_statements(&mut statements, aliases)?;
+    let rendered = if result.changed {
+        statements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(";\n")
+    } else {
+        sql.to_owned()
+    };
+    Ok((rendered, result))
+}
+
 /// Classify quoted Form-name table references using the shared Rust CTE-scope
 /// visitor. Parse errors are returned so callers can preserve guards fail-closed.
 pub fn collect_quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>, String> {
@@ -209,7 +237,7 @@ pub fn collect_quoted_form_relation_names(sql: &str) -> Result<BTreeSet<String>,
 mod tests {
     use super::{
         collect_quoted_form_name_references, collect_quoted_form_relation_names,
-        resolve_form_name_references_in_statements,
+        resolve_form_name_references_in_sql, resolve_form_name_references_in_statements,
     };
     use sqlparser::dialect::GenericDialect;
     use sqlparser::parser::Parser;
@@ -265,6 +293,27 @@ mod tests {
             aliased[0].to_string(),
             "SELECT chosen.amount FROM form_123 AS chosen"
         );
+    }
+
+    #[test]
+    fn sql_text_resolution_keeps_ast_types_inside_the_domain_crate() {
+        let aliases = BTreeMap::from([("Expenses".to_string(), "form_123".to_string())]);
+        let (rendered, resolution) = resolve_form_name_references_in_sql(
+            "SELECT \"Expenses\".amount FROM \"Expenses\"",
+            &aliases,
+        )
+        .unwrap();
+
+        assert!(resolution.changed);
+        assert_eq!(
+            resolution.used_aliases,
+            BTreeSet::from(["Expenses".to_owned()])
+        );
+        assert!(
+            rendered.contains("FROM form_123 AS \"Expenses\""),
+            "{rendered}"
+        );
+        assert!(rendered.contains("\"Expenses\".amount"), "{rendered}");
     }
 
     #[test]

@@ -1921,34 +1921,39 @@ fn resolve_form_name_references_with_references(
 ) -> Result<FormNameReferenceResolution> {
     use datafusion::sql::parser::Statement as DataFusionStatement;
 
-    let mut statements =
+    let statements =
         crate::sql_parser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
-    let resolution =
-        ugoite_domain::sql_form_references::resolve_form_name_references_in_statements(
-            statements
-                .iter_mut()
-                .filter_map(|statement| match statement {
-                    DataFusionStatement::Statement(statement) => Some(statement.as_mut()),
-                    _ => None,
-                }),
-            aliases,
-        )
-        .map_err(|error| AuthorizedQueryError::invalid_query(anyhow!(error)))?;
-    let rendered = if resolution.changed {
-        statements
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(";\n")
+    let mut changed = false;
+    let mut used_aliases = BTreeSet::new();
+    let mut form_names = BTreeSet::new();
+    let mut quoted_relation_names = BTreeSet::new();
+    let mut rendered_statements = Vec::with_capacity(statements.len());
+
+    for statement in &statements {
+        match statement {
+            DataFusionStatement::Statement(statement) => {
+                let (rendered, resolution) =
+                    ugoite_domain::sql_form_references::resolve_form_name_references_in_sql(
+                        &statement.to_string(),
+                        aliases,
+                    )
+                    .map_err(|error| AuthorizedQueryError::invalid_query(anyhow!(error)))?;
+                changed |= resolution.changed;
+                used_aliases.extend(resolution.used_aliases);
+                form_names.extend(resolution.form_names);
+                quoted_relation_names.extend(resolution.quoted_relation_names);
+                rendered_statements.push(rendered);
+            }
+            _ => rendered_statements.push(statement.to_string()),
+        }
+    }
+
+    let rendered = if changed {
+        rendered_statements.join(";\n")
     } else {
         sql.to_string()
     };
-    Ok((
-        rendered,
-        resolution.used_aliases,
-        resolution.form_names,
-        resolution.quoted_relation_names,
-    ))
+    Ok((rendered, used_aliases, form_names, quoted_relation_names))
 }
 
 fn validate_logical_plan(

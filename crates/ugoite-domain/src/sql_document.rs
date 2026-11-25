@@ -2262,13 +2262,7 @@ impl QueryStructureCollector<'_> {
                                     Some(item_range),
                                     order_id,
                                     Some(SqlDocumentNodeData::OrderByItem {
-                                        direction: item.options.asc.map(|ascending| {
-                                            if ascending {
-                                                SqlDocumentOrderDirection::Asc
-                                            } else {
-                                                SqlDocumentOrderDirection::Desc
-                                            }
-                                        }),
+                                        direction: order_by_direction(&item.options),
                                         nulls_order: item.options.nulls_first.map(|first| {
                                             if first {
                                                 SqlDocumentNullsOrder::First
@@ -4124,6 +4118,9 @@ fn object_name_parts(name: &ObjectName) -> Vec<SqlDocumentIdentifier> {
 }
 
 fn table_factor_data(table_factor: &TableFactor) -> SqlDocumentNodeData {
+    // sqlparser 0.64 adds a table-factor variant; the wildcard keeps this
+    // metadata adapter source-compatible while it records the generic shape.
+    #[allow(unreachable_patterns)]
     let (factor_kind, alias) = match table_factor {
         TableFactor::Table { alias, .. } => ("table", alias.as_ref()),
         TableFactor::Derived { alias, .. } => ("derived", alias.as_ref()),
@@ -4138,6 +4135,7 @@ fn table_factor_data(table_factor: &TableFactor) -> SqlDocumentNodeData {
         TableFactor::MatchRecognize { alias, .. } => ("match_recognize", alias.as_ref()),
         TableFactor::XmlTable { alias, .. } => ("xml_table", alias.as_ref()),
         TableFactor::SemanticView { alias, .. } => ("semantic_view", alias.as_ref()),
+        _ => ("other", None),
     };
     let alias_columns = alias.map(|alias| {
         (
@@ -4331,9 +4329,6 @@ fn expression_data(
             cast_kind: if *is_try { "try_convert" } else { "convert" }.to_owned(),
             target_type: data_type.as_ref().map(ToString::to_string),
         }),
-        Expr::InList { negated, .. } => predicate("in", *negated),
-        Expr::InSubquery { negated, .. } => predicate("in_subquery", *negated),
-        Expr::InUnnest { negated, .. } => predicate("in_unnest", *negated),
         Expr::Between { negated, .. } => predicate("between", *negated),
         Expr::Like { negated, .. } => predicate("like", *negated),
         Expr::ILike { negated, .. } => predicate("ilike", *negated),
@@ -4349,10 +4344,16 @@ fn expression_data(
         Expr::IsNotUnknown(_) => predicate("is_unknown", true),
         Expr::IsDistinctFrom(_, _) => predicate("is_distinct_from", false),
         Expr::IsNotDistinctFrom(_, _) => predicate("is_distinct_from", true),
-        _ => Some(SqlDocumentNodeData::UnmodeledExpression {
-            node_kind: expression_kind(expression),
-            reason: "No dedicated semantic attributes are defined for this parser expression variant; its exact source remains available from the document range and tokens.".to_owned(),
-        }),
+        _ => match in_predicate_operator(&expression.to_string()) {
+            Some((operator, negated)) => Some(SqlDocumentNodeData::Predicate {
+                operator: operator.to_owned(),
+                negated,
+            }),
+            None => Some(SqlDocumentNodeData::UnmodeledExpression {
+                node_kind: expression_kind(expression),
+                reason: "No dedicated semantic attributes are defined for this parser expression variant; its exact source remains available from the document range and tokens.".to_owned(),
+            }),
+        },
     }
 }
 
@@ -4366,9 +4367,7 @@ fn expression_kind(expression: &Expr) -> SqlDocumentNodeKind {
         Expr::Function(_) => SqlDocumentNodeKind::FunctionExpression,
         Expr::Case { .. } => SqlDocumentNodeKind::CaseExpression,
         Expr::Cast { .. } | Expr::Convert { .. } => SqlDocumentNodeKind::CastExpression,
-        Expr::Subquery(_) | Expr::Exists { .. } | Expr::InSubquery { .. } => {
-            SqlDocumentNodeKind::SubqueryExpression
-        }
+        Expr::Subquery(_) | Expr::Exists { .. } => SqlDocumentNodeKind::SubqueryExpression,
         Expr::IsFalse(_)
         | Expr::IsNotFalse(_)
         | Expr::IsTrue(_)
@@ -4379,16 +4378,126 @@ fn expression_kind(expression: &Expr) -> SqlDocumentNodeKind {
         | Expr::IsNotUnknown(_)
         | Expr::IsDistinctFrom(_, _)
         | Expr::IsNotDistinctFrom(_, _)
-        | Expr::InList { .. }
-        | Expr::InUnnest { .. }
         | Expr::Between { .. }
         | Expr::Like { .. }
         | Expr::ILike { .. }
         | Expr::SimilarTo { .. }
         | Expr::RLike { .. } => SqlDocumentNodeKind::PredicateExpression,
         Expr::Nested(_) => SqlDocumentNodeKind::NestedExpression,
-        _ => SqlDocumentNodeKind::OtherExpression,
+        _ => match in_predicate_operator(&expression.to_string()) {
+            Some(("in_subquery", _)) => SqlDocumentNodeKind::SubqueryExpression,
+            Some(_) => SqlDocumentNodeKind::PredicateExpression,
+            None => SqlDocumentNodeKind::OtherExpression,
+        },
     }
+}
+
+fn order_by_direction(options: &impl ToString) -> Option<SqlDocumentOrderDirection> {
+    let rendered = options.to_string();
+    let rendered = rendered.trim_start().to_ascii_uppercase();
+    if rendered.starts_with("ASC")
+        && rendered
+            .as_bytes()
+            .get(3)
+            .is_none_or(u8::is_ascii_whitespace)
+    {
+        Some(SqlDocumentOrderDirection::Asc)
+    } else if rendered.starts_with("DESC")
+        && rendered
+            .as_bytes()
+            .get(4)
+            .is_none_or(u8::is_ascii_whitespace)
+    {
+        Some(SqlDocumentOrderDirection::Desc)
+    } else {
+        None
+    }
+}
+
+fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
+    let dialect = GenericDialect {};
+    let tokens = Tokenizer::new(&dialect, expression).tokenize().ok()?;
+    let tokens = tokens
+        .into_iter()
+        .filter(|token| !matches!(token, Token::Whitespace(_) | Token::EOF))
+        .collect::<Vec<_>>();
+    let mut nesting = 0usize;
+    let mut previous_word = None::<String>;
+    let mut candidate = None;
+
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            Token::LParen | Token::LBracket => {
+                nesting += 1;
+                if nesting == 1 {
+                    previous_word = None;
+                }
+            }
+            Token::RParen | Token::RBracket => {
+                nesting = nesting.saturating_sub(1);
+                if nesting == 0 {
+                    previous_word = None;
+                }
+            }
+            Token::Word(word) if nesting == 0 && word.quote_style.is_none() => {
+                let value = word.value.to_ascii_uppercase();
+                if value == "IN" {
+                    let (target, rhs_open) = match (tokens.get(index + 1), tokens.get(index + 2)) {
+                        (Some(Token::Word(word)), Some(Token::LParen))
+                            if word.value.eq_ignore_ascii_case("UNNEST") =>
+                        {
+                            ("in_unnest", index + 2)
+                        }
+                        (Some(Token::LParen), _) => {
+                            let target = if matches!(tokens.get(index + 2), Some(Token::Word(word))
+                                if ["SELECT", "WITH", "VALUES", "TABLE"].iter().any(|keyword| word.value.eq_ignore_ascii_case(keyword)))
+                            {
+                                "in_subquery"
+                            } else {
+                                "in"
+                            };
+                            (target, index + 1)
+                        }
+                        _ => {
+                            previous_word = Some(value);
+                            continue;
+                        }
+                    };
+                    if let Some(rhs_close) = matching_parenthesis(&tokens, rhs_open) {
+                        if rhs_close + 1 == tokens.len() {
+                            candidate = Some((target, previous_word.as_deref() == Some("NOT")));
+                        }
+                    }
+                    continue;
+                }
+                previous_word = Some(value);
+            }
+            _ if nesting == 0 => previous_word = None,
+            _ => {}
+        }
+    }
+    candidate
+}
+
+fn matching_parenthesis(tokens: &[Token], open: usize) -> Option<usize> {
+    if !matches!(tokens.get(open), Some(Token::LParen)) {
+        return None;
+    }
+
+    let mut nesting = 0usize;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        match token {
+            Token::LParen => nesting += 1,
+            Token::RParen => {
+                nesting = nesting.checked_sub(1)?;
+                if nesting == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -4417,6 +4526,135 @@ mod tests {
             "$second"
         );
         assert_eq!(normalized.error, None);
+    }
+
+    #[test]
+    fn parser_version_neutral_adapters_keep_order_and_in_predicate_semantics() {
+        let source = "SELECT a IN (1, 2), b NOT IN (SELECT c FROM t), d IN UNNEST(arr), '$$ IN $$' ORDER BY a DESC NULLS LAST";
+        let document = parse_sql_document(source);
+        assert_eq!(
+            document.status,
+            SqlDocumentStatus::Parsed,
+            "{:?}",
+            document.diagnostics
+        );
+
+        let predicates = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node.semantic.as_ref() {
+                Some(SqlDocumentNodeData::Predicate { operator, negated }) => {
+                    Some((operator.as_str(), *negated))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(predicates.contains(&("in", false)), "{predicates:?}");
+        assert!(
+            predicates.contains(&("in_subquery", true)),
+            "{predicates:?}"
+        );
+        assert!(predicates.contains(&("in_unnest", false)), "{predicates:?}");
+        assert!(document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::OrderByItem
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::OrderByItem {
+                        direction: Some(SqlDocumentOrderDirection::Desc),
+                        nulls_order: Some(SqlDocumentNullsOrder::Last),
+                    })
+                )
+        }));
+    }
+
+    #[test]
+    fn in_predicate_scanner_ignores_literals_and_nested_subexpressions() {
+        assert_eq!(in_predicate_operator("'value IN (1)'"), None);
+        assert_eq!(in_predicate_operator("$$ value IN (1) $$"), None);
+        assert_eq!(in_predicate_operator("(value IN (1))"), None);
+        assert_eq!(in_predicate_operator("value IN (1) AND enabled"), None);
+        assert_eq!(
+            in_predicate_operator("value IN UNNEST(items) AND enabled"),
+            None
+        );
+        assert_eq!(
+            in_predicate_operator("value = other IN (1)"),
+            Some(("in", false))
+        );
+        assert_eq!(
+            in_predicate_operator("CASE WHEN a IN (1) THEN b END IN (2)"),
+            Some(("in", false))
+        );
+        assert_eq!(
+            in_predicate_operator("value NOT IN (SELECT id FROM t)"),
+            Some(("in_subquery", true))
+        );
+    }
+
+    #[test]
+    fn compound_in_predicates_keep_the_parent_binary_operator_metadata() {
+        let document =
+            parse_sql_document("SELECT a OR b IN (1), c AND d NOT IN (SELECT id FROM t)");
+        assert_eq!(
+            document.status,
+            SqlDocumentStatus::Parsed,
+            "{:?}",
+            document.diagnostics
+        );
+
+        let operators = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node.semantic.as_ref() {
+                Some(SqlDocumentNodeData::BinaryOperator { operator }) => Some(operator.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(operators.contains(&"OR"), "{operators:?}");
+        assert!(operators.contains(&"AND"), "{operators:?}");
+
+        let predicates = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node.semantic.as_ref() {
+                Some(SqlDocumentNodeData::Predicate { operator, negated }) => {
+                    Some((operator.as_str(), *negated))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(predicates.contains(&("in", false)), "{predicates:?}");
+        assert!(
+            predicates.contains(&("in_subquery", true)),
+            "{predicates:?}"
+        );
+    }
+
+    #[test]
+    fn comparison_left_operand_keeps_in_predicate_metadata() {
+        let document = parse_sql_document("SELECT 1 = 1 IN (TRUE, FALSE)");
+        assert_eq!(
+            document.status,
+            SqlDocumentStatus::Parsed,
+            "{:?}",
+            document.diagnostics
+        );
+
+        assert!(document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::PredicateExpression
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::Predicate { operator, negated: false })
+                        if operator == "in"
+                )
+        }));
+        assert!(document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::BinaryExpression
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::BinaryOperator { operator }) if operator == "="
+                )
+        }));
     }
 
     #[test]
