@@ -302,7 +302,6 @@ inventory:
         - frontend/src/components/CompositionDisplayPicker.test.tsx
         - frontend/src/components/CompositionVariableList.tsx
         - frontend/src/components/CompositionVariableList.test.tsx
-        - frontend/src/lib/composition-variable-name.ts
         - frontend/src/lib/exact-integer.ts
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx

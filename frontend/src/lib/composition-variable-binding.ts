@@ -88,7 +88,7 @@ export interface CompositionGraphDocumentDraft {
   spec: CompositionGraphSpecDraft;
 }
 
-export const compositionGraphSpecDraft = (
+const compositionGraphSpecDraft = (
   draft: CompositionGraphDraft,
 ): CompositionGraphSpecDraft => ({
   variables: draft.variables,
@@ -253,12 +253,7 @@ export const compositionNodeReturnsScalar = (
 };
 
 /** Types supported by plain text interpolation. */
-export const isCompositionDisplayableType = (
-  type: CompositionScalarType,
-): boolean =>
-  type !== "json";
-
-export const compositionVariableFitsComponent = (
+const compositionVariableFitsComponent = (
   node: CompositionVariableNode,
   kind: BindingComponentKind,
 ): boolean =>
