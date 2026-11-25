@@ -258,23 +258,6 @@
       "enabled": false
     },
     {
-      "description": "Hold non-vulnerability p256 minor and major updates until the authentication adapter supports the 0.14 API",
-      "matchManagers": [
-        "cargo"
-      ],
-      "matchPackageNames": [
-        "p256"
-      ],
-      "matchUpdateTypes": [
-        "major",
-        "minor"
-      ],
-      "matchJsonata": [
-        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
-      ],
-      "enabled": false
-    },
-    {
       "description": "Hold non-vulnerability rmcp minor updates until transport error bodies remain visible in CLI errors",
       "matchManagers": [
         "cargo"
