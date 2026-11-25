@@ -38,9 +38,14 @@ extraction does not replace CI evidence on a generated candidate.
 ```bash
 mise outdated --bump
 deno outdated --recursive
-cargo audit --locked --json
+cargo audit --json
+cargo metadata --locked --no-deps --format-version 1
 deno audit
 ```
+
+`cargo-audit 0.23.0` reads the workspace `Cargo.lock` but does not accept a
+`--locked` flag. Use `cargo metadata --locked` separately when checking that
+the workspace resolves without changing its lockfile.
 
 `cargo audit` and `deno audit` run only when the corresponding tool is
 available; the workflow does not install extra scanners on its own. If the
