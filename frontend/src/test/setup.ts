@@ -1,24 +1,22 @@
 import "@testing-library/jest-dom/vitest";
-import { readFile } from "node:fs/promises";
-import { http, HttpResponse } from "msw";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { setLocale } from "../lib/i18n";
+
+// Keep Vitest's generated `?init` loader on the checked WASM artifact without
+// asking its URL fetch to go through the local frontend origin. MSW continues
+// to own API request interception; the protocol tests still execute the real
+// compiled module.
+vi.mock("../lib/generated/ugoite_wasm.wasm?init", () => ({
+  default: async () => {
+    const { readFile } = await import("node:fs/promises");
+    const bytes = await readFile("src/lib/generated/ugoite_wasm.wasm");
+    const { instance } = await WebAssembly.instantiate(bytes);
+    return instance;
+  },
+}));
 
 // Import MSW server - will be created when mocks are available
 let server: ReturnType<typeof import("msw/node").setupServer>;
-let wasmBytes: Uint8Array<ArrayBuffer>;
-
-const registerWasmHandler = () => {
-  server.use(
-    http.get(
-      /.*ugoite_wasm\.wasm(?:\?.*)?$/,
-      () =>
-        new HttpResponse(wasmBytes, {
-          headers: { "Content-Type": "application/wasm" },
-        }),
-    ),
-  );
-};
 
 const createStorageMock = () => {
   const data = new Map<string, string>();
@@ -62,15 +60,12 @@ ensureStorage("sessionStorage");
 beforeAll(async () => {
   const { server: mswServer } = await import("./mocks/server");
   server = mswServer;
-  wasmBytes = await readFile("src/lib/generated/ugoite_wasm.wasm");
-  registerWasmHandler();
   server.listen({ onUnhandledRequest: "error" });
 });
 
 // Reset handlers after each test
 afterEach(() => {
   server?.resetHandlers();
-  registerWasmHandler();
   setLocale("en");
 });
 
