@@ -835,7 +835,8 @@ export const handlers = [
     if (validationError) {
       return HttpResponse.json({ detail: validationError }, { status: 422 });
     }
-    if (body.parent_revision_id !== entry.revision_id) {
+    const validatedBody = body as Record<string, unknown>;
+    if (validatedBody.parent_revision_id !== entry.revision_id) {
       return HttpResponse.json(
         {
           code: "REVISION_CONFLICT",
@@ -845,7 +846,7 @@ export const handlers = [
         { status: 409 },
       );
     }
-    const { parent_revision_id: _parentRevisionId, ...payload } = body;
+    const { parent_revision_id: _parentRevisionId, ...payload } = validatedBody;
     Object.assign(entry, payload);
     const revisionId = generateRevisionId();
     entry.revision_id = revisionId;

@@ -60,7 +60,12 @@ ensureStorage("sessionStorage");
 beforeAll(async () => {
   const { server: mswServer } = await import("./mocks/server");
   server = mswServer;
-  server.listen({ onUnhandledRequest: "error" });
+  server.listen({
+    onUnhandledFrame: ({ frame, defaults }) => {
+      if (frame.protocol === "http") defaults.error();
+      else defaults.warn();
+    },
+  });
 });
 
 // Reset handlers after each test
