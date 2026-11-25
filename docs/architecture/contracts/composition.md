@@ -4,14 +4,12 @@ description: The portable typed graph and execution boundaries for Composition.
 ---
 
 [ADR-027](adr-027-text-first-composition.md) records the accepted
-Text-first design. Current requirements and verification bindings are tracked
-in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
+Text-first design. [REQ-COMP-010](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/composition/text-first-graph.yaml)
+is the behavior authority; current requirements and verification bindings are
+tracked in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
 REST behavior is implemented by `ugoite-server` and `/openapi.json` defines
-its contract. This is a current-main implementation description; Composition
-was not included in the published v0.2.1 release. The
-[release-scope page](../release/release-scope.md) defines the Current and Stable
-documentation boundary, and the [v0.2.1 release note](../../version/releases/v0.2.1.md)
-remains authoritative for that stable release.
+its contract. Release status and compatibility follow the
+[release-scope page](../release/release-scope.md) and [ADR-027](adr-027-text-first-composition.md).
 
 ## Canonical document
 
@@ -26,27 +24,24 @@ the unreleased prior Composition shape are rejected. There is no alias or
 migration for that prior shape; raw Entry inspection and recovery remain
 available.
 
-Each variable has a unique ID and exactly one kind:
+Each variable has a unique ID and one kind:
 
 | Kind | Stored definition | Runtime value |
 | --- | --- | --- |
-| `constant` | Typed scalar type and validated value | The stored typed value |
-| `input` | Scalar type, requiredness, and optional typed default | A transient user value |
-| `query` | Inline SQL, explicit argument bindings, and server-derived return descriptor | The authorized result for one immutable evaluation snapshot |
+| `constant` | Typed scalar type and validated value | Stored typed value |
+| `input` | Scalar type, requiredness, optional typed default | Transient user value |
+| `query` | Inline SQL, explicit argument bindings, server-derived return descriptor | Authorized result for one evaluation snapshot |
 
-Query parameters map explicitly to graph variable IDs. Matching names do not
-create implicit bindings, and only scalar variables supply SQL parameters. A
-query result is either an ordered `table<Row>` descriptor or a nullable
-`scalar<T>` descriptor. Form identity and result schema are checked by the
-server; the client cannot supply trusted derived metadata. A query schema
-fingerprint covers its ordered result columns and types. A changed or missing
-result descriptor, missing referenced field, or revoked access fails closed;
-changes to unused Form fields do not invalidate an unchanged query result
-contract.
-Stored SQL retains its authored Form names and bindings. Evaluation and its
-Count request use the same resolver-produced SQL with stable Form relation IDs,
-so a rename or same-name replacement cannot retarget a saved query; current
-Publication and ACL checks still apply to that Form ID.
+Query parameters bind explicitly to scalar graph variables; matching names do
+not bind implicitly. Results declare an ordered `table<Row>` or nullable
+`scalar<T>`. The server derives Form identity and result schema; the client
+cannot supply trusted metadata. A fingerprint covers ordered result columns
+and types. Missing or changed descriptors, missing referenced fields, and
+revoked access fail closed, while changes to unused Form fields do not
+invalidate an unchanged result contract. Stored SQL keeps authored Form names
+and bindings; evaluation and Count use the same resolved SQL and stable Form
+relation IDs, so renames or same-name replacements cannot retarget a query.
+Current Publication and ACL checks still apply to the bound Form ID.
 
 Composition integer tokens use ASCII `[+-]?[0-9]+` with at most 64 bytes,
 within the signed 64-bit range. Leading zeros are accepted. YAML and the
@@ -56,42 +51,28 @@ cannot be preserved. Opaque JSON retains its own semantics.
 
 ## Components and Text
 
-The only components are:
-
-- `Table`, which references a table-valued query and renders its SQL projection
-  in result order;
-- `Text`, which owns one plain template string in `content`;
-- `Input`, which references an input variable whose current value is Work.
-
-Table has no saved column projection or heading override. SQL output names,
-aliases, and order determine displayed columns. Text references displayable
-scalar variables with `{{variable_id}}`; `\{{` emits a literal `{{`. Rust
-parses and validates the template and returns ordered literal/reference parts.
-Missing variables, table values, and JSON values are rejected. Values are
-rendered as text nodes only; there is no HTML interpolation, Markdown
-evaluation, or template expression language. Integer and decimal values retain
-their exact representation. Booleans use `true` or `false`; NULL uses a shared
-neutral no-value rendering. Missing or stale values do not restore an earlier
-result as current output.
-
-Every component is placed exactly once. The flow layout controls presentation
-order only. Pixel coordinates, current input values, previews, pages, results,
-cursors, loading state, and errors are transient Work.
+REQ-COMP-010 defines the `Table`, `Text`, and `Input` components. Table displays
+its SQL projection in result order, without a saved column projection or
+heading override. Rust parses Text templates into literal and
+`{{variable_id}}` reference parts; `\{{` is a literal `{{`. Values render as
+text nodes, never HTML, Markdown, or expressions. Integers and decimals retain
+their exact representation; booleans render as `true` or `false`, and NULL
+uses a neutral no-value rendering. Missing or stale values are not shown as
+current output. Components are placed once, and flow layout sets presentation
+order only. Coordinates, inputs, previews, pages, results, cursors, loading,
+and errors are transient Work.
 
 ## Query planning and evaluation
 
-Rust Domain and Core define graph validation, template parsing, canonicalization,
-dependencies, query planning, and diagnostics. The Composition-specific SQL lint
-profile rejects output-projection wildcards; ordinary SQL and published Saved
-SQL behavior remain unchanged. Lint reads no Space data. Authorized planning
-checks current relation identity, ACL, Publication, parameter types, and output
-schema without returning rows. Explicit evaluation runs through the existing
-bounded Rust SQL path.
-
-A scalar query succeeds only for exactly one row and one column. Zero rows, a
-NULL row, multiple rows, type drift, and access denial remain distinguishable.
-Planning one output column does not claim that row cardinality is guaranteed.
-Runtime never selects a first row or column implicitly.
+Rust Domain and Core own graph validation, templates, canonicalization,
+dependencies, planning, and diagnostics. Composition lint rejects
+output-projection wildcards without changing ordinary SQL or published Saved
+SQL behavior, and reads no Space data. Authorized planning checks current
+relation identity, ACL, Publication, parameter types, and output schema without
+returning rows; explicit evaluation uses the bounded Rust SQL path. Scalar
+results require exactly one row and column; zero rows, NULL, multiple rows,
+type drift, and access denial remain distinct. Runtime never selects a first
+row or column implicitly.
 
 Each run is bound to one Composition revision, Publication, authorization
 state, input set, and argument fingerprint. Only affected dependencies are
@@ -100,9 +81,9 @@ are checked against their declared descriptors before rendering, and are never
 persisted as Knowledge or materialized in a hidden table. Paging, continuation,
 cancellation, and resource limits remain server-owned.
 
-An explicitly selected query requires only inputs consumed by its dependency
-closure. Results, pages, and cursors are published together after the closure
-passes validation. A full evaluation still validates all its inputs.
+An explicitly selected query requires only inputs in its dependency closure.
+Its results, pages, and cursors publish together after validation; full
+evaluation validates every input.
 
 The saved-revision Reader retains transient results while it holds a current
 server-issued authority snapshot lease of at most 30 seconds. Returning to
@@ -122,13 +103,11 @@ interaction flow or layout.
 
 ## Compatibility and recovery
 
-The v0.2.1 released CLI, REST/OpenAPI, and release notes do not define a
-Composition surface. The replaced shape was saveable on prerelease `main`; its
-records remain raw Knowledge but are not executable or restorable as the current
-Composition. The current-main implementation targets v0.2.2 as a compatible
-patch without migration or dual read; v0.2.2 is not yet a published release.
-Raw inspect, exact reads, export, and history remain available. Restore succeeds
-for current-shape revisions and rejects the replaced shape.
+Compatibility and release status follow the [release-scope page](../release/release-scope.md)
+and [ADR-027](adr-027-text-first-composition.md). Records in the replaced shape
+remain raw Knowledge but are not executable or restorable as the current
+Composition. Raw inspect, exact reads, export, and history remain available;
+restore succeeds for current-shape revisions and rejects the replaced shape.
 
 Published Saved SQL API and CLI operations, the `SQL` system Form, Space/Entry/
 Form 0.1 semantics, EntryBrowser/FormTable controls, CI lanes, and merge queue
