@@ -55,7 +55,8 @@ fn is_e2e_mock_host(host: &str) -> bool {
         && env::var("E2E_OIDC_MOCK_HOST").is_ok_and(|value| value.trim().eq_ignore_ascii_case(host))
 }
 
-fn is_loopback_host(host: &str) -> bool {
+/// Return whether an OIDC host names localhost or a loopback IP address.
+pub fn is_loopback_host(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost")
         || host
             .parse::<std::net::IpAddr>()

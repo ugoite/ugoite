@@ -77,6 +77,7 @@ fn test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips() {
 fn test_cli_req_ops_006_operator_for_path_supports_file_and_rejects_remote_uris() {
     let temp = tempfile::tempdir().expect("tempdir");
     assert!(operator_for_path(temp.path().to_str().expect("temp path")).is_ok());
+    assert!(operator_for_path(&format!("file://{}", temp.path().display())).is_ok());
     let error = operator_for_path("s3://bucket/space").expect_err("remote URI rejected");
     assert!(error.to_string().contains("unsupported storage uri"));
 }
