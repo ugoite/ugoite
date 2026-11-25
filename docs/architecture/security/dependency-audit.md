@@ -78,7 +78,7 @@ run record below for the exact sources and limits of each result.
 | Ubuntu GitHub Actions runner | Renovate excludes the observed `ubuntu` 26.04 runner target. | Grouped Actions PR #5117 selected `ubuntu-26.04`; CI run #45314368028 reports that Playwright does not support Chromium on `ubuntu26.04-x64`, so browser installation and its dependent lanes fail. | Revisit after the pinned Playwright browser tooling supports that runner; verify browser installation, Docsite navigation, and the required E2E lanes. Track the candidate in [#5148](https://github.com/ugoite/ugoite/issues/5148). |
 | SolidStart | Renovate holds `2.0.0`–`2.0.6`, `2.1.0`, and `2.2.0`–`2.2.3`; `1.5.1` remains eligible. | The held targets resolved to `2.2.3`, which removes `defineConfig` used by `frontend/app.config.ts`. | Revisit a compatible candidate; verify frontend type checking, tests, and build. |
 | SolidJS runtime and router | Renovate holds major updates of `solid-js` and `@solidjs/router`; updates within the current major remain eligible. | An earlier grouped Deno PR #5115 resolved SolidJS `2.0.3`, which does not export `solid-js/web` used by the frontend, and its Web tests failed on changed locale/context behavior. The refreshed Deno candidate remains on the current major. Earlier grouped Deno candidates recorded the same missing export in issue #5045. | Re-enable the major updates after the frontend supports the new exports and runtime behavior; verify the Web type check, tests, and build. Track candidate evidence in [#5045](https://github.com/ugoite/ugoite/issues/5045). |
-| RustSec `rsa` advisory | The lockfile contains `rsa 0.9.10`, reported for `RUSTSEC-2023-0071`. | The crate is transitive through the OIDC adapter and OpenDAL cloud backends. Removing those optional protocol and storage surfaces is not an appropriate dependency-update workaround. | Rerun `cargo audit --locked --json` on graph changes and remove this exception when a patched release or supported replacement is available. |
+| RustSec `rsa` advisory | Main contains `rsa 0.9.10`; Cargo candidate #5119 also resolves `rsa 0.10.0-rc.19`. Both versions are reported for `RUSTSEC-2023-0071`. | The 0.9.10 crate is transitive through the OIDC adapter and OpenDAL cloud backends. The 0.10.0 release candidate comes through WebAuthn's `crypto-glue` dependency. | Run `cargo audit --json` from the workspace root on graph changes and `cargo metadata --locked` to verify the lockfile contract. Keep the finding visible until a patched, supported graph is available. |
 | Dev Container and OS packages | Base image and feature pins are in `.devcontainer/devcontainer.json`. | Base image and OS package updates are periodic environment changes rather than application dependency updates. | Review with a base-image update; verify container setup and the basic contributor workflow. |
 
 The current frontend manifest resolves the Vitest runner and coverage provider
@@ -91,12 +91,39 @@ corresponding coverage task and its normal test/build lane.
 
 ## RustSec exception detail
 
-The current lockfile contains `rsa 0.9.10`, reported under
-`RUSTSEC-2023-0071`. The dependency is transitive through `openidconnect` and
-OpenDAL/reqsign cloud backends used for S3, GCS, Azure, and OSS storage. It is
-not used by the local-first core path. Keep the finding visible in the
-read-only audit and remove this exception when a patched release or supported
-replacement is available; do not mark it resolved without rerunning the audit.
+Main contains `rsa 0.9.10`, reported under `RUSTSEC-2023-0071`. The dependency
+is transitive through `openidconnect` and OpenDAL/reqsign cloud backends used
+for S3, GCS, Azure, and OSS storage. It is not used by the local-first core
+path. Keep the finding visible in the read-only audit and remove this
+exception when a patched release or supported replacement is available; do
+not mark it resolved without rerunning the audit.
+
+Cargo update candidate [#5119](https://github.com/ugoite/ugoite/pull/5119) at
+HEAD `7496bf472f1b2d0f0dd3551fc4319f8daa7fa7b2` (base
+`0c9c3f347c743ea592435f500960c79f34e75515`) also resolves
+`rsa 0.10.0-rc.19` through `webauthn-rs 0.6.2` → `webauthn-rs-core 0.6.2` →
+`crypto-glue 0.2.2`. The candidate `Cargo.lock` blob is
+`573c4e151b43db2cca7723c308a8c819b0265cf7`; main's pre-update lockfile blob
+is `6602514a509c7e82186f0ba6db3e27239c3bb020`. On 2026-11-25,
+`cargo-audit 0.23.0` with advisory database commit
+`10db6998b5d74ec438bcf0763125bd425a068a8f` reported 19 advisory records
+against the main lockfile and 18 against the candidate. The candidate resolves
+the `ctutils 0.4.2` and `url 2.5.8` findings; it still reports
+`RUSTSEC-2023-0071` for `rsa 0.9.10` and also reports that advisory for
+`rsa 0.10.0-rc.19`. This is an unresolved audit result, not a clean audit.
+
+The inspected WebAuthn call path uses RSA public-key signature verification
+through `RS256VerifyingKey`; no private-key signing or decryption call was
+found in that path. This is a bounded call-site review, not proof that every
+transitive caller is safe. Forcing stable `rsa 0.10.0` currently fails
+resolution because `crypto-glue 0.2.2` requires `rsa ^0.10.0-rc.18` with a
+`sha2` feature not provided by the stable release. Keep the RC finding visible
+and revisit it with a compatible upstream `crypto-glue`/WebAuthn release.
+
+With `cargo-audit 0.23.0`, `cargo audit --locked` is unsupported. Run
+`cargo audit --json` from the workspace root; it reads `Cargo.lock`. Pair it
+with `cargo metadata --locked --no-deps --format-version 1` when verifying the
+locked workspace graph.
 
 The current lockfile resolves `event-listener` to `5.4.2`; it is not a
 separately maintained exception. Re-run the audit when the Rust dependency
