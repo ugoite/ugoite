@@ -4194,11 +4194,13 @@ fn expression_data(
     source: &str,
     source_map: &SqlSourceMap,
 ) -> Option<SqlDocumentNodeData> {
-    if let Some((operator, negated)) = in_predicate_operator(&expression.to_string()) {
-        return Some(SqlDocumentNodeData::Predicate {
-            operator: operator.to_owned(),
-            negated,
-        });
+    if !matches!(expression, Expr::BinaryOp { .. }) {
+        if let Some((operator, negated)) = in_predicate_operator(&expression.to_string()) {
+            return Some(SqlDocumentNodeData::Predicate {
+                operator: operator.to_owned(),
+                negated,
+            });
+        }
     }
 
     let raw = || {
@@ -4359,12 +4361,14 @@ fn expression_data(
 }
 
 fn expression_kind(expression: &Expr) -> SqlDocumentNodeKind {
-    if let Some((operator, _)) = in_predicate_operator(&expression.to_string()) {
-        return if operator == "in_subquery" {
-            SqlDocumentNodeKind::SubqueryExpression
-        } else {
-            SqlDocumentNodeKind::PredicateExpression
-        };
+    if !matches!(expression, Expr::BinaryOp { .. }) {
+        if let Some((operator, _)) = in_predicate_operator(&expression.to_string()) {
+            return if operator == "in_subquery" {
+                SqlDocumentNodeKind::SubqueryExpression
+            } else {
+                SqlDocumentNodeKind::PredicateExpression
+            };
+        }
     }
 
     match expression {
