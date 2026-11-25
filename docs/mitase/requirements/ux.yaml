@@ -423,20 +423,18 @@ requirements:
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/RowList.test.tsx, test: "REQ-UX-LIST-002: keeps each row in a single flex row with ellipsis and nowrap meta" } }
-      - id: entry-action-bar-verification
-        role: verification
+      - id: entry-action-bar-stylesheet-evidence
+        role: evidence
         facet: verification
-        responsibility: Verify the PR-4 entry detail single one-row action bar (save/history/info/delete with dirty-gated strong save) through exact Vitest cases.
+        responsibility: Record the existing CSS grid declaration check as supporting evidence for the narrow action bar rule. Runtime rendering, wrapping, and horizontal overflow at 390px remain unverified.
         targets:
           - id: entry-action-bar-single-row
             adapter: typescript
             path: frontend/src/components/a11y-contract.test.tsx
             selector: { kind: test, name: "keeps the one-row action bar at 390px widths" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
-                covers: [FEAT-UX-003#binding.list-baseline/target.action-bar-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "keeps the one-row action bar at 390px widths" } }
+              - kind: evidences
+                anchor: REQ-UX-LIST-002#criterion.one-row-action-bar
       - id: form-edit-action-bar-verification
         role: verification
         facet: verification
