@@ -23,9 +23,7 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
 };
-use ugoite_core::sql_query::{
-    SqlResultColumnType, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
-};
+use ugoite_core::sql_query::{MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS};
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, variable_graph_dependency_order,
     CompositionDiagnosticCode, CompositionDocument, VariableGraph, VariableGraphColumn,
