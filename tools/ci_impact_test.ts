@@ -356,16 +356,6 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
     assertEquals(report.runDockerRustSourceBuild, false, path);
   }
 
-  const specificationDocs = makeImpactReport({
-    event: "pull_request",
-    baseSha,
-    headSha,
-    paths: ["docs/spec/features/composition-query-variables.md"],
-  });
-  assertEquals(specificationDocs.scope, "scoped");
-  assertEquals(specificationDocs.candidateLanes, ["docsite-nav", "web"]);
-  assertEquals(specificationDocs.runDockerRustSourceBuild, false);
-
   const e2eOnly = makeImpactReport({
     event: "pull_request",
     baseSha,

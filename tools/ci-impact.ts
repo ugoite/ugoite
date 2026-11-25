@@ -72,7 +72,8 @@ function affectsDockerRustSourceBuild(path: string): boolean {
 function isKnownDockerRustSourceBuildUnrelatedGlobalPath(
   path: string,
 ): boolean {
-  return path.startsWith("docs/") ||
+  return path.startsWith("docs/architecture/") ||
+    path.startsWith("docs/mitase/") ||
     path === "tools/ci-impact.ts" ||
     /^tools\/[^/]+_test\.ts$/.test(path) ||
     /^e2e\/.+\.test\.ts$/.test(path);
