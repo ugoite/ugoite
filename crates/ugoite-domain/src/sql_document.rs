@@ -4194,15 +4194,6 @@ fn expression_data(
     source: &str,
     source_map: &SqlSourceMap,
 ) -> Option<SqlDocumentNodeData> {
-    if !matches!(expression, Expr::BinaryOp { .. }) {
-        if let Some((operator, negated)) = in_predicate_operator(&expression.to_string()) {
-            return Some(SqlDocumentNodeData::Predicate {
-                operator: operator.to_owned(),
-                negated,
-            });
-        }
-    }
-
     let raw = || {
         SqlSourceRange::from_span(source, source_map, expression.span())
             .and_then(|range| source.get(range.start..range.end))
@@ -4353,24 +4344,20 @@ fn expression_data(
         Expr::IsNotUnknown(_) => predicate("is_unknown", true),
         Expr::IsDistinctFrom(_, _) => predicate("is_distinct_from", false),
         Expr::IsNotDistinctFrom(_, _) => predicate("is_distinct_from", true),
-        _ => Some(SqlDocumentNodeData::UnmodeledExpression {
-            node_kind: expression_kind(expression),
-            reason: "No dedicated semantic attributes are defined for this parser expression variant; its exact source remains available from the document range and tokens.".to_owned(),
-        }),
+        _ => match in_predicate_operator(&expression.to_string()) {
+            Some((operator, negated)) => Some(SqlDocumentNodeData::Predicate {
+                operator: operator.to_owned(),
+                negated,
+            }),
+            None => Some(SqlDocumentNodeData::UnmodeledExpression {
+                node_kind: expression_kind(expression),
+                reason: "No dedicated semantic attributes are defined for this parser expression variant; its exact source remains available from the document range and tokens.".to_owned(),
+            }),
+        },
     }
 }
 
 fn expression_kind(expression: &Expr) -> SqlDocumentNodeKind {
-    if !matches!(expression, Expr::BinaryOp { .. }) {
-        if let Some((operator, _)) = in_predicate_operator(&expression.to_string()) {
-            return if operator == "in_subquery" {
-                SqlDocumentNodeKind::SubqueryExpression
-            } else {
-                SqlDocumentNodeKind::PredicateExpression
-            };
-        }
-    }
-
     match expression {
         Expr::Identifier(_) => SqlDocumentNodeKind::IdentifierExpression,
         Expr::CompoundIdentifier(_) => SqlDocumentNodeKind::CompoundIdentifierExpression,
@@ -4397,7 +4384,11 @@ fn expression_kind(expression: &Expr) -> SqlDocumentNodeKind {
         | Expr::SimilarTo { .. }
         | Expr::RLike { .. } => SqlDocumentNodeKind::PredicateExpression,
         Expr::Nested(_) => SqlDocumentNodeKind::NestedExpression,
-        _ => SqlDocumentNodeKind::OtherExpression,
+        _ => match in_predicate_operator(&expression.to_string()) {
+            Some(("in_subquery", _)) => SqlDocumentNodeKind::SubqueryExpression,
+            Some(_) => SqlDocumentNodeKind::PredicateExpression,
+            None => SqlDocumentNodeKind::OtherExpression,
+        },
     }
 }
 
@@ -4432,6 +4423,7 @@ fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
         .collect::<Vec<_>>();
     let mut nesting = 0usize;
     let mut previous_word = None::<String>;
+    let mut candidate = None;
 
     for (index, token) in tokens.iter().enumerate() {
         match token {
@@ -4450,9 +4442,6 @@ fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
             Token::Word(word) if nesting == 0 && word.quote_style.is_none() => {
                 let value = word.value.to_ascii_uppercase();
                 if value == "IN" {
-                    if has_non_in_predicate_operator_before(&tokens, index) {
-                        return None;
-                    }
                     let (target, rhs_open) = match (tokens.get(index + 1), tokens.get(index + 2)) {
                         (Some(Token::Word(word)), Some(Token::LParen))
                             if word.value.eq_ignore_ascii_case("UNNEST") =>
@@ -4469,13 +4458,17 @@ fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
                             };
                             (target, index + 1)
                         }
-                        _ => return None,
+                        _ => {
+                            previous_word = Some(value);
+                            continue;
+                        }
                     };
-                    let rhs_close = matching_parenthesis(&tokens, rhs_open)?;
-                    if rhs_close + 1 != tokens.len() {
-                        return None;
+                    if let Some(rhs_close) = matching_parenthesis(&tokens, rhs_open) {
+                        if rhs_close + 1 == tokens.len() {
+                            candidate = Some((target, previous_word.as_deref() == Some("NOT")));
+                        }
                     }
-                    return Some((target, previous_word.as_deref() == Some("NOT")));
+                    continue;
                 }
                 previous_word = Some(value);
             }
@@ -4483,7 +4476,7 @@ fn in_predicate_operator(expression: &str) -> Option<(&'static str, bool)> {
             _ => {}
         }
     }
-    None
+    candidate
 }
 
 fn matching_parenthesis(tokens: &[Token], open: usize) -> Option<usize> {
@@ -4505,42 +4498,6 @@ fn matching_parenthesis(tokens: &[Token], open: usize) -> Option<usize> {
         }
     }
     None
-}
-
-fn has_non_in_predicate_operator_before(tokens: &[Token], in_index: usize) -> bool {
-    let mut nesting = 0usize;
-    for (index, token) in tokens.iter().take(in_index).enumerate() {
-        match token {
-            Token::LParen | Token::LBracket => nesting += 1,
-            Token::RParen | Token::RBracket => nesting = nesting.saturating_sub(1),
-            Token::Word(word) if nesting == 0 && word.quote_style.is_none() => {
-                let value = word.value.to_ascii_uppercase();
-                if [
-                    "AND", "OR", "XOR", "IS", "LIKE", "ILIKE", "BETWEEN", "REGEXP", "RLIKE",
-                    "SIMILAR",
-                ]
-                .contains(&value.as_str())
-                    || (value == "NOT" && index + 1 != in_index)
-                {
-                    return true;
-                }
-            }
-            Token::DoubleEq
-            | Token::Eq
-            | Token::Neq
-            | Token::Lt
-            | Token::Gt
-            | Token::LtEq
-            | Token::GtEq
-            | Token::Spaceship
-                if nesting == 0 =>
-            {
-                return true;
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -4620,12 +4577,14 @@ mod tests {
             in_predicate_operator("value IN UNNEST(items) AND enabled"),
             None
         );
-        assert_eq!(in_predicate_operator("value OR other IN (1)"), None);
         assert_eq!(
-            in_predicate_operator("value AND other NOT IN (SELECT id FROM t)"),
-            None
+            in_predicate_operator("value = other IN (1)"),
+            Some(("in", false))
         );
-        assert_eq!(in_predicate_operator("value = other IN (1)"), None);
+        assert_eq!(
+            in_predicate_operator("CASE WHEN a IN (1) THEN b END IN (2)"),
+            Some(("in", false))
+        );
         assert_eq!(
             in_predicate_operator("value NOT IN (SELECT id FROM t)"),
             Some(("in_subquery", true))
@@ -4669,6 +4628,33 @@ mod tests {
             predicates.contains(&("in_subquery", true)),
             "{predicates:?}"
         );
+    }
+
+    #[test]
+    fn comparison_left_operand_keeps_in_predicate_metadata() {
+        let document = parse_sql_document("SELECT 1 = 1 IN (TRUE, FALSE)");
+        assert_eq!(
+            document.status,
+            SqlDocumentStatus::Parsed,
+            "{:?}",
+            document.diagnostics
+        );
+
+        assert!(document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::PredicateExpression
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::Predicate { operator, negated: false })
+                        if operator == "in"
+                )
+        }));
+        assert!(document.nodes.iter().any(|node| {
+            node.kind == SqlDocumentNodeKind::BinaryExpression
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(SqlDocumentNodeData::BinaryOperator { operator }) if operator == "="
+                )
+        }));
     }
 
     #[test]
