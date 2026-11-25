@@ -77,6 +77,64 @@ pub struct CompositionPreviewSelection<'a> {
     pub requested_queries: Option<&'a [String]>,
 }
 
+/// Save inputs prepared after each authority path has selected its own
+/// readable Form snapshot. Metadata lookup itself remains in the caller.
+pub(super) struct CompositionSaveQueryInput {
+    pub node_index: usize,
+    pub source_node: VariableGraphNode,
+    pub form_bindings: Vec<VariableGraphFormBinding>,
+    pub draft_descriptor: bool,
+}
+
+/// Prepare query inputs shared by local and authorized Composition saves.
+/// The caller supplies its own Form view and retains its own metadata access
+/// boundary, error mapping, and mutation checks.
+pub(super) fn composition_save_query_inputs(
+    document: &CompositionDocument,
+    previous_document: Option<&CompositionDocument>,
+    readable_forms: &[FormDefinition],
+) -> Result<Vec<CompositionSaveQueryInput>> {
+    let query_order = variable_graph_topological_order(&document.spec.variables).map_err(|_| {
+        AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Composition query dependencies are invalid",
+        )
+    })?;
+    let variable_indexes = document
+        .spec
+        .variables
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut inputs = Vec::new();
+    for variable_id in query_order {
+        let Some(node_index) = variable_indexes.get(&variable_id).copied() else {
+            continue;
+        };
+        let source_node = document.spec.variables[node_index].clone();
+        let VariableGraphNodeKind::Query { query, .. } = &source_node.kind else {
+            continue;
+        };
+        let draft_descriptor = query.schema_fingerprint.is_empty();
+        let VariableGraphQueryDefinition::InlineSql { sql } = &query.definition;
+        let form_bindings = super::composition_inline_form_bindings_for_save(
+            &source_node.id,
+            sql,
+            &query.form_bindings,
+            previous_document,
+            readable_forms,
+        )?;
+        inputs.push(CompositionSaveQueryInput {
+            node_index,
+            source_node,
+            form_bindings,
+            draft_descriptor,
+        });
+    }
+    Ok(inputs)
+}
+
 /// Variable and query selection inputs for resolving an authorized graph.
 pub(super) struct CompositionQuerySelection<'a> {
     pub variables: &'a BTreeMap<String, Value>,
@@ -1404,6 +1462,23 @@ pub(super) fn reconcile_query_returns_with_schema(
     Ok(())
 }
 
+/// Apply planner-derived metadata to one query node while saving a candidate
+/// Composition. Both local and authorized saves resolve metadata through their
+/// own access boundary, then use this same semantic reconciliation step.
+pub(super) fn apply_save_query_metadata(
+    node: &mut VariableGraphNode,
+    metadata: InlineSqlQueryMetadata,
+    draft_descriptor: bool,
+) -> Result<bool> {
+    let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
+        return Ok(false);
+    };
+    reconcile_query_returns_with_schema(returns, &metadata.result_columns, draft_descriptor)?;
+    query.form_bindings = metadata.form_bindings;
+    query.schema_fingerprint = metadata.schema_fingerprint;
+    Ok(true)
+}
+
 /// Expose declared variables with layout-placed controls first in layout
 /// row and item order. An invalid placement falls back to declaration order
 /// so diagnostics responses still describe the same semantic variables.
@@ -1489,6 +1564,54 @@ mod graph_metadata_tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn save_query_inputs_capture_order_draft_state_and_current_bindings() {
+        let form_id = FormId::from_uuid(Uuid::from_u128(10));
+        let document = exact_base_with_form_binding(form_id);
+        let inputs = composition_save_query_inputs(&document, None, &[form(form_id, "Original")])
+            .expect("save query inputs resolve against the selected Form snapshot");
+
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].node_index, 0);
+        assert!(!inputs[0].draft_descriptor);
+        assert_eq!(inputs[0].source_node.id, "rows");
+        assert_eq!(
+            inputs[0].form_bindings,
+            vec![VariableGraphFormBinding {
+                relation: "Original".to_owned(),
+                form_id,
+            }]
+        );
+    }
+
+    #[test]
+    fn save_query_metadata_replaces_bindings_and_fingerprint() {
+        let old_form = FormId::from_uuid(Uuid::from_u128(10));
+        let current_form = FormId::from_uuid(Uuid::from_u128(11));
+        let mut document = exact_base_with_form_binding(old_form);
+        let metadata = InlineSqlQueryMetadata {
+            bound_sql: "SELECT * FROM Current".to_owned(),
+            form_bindings: vec![VariableGraphFormBinding {
+                relation: "Current".to_owned(),
+                form_id: current_form,
+            }],
+            parameter_names: BTreeSet::new(),
+            result_columns: Vec::new(),
+            schema_fingerprint: "b".repeat(64),
+        };
+
+        assert!(
+            apply_save_query_metadata(&mut document.spec.variables[0], metadata, false)
+                .expect("current planner descriptors apply to the query")
+        );
+
+        let VariableGraphNodeKind::Query { query, .. } = &document.spec.variables[0].kind else {
+            panic!("query node remains a query");
+        };
+        assert_eq!(query.form_bindings[0].form_id, current_form);
+        assert_eq!(query.schema_fingerprint, "b".repeat(64));
     }
 
     #[test]

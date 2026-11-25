@@ -113,51 +113,17 @@ impl UgoiteService {
                 MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
             )
             .await?;
-        let query_order = super::composition_resolver::variable_graph_topological_order(
-            &request.document.spec.variables,
-        )
-        .map_err(|_| {
-            AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "Composition query dependencies are invalid",
-            )
-        })?;
-        let variable_indexes = request
-            .document
-            .spec
-            .variables
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.id.clone(), index))
-            .collect::<BTreeMap<_, _>>();
-        for variable_id in query_order {
-            let Some(node_index) = variable_indexes.get(&variable_id).copied() else {
-                continue;
-            };
-            let source_for_planning = request.document.spec.variables[node_index].clone();
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
-                &source_for_planning.kind
-            else {
-                continue;
-            };
-            // Form bindings are never trusted, even when a draft submits a
-            // nonempty spoof. An empty schema fingerprint marks the result
-            // descriptor incomplete and lets the planner fill it in.
-            let draft_descriptor = query.schema_fingerprint.is_empty();
-            let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
-                &query.definition;
-            let bindings = composition_inline_form_bindings_for_save(
-                &source_for_planning.id,
-                sql,
-                &query.form_bindings,
-                previous_document.as_ref(),
-                &forms,
-            )?;
+        let query_inputs = super::composition_resolver::composition_save_query_inputs(
+            &request.document,
+            previous_document.as_ref(),
+            &forms,
+        )?;
+        for input in query_inputs {
             let metadata = self
                 .derive_inline_sql_query_metadata(
                     space_id,
-                    &source_for_planning,
-                    Some(&bindings),
+                    &input.source_node,
+                    Some(&input.form_bindings),
                     &request.document.spec.variables,
                     None,
                     None,
@@ -170,19 +136,14 @@ impl UgoiteService {
                         "Composition SQL query cannot be resolved",
                     )
                 })?;
-            let node = &mut request.document.spec.variables[node_index];
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
-                &mut node.kind
-            else {
+            let node = &mut request.document.spec.variables[input.node_index];
+            if !super::composition_resolver::apply_save_query_metadata(
+                node,
+                metadata,
+                input.draft_descriptor,
+            )? {
                 continue;
-            };
-            super::composition_resolver::reconcile_query_returns_with_schema(
-                returns,
-                &metadata.result_columns,
-                draft_descriptor,
-            )?;
-            query.form_bindings = metadata.form_bindings;
-            query.schema_fingerprint = metadata.schema_fingerprint;
+            }
         }
         if !request.document.has_complete_query_descriptors() {
             return Err(AppError::invalid_input(
