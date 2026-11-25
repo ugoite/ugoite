@@ -67,7 +67,8 @@
         "deno"
       ],
       "groupName": "deno-workspace",
-      "groupSlug": "deno-workspace"
+      "groupSlug": "deno-workspace",
+      "recreateWhen": "always"
     },
     {
       "description": "One daily update group for the GitHub Actions ecosystem",
