@@ -4,47 +4,13 @@ import { parse } from "yaml";
 import path from "node:path";
 
 const repoRoot = path.resolve(Deno.cwd());
-const specRoot = path.join(repoRoot, "docs/spec");
-
-Deno.test("REQ-OPS-003: requirement IDs, related documents, and test references resolve", async () => {
-  const requirementDir = path.join(specRoot, "requirements");
-  const ids = new Set<string>();
-
-  for (const filename of await yamlFiles(requirementDir)) {
-    const source = parse(
-      await Deno.readTextFile(path.join(requirementDir, filename)),
-    ) as { requirements?: Requirement[] };
-    for (const requirement of source.requirements ?? []) {
-      assertRequirementStatusIntegrity(requirement);
-      assertEquals(
-        ids.has(requirement.id),
-        false,
-        `duplicate requirement ${requirement.id}`,
-      );
-      ids.add(requirement.id);
-
-      for (const related of requirement.related_spec ?? []) {
-        const relativePath = related.split("#", 1)[0];
-        await expectOnePath(
-          [
-            path.resolve(specRoot, relativePath),
-            path.resolve(requirementDir, relativePath),
-          ],
-          requirement.id,
-        );
-      }
-      for (const reference of requirement.tests ?? []) {
-        await expectPath(
-          path.resolve(repoRoot, reference.file),
-          requirement.id,
-        );
-      }
-    }
-  }
+Deno.test("REQ-OPS-003: legacy requirement directory contains no YAML records", async () => {
+  const requirementDir = path.join(repoRoot, "docs/spec/requirements");
+  const yamlRecords = await yamlFilesRecursively(requirementDir);
   assertEquals(
-    ids.size,
-    0,
-    "all Operations and Security requirement records have migrated to Mitase",
+    yamlRecords,
+    [],
+    "requirement records are maintained in Mitase, not the legacy directory",
   );
 });
 
@@ -126,14 +92,6 @@ Deno.test("REQ-API-013: MCP documentation describes the shipped semantic facade"
   assert(/DPoP/i.test(source), "MCP docs must describe DPoP");
 });
 
-type Requirement = {
-  id: string;
-  status: string;
-  verification: string;
-  related_spec?: string[];
-  tests?: Array<{ file: string; cases?: string[] }>;
-};
-
 type VersionStatus = "planned" | "in_progress" | "completed";
 
 type VersionTask = { done?: boolean };
@@ -157,38 +115,11 @@ type VersionDocument = {
   milestones?: VersionMilestone[];
 };
 
-const requirementStatuses = new Set(["implemented", "planned", "superseded"]);
-const verificationStatuses = new Set(["traced", "untraced"]);
 const versionStatuses = new Set<VersionStatus>([
   "planned",
   "in_progress",
   "completed",
 ]);
-
-function assertRequirementStatusIntegrity(requirement: Requirement): void {
-  assert(
-    requirementStatuses.has(requirement.status),
-    `${requirement.id}: invalid requirement status`,
-  );
-  assert(
-    verificationStatuses.has(requirement.verification),
-    `${requirement.id}: invalid verification status`,
-  );
-
-  const tests = requirement.tests ?? [];
-  if (requirement.verification === "traced") {
-    assert(
-      tests.length > 0,
-      `${requirement.id}: traced requirements need test references`,
-    );
-  } else {
-    assertEquals(
-      tests.length,
-      0,
-      `${requirement.id}: untraced requirements cannot claim test references`,
-    );
-  }
-}
 
 function assertVersionStatus(
   status: string,
@@ -249,16 +180,6 @@ async function assertMilestoneSourceIntegrity(
   );
 }
 
-async function yamlFiles(directory: string): Promise<string[]> {
-  const files: string[] = [];
-  for await (const entry of Deno.readDir(directory)) {
-    if (entry.isFile && entry.name.endsWith(".yaml")) {
-      files.push(entry.name);
-    }
-  }
-  return files.sort();
-}
-
 async function yamlFilesRecursively(
   directory: string,
   prefix = "",
@@ -282,19 +203,4 @@ async function expectPath(filePath: string, owner: string): Promise<void> {
   } catch (error) {
     throw new Error(`${owner}: missing ${filePath}`, { cause: error });
   }
-}
-
-async function expectOnePath(
-  filePaths: string[],
-  owner: string,
-): Promise<void> {
-  for (const filePath of filePaths) {
-    try {
-      await Deno.stat(filePath);
-      return;
-    } catch {
-      // Try the next documented relative-path convention.
-    }
-  }
-  throw new Error(`${owner}: missing one of ${filePaths.join(", ")}`);
 }
