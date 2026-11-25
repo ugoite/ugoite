@@ -749,7 +749,7 @@ mod tests {
         login, mcp_resource, mcp_target, oauth_payload, parse_space_uid_arg, public_jwk,
         refresh_session,
     };
-    use base64::Engine as _;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use p256::{
         ecdsa::signature::{Signer, Verifier},
         pkcs8::EncodePrivateKey,
