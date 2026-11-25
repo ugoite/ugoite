@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      writer_debug:
+        description: Run the Renovate writer with debug logging for diagnosis
+        required: false
+        type: boolean
+        default: false
   schedule:
     # 01:17 JST daily; GitHub Actions cron uses UTC.
     - cron: "17 16 * * *"
@@ -110,7 +115,7 @@ jobs:
           RENOVATE_PLATFORM_COMMIT: enabled
           RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_ALLOW_PLUGINS: "false"
-          LOG_LEVEL: info
+          LOG_LEVEL: ${{ github.event_name == 'workflow_dispatch' && inputs.writer_debug && 'debug' || 'info' }}
 
       - name: Run pinned Renovate CLI read-only diagnostic
         if: ${{ inputs.diagnostic }}
