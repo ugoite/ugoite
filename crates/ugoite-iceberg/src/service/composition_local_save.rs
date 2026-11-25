@@ -137,13 +137,11 @@ impl UgoiteService {
                     )
                 })?;
             let node = &mut request.document.spec.variables[input.node_index];
-            if !super::composition_resolver::apply_save_query_metadata(
+            super::composition_resolver::apply_save_query_metadata(
                 node,
                 metadata,
                 input.draft_descriptor,
-            )? {
-                continue;
-            }
+            )?;
         }
         if !request.document.has_complete_query_descriptors() {
             return Err(AppError::invalid_input(

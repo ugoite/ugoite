@@ -1469,14 +1469,14 @@ pub(super) fn apply_save_query_metadata(
     node: &mut VariableGraphNode,
     metadata: InlineSqlQueryMetadata,
     draft_descriptor: bool,
-) -> Result<bool> {
+) -> Result<()> {
     let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
-        return Ok(false);
+        unreachable!("save inputs contain only query nodes");
     };
     reconcile_query_returns_with_schema(returns, &metadata.result_columns, draft_descriptor)?;
     query.form_bindings = metadata.form_bindings;
     query.schema_fingerprint = metadata.schema_fingerprint;
-    Ok(true)
+    Ok(())
 }
 
 /// Expose declared variables with layout-placed controls first in layout
@@ -1602,10 +1602,8 @@ mod graph_metadata_tests {
             schema_fingerprint: "b".repeat(64),
         };
 
-        assert!(
-            apply_save_query_metadata(&mut document.spec.variables[0], metadata, false)
-                .expect("current planner descriptors apply to the query")
-        );
+        apply_save_query_metadata(&mut document.spec.variables[0], metadata, false)
+            .expect("current planner descriptors apply to the query");
 
         let VariableGraphNodeKind::Query { query, .. } = &document.spec.variables[0].kind else {
             panic!("query node remains a query");
