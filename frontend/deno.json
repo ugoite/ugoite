@@ -53,7 +53,7 @@
     "pretty-bytes": "npm:pretty-bytes@^7.0.0",
     "redent": "npm:redent@^4.0.0",
     "radix3": "npm:radix3@^1.1.2",
-    "rettime": "npm:rettime@^0.11.7",
+    "rettime": "npm:rettime@0.11.12",
     "seroval": "npm:seroval@1.8.2",
     "seroval-plugins/web": "npm:seroval-plugins@1.8.0/web",
     "solid-js": "./node_modules/solid-js/dist/dev.js",

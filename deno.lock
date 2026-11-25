@@ -71,7 +71,7 @@
     "npm:prismjs@1.30.0": "1.30.0",
     "npm:radix3@^1.1.2": "1.1.2",
     "npm:redent@4": "4.0.0",
-    "npm:rettime@~0.11.7": "0.11.13",
+    "npm:rettime@0.11.12": "0.11.12",
     "npm:seroval-plugins@1.8.0": "1.8.0_seroval@1.8.2",
     "npm:seroval@1.8.2": "1.8.2",
     "npm:sharp@0.35.5": "0.35.5",
@@ -7826,8 +7826,8 @@
         "unified"
       ]
     },
-    "rettime@0.11.13": {
-      "integrity": "sha512-kzDWDmrxn6KPqqyFaBcXtV+GzaUzgYulSrWBetyxsPZjlXabWoeg3uZJU+zK/TnFUtkWC2Yw7J/VAWYnzy0tRA=="
+    "rettime@0.11.12": {
+      "integrity": "sha512-5ExtR1ppiDBQkVoPw5NAqdbfH4Iq2VOmQKHMtUoaFxA9bo2krzFYBtyq6K40xxbYp+2w/YOr6D+1ToF6tTN53A=="
     },
     "reusify@1.1.0": {
       "integrity": "sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw=="
@@ -9868,7 +9868,7 @@
           "npm:pretty-bytes@7",
           "npm:radix3@^1.1.2",
           "npm:redent@4",
-          "npm:rettime@~0.11.7",
+          "npm:rettime@0.11.12",
           "npm:seroval-plugins@1.8.0",
           "npm:seroval@1.8.2",
           "npm:solid-js@^1.9.10",
