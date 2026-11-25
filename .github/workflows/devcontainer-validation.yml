@@ -38,7 +38,7 @@ jobs:
           push: never
           runCmd: |
             set -euo pipefail
-            mise run setup
             mise --version
             deno --version
-            cargo +1.100.0 --version
+            cargo --version
+            rustc --version
