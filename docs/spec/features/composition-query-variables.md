@@ -73,6 +73,7 @@ missing variable returns to the pending Design placement only on success.
 Reader uses the shared renderer without authoring controls. Save and restore
 continue through Space-owned append-only Entry revisions, receipts, and stale
 write conflicts. An unsupported historical Composition is not migrated or
-executed, while raw inspect, export, history, and restore remain available.
+executed. Raw inspect, export, and history remain available; restore is
+supported only for revisions in the current Composition shape.
 Published Saved SQL API/CLI behavior, the `SQL` system Form, Space/Entry/Form
 0.1 semantics, and EntryBrowser/FormTable controls are unchanged.
