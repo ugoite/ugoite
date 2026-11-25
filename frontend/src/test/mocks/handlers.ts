@@ -1,4 +1,5 @@
 import {
+  type DefaultBodyType,
   http,
   HttpResponse,
   type HttpResponseResolver,
@@ -177,23 +178,43 @@ const testHttp = {
   get: <Params extends PathParams = PathParams>(
     path: string,
     resolver: HttpResponseResolver<Params>,
-  ) => http.get<Params>(createTestApiPredicate<Params>(path), resolver),
+  ) =>
+    http.get<Params, DefaultBodyType, DefaultBodyType>(
+      createTestApiPredicate<Params>(path),
+      resolver,
+    ),
   post: <Params extends PathParams = PathParams>(
     path: string,
     resolver: HttpResponseResolver<Params>,
-  ) => http.post<Params>(createTestApiPredicate<Params>(path), resolver),
+  ) =>
+    http.post<Params, DefaultBodyType, DefaultBodyType>(
+      createTestApiPredicate<Params>(path),
+      resolver,
+    ),
   put: <Params extends PathParams = PathParams>(
     path: string,
     resolver: HttpResponseResolver<Params>,
-  ) => http.put<Params>(createTestApiPredicate<Params>(path), resolver),
+  ) =>
+    http.put<Params, DefaultBodyType, DefaultBodyType>(
+      createTestApiPredicate<Params>(path),
+      resolver,
+    ),
   patch: <Params extends PathParams = PathParams>(
     path: string,
     resolver: HttpResponseResolver<Params>,
-  ) => http.patch<Params>(createTestApiPredicate<Params>(path), resolver),
+  ) =>
+    http.patch<Params, DefaultBodyType, DefaultBodyType>(
+      createTestApiPredicate<Params>(path),
+      resolver,
+    ),
   delete: <Params extends PathParams = PathParams>(
     path: string,
     resolver: HttpResponseResolver<Params>,
-  ) => http.delete<Params>(createTestApiPredicate<Params>(path), resolver),
+  ) =>
+    http.delete<Params, DefaultBodyType, DefaultBodyType>(
+      createTestApiPredicate<Params>(path),
+      resolver,
+    ),
 };
 
 // Reset function for tests
