@@ -31,7 +31,7 @@ ugoite-storage = { path = "../ugoite-storage" }
 ugoite-domain = { path = "../ugoite-domain" }
 uuid = { version = "1.23.2", features = ["v4", "v7", "serde"] }
 url = "2.5"
-webauthn-rs = "0.5.3"
+webauthn-rs = "0.6.0"
 chrono = "0.4.44"
 openidconnect = "4.0.1"
 hex = "0.4"
