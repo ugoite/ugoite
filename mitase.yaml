@@ -92,8 +92,6 @@ inventory:
         - frontend/src/components/ResultPagination.test.tsx
         - frontend/src/lib/row-action-focus.ts
         - frontend/src/lib/row-action-focus.test.tsx
-        - frontend/src/lib/virtual-rows.ts
-        - frontend/src/lib/virtual-rows.test.ts
         - frontend/src/lib/ugoite-client/protocol.ts
         - frontend/src/lib/ugoite-client/protocol.test.ts
         - frontend/src/lib/konase/host.ts
@@ -210,7 +208,6 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
         - frontend/src/components/SqlResultTable.tsx
         - frontend/src/components/SqlResultTable.test.tsx
-        - e2e/qry02-visible-rows.test.ts
         - frontend/src/routes/spaces/[space_id]/settings.tsx
         - frontend/src/routes/spaces/[space_id]/sql.tsx
         - frontend/src/routes/spaces/[space_id]/test-connection.tsx
@@ -257,22 +254,6 @@ inventory:
         - crates/ugoite-wasm/tests/composition_parity.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
-        - frontend/src/lib/composition-draft.ts
-        - frontend/src/lib/composition-draft.test.ts
-        - frontend/src/lib/composition-query-handle.ts
-        - frontend/src/lib/composition-query-handle.test.ts
-        - frontend/src/lib/composition-preview-handle.ts
-        - frontend/src/lib/composition-preview-handle.test.ts
-        - frontend/src/components/CompositionRenderer.tsx
-        - frontend/src/components/CompositionRenderer.test.tsx
-        - frontend/src/components/DashboardFlowRenderer.tsx
-        - frontend/src/components/DashboardFlowRenderer.test.tsx
-        - frontend/src/components/CompositionDesignCanvas.tsx
-        - frontend/src/components/CompositionDesignCanvas.test.tsx
-        - frontend/src/components/CompositionInspector.tsx
-        - frontend/src/components/CompositionInspector.test.tsx
-        - frontend/src/components/CompositionDataWorkspace.tsx
-        - frontend/src/components/CompositionDataWorkspace.test.tsx
         - frontend/src/components/CompositionGraphArguments.test.tsx
         - frontend/src/components/CompositionGraphDesignCanvas.tsx
         - frontend/src/components/CompositionGraphDesignCanvas.test.tsx
@@ -283,26 +264,7 @@ inventory:
         - frontend/src/lib/sql-document-columns.ts
         - frontend/src/components/SqlFormSourceControl.tsx
         - frontend/src/components/SqlFormSourceControl.test.tsx
-        - frontend/src/components/CompositionSqlBinding.test.tsx
         - frontend/src/components/SqlFormPicker.test.tsx
-        - frontend/src/components/SourceNavigator.tsx
-        - frontend/src/components/composition/InspectorFields.tsx
-        - frontend/src/components/composition/MetricInspector.tsx
-        - frontend/src/components/composition/TableInspector.tsx
-        - frontend/src/components/composition/TextInspector.tsx
-        - frontend/src/components/composition/InputInspector.tsx
-        - frontend/src/components/composition/TextComponent.tsx
-        - frontend/src/components/composition/InputControl.tsx
-        - frontend/src/components/composition/InputControl.test.tsx
-        - frontend/src/components/CompositionSourcePicker.tsx
-        - frontend/src/components/CompositionSourcePicker.test.tsx
-        - frontend/src/components/CompositionDisplayList.tsx
-        - frontend/src/components/CompositionDisplayList.test.tsx
-        - frontend/src/components/CompositionDisplayPicker.tsx
-        - frontend/src/components/CompositionDisplayPicker.test.tsx
-        - frontend/src/components/CompositionVariableList.tsx
-        - frontend/src/components/CompositionVariableList.test.tsx
-        - frontend/src/lib/composition-variable-name.ts
         - frontend/src/lib/exact-integer.ts
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
@@ -315,10 +277,7 @@ inventory:
         - frontend/src/lib/composition-evaluation.test.ts
         - frontend/src/lib/composition-design-evaluation.test.ts
         - e2e/composition-invalid-variable-input.test.ts
-        - frontend/src/lib/composition-studio-sync.ts
-        - frontend/src/lib/composition-studio-sync.test.ts
         - frontend/src/components/CompositionStudioSync.test.tsx
-        - frontend/src/components/CompositionInspectorSheet.tsx
         - frontend/src/components/CompositionStudioMobile.test.tsx
         - e2e/composition-golden-journey.test.ts
         - e2e/composition-stale-response.test.ts
@@ -414,7 +373,6 @@ inventory:
         - docs/mitase/requirements/composition
         - docs/mitase/requirements/frontend
         - docs/mitase/features/frontend
-        - docs/spec/ui/components/composition-sql-workspace.yaml
         - docs/spec/ui/components/composition-studio.yaml
         - docs/spec/ui/components/sql-workspace.yaml
         - docs/spec/ui/components/entry-browser.yaml
@@ -571,11 +529,6 @@ inventory:
         - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
         - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
         - docs/architecture/contracts/composition.md
-        - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
-        - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
-        - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml
-        - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml
-        - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt
 validation:
   preset: strict
   readiness:
