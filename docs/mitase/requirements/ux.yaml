@@ -328,7 +328,7 @@ requirements:
       - id: entry-async-state-verification
         role: verification
         facet: verification
-        responsibility: Verify Entry list loading and empty states and Entry detail load failure recovery through exact Vitest cases. The current detail case covers error and retry recovery, while loading presentation has no bound detail test.
+        responsibility: Exact cases cover Entry list loading and empty states plus Entry detail load failure and retry. No Entry list error case or bound detail loading presentation test is available, so those states remain unverified.
         targets:
           - id: entry-list-empty
             adapter: typescript
