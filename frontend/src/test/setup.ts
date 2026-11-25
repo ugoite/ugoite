@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom/vitest";
+import { isCommonAssetRequest } from "msw";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { HttpNetworkFrame } from "msw/experimental";
 import { setLocale } from "../lib/i18n";
 
 // Keep Vitest's generated `?init` loader on the checked WASM artifact without
@@ -61,9 +63,14 @@ beforeAll(async () => {
   const { server: mswServer } = await import("./mocks/server");
   server = mswServer;
   server.listen({
-    onUnhandledFrame: ({ frame, defaults }) => {
-      if (frame.protocol === "http") defaults.error();
-      else defaults.warn();
+    onUnhandledFrame: async ({ frame, defaults }) => {
+      if (frame instanceof HttpNetworkFrame) {
+        if (!isCommonAssetRequest(frame.data.request)) {
+          throw new Error(await frame.getUnhandledMessage());
+        }
+        return;
+      }
+      defaults.warn();
     },
   });
 });
