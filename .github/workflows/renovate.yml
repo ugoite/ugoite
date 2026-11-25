@@ -87,6 +87,14 @@ jobs:
             --silent >/dev/null
           echo "Dependabot alerts API: accessible"
 
+      - name: Write diagnostic-only Renovate config
+        if: ${{ inputs.diagnostic }}
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/renovate-diagnostic.json" <<'EOF'
+          {"force":{"vulnerabilityAlerts":{"enabled":false}}}
+          EOF
+
       - name: Run pinned Renovate CLI writer
         if: ${{ !inputs.diagnostic }}
         uses: renovatebot/github-action@ebcbb513d07ead4d9c0c2139064301db05e84a3e # v46.3.15
@@ -116,6 +124,7 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: required
           RENOVATE_PLATFORM_COMMIT: enabled
           RENOVATE_DRY_RUN: full
+          RENOVATE_ADDITIONAL_CONFIG_FILE: ${{ runner.temp }}/renovate-diagnostic.json
           RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_ALLOW_PLUGINS: "false"
           LOG_LEVEL: debug
