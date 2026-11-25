@@ -241,23 +241,6 @@
       "enabled": false
     },
     {
-      "description": "Hold non-vulnerability sqlparser minor and major updates until the pinned Iceberg and DataFusion boundary can move together",
-      "matchManagers": [
-        "cargo"
-      ],
-      "matchPackageNames": [
-        "sqlparser"
-      ],
-      "matchUpdateTypes": [
-        "major",
-        "minor"
-      ],
-      "matchJsonata": [
-        "$not($exists(isVulnerabilityAlert) and isVulnerabilityAlert)"
-      ],
-      "enabled": false
-    },
-    {
       "description": "Hold non-vulnerability rmcp minor updates until transport error bodies remain visible in CLI errors",
       "matchManagers": [
         "cargo"
