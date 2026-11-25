@@ -213,6 +213,7 @@ after their affected verification passes.
 ```bash
 mise outdated --bump
 deno outdated --recursive
-cargo audit --locked --json
+cargo audit --json
+cargo metadata --locked --no-deps --format-version 1
 deno audit
 ```
