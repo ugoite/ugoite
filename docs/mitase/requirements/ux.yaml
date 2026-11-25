@@ -325,20 +325,38 @@ requirements:
         statement: Editor guidance derives from the active Form fields and explains unstructured Forms without fabricating field headings or examples.
         governed_by: [POL-UI-010#rule.guidance]
     bindings:
-      - id: entry-save-state-verification
+      - id: entry-async-state-verification
         role: verification
         facet: verification
-        responsibility: Verify PR-4 entry detail save states announce without layout shift and confirm transiently (no permanent saved chip) through exact Vitest cases.
+        responsibility: Verify Entry list loading and empty states and Entry detail load failure recovery through exact Vitest cases. The current detail case covers error and retry recovery, while loading presentation has no bound detail test.
         targets:
-          - id: entry-save-announcement
+          - id: entry-list-empty
             adapter: typescript
-            path: frontend/src/components/EntryDetailPane.test.tsx
-            selector: { kind: test, name: "PR4: announces saving without layout shift and toasts success transiently" }
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should render empty state when no entries exist" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
+                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-list-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should render empty state when no entries exist" } }
+          - id: entry-list-loading
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should show loading state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
+                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-list-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should show loading state" } }
+          - id: entry-detail-load-error-retry
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.safety.test.tsx
+            selector: { kind: test, name: "REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
                 covers: [FEAT-UX-002#binding.entry-baseline/target.entry-detail-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: announces saving without layout shift and toasts success transiently" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions" } }
       - id: form-dialog-structure-verification
         role: verification
         facet: verification
@@ -374,12 +392,12 @@ requirements:
           - id: entry-guidance-derived
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx
-            selector: { kind: test, name: "REQ-FE-053: renders English entry guidance across input modes" }
+            selector: { kind: test, name: "REQ-FE-053: renders English entry guidance across supported input modes" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
                 covers: [FEAT-UX-009#binding.auth-form-implementation/target.form-dialog-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-053: renders English entry guidance across input modes" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-053: renders English entry guidance across supported input modes" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
@@ -412,13 +430,13 @@ requirements:
         targets:
           - id: entry-action-bar-single-row
             adapter: typescript
-            path: frontend/src/components/EntryDetailPane.test.tsx
-            selector: { kind: test, name: "PR4: keeps a single one-row action bar with save/history/info/delete" }
+            path: frontend/src/components/a11y-contract.test.tsx
+            selector: { kind: test, name: "keeps the one-row action bar at 390px widths" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
                 covers: [FEAT-UX-003#binding.list-baseline/target.action-bar-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.test.tsx, test: "PR4: keeps a single one-row action bar with save/history/info/delete" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "keeps the one-row action bar at 390px widths" } }
       - id: form-edit-action-bar-verification
         role: verification
         facet: verification
