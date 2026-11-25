@@ -91,7 +91,8 @@ jobs:
         if: ${{ inputs.diagnostic }}
         run: |
           set -euo pipefail
-          cat > "${RUNNER_TEMP}/renovate-diagnostic.json" <<'EOF'
+          # The Renovate action container mounts host /tmp at container /tmp.
+          cat > /tmp/renovate-diagnostic.json <<'EOF'
           {"force":{"vulnerabilityAlerts":{"enabled":false}}}
           EOF
 
@@ -124,7 +125,7 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: required
           RENOVATE_PLATFORM_COMMIT: enabled
           RENOVATE_DRY_RUN: full
-          RENOVATE_ADDITIONAL_CONFIG_FILE: ${{ runner.temp }}/renovate-diagnostic.json
+          RENOVATE_ADDITIONAL_CONFIG_FILE: /tmp/renovate-diagnostic.json
           RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_ALLOW_PLUGINS: "false"
           LOG_LEVEL: debug
