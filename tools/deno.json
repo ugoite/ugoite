@@ -7,6 +7,6 @@
   },
   "imports": {
     "typescript": "npm:typescript@5.9.3",
-    "yaml": "npm:yaml@2.9.0"
+    "yaml": "npm:yaml@2.9.1"
   }
 }
