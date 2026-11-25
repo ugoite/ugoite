@@ -28,9 +28,9 @@ pub use text_template::{
     parse_composition_text_template, CompositionTextTemplateError, CompositionTextTemplatePart,
 };
 pub use variable_graph::{
-    compile_variable_graph, validate_variable_graph_result, variable_graph_dependency_order,
-    variable_graph_literal_matches, CompiledVariableGraph, VariableGraph,
-    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
+    compile_variable_graph, is_valid_argument_name, validate_variable_graph_result,
+    variable_graph_dependency_order, variable_graph_literal_matches, CompiledVariableGraph,
+    VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
     VariableGraphDiagnosticCode, VariableGraphFormBinding, VariableGraphLiteral, VariableGraphNode,
     VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
     VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode, VariableGraphResultType,

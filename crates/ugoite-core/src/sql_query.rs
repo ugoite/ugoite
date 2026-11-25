@@ -456,6 +456,25 @@ impl SqlResultColumnType {
             Self::Json => "json",
         }
     }
+
+    /// Map the SQL output contract's logical type to the Composition graph's
+    /// corresponding scalar type.
+    pub const fn as_variable_graph_scalar_type(
+        self,
+    ) -> ugoite_domain::composition::VariableGraphScalarType {
+        use ugoite_domain::composition::VariableGraphScalarType as ScalarType;
+
+        match self {
+            Self::String => ScalarType::String,
+            Self::Boolean => ScalarType::Boolean,
+            Self::Integer => ScalarType::Integer,
+            Self::Float => ScalarType::Float,
+            Self::Date => ScalarType::Date,
+            Self::Timestamp => ScalarType::Timestamp,
+            Self::Decimal => ScalarType::Decimal,
+            Self::Json => ScalarType::Json,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

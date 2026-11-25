@@ -426,7 +426,9 @@ impl VariableGraphQueryEvaluation {
                 VariableGraphNodeKind::Query { .. } => None,
             };
             if let Some(value) = value {
-                let descriptor = scalar_descriptor_of(&node.kind)
+                let descriptor = node
+                    .kind
+                    .scalar_descriptor()
                     .expect("constant and input variables have scalar descriptors");
                 if !variable_graph_literal_matches(&descriptor, &value) {
                     if required_inputs
@@ -960,7 +962,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
         .map(|graph_node| (graph_node.id.as_str(), graph_node))
         .collect();
     for argument in &query.arguments {
-        if !valid_argument_name(&argument.name) {
+        if !ugoite_domain::composition::is_valid_argument_name(&argument.name) {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::InvalidArgumentName,
                 &node.id,
@@ -979,7 +981,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
 
         let source_type = graph_nodes
             .get(argument.variable.as_str())
-            .and_then(|source| scalar_descriptor_of(&source.kind));
+            .and_then(|source| source.kind.scalar_descriptor());
         let Some(source_type) = source_type else {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::ArgumentTypeMismatch,
@@ -1296,7 +1298,7 @@ pub fn validate_variable_graph_sql_page(
         .map(|column| VariableGraphColumn {
             name: column.name.clone(),
             value_type: VariableGraphScalarDescriptor {
-                scalar_type: graph_scalar_type(column.column_type),
+                scalar_type: column.column_type.as_variable_graph_scalar_type(),
                 nullable: column.nullable,
             },
         })
@@ -1327,19 +1329,6 @@ pub fn validate_variable_graph_sql_page(
     Ok(result)
 }
 
-fn graph_scalar_type(column_type: SqlResultColumnType) -> VariableGraphScalarType {
-    match column_type {
-        SqlResultColumnType::String => VariableGraphScalarType::String,
-        SqlResultColumnType::Boolean => VariableGraphScalarType::Boolean,
-        SqlResultColumnType::Integer => VariableGraphScalarType::Integer,
-        SqlResultColumnType::Float => VariableGraphScalarType::Float,
-        SqlResultColumnType::Date => VariableGraphScalarType::Date,
-        SqlResultColumnType::Timestamp => VariableGraphScalarType::Timestamp,
-        SqlResultColumnType::Decimal => VariableGraphScalarType::Decimal,
-        SqlResultColumnType::Json => VariableGraphScalarType::Json,
-    }
-}
-
 fn sql_result_literal(
     column_type: SqlResultColumnType,
     value: &Value,
@@ -1368,31 +1357,6 @@ fn sql_result_literal(
             .map(|value| VariableGraphLiteral::Decimal(value.to_owned())),
         SqlResultColumnType::Json => Some(VariableGraphLiteral::Json(value.clone())),
     }
-}
-
-fn scalar_descriptor_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
-    match kind {
-        VariableGraphNodeKind::Constant { value_type, .. }
-        | VariableGraphNodeKind::Input { value_type, .. } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Scalar { value_type },
-            ..
-        } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Table { .. },
-            ..
-        } => None,
-    }
-}
-
-fn valid_argument_name(name: &str) -> bool {
-    let Some((first, rest)) = name.as_bytes().split_first() else {
-        return false;
-    };
-    matches!(*first, b'A'..=b'Z' | b'a'..=b'z' | b'_')
-        && rest
-            .iter()
-            .all(|byte| matches!(*byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_'))
 }
 
 fn sql_type_for_graph_type(value_type: VariableGraphScalarType) -> Option<&'static str> {

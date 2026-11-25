@@ -23,9 +23,7 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
 };
-use ugoite_core::sql_query::{
-    SqlResultColumnType, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
-};
+use ugoite_core::sql_query::{MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS};
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, variable_graph_dependency_order,
     CompositionDiagnosticCode, CompositionDocument, VariableGraph, VariableGraphColumn,
@@ -456,7 +454,7 @@ impl UgoiteService {
             .map(|column| VariableGraphColumn {
                 name: column.name.clone(),
                 value_type: VariableGraphScalarDescriptor {
-                    scalar_type: variable_graph_scalar_type(column.column_type),
+                    scalar_type: column.column_type.as_variable_graph_scalar_type(),
                     nullable: column.nullable,
                 },
             })
@@ -1343,19 +1341,6 @@ fn sql_parameter_null(type_name: &str) -> ScalarValue {
             ScalarValue::TimestampNanosecond(None, Some(std::sync::Arc::from("+00:00")))
         }
         _ => ScalarValue::Null,
-    }
-}
-
-fn variable_graph_scalar_type(column_type: SqlResultColumnType) -> VariableGraphScalarType {
-    match column_type {
-        SqlResultColumnType::String => VariableGraphScalarType::String,
-        SqlResultColumnType::Boolean => VariableGraphScalarType::Boolean,
-        SqlResultColumnType::Integer => VariableGraphScalarType::Integer,
-        SqlResultColumnType::Float => VariableGraphScalarType::Float,
-        SqlResultColumnType::Decimal => VariableGraphScalarType::Decimal,
-        SqlResultColumnType::Date => VariableGraphScalarType::Date,
-        SqlResultColumnType::Timestamp => VariableGraphScalarType::Timestamp,
-        SqlResultColumnType::Json => VariableGraphScalarType::Json,
     }
 }
 
