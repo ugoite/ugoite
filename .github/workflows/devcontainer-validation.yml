@@ -1,0 +1,44 @@
+name: Dev Container Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .devcontainer/**
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Open PR number to validate against current main
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcontainer-validation-${{ github.event.pull_request.number || inputs.pull_request_number }}
+  cancel-in-progress: true
+
+jobs:
+  build-up-setup:
+    if: ${{ github.event_name == 'pull_request' || inputs.pull_request_number != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the PR merge ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pull_request_number) || github.sha }}
+          persist-credentials: false
+
+      - name: Build, start, and initialize the Dev Container
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          push: never
+          runCmd: |
+            set -euo pipefail
+            mise --version
+            deno --version
+            cargo --version
+            rustc --version
