@@ -133,6 +133,38 @@ pub(super) fn composition_save_query_inputs(
     Ok(inputs)
 }
 
+/// Resolve and apply planner metadata for save inputs shared by local and
+/// authorized Composition saves. Each caller keeps its own Form snapshot and
+/// supplies the access context and missing-Form error for its boundary.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_and_apply_save_query_metadata(
+    service: &UgoiteService,
+    space_id: &str,
+    document: &mut CompositionDocument,
+    query_inputs: Vec<CompositionSaveQueryInput>,
+    principal_ids: Option<&[Uuid]>,
+    authorization_state: Option<&super::AuthorizationState>,
+    missing_metadata_error: fn() -> AppError,
+) -> Result<()> {
+    for input in query_inputs {
+        let metadata = service
+            .derive_inline_sql_query_metadata(
+                space_id,
+                &input.source_node,
+                Some(&input.form_bindings),
+                &document.spec.variables,
+                principal_ids,
+                authorization_state,
+                None,
+            )
+            .await?
+            .ok_or_else(missing_metadata_error)?;
+        let node = &mut document.spec.variables[input.node_index];
+        apply_save_query_metadata(node, metadata, input.draft_descriptor)?;
+    }
+    Ok(())
+}
+
 /// Variable and query selection inputs for resolving an authorized graph.
 pub(super) struct CompositionQuerySelection<'a> {
     pub variables: &'a BTreeMap<String, Value>,
