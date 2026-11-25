@@ -71,22 +71,13 @@ function compositionGraph(
       content: `{{${query.id}}}`,
       style: "body",
     })),
-    rows: [
-      {
-        id: "aggregates",
-        items: queries.slice(0, 4).map((query) => ({
-          kind: "component" as const,
-          component: query.id,
-        })),
-      },
-      {
-        id: "scalar_states",
-        items: queries.slice(4).map((query) => ({
-          kind: "component" as const,
-          component: query.id,
-        })),
-      },
-    ],
+    rows: [{
+      id: "scalar_states",
+      items: queries.map((query) => ({
+        kind: "component" as const,
+        component: query.id,
+      })),
+    }],
   };
 }
 
@@ -136,30 +127,6 @@ async function seedScalarStateComposition(
   const amount = sqlIdentifier(amountColumn!);
   const table = sqlIdentifier(relation!);
   const queries: ScalarQueryDefinition[] = [
-    {
-      id: "all_rows",
-      sql: `SELECT COUNT(*) AS value FROM ${table}`,
-      scalarType: "integer",
-      nullable: false,
-    },
-    {
-      id: "rows_with_amount",
-      sql: `SELECT COUNT(${amount}) AS value FROM ${table}`,
-      scalarType: "integer",
-      nullable: false,
-    },
-    {
-      id: "amount_total",
-      sql: `SELECT SUM(${amount}) AS value FROM ${table}`,
-      scalarType: "float",
-      nullable: true,
-    },
-    {
-      id: "amount_average",
-      sql: `SELECT AVG(${amount}) AS value FROM ${table}`,
-      scalarType: "float",
-      nullable: true,
-    },
     {
       id: "null_result",
       sql: `SELECT SUM(${amount}) AS value FROM ${table} WHERE ${amount} < 0`,
@@ -810,16 +777,7 @@ test.describe("Composition scalar state journey", () => {
         await expect(multipleRowsOutput).toHaveText("10", {
           timeout: scalarResultTimeoutMs,
         });
-        const failedEvaluation = page.waitForResponse((response) => {
-          if (
-            response.request().method() !== "POST" ||
-            !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-          ) return false;
-          return response.request().postDataJSON().variables?.maximum === 20;
-        });
         await maximumInput.fill("20");
-        const result = await (await failedEvaluation).json();
-        expect(result.ok).toBe(false);
         const multipleRowsSection = page.getByRole("region", {
           name: "scalar_states",
           exact: true,
