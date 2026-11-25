@@ -7,6 +7,92 @@ revisit them. It is not a version authority: manifests, lockfiles, toolchain
 files, and workflow configuration below decide the actual versions and update
 policy.
 
+## Operational status snapshot — 2026-11-25
+
+This snapshot records the latest successful Renovate writer run on source main SHA
+9e113d6c03c3efd1bf97e2fdaffed70a854158f4,
+[#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015). Main had
+advanced from cf1d670d80fee59e953aec896e8e191e8fe62c34 through PR #5269, whose only
+changed file was tools/sql_aggregate_registry_test.ts. This audit PR is based on
+9e113d6c and updates only this evidence record.
+
+The latest full main-push CI comparison
+[#45623698788](https://github.com/ugoite/ugoite/actions/runs/45623698788) completed
+successfully on the immediately preceding source cf1d670d, including Composition Studio
+E2E and ci-required. PR #5269 changed only the SQL aggregate registry meta-test after
+that run. Cargo candidate PR #5262 merged through the normal merge queue at
+c3ba4e1c7d5ca342bbbce0b731f9382c0048a55 from Renovate head
+c1ab600d486b4a5a153838ca0dc4de7fb2b01c1d. It changed the exact ugoite-domain sqlparser
+pin to 0.64.0 and the shared Cargo.lock, retaining 0.62.0 for DataFusion consumers.
+Independent AI review covered that exact head and base and found no blocker. Candidate
+run [#45613417600](https://github.com/ugoite/ugoite/actions/runs/45613417600) passed
+required CI, Rust checks/tests, artifact build, and Composition Studio E2E; CodeQL and
+codeql-required passed. The merge queue added the candidate at 13:23:21Z and merged it
+at 13:23:39Z. No separate merge_group Actions run was observed. Main-push CI for the
+merge commit was cancelled when newer main landed; it is not counted as a failure.
+
+The original Composition Studio failure during #5204 validation is recorded in #5183.
+Run [#45455261932](https://github.com/ugoite/ugoite/actions/runs/45455261932) failed two
+tests at candidate head caba61b50bc5f8c186cdc25d5dd1527c57fcffd0. Attempt 2 reran the
+same job at the same head and passed, as did ci-required. The later #5262 candidate and
+latest-main CI also passed Composition Studio. The original root cause remains unknown;
+no assertion, timeout, or CI gate changed.
+
+Cargo range policy PR #5204 merged through the normal queue at
+ae3212679e7241b98e4f22bee1dca15d5bdf3f16. The post-policy grouped candidate #5119
+represented all 13 Cargo manifests, preserved SemVer ranges for in-range updates,
+changed manifest requirements where needed for out-of-range updates, and updated the
+shared Cargo.lock. Locked Cargo metadata, exact-head CI/E2E
+[#45534228061](https://github.com/ugoite/ugoite/actions/runs/45534228061), CodeQL
+[#45534228067](https://github.com/ugoite/ugoite/actions/runs/45534228067), and normal
+queue integration passed; #5119 merged at 3a4a43f10149b6c6984add61fb39fc337e510520. This
+grouped candidate is the live evidence for range preservation; #5262 itself changed an
+intentional exact pin.
+
+The original eight ecosystem candidates were authored by ugoite-renovate[bot] and merged
+through the normal queue after their recorded exact-head checks and independent AI
+review: Deno #5115, Dev Containers #5116, GitHub Actions #5117, mise #5118, Cargo #5119,
+Docker #5173, Renovate CLI #5174, and Rust toolchain #5175. Docker authority PR #5179
+and Rust 1.100 Clippy fix #5182 also merged. No release, tag, publish, or
+product-version change occurred.
+
+Latest successful self-hosted writer run
+[#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015) used main SHA
+9e113d6c03c3efd1bf97e2fdaffed70a854158f4, verified the Ugoite App identity and
+Dependabot alerts API access, and evaluated all enabled managers and configured
+ecosystem groups. The run matched all 13 Cargo manifests and all five Deno manifests
+plus the shared lockfile. For deno-workspace it reported no Dashboard approval, no
+schedule, unlimited PR/hour limits, and that the missing branch needed creating. Deno
+artifact generation completed, but the writer created no branch or PR. Dashboard #5099
+continues to list 11 Deno updates under Other Branches. The cause is unresolved in
+[#5239](https://github.com/ugoite/ugoite/issues/5239); this is not counted as a
+completed Deno update. Keep #5239 and broader acceptance issue
+[#5100](https://github.com/ugoite/ugoite/issues/5100) open.
+
+Scheduled Renovate run
+[#45521335674](https://github.com/ugoite/ugoite/actions/runs/45521335674) and later
+manual writer runs including #45612705430, #45614837515, #45623235343, #45628452309, and
+#45629633015 completed after the administrator-reported external App removal. No
+external Renovate writer or Dependabot update PR was observed in the inspected events or
+timelines. Dashboard #5099 has no routine Pending Approval, Awaiting Schedule, PR Edited
+(Blocked), or Errored section. The external App removal, Dependency graph/alerts enabled
+state, and Dependabot security-update setting remain administrator-reported, not
+independently confirmed from the settings page. The user API receives 403 for alert
+listing; that does not prove a setting value. App-backed alerts API preflight is
+separate evidence.
+
+The latest writer run skipped one vulnerability alert without firstPatchedVersion and
+reported zero vulnerability branches and concurrent vulnerability PRs. No patchable
+security candidate or security-fix PR was confirmed. Existing security-rule fixture
+evidence is recorded in #5183; it does not establish live remediation. Keep this
+security-path gap open. Do not infer that no fixable alert exists.
+
+No human review is claimed. Independent AI reviews record their exact HEAD, base, scope,
+findings, and rationale. Existing required CI, CodeQL, GitHub protections, and merge
+queue remain in force. Renovate automerge remains disabled.
+
+
+
 ## Authorities and verification
 
 | Domain | Authority | Verification and notes |
@@ -14,7 +100,7 @@ policy.
 | Rust crates | Workspace `Cargo.toml` files and `Cargo.lock` | CI and release builds use locked Cargo operations. |
 | Deno dependencies | Root and member `deno.json` files plus the single root `deno.lock` | `mise run deps:deno:verify` runs `deno install --frozen --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp`. `setup`, the hosted Web lane, and artifact preparation call this task. The lockfile-hash cache is disposable; the frozen install verifies the manifest-to-lockfile boundary. Deno command and source imports use manifest aliases rather than embedding a second package version. |
 | Rust compiler | `rust-toolchain.toml` | The same channel and components are used by local development and CI. `mise.toml` enables mise's idiomatic Rust version file instead of duplicating a compiler pin. |
-| Development tools | `mise.toml` | This file pins Deno `2.9.8`, Helm `3.19.0`, nextest `cargo-nextest-0.9.143`, and the minimum mise version `2025.11.3`. Rust follows `rust-toolchain.toml`. |
+| Development tools | `mise.toml` | This file pins Deno `2.9.8`, Helm `4.3.2`, nextest `cargo-nextest-0.9.143`, and the minimum mise version `2025.11.3`. Rust follows `rust-toolchain.toml`. |
 | Docker Deno runtime | `Dockerfile` | The frontend build image is explicitly pinned to `denoland/deno:2.9.8`, matching the development toolchain. |
 | Node runtime | `.github/workflows/ci.yml`, `release-candidate.yml`, and `release-publish.yml` | CI and release workflows use Node 24. `packages/ugoite/package.json` declares `engines.node >=20` as the package support floor. |
 | Update policy | `renovate.json` | Defines enabled managers, one group per ecosystem, compatibility holds, immediate PR creation, and the no-auto-merge policy. This is the repository's update-policy authority. |
@@ -37,25 +123,42 @@ JST (16:17 UTC on the previous day) and evaluates enabled managers together;
 `renovate.json` has no manager-specific schedule or Dashboard approval gate.
 Eligible updates are proposed immediately with no concurrent or hourly cap.
 Automatic merging remains disabled. Security alerts remain
-separate from the routine ecosystem groups. The final vulnerability-alert rule
-keeps routine compatibility holds and `allowedVersions` restrictions from
-suppressing security-fix candidates; those PRs still require the existing CI,
-CodeQL, review, and merge-queue checks.
+separate from routine ecosystem groups. The vulnerability-alert rule keeps
+routine compatibility holds and `allowedVersions` restrictions from
+suppressing security-fix candidates. Security candidates still require the
+existing CI, CodeQL, GitHub protections, and merge-queue checks. AI review is
+recorded with the exact candidate HEAD and scope; no human review is claimed.
 
-## Deno grouped update status
+## Cargo update-policy verification
 
-The five Deno manifests share the root `deno.lock`; the `deno-workspace` group
-proposes eligible updates together without Dashboard approval. The refreshed
-PR #5115 includes the changed manifests and shared lockfile. The App inventory
-detects all five manifests, including `e2e/deno.json` when it has eligible
-updates. The current refreshed head and its completed CI and CodeQL evidence
-are recorded below. The old Dependabot Deno PR #5082 was closed after the
-writer switch. Track remaining generated-candidate evidence in
-[#5100](https://github.com/ugoite/ugoite/issues/5100).
+PR #5204 adds Cargo-manager-only rangeStrategy: update-lockfile; Cargo grouping,
+compatibility holds, vulnerability handling, and automerge: false remain unchanged. On
+the post-policy source, Renovate regenerated grouped Cargo candidate #5119 with all 13
+Cargo manifests represented. The candidate retained declared SemVer ranges for in-range
+updates, changed manifest requirements when the selected update was outside the prior
+range, and updated the shared lockfile. Locked Cargo metadata, candidate CI/E2E, CodeQL,
+and normal merge-queue integration passed. The exact-pin sqlparser update in #5262 was
+validated separately and does not by itself exercise an in-range range update.
 
-The App-backed inventory covers all five Deno manifests. Successful extract,
-lookup, and full dry-runs do not substitute for CI on a generated PR. See the
-run record below for the exact sources and limits of each result.
+## Deno workspace update status
+
+All five Deno manifests are evaluated together and share the root deno.lock. PR #5115
+merged after exact-head CI/CodeQL; e2e/deno.json had no eligible change in that
+candidate. Latest writer run
+[#45629633015](https://github.com/ugoite/ugoite/actions/runs/45629633015) ran against
+main SHA 9e113d6c03c3efd1bf97e2fdaffed70a854158f4 and detected all five Deno manifests
+plus deno.lock. It planned deno-workspace, with no approval check, no schedule, and
+unlimited PR/hour limits. Artifact generation completed, but no branch or PR was
+created; Dashboard #5099 still lists 11 updates under Other Branches. Extraction and
+successful artifact generation do not prove that a candidate lockfile or PR exists. The
+cause remains unresolved in [#5239](https://github.com/ugoite/ugoite/issues/5239).
+
+The frozen install remains mise run deps:deno:verify; preserve the five manifests and
+single shared lockfile. Keep #5239 open until an App-authored candidate is created,
+frozen-install verification passes, and its exact-head CI/CodeQL and queue integration
+complete.
+
+
 
 ## Intentionally held updates and security exceptions
 
@@ -63,10 +166,10 @@ run record below for the exact sources and limits of each result.
 | --- | --- | --- | --- |
 | Arrow / Parquet / Iceberg / DataFusion / OpenDAL stack | Renovate excludes Cargo major/minor updates with `enabled: false`; routine patches remain eligible for `cargo-workspace`. | The stack shares concrete Arrow types; a single-crate major or minor update can break compatibility across the stack. | Re-enable only after a coordinated candidate is designed and reviewed; validate the crates, Iceberg adapters, SQL, and storage regressions together. Review quarterly. |
 | `keyring` major updates | Renovate excludes routine Cargo major updates for `keyring`; current-major updates and vulnerability-alert fixes remain eligible. | Cargo workspace PR #5119 initially could not regenerate `Cargo.lock` for `keyring` 4 because it no longer exposes the `apple-native` feature requested by `crates/ugoite-cli/Cargo.toml`. After the major hold, the regenerated candidate leaves `keyring` at v3 and includes `Cargo.lock`. | Revisit after the CLI removes or replaces that feature; validate `cargo check --workspace --locked` and `cargo test --workspace --locked`. Track candidate verification in issue #5121. |
-| `rig-agent` minor and major updates | Renovate excludes non-vulnerability minor/major updates; vulnerability-alert updates remain eligible. | An earlier Cargo candidate proposed `rig-agent` 0.47.0, whose API no longer matches `crates/ugoite-konase-rig/src/lib.rs`. The refreshed candidate retains 0.44.0 under the current hold. The adapter is deliberately exact-pinned because it lacks behavior tests for this migration. | Revisit in a dedicated adapter migration with behavioral tests, then run the affected Rust lanes and grouped Cargo CI. Track candidate evidence in [#5147](https://github.com/ugoite/ugoite/issues/5147). |
-| `sqlparser` minor and major updates | Renovate excludes non-vulnerability minor/major updates; vulnerability-alert updates remain eligible. | An earlier `ugoite-domain` candidate proposed 0.64.0 while the pinned Iceberg/DataFusion path remained on 0.62.0; their distinct AST types fail at the `ugoite-iceberg` boundary. The refreshed candidate retains the 0.62.0 pin under the current hold. | Revisit only when DataFusion and Iceberg can move to a compatible parser version in a coordinated update. Validate SQL and storage checks together. Track the AST migration in [#5144](https://github.com/ugoite/ugoite/issues/5144) and candidate in [#5147](https://github.com/ugoite/ugoite/issues/5147). |
-| `p256` minor and major updates | Renovate excludes non-vulnerability direct Cargo updates; vulnerability-alert updates remain eligible. | The earlier regenerated candidate #5119 moved direct `p256` from 0.13.2 to 0.14.0. CI run [#45330847246](https://github.com/ugoite/ugoite/actions/runs/45330847246) failed in Rust check, Rust test, and artifact build because the authentication adapter used APIs removed in 0.14. The refreshed candidate below keeps the direct dependency at 0.13.2, while `webauthn-rs` brings `p256` 0.14.0 transitively. The observed Rust-test failure is separately attributed to `rmcp` 3.11.0; it does not establish a transitive p256 failure. | Revisit after a reviewed authentication adapter migration; validate the auth code, workspace Rust check/test, and grouped Cargo CI. Track the policy hold in [#5159](https://github.com/ugoite/ugoite/issues/5159) and regenerated candidate verification in [#5147](https://github.com/ugoite/ugoite/issues/5147). |
-| `rmcp` non-vulnerability minor updates | Renovate holds Cargo minor updates; patch and vulnerability-alert updates remain eligible. | Candidate #5119 head `70ca299` updated `rmcp` 3.7.0 to 3.11.0 and failed `rmcp_transport_error_keeps_status_and_body_in_the_cli_error_chain` in [CI #45349053433](https://github.com/ugoite/ugoite/actions/runs/45349053433) because the CLI error no longer contains `storage unavailable`. The same Rust-test lane passed on main in [#45346619515](https://github.com/ugoite/ugoite/actions/runs/45346619515). | Revisit after the transport error body is preserved in the CLI error chain; run the focused Rust test and grouped Cargo CI. Policy implemented in [PR #5168](https://github.com/ugoite/ugoite/pull/5168); candidate verification remains in [#5147](https://github.com/ugoite/ugoite/issues/5147). |
+| `rig-agent` minor and major updates | Renovate excludes non-vulnerability minor/major updates; vulnerability-alert updates remain eligible. | An earlier Cargo candidate proposed `rig-agent` 0.47.0, whose API no longer matches `crates/ugoite-konase-rig/src/lib.rs`. The refreshed candidate retains 0.44.0 under the current hold. The adapter is deliberately exact-pinned because it lacks behavior tests for this migration. | Revisit in a dedicated adapter migration with behavioral tests, then run the affected Rust lanes and grouped Cargo CI. Track the adapter migration and grouped-candidate retest in [#5242](https://github.com/ugoite/ugoite/issues/5242). |
+| sqlparser minor and major updates | The targeted non-vulnerability hold is removed; vulnerability-alert updates remain eligible. | Source compatibility PR #5249 moved parser AST types behind the domain boundary. Grouped Cargo candidate #5262 updated the exact domain pin from 0.62.0 to 0.64.0 while retaining 0.62.0 for DataFusion in the shared lockfile. Its exact-head Rust test suite (including SQL form-reference alias coverage), Web, S3, artifact-build, Composition Studio E2E, required CI, and CodeQL checks passed; it merged through the normal queue at c3ba4e1c7d5ca342bbbce0b731f9382c0048a55e. | Compatibility migration is integrated. Keep routine sqlparser updates eligible and validate future grouped candidates against locked workspace resolution and query-context alias tests. Issue #5144 is resolved.
+| `p256` direct major/minor updates | The non-vulnerability hold was removed by #5245; vulnerability-alert updates remain eligible. | Source compatibility PR #5235 merged before the hold was removed. App-authored grouped Cargo PR #5248 then updated `p256` to 0.14.0 and the shared `Cargo.lock`; it passed required CI, CodeQL, selected E2E, independent AI review, and the normal merge queue. The update is now in main. | The compatibility hold is resolved. Issue [#5159](https://github.com/ugoite/ugoite/issues/5159) is closed. |
+| `rmcp` non-vulnerability minor updates | Renovate holds Cargo minor updates; patch and vulnerability-alert updates remain eligible. | Candidate #5119 updated `rmcp` 3.7.0 to 3.11.0 and failed `rmcp_transport_error_keeps_status_and_body_in_the_cli_error_chain` in [CI #45349053433](https://github.com/ugoite/ugoite/actions/runs/45349053433). Inspection of rmcp 3.11 shows its public HTTP status error is body-free; retaining the response body needs a custom transport. Retrying the mutating `ugoite.undo` operation could duplicate the request, and removing the assertion would weaken the test. | Keep the targeted hold unless a safe transport change is designed; periodically re-test a compatible candidate with the focused Rust test and grouped Cargo CI. Track a safe transport design and the next compatibility retest in [#5243](https://github.com/ugoite/ugoite/issues/5243). |
 | GitHub Actions Node major updates | Renovate excludes routine GitHub Actions updates with `depName: node`; vulnerability-alert updates remain eligible. The npm `engines.node >=20` package support floor remains a separate contract. | Grouped Actions PR #5117 initially changed `actions/setup-node` from Node 24 to 26. CI run [#45331135864](https://github.com/ugoite/ugoite/actions/runs/45331135864) failed `tools/workspace_test.ts` because the workflow runtime no longer matched the CI toolchain authority. Renovate 44.257.9 extracts this input as `depName: node` and `packageName: actions/node-versions`; the initial package-name matcher did not apply. The matcher correction merged in PR [#5164](https://github.com/ugoite/ugoite/pull/5164). The refreshed candidate no longer changes Node 24 to 26; see current evidence below. | Revisit after an intentional CI runtime change updates both workflow configuration and its authority check; regenerate the grouped Actions candidate and pass required CI. Matcher correction is tracked in [#5163](https://github.com/ugoite/ugoite/issues/5163); refreshed-candidate evidence remains in [#5158](https://github.com/ugoite/ugoite/issues/5158). |
 | `iceberg` and `iceberg-datafusion` Git dependencies | Revision `1ecd497` in `crates/ugoite-iceberg/Cargo.toml`. | This upstream area is consumed by Git revision, not a normal registry version update. | Review a compatible upstream revision and verify saved-Space reopen, bounded queries, storage, and API behavior monthly. |
 | Mitase bootstrap | Version `0.2.5` and four target SHA-256 values in `tools/mitase.lock.toml`. | Bootstrap and Mitase contracts depend on the exact downloaded bytes. | Update version and all four checksums together; run bootstrap and Mitase contract checks monthly. |
@@ -130,7 +233,10 @@ The current lockfile resolves `event-listener` to `5.4.2`; it is not a
 separately maintained exception. Re-run the audit when the Rust dependency
 graph changes.
 
-## Renovate cutover evidence
+> The dated run/candidate records below are historical snapshots. Use the current
+> operational status above for the latest main and open-candidate state.
+
+## Renovate cutover evidence (historical snapshots)
 
 The writer cutover merged through the merge queue in PR
 [#5094](https://github.com/ugoite/ugoite/pull/5094) at source SHA
@@ -157,7 +263,7 @@ managed separately from the Renovate workflow.
 | Writer attribution follow-up | [#5120](https://github.com/ugoite/ugoite/issues/5120) | Earlier PR #5115 received a head update at 03:58 UTC to `3a0ef8a4`; the timeline attributes that force-push to `renovate[bot]` without a matching workflow run. Newer Docker PR #5166 is also authored by `app/renovate`, while its head commit was force-pushed by `ugoite-renovate[bot]` during the intended workflow run. The intended run then reported that the PR already existed. This writer overlap remains unresolved. |
 | Earlier update candidates | PRs [#5112](https://github.com/ugoite/ugoite/pull/5112), [#5113](https://github.com/ugoite/ugoite/pull/5113), and [#5114](https://github.com/ugoite/ugoite/pull/5114) | These earlier candidates were closed after saving their update heads. Replacement PRs #5155–#5157 were created by `app/renovate`; #5155 was closed during a transfer attempt, after which the Docker branch resurfaced as #5166. #5156 and #5157 remain open. No failing dependency update was merged. |
 
-### Daily grouping rerun evidence (2026-11-24)
+### Historical daily grouping rerun evidence (2026-11-24)
 
 The Node matcher correction merged in PR [#5164](https://github.com/ugoite/ugoite/pull/5164) at main SHA `ba50170e5a4b81677e756e7ff631480c3a2bbd70`. The pinned Renovate CLI 44.257.9 strict configuration validator passed on that source. Runs [#45346979191](https://github.com/ugoite/ugoite/actions/runs/45346979191), [#45348656866](https://github.com/ugoite/ugoite/actions/runs/45348656866), and [#45349952115](https://github.com/ugoite/ugoite/actions/runs/45349952115) completed successfully; each verified the intended App slug and Dependabot alerts API access. The live inventory in those runs covered 36 files and 620 dependencies across ten managers:
 
@@ -180,12 +286,12 @@ The refreshed candidate state below is tied to exact heads; a successful Renovat
 | --- | --- | --- |
 | Deno [#5115](https://github.com/ugoite/ugoite/pull/5115) | Head `3610b09d18ef850550894d5eab313ed35c2c6048`; CI [#45349124671](https://github.com/ugoite/ugoite/actions/runs/45349124671); CodeQL [#45349124899](https://github.com/ugoite/ugoite/actions/runs/45349124899) | Candidate CI and CodeQL completed successfully. Changed manifests share root `deno.lock`; Web and artifact lanes use frozen dependency verification. This head retains Starlight outside the held versions. Saved SQL case A07 passed here and on baseline main SHA `ba50170` in [main CI #45346619515](https://github.com/ugoite/ugoite/actions/runs/45346619515); the earlier mismatch did not reproduce in this same-lane comparison. |
 | GitHub Actions [#5117](https://github.com/ugoite/ugoite/pull/5117) | Head `244f4010679de0dff5bbf25fa03a04eb31cb34f2`; CI [#45348936509](https://github.com/ugoite/ugoite/actions/runs/45348936509); CodeQL [#45348936439](https://github.com/ugoite/ugoite/actions/runs/45348936439) | This regenerated head retains Node 24 and does not select Ubuntu 26.04. Required CI and CodeQL passed, including mobile and Composition Studio E2E. |
-| Cargo [#5119](https://github.com/ugoite/ugoite/pull/5119) | Head `70ca29921a5eb2f8ca9339f14f8f09a71f63beb5`; CI [#45349053433](https://github.com/ugoite/ugoite/actions/runs/45349053433); CodeQL [#45349053166](https://github.com/ugoite/ugoite/actions/runs/45349053166) | Candidate contains `Cargo.lock`; CodeQL, Rust check, artifact build, E2E, and other executed lanes passed. Rust tests failed because `rmcp` 3.11.0 no longer leaves `storage unavailable` in the CLI error chain; `ci-required` correctly failed on that required test result. The same Rust-test lane passed on main. The `rmcp` hold merged in [PR #5168](https://github.com/ugoite/ugoite/pull/5168); regeneration and verification remain open in [#5147](https://github.com/ugoite/ugoite/issues/5147). |
+| Cargo [#5119](https://github.com/ugoite/ugoite/pull/5119) | Head `70ca29921a5eb2f8ca9339f14f8f09a71f63beb5`; CI [#45349053433](https://github.com/ugoite/ugoite/actions/runs/45349053433); CodeQL [#45349053166](https://github.com/ugoite/ugoite/actions/runs/45349053166) | Candidate contains `Cargo.lock`; CodeQL, Rust check, artifact build, E2E, and other executed lanes passed. Rust tests failed because `rmcp` 3.11.0 no longer leaves `storage unavailable` in the CLI error chain; `ci-required` correctly failed on that required test result. The same Rust-test lane passed on main. The `rmcp` hold merged in [PR #5168](https://github.com/ugoite/ugoite/pull/5168); the later regeneration follow-up was recorded in issue #5147 at the time of this snapshot. Current source/transport work is tracked in [#5243](https://github.com/ugoite/ugoite/issues/5243). |
 | Docker [#5166](https://github.com/ugoite/ugoite/pull/5166) | Head `e4ddccbf0f57bac1153e4bc9f4d20516c5a7f51c`; Renovate run [#45349952115](https://github.com/ugoite/ugoite/actions/runs/45349952115); CI [#45350203317](https://github.com/ugoite/ugoite/actions/runs/45350203317) | All selected CI and CodeQL checks passed, but the repository issue-link gate failed. The head commit was force-pushed by `ugoite-renovate[bot]` while the PR is authored by `app/renovate`; the intended run reported that a PR already existed for the branch. This does not establish single-writer PR creation. |
 
 After the grouped run, Dashboard #5099 had no routine proposals waiting for approval or a manager-specific schedule. It still listed an errored Docker retry and old branches #5156–#5157 in “PR Edited (Blocked)”; these must be accounted for before writer exclusivity is claimed. The transfer attempt closed #5155 and deleted its branch, but the `app/renovate` integration recreated Docker PR #5166 while the intended workflow updated the same branch. Disable the separate writer at the repository integration boundary before transferring the remaining legacy candidates. Issue #5120 tracks that cutover and candidate disposition.
 
-### Post-hold live run (2026-11-24)
+### Historical post-hold live run (2026-11-24)
 
 The `rmcp` minor hold merged through the merge queue in [PR #5168](https://github.com/ugoite/ugoite/pull/5168), producing main SHA `f7dc67715d57a884debb19f26ef411b7237056b3`. Intended writer run [#45357790780](https://github.com/ugoite/ugoite/actions/runs/45357790780) completed successfully on that source. The App slug and Dependabot alerts API checks passed; the run extracted 36 files and 620 dependencies across all ten managers. Dashboard #5099 has no routine Pending Approval or Awaiting Schedule sections.
 
