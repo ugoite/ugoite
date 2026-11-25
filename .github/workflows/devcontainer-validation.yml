@@ -26,11 +26,40 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out the PR merge ref
+      - name: Check out current main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pull_request_number) || github.sha }}
+          ref: main
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Merge the PR head onto current main
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid pull request number."
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +"refs/pull/${PR_NUMBER}/head:refs/remotes/validation/pr-${PR_NUMBER}"
+          base_sha="$(git rev-parse refs/remotes/origin/main)"
+          pr_head_sha="$(git rev-parse "refs/remotes/validation/pr-${PR_NUMBER}")"
+          git checkout --detach "${base_sha}"
+          git -c user.name=tohboeh5 \
+            -c user.email=47549972+tohboeh5@users.noreply.github.com \
+            merge --no-edit --no-ff "${pr_head_sha}" \
+            -m "Dev Container validation merge for PR #${PR_NUMBER}"
+          merge_sha="$(git rev-parse HEAD)"
+
+          {
+            printf 'Base main: `%s`\n' "${base_sha}"
+            printf 'PR #%s head: `%s`\n' "${PR_NUMBER}" "${pr_head_sha}"
+            printf 'Synthetic merge: `%s`\n' "${merge_sha}"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Build, start, and initialize the Dev Container
         uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
