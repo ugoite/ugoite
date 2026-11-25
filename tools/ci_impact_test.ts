@@ -342,6 +342,8 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
       "tools/ci-impact.ts",
       "tools/ci_impact_test.ts",
       "tools/spec_integrity_test.ts",
+      "e2e/composition-scalar-state-journey.test.ts",
+      "e2e/lib/navigation-retry.test.ts",
     ]
   ) {
     const report = makeImpactReport({
@@ -352,6 +354,34 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
     });
     assertEquals(report.scope, "all", path);
     assertEquals(report.runDockerRustSourceBuild, false, path);
+  }
+
+  const e2eOnly = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["e2e/composition-scalar-state-journey.test.ts"],
+  });
+  assertEquals(e2eOnly.scope, "all");
+  assertEquals(e2eOnly.candidateLanes, [
+    "artifacts",
+    "cp1-acceptance",
+    "docsite-nav",
+    "rust-check",
+    "rust-test",
+    "web",
+  ]);
+  assertEquals(e2eOnly.runDockerRustSourceBuild, false);
+
+  for (const buildInput of ["Cargo.toml", "Cargo.lock", "Dockerfile"]) {
+    const e2eWithBuildInput = makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: ["e2e/composition-scalar-state-journey.test.ts", buildInput],
+    });
+    assertEquals(e2eWithBuildInput.scope, "all", buildInput);
+    assertEquals(e2eWithBuildInput.runDockerRustSourceBuild, true, buildInput);
   }
 
   const architectureDocsWithDockerInput = makeImpactReport({

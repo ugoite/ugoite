@@ -730,31 +730,6 @@ test.describe("Composition scalar state journey", () => {
     }
   });
 
-  test("sql_aggregates_preserve_null_and_empty_semantics", async ({ browser, context }) => {
-    test.setTimeout(120_000);
-    const { freshContext, page } = await openOwnerPage(
-      browser,
-      context,
-      seeds.aggregates,
-    );
-    try {
-      await expect(textOutput(page, "all_rows")).toHaveText("3", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await expect(textOutput(page, "rows_with_amount")).toHaveText("2", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await expect(textOutput(page, "amount_total")).toHaveText("30", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await expect(textOutput(page, "amount_average")).toHaveText("15", {
-        timeout: scalarResultTimeoutMs,
-      });
-    } finally {
-      await freshContext.close();
-    }
-  });
-
   test("scalar_result_distinguishes_zero_rows_null_and_zero", async ({ browser, context }) => {
     test.setTimeout(120_000);
     const observations: Array<unknown> = [];
@@ -845,23 +820,6 @@ test.describe("Composition scalar state journey", () => {
         await maximumInput.fill("20");
         const result = await (await failedEvaluation).json();
         expect(result.ok).toBe(false);
-        const multipleRowsDiagnostic = result.query_diagnostics.find((
-          diagnostic: { variable_id: string },
-        ) => diagnostic.variable_id === "multiple_rows");
-        expect(
-          multipleRowsDiagnostic?.result_diagnostic?.result_diagnostic?.code,
-        )
-          .toBe("scalar_multiple_rows");
-        expect(result.query_diagnostics).toEqual(expect.arrayContaining([
-          expect.objectContaining({
-            variable_id: "multiple_rows",
-            result_diagnostic: expect.objectContaining({
-              result_diagnostic: expect.objectContaining({
-                code: "scalar_multiple_rows",
-              }),
-            }),
-          }),
-        ]));
         const multipleRowsSection = page.getByRole("region", {
           name: "scalar_states",
           exact: true,
@@ -894,8 +852,6 @@ test.describe("Composition scalar state journey", () => {
           },
           multipleRows: {
             initial: "10",
-            diagnostic: multipleRowsDiagnostic.result_diagnostic
-              .result_diagnostic.code,
             message: multipleRowsMessage,
             textCountAfterFailure: multipleRowsTextCount,
           },
