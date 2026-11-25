@@ -2,7 +2,7 @@
 title: "Text-first Composition"
 ---
 
-**Status: accepted contract.** [ADR-027](../../architecture/contracts/adr-027-text-first-composition.md)
+**Status: implementation architecture summary.** [ADR-027](../../architecture/contracts/adr-027-text-first-composition.md)
 records the design decision. Behavior is specified by
 [REQ-COMP-010](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/composition/text-first-graph.yaml);
 browser behavior is specified by

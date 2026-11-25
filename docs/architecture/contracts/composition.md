@@ -8,11 +8,8 @@ Text-first design. [REQ-COMP-010](../../mitase/requirements/composition/text-fir
 is the behavior authority; current requirements and verification bindings are
 tracked in [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase/requirements/composition).
 REST behavior is implemented by `ugoite-server` and `/openapi.json` defines
-its contract. This is a current-main implementation description; Composition
-was not included in the published v0.2.1 release. The
-[release-scope page](../release/release-scope.md) defines the Current and Stable
-documentation boundary, and the [v0.2.1 release note](../../version/releases/v0.2.1.md)
-remains authoritative for that stable release.
+its contract. Release status and compatibility follow the
+[release-scope page](../release/release-scope.md) and [ADR-027](adr-027-text-first-composition.md).
 
 ## Canonical document
 
@@ -106,13 +103,11 @@ interaction flow or layout.
 
 ## Compatibility and recovery
 
-The v0.2.1 released CLI, REST/OpenAPI, and release notes do not define a
-Composition surface. The replaced shape was saveable on prerelease `main`; its
-records remain raw Knowledge but are not executable or restorable as the current
-Composition. The current-main implementation targets v0.2.2 as a compatible
-patch without migration or dual read; v0.2.2 is not yet a published release.
-Raw inspect, exact reads, export, and history remain available. Restore succeeds
-for current-shape revisions and rejects the replaced shape.
+Compatibility and release status follow the [release-scope page](../release/release-scope.md)
+and [ADR-027](adr-027-text-first-composition.md). Records in the replaced shape
+remain raw Knowledge but are not executable or restorable as the current
+Composition. Raw inspect, exact reads, export, and history remain available;
+restore succeeds for current-shape revisions and rejects the replaced shape.
 
 Published Saved SQL API and CLI operations, the `SQL` system Form, Space/Entry/
 Form 0.1 semantics, EntryBrowser/FormTable controls, CI lanes, and merge queue
