@@ -75,7 +75,7 @@ function isKnownDockerRustSourceBuildUnrelatedGlobalPath(
   return path.startsWith("docs/architecture/") ||
     path.startsWith("docs/mitase/") ||
     path === "tools/ci-impact.ts" ||
-    path === "tools/ci_impact_test.ts";
+    /^tools\/[^/]+_test\.ts$/.test(path);
 }
 
 export function classifyPaths(paths: string[]): ImpactCategories {

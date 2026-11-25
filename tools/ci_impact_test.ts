@@ -341,6 +341,7 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
       "docs/mitase/requirements/ops/quality-gates.yaml",
       "tools/ci-impact.ts",
       "tools/ci_impact_test.ts",
+      "tools/spec_integrity_test.ts",
     ]
   ) {
     const report = makeImpactReport({
@@ -454,6 +455,18 @@ Deno.test("Docker Rust source build runs for build inputs and uncertain diffs", 
 Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan all", () => {
   const cases = [
     makeImpactReport({ event: "merge_group" }),
+    makeImpactReport({
+      event: "merge_group",
+      baseSha,
+      headSha,
+      paths: ["tools/spec_integrity_test.ts"],
+    }),
+    makeImpactReport({
+      event: "push",
+      baseSha,
+      headSha,
+      paths: ["tools/spec_integrity_test.ts"],
+    }),
     makeImpactReport({ event: "push", baseSha: "0".repeat(40), headSha }),
     makeImpactReport({
       event: "push",
