@@ -2,6 +2,12 @@ name: Renovate
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic:
+        description: Run a read-only Renovate full dry-run with debug logging
+        required: false
+        type: boolean
+        default: false
   schedule:
     # 01:17 JST daily; GitHub Actions cron uses UTC.
     - cron: "17 16 * * *"
@@ -24,7 +30,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Issue single-repository App token
+      - name: Issue read-only diagnostic App token
+        if: ${{ inputs.diagnostic }}
+        id: diagnostic-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ugoite
+          repositories: ugoite
+          permission-administration: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: read
+          permission-members: read
+          permission-pull-requests: read
+          permission-statuses: read
+          permission-vulnerability-alerts: read
+          permission-workflows: read
+
+      - name: Issue single-repository writer App token
+        if: ${{ !inputs.diagnostic }}
         id: app-token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
         with:
@@ -44,7 +70,7 @@ jobs:
 
       - name: Verify App slug matches the PR gate
         env:
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          APP_SLUG: ${{ inputs.diagnostic && steps.diagnostic-token.outputs.app-slug || steps.app-token.outputs.app-slug }}
           RENOVATE_APP_SLUG: ${{ vars.RENOVATE_APP_SLUG }}
         run: |
           set -euo pipefail
@@ -56,7 +82,7 @@ jobs:
 
       - name: Verify Dependabot alerts API access without printing alert data
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ inputs.diagnostic && steps.diagnostic-token.outputs.token || steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           gh api --method GET \
@@ -64,7 +90,8 @@ jobs:
             --silent >/dev/null
           echo "Dependabot alerts API: accessible"
 
-      - name: Run pinned Renovate CLI
+      - name: Run pinned Renovate CLI writer
+        if: ${{ !inputs.diagnostic }}
         uses: renovatebot/github-action@ebcbb513d07ead4d9c0c2139064301db05e84a3e # v46.3.15
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -78,3 +105,20 @@ jobs:
           RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_ALLOW_PLUGINS: "false"
           LOG_LEVEL: info
+
+      - name: Run pinned Renovate CLI read-only diagnostic
+        if: ${{ inputs.diagnostic }}
+        uses: renovatebot/github-action@ebcbb513d07ead4d9c0c2139064301db05e84a3e # v46.3.15
+        with:
+          token: ${{ steps.diagnostic-token.outputs.token }}
+          renovate-version: "44.262.1" # renovate: datasource=github-releases depName=renovatebot/renovate
+        env:
+          RENOVATE_PLATFORM: github
+          RENOVATE_REPOSITORIES: ugoite/ugoite
+          RENOVATE_AUTODISCOVER: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          RENOVATE_PLATFORM_COMMIT: enabled
+          RENOVATE_DRY_RUN: full
+          RENOVATE_ALLOW_SCRIPTS: "false"
+          RENOVATE_ALLOW_PLUGINS: "false"
+          LOG_LEVEL: debug
