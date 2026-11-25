@@ -39,6 +39,8 @@ jobs:
           runCmd: |
             set -euo pipefail
             mise --version
-            deno --version
-            cargo --version
-            rustc --version
+            # devcontainers/ci uses a non-login shell here; resolve mise tools
+            # without relying on interactive shell startup files.
+            mise exec -- deno --version
+            mise exec -- cargo --version
+            mise exec -- rustc --version
