@@ -46,13 +46,13 @@ jobs:
           set -o pipefail
           deno outdated --recursive 2>&1 | tee deno-outdated.txt
 
-      - name: cargo audit --locked --json (if available, read-only)
+      - name: cargo audit --json (if available, read-only; Cargo.lock)
         id: cargo-audit
         continue-on-error: true
         run: |
           set -o pipefail
           if command -v cargo-audit >/dev/null 2>&1; then
-            cargo audit --locked --json 2>&1 | tee cargo-audit.txt
+            cargo audit --json 2>&1 | tee cargo-audit.txt
           else
             echo "cargo-audit is not installed; skipping (no install attempted)." | tee cargo-audit.txt
           fi
@@ -92,7 +92,7 @@ jobs:
             echo '```'
             echo "</details>"
             echo ""
-            echo "<details><summary><code>cargo audit --locked --json</code> (${{ steps.cargo-audit.outcome }})</summary>"
+            echo "<details><summary><code>cargo audit --json</code> (${{ steps.cargo-audit.outcome }})</summary>"
             echo ""
             echo '```'
             cat cargo-audit.txt 2>/dev/null || echo "(no output)"
