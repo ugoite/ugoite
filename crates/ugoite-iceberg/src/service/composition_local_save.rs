@@ -118,31 +118,21 @@ impl UgoiteService {
             previous_document.as_ref(),
             &forms,
         )?;
-        for input in query_inputs {
-            let metadata = self
-                .derive_inline_sql_query_metadata(
-                    space_id,
-                    &input.source_node,
-                    Some(&input.form_bindings),
-                    &request.document.spec.variables,
-                    None,
-                    None,
-                    None,
+        super::composition_resolver::resolve_and_apply_save_query_metadata(
+            self,
+            space_id,
+            &mut request.document,
+            query_inputs,
+            None,
+            None,
+            || {
+                AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition SQL query cannot be resolved",
                 )
-                .await?
-                .ok_or_else(|| {
-                    AppError::invalid_input(
-                        ErrorCode::InvalidInput,
-                        "Composition SQL query cannot be resolved",
-                    )
-                })?;
-            let node = &mut request.document.spec.variables[input.node_index];
-            super::composition_resolver::apply_save_query_metadata(
-                node,
-                metadata,
-                input.draft_descriptor,
-            )?;
-        }
+            },
+        )
+        .await?;
         if !request.document.has_complete_query_descriptors() {
             return Err(AppError::invalid_input(
                 ErrorCode::InvalidInput,
