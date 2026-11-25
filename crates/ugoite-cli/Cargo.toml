@@ -15,6 +15,7 @@ ugoite-domain = { path = "../ugoite-domain" }
 ugoite-api-client = { path = "../ugoite-api-client" }
 ugoite-konase = { path = "../ugoite-konase" }
 ugoite-konase-rig = { path = "../ugoite-konase-rig" }
+ugoite-storage = { path = "../ugoite-storage" }
 clap = { version = "4", features = ["derive"] }
 anstyle = "1"
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
