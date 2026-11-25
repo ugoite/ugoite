@@ -53,6 +53,24 @@ pub enum VariableGraphNodeKind {
     },
 }
 
+impl VariableGraphNodeKind {
+    /// Return the scalar descriptor produced by this node, if it has one.
+    /// Table query nodes do not represent a single scalar value.
+    pub fn scalar_descriptor(&self) -> Option<VariableGraphScalarDescriptor> {
+        match self {
+            Self::Constant { value_type, .. } | Self::Input { value_type, .. } => Some(*value_type),
+            Self::Query {
+                returns: VariableGraphResultType::Scalar { value_type },
+                ..
+            } => Some(*value_type),
+            Self::Query {
+                returns: VariableGraphResultType::Table { .. },
+                ..
+            } => None,
+        }
+    }
+}
+
 /// Stable identity of one Form relation resolved from query SQL by Core.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -516,7 +534,7 @@ pub fn compile_variable_graph(
                 };
                 let mut argument_counts = BTreeMap::<&str, usize>::new();
                 for argument in &query.arguments {
-                    if !valid_argument_name(&argument.name) {
+                    if !is_valid_argument_name(&argument.name) {
                         diagnostics.push(VariableGraphDiagnostic::for_argument(
                             VariableGraphDiagnosticCode::InvalidArgumentName,
                             &node.id,
@@ -584,7 +602,7 @@ pub fn compile_variable_graph(
                     ));
                     continue;
                 };
-                if scalar_type_of(&target.kind).is_none() {
+                if target.kind.scalar_descriptor().is_none() {
                     diagnostics.push(VariableGraphDiagnostic::for_argument(
                         VariableGraphDiagnosticCode::VariableTypeMismatch,
                         &node.id,
@@ -637,7 +655,8 @@ fn result_descriptor_is_valid(result: &VariableGraphResultType) -> bool {
     }
 }
 
-fn valid_argument_name(name: &str) -> bool {
+/// Whether a Composition SQL argument name is a portable bare identifier.
+pub fn is_valid_argument_name(name: &str) -> bool {
     let Some((first, rest)) = name.as_bytes().split_first() else {
         return false;
     };
@@ -677,27 +696,12 @@ fn inline_sql_parameter_names(
             continue;
         }
         let name = document.source_slice(token.range)?.strip_prefix('$')?;
-        if !valid_argument_name(name) {
+        if !is_valid_argument_name(name) {
             return None;
         }
         parameters.insert(name.to_owned());
     }
     (source_cursor == document.source.len()).then_some(parameters)
-}
-
-fn scalar_type_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
-    match kind {
-        VariableGraphNodeKind::Constant { value_type, .. }
-        | VariableGraphNodeKind::Input { value_type, .. } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Scalar { value_type },
-            ..
-        } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Table { .. },
-            ..
-        } => None,
-    }
 }
 
 /// A nullable result can satisfy a nullable declaration, while a non-null

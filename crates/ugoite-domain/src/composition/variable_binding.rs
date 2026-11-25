@@ -292,25 +292,9 @@ fn component_accepts_variable(
         VariableGraphComponentBinding::Input { .. } => {
             matches!(variable, VariableGraphNodeKind::Input { .. })
         }
-        VariableGraphComponentBinding::Text { .. } => scalar_type_of(variable)
+        VariableGraphComponentBinding::Text { .. } => variable
+            .scalar_descriptor()
             .is_some_and(|scalar_type| scalar_type.scalar_type != VariableGraphScalarType::Json),
-    }
-}
-
-fn scalar_type_of(
-    variable: &VariableGraphNodeKind,
-) -> Option<super::variable_graph::VariableGraphScalarDescriptor> {
-    match variable {
-        VariableGraphNodeKind::Constant { value_type, .. }
-        | VariableGraphNodeKind::Input { value_type, .. } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Scalar { value_type },
-            ..
-        } => Some(*value_type),
-        VariableGraphNodeKind::Query {
-            returns: VariableGraphResultType::Table { .. },
-            ..
-        } => None,
     }
 }
 
