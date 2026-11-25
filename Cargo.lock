@@ -7031,6 +7031,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "clap",
+ "getrandom 0.4.2",
  "keyring",
  "opendal",
  "p256 0.13.2",

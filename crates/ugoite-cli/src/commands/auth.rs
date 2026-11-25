@@ -6,7 +6,7 @@ use chrono::Utc;
 use clap::{Args, Subcommand, ValueEnum};
 use p256::{
     ecdsa::{signature::Signer, Signature, SigningKey},
-    elliptic_curve::rand_core::OsRng,
+    elliptic_curve::zeroize::Zeroize,
     pkcs8::{DecodePrivateKey, EncodePrivateKey},
 };
 use serde_json::{json, Value};
@@ -17,6 +17,26 @@ use url::Url;
 use uuid::Uuid;
 
 pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
+
+/// Generate a P-256 signing key from the operating system CSPRNG.
+///
+/// Sample uniformly random scalar bytes and reject invalid scalars rather than
+/// reducing them modulo the curve order, which would introduce bias.
+fn generate_signing_key() -> Result<SigningKey> {
+    let mut secret_bytes = [0_u8; 32];
+    loop {
+        if let Err(error) = getrandom::fill(&mut secret_bytes) {
+            secret_bytes.zeroize();
+            return Err(error).context("generate CLI device authorization key");
+        }
+
+        let key = SigningKey::from_slice(&secret_bytes);
+        secret_bytes.zeroize();
+        if let Ok(key) = key {
+            return Ok(key);
+        }
+    }
+}
 
 /// Parse the `--space-uid` login scope as an immutable UUIDv7 Space UID.
 ///
@@ -398,7 +418,7 @@ async fn perform_device_login(
     // UUIDv7 admission lives in exactly one place: the Clap value parser
     // (`parse_space_uid_arg`). No post-parse recheck here; the parser-level
     // regression test (`login_space_uid_accepts_only_uuid_v7`) pins rejection.
-    let signing_key = SigningKey::random(&mut OsRng);
+    let signing_key = generate_signing_key()?;
     let public_key_jwk = public_jwk(&signing_key);
     let device_payload = oauth_payload(
         json!({
@@ -700,11 +720,14 @@ fn signed_jwt(key: &SigningKey, header: Value, claims: Value) -> Result<String> 
 }
 
 fn public_jwk(key: &SigningKey) -> Value {
-    let point = key.verifying_key().to_encoded_point(false);
+    let point = key.verifying_key().to_sec1_bytes();
+    let point = point.as_ref();
+    assert_eq!(point.len(), 65, "uncompressed P-256 point has 65 bytes");
+    assert_eq!(point[0], 0x04, "uncompressed SEC1 point prefix");
     json!({
         "kty": "EC", "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed x")),
-        "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed y")),
+        "x": URL_SAFE_NO_PAD.encode(&point[1..33]),
+        "y": URL_SAFE_NO_PAD.encode(&point[33..65]),
     })
 }
 
@@ -722,17 +745,44 @@ async fn login(
 #[cfg(test)]
 mod tests {
     use super::{
-        api_base_root, canonical_dpop_htu, device_authorization_prompt, login, mcp_resource,
-        mcp_target, oauth_payload, parse_space_uid_arg, public_jwk, refresh_session,
+        api_base_root, canonical_dpop_htu, device_authorization_prompt, generate_signing_key,
+        login, mcp_resource, mcp_target, oauth_payload, parse_space_uid_arg, public_jwk,
+        refresh_session,
     };
     use base64::Engine as _;
-    use p256::pkcs8::EncodePrivateKey;
+    use p256::{
+        ecdsa::signature::{Signer, Verifier},
+        pkcs8::EncodePrivateKey,
+    };
     use serde_json::json;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn generated_device_key_signs_and_exposes_its_matching_public_jwk() {
+        let key = generate_signing_key().expect("generate device authorization key");
+        let message = b"device authorization key regression";
+        let signature: p256::ecdsa::Signature = key.sign(message);
+        key.verifying_key()
+            .verify(message, &signature)
+            .expect("generated key verifies its signature");
+
+        let jwk = public_jwk(&key);
+        let encoded = key.verifying_key().to_sec1_bytes();
+        assert_eq!(jwk["kty"], "EC");
+        assert_eq!(jwk["crv"], "P-256");
+        let jwk_x = URL_SAFE_NO_PAD
+            .decode(jwk["x"].as_str().expect("JWK x"))
+            .unwrap();
+        let jwk_y = URL_SAFE_NO_PAD
+            .decode(jwk["y"].as_str().expect("JWK y"))
+            .unwrap();
+        assert_eq!(jwk_x.as_slice(), &encoded[1..33]);
+        assert_eq!(jwk_y.as_slice(), &encoded[33..65]);
+    }
 
     fn read_request(stream: &mut TcpStream) -> String {
         stream
@@ -990,7 +1040,7 @@ mod tests {
 
     #[test]
     fn mcp_refresh_carries_the_saved_resource() {
-        let signing_key = super::SigningKey::random(&mut super::OsRng);
+        let signing_key = super::generate_signing_key().expect("generate test signing key");
         let public_key_jwk = public_jwk(&signing_key);
         let private_key = super::URL_SAFE_NO_PAD.encode(
             signing_key

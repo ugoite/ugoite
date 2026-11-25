@@ -2,7 +2,7 @@
 //! REQ-ASSET-001
 
 use base64::Engine;
-use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
+use p256::pkcs8::EncodePrivateKey;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -286,18 +286,8 @@ fn init_backend_config(config_path: &std::path::Path, url: &str, space_uid: &str
 /// carry a real ES256 session. The stub ignores auth headers; only the
 /// CLI-side gate and session binding observe it.
 fn seed_stub_credential(config_path: &std::path::Path, base_url: &str, space_uid: &str) {
-    let key = SigningKey::random(&mut OsRng);
-    let point = key.verifying_key().to_encoded_point(false);
-    let public_key_jwk = serde_json::json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-            point.x().expect("public key x"),
-        ),
-        "y": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-            point.y().expect("public key y"),
-        ),
-    });
+    let key = support::test_signing_key();
+    let public_key_jwk = support::public_jwk(&key);
     let session = serde_json::json!({
         "credential_id": uuid::Uuid::now_v7().to_string(),
         "device_name": "asset stub test",
