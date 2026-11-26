@@ -1188,7 +1188,7 @@ describe("CompositionStudio graph surface", () => {
       authenticated: true,
       account: { account_id: "editor-2", display_name: "Other editor" },
     });
-    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new window.Event("focus"));
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()
     );
@@ -1198,7 +1198,7 @@ describe("CompositionStudio graph surface", () => {
       authenticated: true,
       account: { account_id: "editor-1", display_name: "Editor" },
     });
-    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new window.Event("focus"));
     const retry = await screen.findByRole("button", { name: "Retry" });
     fireEvent.click(retry);
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
@@ -1218,7 +1218,7 @@ describe("CompositionStudio graph surface", () => {
       authenticated: true,
       account: { account_id: "editor-2", display_name: "Other editor" },
     });
-    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new window.Event("focus"));
     await waitFor(() =>
       expect(document.querySelector(".compositionGraphStudioEditor"))
         .not.toHaveAttribute("inert")
