@@ -81,8 +81,8 @@ each evaluated five Deno manifest paths in a 37-file / 630-dependency inventory.
 The writer's Deno manager remains one `deno-workspace` group, and frozen
 verification is `mise run deps:deno:verify`.
 
-The current App-authored candidate [#5279](https://github.com/ugoite/ugoite/pull/5279)
-is at head `a73b9025470efcd97a45b3e2a03d3932062d993f` against main
+The earlier CLI 45.0.0 App-authored candidate [#5279](https://github.com/ugoite/ugoite/pull/5279)
+was at head `a73b9025470efcd97a45b3e2a03d3932062d993f` against main
 `2d53e541187743199f3710a2a511a358b32b5ec1`. It changes root `deno.json`,
 `frontend/deno.json`, `e2e/deno.json`, and root `deno.lock`; `docsite/` and
 `tools/` were evaluated but had no eligible updates. The candidate's frozen
