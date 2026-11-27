@@ -3,32 +3,6 @@ kind: requirements
 namespace: ops
 category: Operations, development, and quality-gate requirements
 requirements:
-  - id: REQ-OPS-003
-    title: No Legacy Requirement YAML Records
-    description: The legacy docs/spec/requirements directory contains no YAML requirement records.
-    priority: medium
-    status: implemented
-    criteria:
-      - id: taxonomy-integrity
-        kind: quality
-        statement: No YAML requirement record files remain in docs/spec/requirements.
-        governed_by: [POL-008#rule.governance]
-    bindings:
-      - id: taxonomy-integrity-verification
-        role: verification
-        facet: docsite-test
-        responsibility: Verify that the legacy requirements directory contains no YAML record files; this check does not validate registry parsing or identifier references.
-        targets:
-          - id: taxonomy-integrity-test
-            adapter: typescript
-            path: tools/spec_integrity_test.ts
-            selector: { kind: test, name: 'REQ-OPS-003: legacy requirement directory contains no YAML records' }
-            claims:
-              - kind: verifies
-                criterion: REQ-OPS-003#criterion.taxonomy-integrity
-                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.specification-integrity]
-                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-003: legacy requirement directory contains no YAML records' } }
-
   - id: REQ-OPS-004
     title: Version Milestone Definitions
     description: Version and milestone status is represented under docs/version and distinguishes implemented, in-progress, and planned work.
