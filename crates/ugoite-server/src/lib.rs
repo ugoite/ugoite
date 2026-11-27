@@ -15891,7 +15891,7 @@ spec:
         assert_eq!(body["query_results"], json!({}));
         assert_eq!(
             body["computed_query_ids"],
-            json!(["dependent_query", "multiple_value"])
+            json!(["multiple_value", "dependent_query"])
         );
         assert!(body["query_diagnostics"]
             .as_array()
