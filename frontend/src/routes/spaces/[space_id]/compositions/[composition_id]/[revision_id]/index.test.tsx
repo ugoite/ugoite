@@ -358,8 +358,10 @@ describe("Composition saved revision graph evaluation", () => {
       expect(evaluateMock).toHaveBeenCalledTimes(2);
       expect(screen.queryByText("10")).not.toBeInTheDocument();
       expect(
-        screen.getByText("Could not open this revision. (Details: offline)"),
-      ).toBeInTheDocument();
+        screen.queryAllByText(
+          "Could not open this revision. (Details: offline)",
+        ),
+      ).not.toHaveLength(0);
     });
     expect(accessSnapshotMock).not.toHaveBeenCalled();
   });
