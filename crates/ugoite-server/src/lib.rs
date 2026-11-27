@@ -15904,7 +15904,7 @@ spec:
                         == "scalar_multiple_rows"
             }) && diagnostics.iter().any(|diagnostic| {
                 diagnostic["variable_id"] == "dependent_query"
-                    && diagnostic["code"] == "evaluation_aborted"
+                    && diagnostic["code"] == "query_dependency_not_ready"
             }),
             "unexpected diagnostics for multi-row scalar dependency: {body}"
         );
