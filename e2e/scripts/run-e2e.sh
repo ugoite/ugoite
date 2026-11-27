@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "saved-sql-route", "late-query-response", "composition-golden", "composition-studio", "composition-variable-name", "composition-scalar-evaluation", "composition-table-pagination", "composition-binding-rebind", "composition-form-schema-drift", "composition-scalar-state", "composition-input-validation", "composition-source-acl-isolation", "native-zoom-200", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "saved-sql-route", "late-query-response", "composition-golden", "composition-studio", "composition-variable-name", "composition-scalar-evaluation", "composition-table-pagination", "composition-binding-rebind", "composition-form-schema-drift", "composition-source-acl-isolation", "native-zoom-200", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "navigation", "screenshot", or "full"
@@ -309,12 +309,6 @@ case "$TEST_TYPE" in
   composition-table-pagination)
     run_e2e_task composition-table-pagination "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
-  composition-scalar-state)
-    run_e2e_task composition-scalar-state "$base_report_file" "$ENFORCE_CI_GATES"
-    ;;
-  composition-input-validation)
-    run_e2e_task composition-input-validation "$base_report_file" "$ENFORCE_CI_GATES"
-    ;;
   composition-source-acl-isolation)
     run_e2e_task composition-source-acl-isolation "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
@@ -367,7 +361,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|saved-sql-route|late-query-response|composition-golden|composition-studio|composition-variable-name|composition-scalar-evaluation|composition-table-pagination|composition-binding-rebind|composition-form-schema-drift|composition-scalar-state|composition-input-validation|composition-source-acl-isolation|native-zoom-200|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|saved-sql-route|late-query-response|composition-golden|composition-studio|composition-variable-name|composition-scalar-evaluation|composition-table-pagination|composition-binding-rebind|composition-form-schema-drift|composition-source-acl-isolation|native-zoom-200|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
     exit 1
     ;;
 esac

@@ -6,6 +6,11 @@ const directRunner = await Deno.readTextFile(
 const composeRunner = await Deno.readTextFile(
   new URL("../e2e/scripts/run-e2e-compose.sh", import.meta.url),
 );
+const e2eTasks = Object.keys(
+  JSON.parse(
+    await Deno.readTextFile(new URL("../e2e/deno.json", import.meta.url)),
+  ).tasks,
+);
 const taskHelperPath = await Deno.realPath(
   new URL("../e2e/scripts/run-e2e-task.sh", import.meta.url),
 );
@@ -13,6 +18,34 @@ const taskHelper = await Deno.readTextFile(taskHelperPath);
 const queryMeasure = await Deno.readTextFile(
   new URL("../scripts/measure-query-surfaces.sh", import.meta.url),
 );
+
+Deno.test("E2E runner dispatches only configured tasks", () => {
+  const configuredTasks = new Set(e2eTasks);
+  for (
+    const [name, runner] of [
+      ["direct", directRunner],
+      ["Compose", composeRunner],
+    ]
+  ) {
+    const dispatchedTasks = new Set(
+      [...runner.matchAll(/^\s+run_e2e_task\s+([a-z0-9-]+)\s/gm)].map(
+        (match) => match[1],
+      ),
+    );
+    const advertisedTasks = new Set(
+      [...runner.matchAll(/echo "Usage:[^\n]*\[([^\]]+)\]"/g)].flatMap((
+        match,
+      ) => match[1].split("|").filter((task) => /^[a-z0-9-]+$/.test(task))),
+    );
+    for (const task of new Set([...dispatchedTasks, ...advertisedTasks])) {
+      assertEquals(
+        configuredTasks.has(task),
+        true,
+        `${name} runner references undefined E2E task: ${task}`,
+      );
+    }
+  }
+});
 
 Deno.test("direct and Compose E2E runners share the task and JUnit gate", async () => {
   assertEquals(
