@@ -990,7 +990,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
             ));
             continue;
         };
-        let Some(sql_type) = sql_type_for_graph_type(source_type.scalar_type) else {
+        let Some(sql_type) = sql_parameter_type_for_graph_type(source_type.scalar_type) else {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::UnsupportedArgumentType,
                 &node.id,
@@ -1359,7 +1359,12 @@ fn sql_result_literal(
     }
 }
 
-fn sql_type_for_graph_type(value_type: VariableGraphScalarType) -> Option<&'static str> {
+/// Return the SQL request binder type for a Composition scalar type.
+///
+/// Decimal and JSON remain result types but are not supported SQL parameters.
+pub fn sql_parameter_type_for_graph_type(
+    value_type: VariableGraphScalarType,
+) -> Option<&'static str> {
     match value_type {
         VariableGraphScalarType::String => Some("string"),
         VariableGraphScalarType::Boolean => Some("boolean"),
@@ -2338,6 +2343,67 @@ mod tests {
                     "floor_value",
                 )]
             );
+        }
+    }
+
+    #[test]
+    fn sql_result_columns_keep_portable_rules_and_engine_limits() {
+        let value_type = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let valid = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type,
+        }];
+        assert!(crate::composition::sql_result_columns_are_well_formed(
+            &valid
+        ));
+        assert!(!crate::composition::sql_result_columns_are_well_formed(&[]));
+
+        let duplicate = vec![
+            valid[0].clone(),
+            VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type,
+            },
+        ];
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &duplicate
+        ));
+
+        let too_many = (0..=crate::sql_query::MAX_SQL_OUTPUT_COLUMNS)
+            .map(|index| VariableGraphColumn {
+                name: format!("column_{index}"),
+                value_type,
+            })
+            .collect::<Vec<_>>();
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &too_many
+        ));
+
+        let too_long = [VariableGraphColumn {
+            name: "x".repeat(crate::sql_query::MAX_SQL_COLUMN_NAME_BYTES + 1),
+            value_type,
+        }];
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &too_long
+        ));
+    }
+
+    #[test]
+    fn sql_parameter_type_mapping_is_shared_and_explicit() {
+        for (scalar_type, expected) in [
+            (VariableGraphScalarType::String, Some("string")),
+            (VariableGraphScalarType::Boolean, Some("boolean")),
+            (VariableGraphScalarType::Integer, Some("integer")),
+            (VariableGraphScalarType::Float, Some("float")),
+            (VariableGraphScalarType::Date, Some("date")),
+            (VariableGraphScalarType::Timestamp, Some("timestamp")),
+            (VariableGraphScalarType::Decimal, None),
+            (VariableGraphScalarType::Json, None),
+        ] {
+            assert_eq!(sql_parameter_type_for_graph_type(scalar_type), expected);
         }
     }
 
