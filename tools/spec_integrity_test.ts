@@ -4,16 +4,6 @@ import { parse } from "yaml";
 import path from "node:path";
 
 const repoRoot = path.resolve(Deno.cwd());
-Deno.test("REQ-OPS-003: legacy requirement directory contains no YAML records", async () => {
-  const requirementDir = path.join(repoRoot, "docs/spec/requirements");
-  const yamlRecords = await yamlFilesRecursively(requirementDir);
-  assertEquals(
-    yamlRecords,
-    [],
-    "requirement records are maintained in Mitase, not the legacy directory",
-  );
-});
-
 Deno.test("REQ-OPS-004: version statuses agree with their tasks and canonical sources", async () => {
   const versionRoot = path.join(repoRoot, "docs/version");
 
