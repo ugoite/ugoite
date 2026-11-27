@@ -948,8 +948,4 @@ export const handlers = [
     async ({ request }) => HttpResponse.json(await request.json()),
   ),
 
-  // Root API endpoint (used by HelloWorld)
-  testHttp.get("/", () => {
-    return HttpResponse.json({ message: "Hello from mock backend!" });
-  }),
 ];

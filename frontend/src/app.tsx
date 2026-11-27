@@ -3,7 +3,6 @@ import { FileRoutes } from "@solidjs/start/router";
 import { type JSXElement, Suspense } from "solid-js";
 import { AppErrorBoundary } from "~/components/AppErrorBoundary";
 import { AuthGate } from "~/components/AuthGate";
-import Nav from "~/components/Nav";
 import { primePortablePreferencesFromLocal } from "~/lib/preferences-store";
 import "./app.css";
 import "./composition-vnext.css";
@@ -22,14 +21,11 @@ function AppRoot(props: { children: JSXElement }) {
   const location = useLocation();
 
   return (
-    <>
-      <Nav />
-      <AuthGate>
-        <AppErrorBoundary pathname={location.pathname}>
-          {props.children}
-        </AppErrorBoundary>
-      </AuthGate>
-    </>
+    <AuthGate>
+      <AppErrorBoundary pathname={location.pathname}>
+        {props.children}
+      </AppErrorBoundary>
+    </AuthGate>
   );
 }
 

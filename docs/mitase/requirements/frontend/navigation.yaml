@@ -58,7 +58,7 @@ requirements:
 
   - id: REQ-FE-066
     title: Auth-Aware Global Navigation Session Controls
-    description: The global frontend navigation exposes only Spaces, shows a sign-in entry point only for signed-out visitors, exposes an explicit account control for authenticated sessions, and clears the browser session before returning to the login route. The root navigation slot remains empty so the global and Space shells remain the only navigation owners.
+    description: The global frontend navigation exposes only Spaces, shows a sign-in entry point only for signed-out visitors, exposes an explicit account control for authenticated sessions, and clears the browser session before returning to the login route.
     priority: medium
     status: implemented
     criteria:
@@ -72,7 +72,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-011#rule.governance]
       - id: single-shell
         kind: custom
-        statement: The root Nav slot remains empty so GlobalShell and SpaceShell own the shipped navigation without a duplicate header; GlobalShell owns only the global Spaces destination and SpaceShell owns Space-scoped destinations.
+        statement: GlobalShell owns the global Spaces destination and SpaceShell owns Space-scoped destinations.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: auth-navigation-verification
@@ -100,15 +100,6 @@ requirements:
                   - FEAT-FE-009#binding.frontend/target.global-shell
                   - FEAT-FE-009#binding.frontend/target.account-menu
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.test.tsx", test: "signs out only from the explicit menu action" } }
-          - id: root-navigation-slot
-            adapter: typescript
-            path: frontend/src/components/Nav.test.tsx
-            selector: { kind: test, name: "leaves navigation to the v5 page shells" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-066#criterion.single-shell
-                covers: [FEAT-FE-009#binding.frontend/target.root-nav]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/Nav.test.tsx", test: "leaves navigation to the v5 page shells" } }
           - id: space-shell-navigation
             adapter: typescript
             path: frontend/src/components/SpaceShell.test.tsx
