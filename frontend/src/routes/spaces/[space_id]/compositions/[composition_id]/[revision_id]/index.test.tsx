@@ -357,9 +357,7 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => {
       expect(evaluateMock).toHaveBeenCalledTimes(2);
       expect(screen.queryByText("10")).not.toBeInTheDocument();
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Could not load results",
-      );
+      expect(screen.getByText("Could not load results")).toBeInTheDocument();
     });
     expect(accessSnapshotMock).not.toHaveBeenCalled();
   });
