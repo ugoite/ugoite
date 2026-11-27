@@ -15633,6 +15633,47 @@ spec:
                             },
                         },
                     },
+                    VariableGraphNode {
+                        id: "multiple_value".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: false,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::InlineSql {
+                                    sql: "SELECT CAST(11 AS BIGINT) AS value UNION ALL SELECT CAST(22 AS BIGINT) AS value".to_string(),
+                                },
+                                arguments: Vec::new(),
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
+                    VariableGraphNode {
+                        id: "dependent_query".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: false,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::InlineSql {
+                                    sql: "SELECT $multiple_value AS value".to_string(),
+                                },
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "multiple_value".to_string(),
+                                    variable: "multiple_value".to_string(),
+                                }],
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
                 ],
                 components: vec![
                     CompositionComponent::Text {
@@ -15653,6 +15694,11 @@ spec:
                         id: "include_empty_input".to_string(),
                         variable: "include_empty".to_string(),
                     },
+                    CompositionComponent::Text {
+                        id: "dependent_text".to_string(),
+                        content: "Dependent: {{dependent_query}}".to_string(),
+                        style: TextStyle::Body,
+                    },
                 ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -15670,6 +15716,9 @@ spec:
                             },
                             FlowItem::Component {
                                 component: "include_empty_input".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "dependent_text".to_string(),
                             },
                         ],
                     }],
@@ -15801,7 +15850,7 @@ spec:
             saved.entry_id, saved.revision_id
         ))
         .body(Body::empty())?;
-        let (snapshot_status, snapshot_body) = route_json(route, snapshot_request).await?;
+        let (snapshot_status, snapshot_body) = route_json(route.clone(), snapshot_request).await?;
         assert_eq!(snapshot_status, StatusCode::OK, "{snapshot_body}");
         assert_eq!(
             snapshot_body["composition_revision"],
@@ -15821,6 +15870,42 @@ spec:
                 ["properties"]["valid_for_ms"]["const"],
             30_000
         );
+
+        let request = Request::post(format!("/spaces/{space_id}/compositions/evaluate"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "evaluation_id": Uuid::now_v7().to_string(),
+                    "target": {
+                        "kind": "saved_revision",
+                        "composition_id": saved.entry_id.to_string(),
+                        "revision_id": saved.revision_id.to_string()
+                    },
+                    "requested_queries": ["dependent_query"]
+                })
+                .to_string(),
+            ))?;
+        let (status, body) = route_json(route, request).await?;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["ok"], false, "{body}");
+        assert_eq!(body["query_results"], json!({}));
+        assert_eq!(
+            body["computed_query_ids"],
+            json!(["dependent_query", "multiple_value"])
+        );
+        assert!(body["query_diagnostics"]
+            .as_array()
+            .is_some_and(|diagnostics| {
+                diagnostics.iter().any(|diagnostic| {
+                    diagnostic["variable_id"] == "multiple_value"
+                        && diagnostic["code"] == "result_validation_failed"
+                        && diagnostic["result_diagnostic"]["result_diagnostic"]["code"]
+                            == "scalar_multiple_rows"
+                }) && diagnostics.iter().any(|diagnostic| {
+                    diagnostic["variable_id"] == "dependent_query"
+                        && diagnostic["code"] == "evaluation_aborted"
+                })
+            }));
         Ok(())
     }
 

@@ -3,7 +3,7 @@
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type] [--fixture-root PATH]
-#   test-type: "smoke", "saved-sql-route", "composition-golden", "composition-studio", "composition-variable-name", "composition-scalar-evaluation", "composition-table-pagination", "composition-binding-rebind", "composition-source-acl-isolation", "asset-owned", "smoke-and-asset-owned", "navigation",
+#   test-type: "smoke", "saved-sql-route", "composition-golden", "composition-studio", "composition-variable-name", "composition-table-pagination", "composition-binding-rebind", "composition-source-acl-isolation", "asset-owned", "smoke-and-asset-owned", "navigation",
 #     "owner-recovery", "portable-space", "mobile-ui", "query-measurement",
 #     "entries", "screenshot", or "full"
 #   --fixture-root: caller-owned storage root used by query-measurement
@@ -520,9 +520,6 @@ case "$TEST_TYPE" in
   composition-binding-rebind)
     run_e2e_task composition-binding-rebind "$base_report_file" true
     ;;
-  composition-scalar-evaluation)
-    run_e2e_task composition-scalar-evaluation "$base_report_file" true
-    ;;
   composition-table-pagination)
     run_e2e_task composition-table-pagination "$base_report_file" true
     ;;
@@ -577,7 +574,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|saved-sql-route|composition-golden|composition-studio|composition-variable-name|composition-scalar-evaluation|composition-table-pagination|composition-binding-rebind|composition-source-acl-isolation|asset-owned|smoke-and-asset-owned|navigation|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|saved-sql-route|composition-golden|composition-studio|composition-variable-name|composition-table-pagination|composition-binding-rebind|composition-source-acl-isolation|asset-owned|smoke-and-asset-owned|navigation|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
     exit 1
     ;;
 esac

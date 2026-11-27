@@ -5,7 +5,6 @@
     "docsite:navigation:raw": "deno run --node-modules-dir=none -A @playwright/test test docsite-mobile-nav.test.ts docsite-links.test.ts",
     "docsite:navigation": "bash scripts/run-docsite-navigation.sh",
     "smoke": "deno run --node-modules-dir=none -A @playwright/test test smoke.test.ts entry-query-late-response.test.ts",
-    "composition-scalar-evaluation": "deno run --node-modules-dir=auto -A @playwright/test test composition-scalar-evaluation-journey.test.ts",
     "composition-table-pagination": "deno run --node-modules-dir=auto -A @playwright/test test composition-table-pagination-journey.test.ts",
     "composition-binding-rebind": "deno run --node-modules-dir=auto -A @playwright/test test composition-binding-rebind.test.ts",
     "composition-form-schema-drift": "deno run --node-modules-dir=auto -A @playwright/test test composition-form-schema-drift.test.ts",
