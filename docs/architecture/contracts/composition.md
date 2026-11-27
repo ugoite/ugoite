@@ -87,12 +87,13 @@ An explicitly selected query requires only inputs in its dependency closure.
 Its results, pages, and cursors publish together after validation; full
 evaluation validates every input.
 
-The saved-revision Reader retains transient results while it holds a current
-server-issued authority snapshot lease of at most 30 seconds. Returning to
-the page requires a fresh check before cached results are shown. A changed
-authorization or Publication fingerprint clears retained results. An expired
-or unavailable check fails closed. The lease bounds detection for the active,
-connected Reader and does not push revocation notifications.
+The saved-revision Reader displays transient results only under a current
+server-issued authority snapshot lease of at most 30 seconds. While the page
+remains active and visible, it checks the lease before expiry; an expired or
+unavailable check fails closed. Blur, page hiding, or loss of network clears
+the results and table pages. Returning to the page evaluates again under the
+current revision, Publication, and authorization. The lease bounds detection
+for the active, connected Reader and does not push revocation notifications.
 
 ## Studio and Reader
 
