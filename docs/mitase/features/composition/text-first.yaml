@@ -485,15 +485,6 @@ features:
                 criterion: REQ-COMP-010#criterion.append-only-save-history
                 covers: [FEAT-COMP-010#binding.service/target.append-only-save]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: composition::history_tests::authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap } }
-          - id: raw-cli-projection
-            adapter: rust
-            path: crates/ugoite-cli/src/commands/composition.rs
-            selector: { kind: test, name: tests::local_raw_projection_matches_the_portable_composition_read_dto }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-010#criterion.raw-history-remains-readable
-                covers: [FEAT-COMP-010#binding.cli/target.cli-raw-inspection]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::local_raw_projection_matches_the_portable_composition_read_dto } }
           - id: raw-cli-exact-read-and-export
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs

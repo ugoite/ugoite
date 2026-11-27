@@ -1,15 +1,18 @@
-//! Shared conversion from Composition evaluation results to the portable API DTO.
+//! Shared projection of Composition service results into portable API DTOs.
 
 use super::{CompositionGraphEvaluationPlan, CompositionQueryEvaluationResponse};
 use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
 use ugoite_api_client::{
     CompositionComponentBinding, CompositionComponentKind, CompositionDeferredArgument,
-    CompositionDependencyIndex, CompositionDiagnostic, CompositionEvaluationQueryDiagnostic,
+    CompositionDependencyIndex, CompositionDiagnostic, CompositionEntryIntegrity,
+    CompositionEntryMetadata, CompositionEvaluationQueryDiagnostic,
     CompositionEvaluationRequestDiagnostic, CompositionEvaluationResponse,
     CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
-    CompositionFormBinding, CompositionGraphQueryResult, CompositionQuery,
-    CompositionQueryResultType, CompositionResultColumn, CompositionRevisionReference,
+    CompositionFormBinding, CompositionGraphQueryResult, CompositionHistoryPage,
+    CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
+    CompositionListPage, CompositionQuery, CompositionQueryResultType, CompositionRawRevision,
+    CompositionResultColumn, CompositionRevisionMetadata, CompositionRevisionReference,
     CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
     CompositionTextTemplatePart, CompositionVariableConsumers,
 };
@@ -19,9 +22,155 @@ use ugoite_core::composition::{
     ResolvedQueryRequest,
 };
 use ugoite_domain::composition::{
-    VariableGraphLiteral, VariableGraphResultType, VariableGraphScalarDescriptor,
-    VariableGraphScalarType, VariableGraphValidatedResult,
+    canonicalize_composition_yaml, CompositionDiagnosticCode, VariableGraphLiteral,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
+
+/// Project the raw stored Composition revision into its portable API form.
+///
+/// This deliberately does not parse or canonicalize the stored Composition
+/// carrier so unsupported and malformed historical payloads remain inspectable.
+pub fn composition_raw_revision_response(
+    raw: crate::composition::RawCompositionRevision,
+) -> CompositionRawRevision {
+    let revision = raw.revision;
+    let entry = revision.entry;
+    CompositionRawRevision {
+        revision: CompositionRevisionMetadata {
+            form_id: revision.form_id.to_string(),
+            entry_id: revision.entry_id.to_string(),
+            revision_id: revision.revision_id.to_string(),
+            parent_revision_id: revision.parent_revision_id.map(|value| value.to_string()),
+            entry_version: revision.entry_version,
+            change_id: revision.change_id,
+            expected_version: revision.expected_version,
+            operation: match revision.operation {
+                ugoite_domain::entry::EntryOperation::Upsert => "upsert",
+                ugoite_domain::entry::EntryOperation::Delete => "delete",
+                ugoite_domain::entry::EntryOperation::Restore => "restore",
+            }
+            .to_string(),
+            committed_at_micros: revision.committed_at_micros,
+            author_id: revision.author_id,
+            form_version: revision.form_version.get(),
+            source_kind: revision.source_kind,
+            source_id: revision.source_id,
+            entry: CompositionEntryMetadata {
+                external_id: entry.external_id,
+                tags: entry.tags,
+                created_at_micros: entry.created_at_micros,
+                updated_at_micros: entry.updated_at_micros,
+                updated_by: entry.updated_by,
+                integrity: CompositionEntryIntegrity {
+                    checksum: entry.integrity.checksum,
+                    signature: entry.integrity.signature,
+                },
+                deleted: entry.deleted,
+                deleted_at_micros: entry.deleted_at_micros,
+                deleted_by: entry.deleted_by,
+                restored_from: entry.restored_from.map(|value| value.to_string()),
+            },
+            extra_attributes: revision.extra_attributes,
+            extension_metadata: revision.extension_metadata,
+        },
+        fields: raw.fields,
+        unmapped_field_values: raw
+            .unmapped_field_values
+            .into_iter()
+            .map(|(field_id, value)| (field_id.get().to_string(), value))
+            .collect(),
+    }
+}
+
+/// Project a raw Composition history page while retaining its bounded paging
+/// metadata and raw revision carriers.
+pub fn composition_raw_history_page_response(
+    raw: crate::composition::RawCompositionHistoryPage,
+) -> CompositionHistoryPage {
+    CompositionHistoryPage {
+        entry_id: raw.entry_id.to_string(),
+        revisions: raw
+            .revisions
+            .into_iter()
+            .map(composition_raw_revision_response)
+            .collect(),
+        total: raw.total,
+        offset: raw.offset,
+        limit: raw.limit,
+        has_more: raw.has_more,
+    }
+}
+
+/// Project a bounded raw Composition list page. Stored spec bodies are not
+/// part of the list DTO.
+pub fn composition_raw_list_page_response(
+    raw: crate::composition::RawCompositionListPage,
+) -> CompositionListPage {
+    CompositionListPage {
+        items: raw
+            .items
+            .into_iter()
+            .map(|item| CompositionListItem {
+                composition_id: item.entry_id,
+                revision_id: item.revision_id.to_string(),
+                updated_at: item.updated_at,
+                name: item.name,
+                kind: item.kind,
+                format_version: item.format_version,
+            })
+            .collect(),
+        offset: raw.offset,
+        limit: raw.limit,
+        has_more: raw.has_more,
+    }
+}
+
+/// Canonicalize Composition YAML and create the portable lint response.
+pub fn composition_lint_response(yaml: &str) -> Result<CompositionLintResponse> {
+    match canonicalize_composition_yaml(yaml) {
+        Ok(canonical) => Ok(CompositionLintResponse {
+            ok: true,
+            value: Some(CompositionLintValue {
+                document: serde_json::to_value(canonical.document)
+                    .context("encode Composition lint document")?,
+                canonical_yaml: canonical.yaml,
+                fingerprint: canonical.fingerprint,
+            }),
+            error: None,
+        }),
+        Err(code) => composition_lint_diagnostic_response(code),
+    }
+}
+
+/// Project a domain Composition diagnostic into the portable lint response.
+pub fn composition_lint_diagnostic_response(
+    code: CompositionDiagnosticCode,
+) -> Result<CompositionLintResponse> {
+    let code = composition_diagnostic_code(code)?;
+    Ok(CompositionLintResponse {
+        ok: false,
+        value: None,
+        error: Some(CompositionLintError {
+            kind: "composition_diagnostic".to_string(),
+            code,
+        }),
+    })
+}
+
+/// Convert a domain Composition diagnostic into the portable API code.
+pub fn composition_diagnostic_code(
+    code: CompositionDiagnosticCode,
+) -> Result<ugoite_api_client::CompositionDiagnosticCode> {
+    let api_code = ugoite_api_client::CompositionDiagnosticCode::from_code(code.as_str())
+        .with_context(|| {
+            format!(
+                "Composition diagnostic {} is missing from the portable API contract",
+                code.as_str()
+            )
+        })?;
+    Ok(api_code)
+}
 
 /// Convert a service evaluation result into the portable API response DTO.
 pub fn composition_evaluation_response(
@@ -301,4 +450,179 @@ fn queries_and_bindings(
         })
         .collect();
     Ok((queries, component_bindings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        composition_lint_diagnostic_response, composition_lint_response,
+        composition_raw_history_page_response, composition_raw_list_page_response,
+        composition_raw_revision_response,
+    };
+    use crate::composition::{
+        RawCompositionHistoryPage, RawCompositionListItem, RawCompositionListPage,
+        RawCompositionRevision,
+    };
+    use serde_json::{json, Value};
+    use std::collections::BTreeMap;
+    use ugoite_domain::composition::{canonicalize_composition_yaml, CompositionDiagnosticCode};
+    use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
+    use ugoite_domain::form::FormVersion;
+    use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
+    use uuid::Uuid;
+
+    const BASIC_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+
+    fn raw_revision() -> RawCompositionRevision {
+        let entry_id = EntryId::from(Uuid::from_u128(1001));
+        RawCompositionRevision {
+            revision: EntryRevision {
+                form_id: FormId::from(Uuid::from_u128(1000)),
+                entry_id,
+                revision_id: RevisionId::from(Uuid::from_u128(1002)),
+                parent_revision_id: Some(RevisionId::from(Uuid::from_u128(1003))),
+                entry_version: 3,
+                change_id: "change-1".to_string(),
+                expected_version: Some(2),
+                operation: EntryOperation::Restore,
+                committed_at_micros: 123,
+                author_id: "author-1".to_string(),
+                form_version: FormVersion::new(1).expect("Form version"),
+                source_kind: "core".to_string(),
+                source_id: Some("source-1".to_string()),
+                entry: EntryMetadata {
+                    external_id: "monthly-expense".to_string(),
+                    tags: vec!["monthly".to_string()],
+                    updated_by: "author-1".to_string(),
+                    ..EntryMetadata::default()
+                },
+                values: BTreeMap::from([(
+                    FieldId::new(101).expect("Field ID"),
+                    FieldValue::String("not: valid: yaml".to_string()),
+                )]),
+                extra_attributes: BTreeMap::from([("reviewed".to_string(), json!(true))]),
+                extension_metadata: BTreeMap::from([("extension".to_string(), json!("kept"))]),
+            },
+            fields: BTreeMap::from([
+                ("name".to_string(), json!("Future format")),
+                ("format_version".to_string(), json!(99)),
+                ("spec".to_string(), json!("not: valid: yaml")),
+            ]),
+            unmapped_field_values: BTreeMap::from([(FieldId::new(102).unwrap(), json!(true))]),
+        }
+    }
+
+    #[test]
+    fn raw_revision_projection_preserves_metadata_and_future_carriers() {
+        let raw = raw_revision();
+        let entry_id = raw.revision.entry_id.to_string();
+        let revision_id = raw.revision.revision_id.to_string();
+
+        let projected = composition_raw_revision_response(raw);
+
+        assert_eq!(projected.revision.entry_id, entry_id);
+        assert_eq!(projected.revision.revision_id, revision_id);
+        assert_eq!(projected.revision.operation, "restore");
+        assert_eq!(
+            projected.revision.parent_revision_id,
+            Some(Uuid::from_u128(1003).to_string())
+        );
+        assert_eq!(projected.revision.source_id.as_deref(), Some("source-1"));
+        assert_eq!(projected.revision.entry.external_id, "monthly-expense");
+        assert_eq!(projected.revision.entry.tags, ["monthly"]);
+        assert_eq!(projected.fields["format_version"], json!(99));
+        assert_eq!(projected.fields["spec"], "not: valid: yaml");
+        assert_eq!(projected.unmapped_field_values["102"], true);
+        assert_eq!(projected.revision.extra_attributes["reviewed"], true);
+        assert_eq!(projected.revision.extension_metadata["extension"], "kept");
+    }
+
+    #[test]
+    fn raw_revision_projection_maps_each_entry_operation() {
+        for (operation, expected) in [
+            (EntryOperation::Upsert, "upsert"),
+            (EntryOperation::Delete, "delete"),
+            (EntryOperation::Restore, "restore"),
+        ] {
+            let mut raw = raw_revision();
+            raw.revision.operation = operation;
+
+            assert_eq!(
+                composition_raw_revision_response(raw).revision.operation,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn raw_history_and_list_projection_preserve_bounded_page_metadata() {
+        let entry_id = EntryId::from(Uuid::from_u128(2001));
+        let history = composition_raw_history_page_response(RawCompositionHistoryPage {
+            entry_id,
+            revisions: vec![raw_revision()],
+            total: 7,
+            offset: 2,
+            limit: 3,
+            has_more: true,
+        });
+        assert_eq!(history.entry_id, entry_id.to_string());
+        assert_eq!(history.total, 7);
+        assert_eq!(history.offset, 2);
+        assert_eq!(history.limit, 3);
+        assert!(history.has_more);
+        assert_eq!(history.revisions[0].fields["format_version"], json!(99));
+
+        let list = composition_raw_list_page_response(RawCompositionListPage {
+            items: vec![RawCompositionListItem {
+                entry_id: entry_id.to_string(),
+                revision_id: RevisionId::from(Uuid::from_u128(2002)),
+                updated_at: 12.5,
+                name: Some(json!("Monthly expenses")),
+                kind: Some(json!("dashboard")),
+                format_version: Some(json!(1)),
+            }],
+            offset: 4,
+            limit: 2,
+            has_more: false,
+        });
+        assert_eq!(list.offset, 4);
+        assert_eq!(list.limit, 2);
+        assert!(!list.has_more);
+        assert_eq!(list.items[0].composition_id, entry_id.to_string());
+        assert_eq!(list.items[0].revision_id, Uuid::from_u128(2002).to_string());
+        assert_eq!(list.items[0].name, Some(json!("Monthly expenses")));
+        assert_eq!(list.items[0].kind, Some(json!("dashboard")));
+        assert_eq!(list.items[0].format_version, Some(json!(1)));
+    }
+
+    #[test]
+    fn lint_projection_matches_domain_canonicalization() -> anyhow::Result<()> {
+        let canonical =
+            canonicalize_composition_yaml(BASIC_COMPOSITION).expect("valid Composition fixture");
+
+        let response = composition_lint_response(BASIC_COMPOSITION)?;
+
+        assert!(response.ok);
+        let value = response.value.expect("canonical lint value");
+        assert_eq!(value.document, serde_json::to_value(canonical.document)?);
+        assert_eq!(value.canonical_yaml, canonical.yaml);
+        assert_eq!(value.fingerprint, canonical.fingerprint);
+        assert!(response.error.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn lint_projection_uses_portable_diagnostic_code() -> anyhow::Result<()> {
+        let response = composition_lint_diagnostic_response(
+            CompositionDiagnosticCode::UnsupportedFormatVersion,
+        )?;
+        assert!(!response.ok);
+        assert!(response.value.is_none());
+        let value: Value = serde_json::to_value(response)?;
+        assert_eq!(
+            value.pointer("/error/code").and_then(Value::as_str),
+            Some(CompositionDiagnosticCode::UnsupportedFormatVersion.as_str())
+        );
+        Ok(())
+    }
 }
