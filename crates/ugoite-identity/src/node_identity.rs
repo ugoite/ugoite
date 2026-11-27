@@ -65,8 +65,8 @@ pub fn is_loopback_host(host: &str) -> bool {
 
 /// Return whether plain HTTP is permitted for this OIDC host in a test context.
 ///
-/// `in_process_test` is true only for the crate's in-process test server. Other
-/// callers require the explicit E2E test-mode environment setting.
+/// `in_process_test` is true only for an in-process server's own test build.
+/// Other callers require the explicit E2E test-mode environment setting.
 pub fn allows_http_oidc_test_host(host: &str, in_process_test: bool) -> bool {
     (in_process_test || oidc_loopback_test_mode())
         && (is_loopback_host(host) || is_e2e_mock_host(host))
