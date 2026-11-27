@@ -936,9 +936,6 @@ mod tests {
         VariableGraphNodeKind, VariableGraphScalarDescriptor, VariableGraphScalarType,
         MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
     };
-    use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
-    use ugoite_domain::form::FormVersion;
-    use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
     use ugoite_iceberg::service::CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan;
     use uuid::Uuid;
 
