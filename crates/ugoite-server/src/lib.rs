@@ -15893,19 +15893,21 @@ spec:
             body["computed_query_ids"],
             json!(["multiple_value", "dependent_query"])
         );
-        assert!(body["query_diagnostics"]
+        let diagnostics = body["query_diagnostics"]
             .as_array()
-            .is_some_and(|diagnostics| {
-                diagnostics.iter().any(|diagnostic| {
-                    diagnostic["variable_id"] == "multiple_value"
-                        && diagnostic["code"] == "result_validation_failed"
-                        && diagnostic["result_diagnostic"]["result_diagnostic"]["code"]
-                            == "scalar_multiple_rows"
-                }) && diagnostics.iter().any(|diagnostic| {
-                    diagnostic["variable_id"] == "dependent_query"
-                        && diagnostic["code"] == "evaluation_aborted"
-                })
-            }));
+            .expect("query diagnostics");
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic["variable_id"] == "multiple_value"
+                    && diagnostic["code"] == "result_validation_failed"
+                    && diagnostic["result_diagnostic"]["result_diagnostic"]["code"]
+                        == "scalar_multiple_rows"
+            }) && diagnostics.iter().any(|diagnostic| {
+                diagnostic["variable_id"] == "dependent_query"
+                    && diagnostic["code"] == "evaluation_aborted"
+            }),
+            "unexpected diagnostics for multi-row scalar dependency: {body}"
+        );
         Ok(())
     }
 
