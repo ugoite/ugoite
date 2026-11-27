@@ -106,7 +106,7 @@ jobs:
         uses: renovatebot/github-action@7b402fe76b7bc4273576663a09be2f0f85266e2f # v47.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
-          renovate-version: "45.1.0" # renovate: datasource=github-releases depName=renovatebot/renovate
+          renovate-version: "45.1.1" # renovate: datasource=github-releases depName=renovatebot/renovate
         env:
           RENOVATE_PLATFORM: github
           RENOVATE_REPOSITORIES: ugoite/ugoite
@@ -122,7 +122,7 @@ jobs:
         uses: renovatebot/github-action@7b402fe76b7bc4273576663a09be2f0f85266e2f # v47.0.0
         with:
           token: ${{ steps.diagnostic-token.outputs.token }}
-          renovate-version: "45.1.0" # renovate: datasource=github-releases depName=renovatebot/renovate
+          renovate-version: "45.1.1" # renovate: datasource=github-releases depName=renovatebot/renovate
         env:
           RENOVATE_PLATFORM: github
           RENOVATE_REPOSITORIES: ugoite/ugoite
