@@ -278,7 +278,7 @@ inventory:
         - frontend/src/components/CompositionStudioSync.test.tsx
         - frontend/src/components/CompositionStudioMobile.test.tsx
         - e2e/composition-golden-journey.test.ts
-        - e2e/composition-stale-response.test.ts
+        - e2e/composition-latest-variable-generation.test.ts
         - e2e/composition-studio-journey.test.ts
         - e2e/composition-table-mobile.test.ts
         - e2e/composition-recovery-authorization.test.ts
