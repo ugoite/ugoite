@@ -17,6 +17,11 @@ defines the Current and Stable documentation boundary.
 This documentation build describes the v0.2 product line on the v0.1 authority
 boundary for operator-owned Spaces:
 
+This is a product-level overview, not an exhaustive feature inventory. Use the
+[current release scope](../architecture/release/release-scope.md) for the full
+Current-versus-Stable boundary and the versioned release notes for published
+capabilities.
+
 - CLI core mode directly opens a local workspace and is the minimal local-first
   path.
 - The Rust server exposes authenticated REST, the small authenticated MCP
