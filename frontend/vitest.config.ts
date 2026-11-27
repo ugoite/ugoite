@@ -48,7 +48,7 @@ export default defineConfig({
     testTimeout: 10000,
     server: {
       deps: {
-        inline: ["@solidjs/router", "@solidjs/testing-library"],
+        inline: ["@solidjs/router", "@solidjs/testing-library", "msw"],
       },
     },
     coverage: {
