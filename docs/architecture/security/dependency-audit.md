@@ -44,7 +44,10 @@ The latest production writer run
 succeeded on main `cacad9bf9b18378b939457726659adb955625256` with CLI 45.1.1 and
 wrapper v48.0.0. The App identity and alerts API preflights passed. It opened
 no update PR, and Dashboard #5099 lists all five Deno manifests with no Open
-update-PR section or Repository Problems. It reported aggregate API counts of
+update-PR section or Repository Problems. It does show the Deno group under
+`Pending Status Checks`; no Renovate-authored PR is currently open. That status
+aligns with the full diagnostic's unmet internal-check filter and is distinct
+from `Pending Approval` or `Awaiting Schedule`. The writer reported aggregate API counts of
 41 open alerts and 40 with a first patched version; these are not counts of
 Renovate-eligible fixes. No security-fix PR was produced in this run, so
 alert-level security-path handling remains unverified in
