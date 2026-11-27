@@ -123,6 +123,22 @@ export const compositionEvaluationIdentity = (
   };
 };
 
+type CompositionEvaluationAuthority = {
+  publication_fingerprint?: string | null;
+  authorization_fingerprint?: string | null;
+};
+
+export const hasSameCompositionEvaluationAuthority = (
+  left: CompositionEvaluationAuthority | undefined,
+  right: CompositionEvaluationAuthority | undefined,
+): boolean =>
+  Boolean(
+    left?.publication_fingerprint && left.authorization_fingerprint &&
+      right?.publication_fingerprint && right.authorization_fingerprint &&
+      left.publication_fingerprint === right.publication_fingerprint &&
+      left.authorization_fingerprint === right.authorization_fingerprint,
+  );
+
 export const sameCompositionEvaluationIdentity = (
   left: CompositionEvaluationIdentity | undefined,
   right: CompositionEvaluationIdentity | undefined,
@@ -130,8 +146,16 @@ export const sameCompositionEvaluationIdentity = (
   Boolean(
     left && right &&
       left.compositionRevision === right.compositionRevision &&
-      left.publicationFingerprint === right.publicationFingerprint &&
-      left.authorizationFingerprint === right.authorizationFingerprint,
+      hasSameCompositionEvaluationAuthority(
+        {
+          publication_fingerprint: left.publicationFingerprint,
+          authorization_fingerprint: left.authorizationFingerprint,
+        },
+        {
+          publication_fingerprint: right.publicationFingerprint,
+          authorization_fingerprint: right.authorizationFingerprint,
+        },
+      ),
   );
 
 /** Find every query whose direct or transitive argument graph uses a change. */
@@ -167,21 +191,22 @@ export const affectedCompositionQueries = (
 };
 
 /**
- * Merge a partial evaluation only when its authority snapshot is unchanged.
- * The caller must send a full evaluation after an identity change.
+ * Merge a partial evaluation only while its saved revision or draft authority
+ * snapshot is unchanged. The caller must send a full evaluation after a change.
  */
 export const mergeCompositionEvaluation = (
   previous: CompositionEvaluationResponse | undefined,
   next: CompositionEvaluationResponse,
   invalidatedQueryIds: readonly string[] = [],
+  scope: "saved_revision" | "draft" = "saved_revision",
 ): CompositionEvaluationResponse => {
-  if (
-    !previous ||
-    !sameCompositionEvaluationIdentity(
+  const reusable = scope === "draft"
+    ? hasSameCompositionEvaluationAuthority(previous, next)
+    : sameCompositionEvaluationIdentity(
       compositionEvaluationIdentity(previous),
       compositionEvaluationIdentity(next),
-    )
-  ) return next;
+    );
+  if (!previous || !reusable) return next;
 
   const invalidated = new Set([
     ...invalidatedQueryIds,
@@ -201,15 +226,19 @@ export const mergeCompositionEvaluation = (
   // caller. Preserve descriptors for the rest of this graph so a later input
   // edit can still discover its affected queries. A same-ID descriptor from
   // the latest response wins in case planner metadata has been refreshed.
-  const queriesById = new Map(
-    previous.queries.map((query) => [query.variable_id, query]),
-  );
-  for (const query of next.queries) {
-    queriesById.set(query.variable_id, query);
+  let queries = next.queries;
+  if (scope === "saved_revision") {
+    const queriesById = new Map(
+      previous.queries.map((query) => [query.variable_id, query]),
+    );
+    for (const query of next.queries) {
+      queriesById.set(query.variable_id, query);
+    }
+    queries = [...queriesById.values()];
   }
   return {
     ...next,
-    queries: [...queriesById.values()],
+    queries,
     query_results: queryResults,
     query_diagnostics: queryDiagnostics,
   };

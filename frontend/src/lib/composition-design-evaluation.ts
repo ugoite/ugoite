@@ -6,6 +6,8 @@ import {
 import {
   changedCompositionQueryIds,
   dependentCompositionQueryIds,
+  hasSameCompositionEvaluationAuthority,
+  mergeCompositionEvaluation,
   unavailableCompositionQueryIds,
 } from "./composition-evaluation";
 import {
@@ -163,11 +165,10 @@ export function createCompositionDesignEvaluation(options: {
       }
       if (!current()) return;
       const previous = evaluation();
-      const sameAuthority = previous && previous.authorization_fingerprint &&
-        previous.publication_fingerprint &&
-        previous.authorization_fingerprint ===
-          response.authorization_fingerprint &&
-        previous.publication_fingerprint === response.publication_fingerprint;
+      const sameAuthority = hasSameCompositionEvaluationAuthority(
+        previous,
+        response,
+      );
       if (
         previous && response.authorization_fingerprint &&
         response.publication_fingerprint && !sameAuthority && !full
@@ -189,23 +190,17 @@ export function createCompositionDesignEvaluation(options: {
           ) => node.id)),
         ...response.computed_query_ids,
       ]);
-      const results = sameAuthority ? { ...previous.query_results } : {};
-      invalidated.forEach((id) => delete results[id]);
-      Object.assign(results, response.query_results);
-      setEvaluation({
-        ...response,
-        query_results: results,
-        query_diagnostics: [
-          ...(sameAuthority ? previous.query_diagnostics ?? [] : []).filter((
-            diagnostic,
-          ) => !invalidated.has(diagnostic.variable_id)),
-          ...(response.query_diagnostics ?? []),
-        ],
-      });
+      const merged = mergeCompositionEvaluation(
+        previous,
+        response,
+        [...invalidated],
+        "draft",
+      );
+      setEvaluation(merged);
       setPages((currentPages) => {
         const next = { ...currentPages };
         for (const id of invalidated) {
-          const result = results[id];
+          const result = merged.query_results[id];
           if (result?.value.kind !== "table") {
             delete next[id];
             continue;

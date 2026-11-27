@@ -394,4 +394,82 @@ describe("Composition graph evaluation reuse", () => {
     expect(merged.query_results.other).toEqual(previous.query_results.other);
     expect(merged.query_diagnostics).toEqual(next.query_diagnostics);
   });
+
+  it("merges draft results on the same authority without retaining old graph descriptors", () => {
+    const previous = response({
+      composition_revision: { entry_id: "comp", revision_id: "draft-1" },
+      query_results: {
+        rows: {
+          value: { kind: "scalar", value: { kind: "integer", value: "1" } },
+          has_more: false,
+        },
+        other: {
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
+          has_more: false,
+        },
+      },
+      query_diagnostics: [
+        { code: "old_rows", variable_id: "rows" },
+        { code: "unrelated", variable_id: "other" },
+      ],
+    });
+    const next = response({
+      composition_revision: { entry_id: "comp", revision_id: "draft-2" },
+      queries: [query("rows")],
+      computed_query_ids: ["rows"],
+      query_results: {
+        rows: {
+          value: { kind: "scalar", value: { kind: "integer", value: "4" } },
+          has_more: false,
+        },
+      },
+      query_diagnostics: [{ code: "new_rows", variable_id: "rows" }],
+    });
+
+    const merged = mergeCompositionEvaluation(
+      previous,
+      next,
+      ["rows"],
+      "draft",
+    );
+
+    expect(merged.query_results.rows.value).toEqual({
+      kind: "scalar",
+      value: { kind: "integer", value: "4" },
+    });
+    expect(merged.query_results.other).toEqual(previous.query_results.other);
+    expect(merged.queries.map((item) => item.variable_id)).toEqual(["rows"]);
+    expect(merged.query_diagnostics).toEqual([
+      { code: "unrelated", variable_id: "other" },
+      { code: "new_rows", variable_id: "rows" },
+    ]);
+  });
+
+  it.each(
+    [
+      ["authorization", { authorization_fingerprint: "auth-2" }],
+      ["publication", { publication_fingerprint: "publication-2" }],
+    ] as const,
+  )("does not reuse draft values when %s changes", (_name, identity) => {
+    const previous = response({
+      query_results: {
+        other: {
+          value: { kind: "scalar", value: { kind: "integer", value: "3" } },
+          has_more: false,
+        },
+      },
+    });
+    const next = response({
+      ...identity,
+      query_results: {
+        rows: {
+          value: { kind: "scalar", value: { kind: "integer", value: "4" } },
+          has_more: false,
+        },
+      },
+    });
+
+    expect(mergeCompositionEvaluation(previous, next, ["rows"], "draft"))
+      .toEqual(next);
+  });
 });
