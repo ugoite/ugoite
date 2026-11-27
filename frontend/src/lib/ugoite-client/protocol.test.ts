@@ -688,6 +688,28 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
           value_type: { scalar_type: "json", nullable: false },
           value: { kind: "json", value: { integer: 42 } },
         },
+        {
+          id: "total",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT $amount",
+            arguments: [{ name: "amount", variable: "count" }],
+          },
+        },
+        {
+          id: "literal_query",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: { kind: "inline_sql", sql: "SELECT 1" },
+        },
       ],
     };
 
@@ -700,23 +722,45 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
         style: "body",
       }],
       "count",
-      "total",
+      "renamed_count",
     );
 
     expect(result.variables).toEqual([
       {
         ...graph.variables[0],
-        id: "total",
+        id: "renamed_count",
         default: { kind: "integer", value: "9223372036854775807" },
       },
       graph.variables[1],
       graph.variables[2],
+      {
+        id: "total",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $amount",
+          arguments: [{ name: "amount", variable: "renamed_count" }],
+        },
+      },
+      {
+        id: "literal_query",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+      },
     ]);
     expect(result.components).toEqual([
       {
         id: "label",
         kind: "text",
-        content: "Count: {{total}}",
+        content: "Count: {{renamed_count}}",
         style: "body",
       },
     ]);

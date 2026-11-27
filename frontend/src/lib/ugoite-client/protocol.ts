@@ -195,9 +195,13 @@ const decodeTypedIntegerResponse = (
     return;
   }
   if (command.action === "domain.rename_composition_variable") {
-    if (isRecord(value)) {
-      decodeVariableGraphIntegerValues(value.variables, source);
-    }
+    // Box JSON primitives so malformed non-record responses keep the decoder's
+    // existing no-op behavior without duplicating the decoder's shape guard.
+    const response = Object(value) as { variables?: unknown };
+    decodeVariableGraphIntegerValues(
+      response.variables,
+      source,
+    );
     return;
   }
   if (command.action === "domain.parse_variable_graph_input") {
