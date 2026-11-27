@@ -7,19 +7,83 @@ revisit them. It is not a version authority: manifests, lockfiles, toolchain
 files, and workflow configuration below decide the actual versions and update
 policy.
 
-## Operational status snapshot — 2026-11-27 JST / 2026-11-26 UTC, 19:37 UTC
+## Operational status — 2026-11-27 UTC
 
-Latest main is `8b5b71cb6ccd69a2d9819fe5009aea320ae0e21a`. Renovate CLI 45.1.0 PR #5302 merged through the normal queue as `e54f8eb682a8a6417d47c05b7cd01cba5eedf630`; GitHub Actions wrapper 47.0.0 PR #5303 then merged through the normal queue as latest main. Both exact PR heads passed required CI, CodeQL, and queue integration checks. Main push run [#45881962543](https://github.com/ugoite/ugoite/actions/runs/45881962543) completed successfully across Web, artifact build, Rust, Composition Studio E2E, and all other lanes. Main CodeQL [#45881962489](https://github.com/ugoite/ugoite/actions/runs/45881962489) passed. No release, tag, publish, or product-version change occurred.
+Main is `2933dac64a09155ac0b834ef0f61f8300c556714` after the source fix,
+grouped Deno update, Renovate CLI update, GitHub Actions wrapper update, and
+strict-config CI change. PR #5308 fixed the candidate-only MSW test-transform
+failure. App-authored Deno PR #5279 merged from exact HEAD
+`9752754f6659ec2543d831abfeb706732b6a3ef8` as
+`3e2628d41421e266395caa54325f3dd1e1ac1c8a`. Its exact-head CI
+[#45986418443](https://github.com/ugoite/ugoite/actions/runs/45986418443) and
+CodeQL [#45986418122](https://github.com/ugoite/ugoite/actions/runs/45986418122)
+passed frozen install, all 166 Web files / 1,380 assertions and coverage, zero
+worker abnormal exits, Artifact Build, and the selected E2E lanes. The PR
+entered the normal merge queue; no admin bypass was used.
 
-After both merges, the read-only full diagnostic [#45882039424](https://github.com/ugoite/ugoite/actions/runs/45882039424) and App-backed writer [#45882451753](https://github.com/ugoite/ugoite/actions/runs/45882451753) succeeded on latest main, using action v47.0.0 and CLI 45.1.0. Both passed the App identity and alerts-API access preflights. The writer evaluated 37 package files, including the five-file Deno workspace group (191 Deno dependencies), and updated the existing App-authored Deno PR #5279; the current head is `559451e99e8df63cc94780a93a82656f734f9be4`. GitHub's force-push event attributes that head update to `ugoite-renovate[bot]`. The writer logged Deno re-extraction warnings for root `deno.json` and `frontend/deno.json`. Separately, the read-only diagnostic reported Docker Hub lookup errors. Neither result establishes a successful Docker lookup or proves that the extraction warnings are harmless; both remain visible follow-up evidence.
+Renovate CLI 45.1.1 PR #5311 and Actions wrapper v48.0.0 PR #5312 merged
+through the normal queue. PR #5313 added strict Renovate-config validation to
+the existing CI when the config or pinned runner changes. Its exact-head CI
+[#45991027662](https://github.com/ugoite/ugoite/actions/runs/45991027662)
+and CodeQL passed; the strict validator ran Renovate 45.1.0 against the
+candidate's pinned config. The same validator also passed separately with
+current CLI 45.1.1 in [#45987720319](https://github.com/ugoite/ugoite/actions/runs/45987720319).
+Post-merge main CI [#45997942142](https://github.com/ugoite/ugoite/actions/runs/45997942142)
+and CodeQL [#45997942057](https://github.com/ugoite/ugoite/actions/runs/45997942057)
+passed for this main SHA.
 
-The refreshed Deno PR changes the root, frontend, and E2E manifests plus the shared root `deno.lock`; docsite and tools manifests were evaluated and had no eligible update. Exact-head CI [#45882707957](https://github.com/ugoite/ugoite/actions/runs/45882707957) fails `ci-web`: 81 of 1,386 tests fail across 11 of 169 test files. MSW-backed API tests reach local origins (`localhost:3000`, `localhost:13000`, and `127.0.0.1:4310`) and receive connection refused. The log also records three Vitest workers exiting with code 1 while starting `protocol.test.ts`, `client.test.ts`, and `sql-api.test.ts`, three uncaught `dispatchEvent` Event-realm errors, and duplicate-Solid warnings. The worker exits are observed alongside the failed tests; the available log does not establish which dependency or runtime condition caused them. Matching main Web in [#45881962543](https://github.com/ugoite/ugoite/actions/runs/45881962543) passes. Frozen install completed before tests; the failure is not a manifest-to-lock mismatch. The current PR's four manifest/lock blobs are identical to failed predecessor `e028b699…`; the refresh did not change the dependency graph. The diff review found no other manifest/lock or scope blocker, but did not isolate a package or source cause. CodeQL and Rust check/test passed; artifact-build was still in progress at this snapshot, so the full required result is incomplete. Do not queue or merge #5279. Issue [#5239](https://github.com/ugoite/ugoite/issues/5239) tracks the repeated candidate-only failure and source-compatibility investigation. No source/test change, timeout increase, test skip, or compatibility hold has been added.
+The latest successful scheduled writer is
+[#45918007014](https://github.com/ugoite/ugoite/actions/runs/45918007014), a
+`schedule` event on earlier main `b481a4a471e97976cd0b00e06c56317140c81bd0`.
+It started at 09:39 JST, 8h22 after the configured 01:17 JST target. GitHub
+Actions schedule times are not start-time guarantees; a new scheduled event is
+not required after every main change.
 
-The only open dependency update PR at this snapshot is #5279. Dashboard #5099 has no `Pending Approval`, `Awaiting Schedule`, or `Edited (Blocked)` entry. All other grouped dependency candidates have merged through the normal queue. Renovate `automerge: false`, CI, CodeQL, human review protections, and merge queue remain in force; no human review is claimed. Independent AI review of #5279 records the exact head, base, scope, findings, and review limits in the PR conversation.
+The latest production writer run
+[#45994750554](https://github.com/ugoite/ugoite/actions/runs/45994750554)
+succeeded on main `cacad9bf9b18378b939457726659adb955625256` with CLI 45.1.1 and
+wrapper v48.0.0. The App identity and alerts API preflights passed. It opened
+no update PR, and Dashboard #5099 lists all five Deno manifests with no Open
+update-PR section or Repository Problems. It does show the Deno group under
+`Pending Status Checks`; no Renovate-authored PR is currently open. That status
+aligns with the full diagnostic's unmet internal-check filter and is distinct
+from `Pending Approval` or `Awaiting Schedule`. The writer reported aggregate API counts of
+41 open alerts and 40 with a first patched version; these are not counts of
+Renovate-eligible fixes. No security-fix PR was produced in this run, so
+alert-level security-path handling remains unverified in
+[#4997](https://github.com/ugoite/ugoite/issues/4997). No alert details are
+recorded here.
 
-Successful scheduled run [#45729166783](https://github.com/ugoite/ugoite/actions/runs/45729166783) occurred after the administrator-reported external App removal, on earlier main `c83a4561afa8d35363c3c46d320a4de6f65b8df3` with CLI 44.263.1; its App identity and alerts-API preflights passed. No scheduled run on current main after the CLI/action merges has been observed. The current daily cron remains 16:17 UTC (01:17 JST). External App removal, Dependency graph/alerts enabled, and Dependabot security-update PR generation disabled remain administrator-reported. The App-backed API preflight confirms access, not alert inventory; settings API 403 is not evidence of a setting value. The connected GitHub integration cannot enumerate alert records (403), so no live patchable security-fix candidate is confirmed; issue [#4997](https://github.com/ugoite/ugoite/issues/4997) tracks this evidence gap.
+Read-only full diagnostic
+[#45999289089](https://github.com/ugoite/ugoite/actions/runs/45999289089)
+then succeeded with CLI 45.1.1 on main `2933dac64a09155ac0b834ef0f61f8300c556714`.
+App identity and alerts-API access passed. It extracted all five Deno manifests
+and listed Deno update candidates in root, frontend, and docsite; it did not
+list an eligible candidate for e2e or tools. This log did not reproduce the
+root/frontend re-extraction warning. Renovate skipped updating the Deno branch
+because its internal-check filter was not met, so the run did not perform a
+post-update re-extraction or verify an updated `deno.lock` candidate set.
+The diagnostic is read-only and disables `vulnerabilityAlerts`; it is not
+evidence of security-fix PR generation.
 
-Issue [#5100](https://github.com/ugoite/ugoite/issues/5100) records candidate and writer evidence; [#5120](https://github.com/ugoite/ugoite/issues/5120) records the single-writer sample. Neither an intended schedule time nor a successful manual diagnostic/writer substitutes for an observed scheduled event. No human review or setting confirmation is inferred from AI review or API access.
+The root/frontend re-extraction warnings appeared in full dry-run
+[#45987720319](https://github.com/ugoite/ugoite/actions/runs/45987720319),
+but did not recur in the later full diagnostic #45999289089. The latter's
+candidate lookup and reason for skipping branch updates are recorded above; it
+did not perform an after-update extraction. The earlier production writer was
+a no-op for Deno, so neither run proves the historical warnings harmless or
+replaces a before/lookup/after candidate-set comparison. Track this residual
+evidence gap in [#5100](https://github.com/ugoite/ugoite/issues/5100). External App
+removal,
+Dependency graph/alerts settings, and Dependabot security-update PR disablement
+remain administrator-reported; API 403 responses are not evidence of those
+settings. Single-writer observations are recorded in
+[#5120](https://github.com/ugoite/ugoite/issues/5120). No recent `merge_group`
+Actions run was observed for the latest queue merges; the separate post-merge
+main CI evidence is recorded above. No human review is claimed; AI review is
+recorded on each PR. No release, tag, publish, or product-version change has
+occurred.
+
 ## Authorities and verification
 
 | Domain | Authority | Verification and notes |
@@ -31,8 +95,9 @@ Issue [#5100](https://github.com/ugoite/ugoite/issues/5100) records candidate an
 | Docker Deno runtime | `Dockerfile` | The frontend build image is explicitly pinned to `denoland/deno:2.9.8`, matching the development toolchain. |
 | Node runtime | `.github/workflows/ci.yml`, `release-candidate.yml`, and `release-publish.yml` | CI and release workflows use Node 24. `packages/ugoite/package.json` declares `engines.node >=20` as the package support floor. |
 | Update policy | `renovate.json` | Defines enabled managers, one group per ecosystem, compatibility holds, immediate PR creation, and the no-auto-merge policy. This is the repository's update-policy authority. |
-| Update-PR runner | `.github/workflows/renovate.yml` | Runs the pinned Renovate CLI on a daily schedule and manual dispatch using a GitHub App scoped to this repository. Live evidence below records update candidates and writer identity. |
-| Vulnerability alerts | GitHub Dependency graph and Dependabot alerts settings | Managed independently of update-PR generation. The Renovate workflow verifies App access to the alerts API; the separate security-update PR toggle is not exposed by that workflow evidence. |
+| Update-PR runner | `.github/workflows/renovate.yml` | Runs pinned Renovate CLI 45.1.1 through GitHub Actions wrapper 48.0.0 on a daily schedule and manual dispatch, using a GitHub App scoped to this repository. Live evidence below records update candidates and writer identity. |
+| Vulnerability alerts | GitHub Dependency graph and Dependabot alerts settings | Managed independently of update-PR generation. The production Renovate run verifies App access and records aggregate alert counts; alert-level update eligibility and the separate security-update PR toggle remain distinct evidence. |
+| Renovate config validation | Existing `.github/workflows/ci.yml` | Strictly validates `renovate.json` with the pinned CLI when that config or the pinned runner changes. PR #5313 added this check without adding another workflow or changing Renovate permissions. |
 | CI lane selection | `tools/ci-impact.ts` and the required CI workflow | Dependency manifests and lockfiles select the existing affected quality lanes. Unknown changes fall back to the full lane set. A Deno lockfile change selects all lanes. |
 | Accepted exceptions | This page | Record the reason, update trigger, and required verification here; do not use this page as a second version source. |
 
@@ -45,8 +110,9 @@ Renovate groups updates by manager: `cargo-workspace`, `deno-workspace`,
 `github-actions`, `docker`, `devcontainers`, `npm`, `mise-tools`,
 `rust-toolchain`, `renovate-cli`, and `renovate-config`. Dockerfile and Docker
 Compose updates share the `docker` group. The five Deno manifests and root
-`deno.lock` share `deno-workspace`. The Actions workflow runs daily at 01:17
-JST (16:17 UTC on the previous day) and evaluates enabled managers together;
+`deno.lock` share `deno-workspace`. The Actions workflow targets a daily run at
+01:17 JST (16:17 UTC on the previous day) and evaluates enabled managers
+together;
 `renovate.json` has no manager-specific schedule or Dashboard approval gate.
 Eligible updates are proposed immediately with no concurrent or hourly cap.
 Automatic merging remains disabled. Security alerts remain
@@ -67,20 +133,27 @@ range, and updated the shared lockfile. Locked Cargo metadata, candidate CI/E2E,
 and normal merge-queue integration passed. The exact-pin sqlparser update in #5262 was
 validated separately and does not by itself exercise an in-range range update. The later App-authored grouped candidate #5278 changed only `Cargo.lock`, preserved every existing `Cargo.toml` requirement, and merged through the normal queue as `bfc62ed70f4015cb3a044e2f6d674dc162a6a455` from head `854d04dc11b41b39773668be5c8632011e178529`. Exact-head CI [#45646977591](https://github.com/ugoite/ugoite/actions/runs/45646977591) passed Rust check/test, Web, artifact build, and selected E2E; CodeQL [#45646977431](https://github.com/ugoite/ugoite/actions/runs/45646977431) also passed. This is live evidence that the Cargo-only `update-lockfile` policy updates an in-range group without rewriting manifest ranges.
 
-## Deno workspace update status — current candidate and prior history
+## Deno workspace update evidence and history
 
 All five Deno manifests and the root lockfile remain one Renovate group. The
-CLI 45.1.0 diagnostic [#45882039424](https://github.com/ugoite/ugoite/actions/runs/45882039424)
-and writer [#45882451753](https://github.com/ugoite/ugoite/actions/runs/45882451753)
-reported five Deno manifest files and 191 Deno dependencies in a 37-file
-repository inventory. The writer updated App-authored PR #5279 to head
-`559451e99e8df63cc94780a93a82656f734f9be4` on main
-`8b5b71cb6ccd69a2d9819fe5009aea320ae0e21a`. Only the root, frontend, and E2E
-manifests and shared root `deno.lock` changed; docsite and tools were evaluated
-with no eligible updates. Frozen install passed before tests, and the lockfile
-was not rejected as inconsistent.
+current App-authored workspace PR #5279 merged from exact HEAD
+`9752754f6659ec2543d831abfeb706732b6a3ef8`; the changed manifests were root,
+docsite, frontend, and E2E plus the one shared root `deno.lock`. Renovate
+evaluated `tools/deno.json` and found no eligible update. Frozen install passed.
+Exact-head CI [#45986418443](https://github.com/ugoite/ugoite/actions/runs/45986418443)
+passed all 166 Web files / 1,380 assertions and coverage, with zero worker
+abnormal exits, plus Artifact Build and selected E2E lanes. CodeQL
+[#45986418122](https://github.com/ugoite/ugoite/actions/runs/45986418122)
+passed. The PR entered the normal merge queue and merged as
+`3e2628d41421e266395caa54325f3dd1e1ac1c8a`.
 
-On current head `559451e`, CI [#45882707957](https://github.com/ugoite/ugoite/actions/runs/45882707957)
+Source PR #5308 fixed the candidate-only test failure by adding `msw` to the
+existing Vitest inline dependency list. No tests were removed or skipped, no
+assertion or timeout was weakened, and no Deno package hold was added. The
+historical failures below predate this correction and the successful grouped
+candidate; they do not describe current main or an open Deno PR.
+
+On superseded head `559451e`, CI [#45882707957](https://github.com/ugoite/ugoite/actions/runs/45882707957)
 failed `ci-web`: 81 of 1,386 tests across 11 of 169 files. The failures include
 MSW-backed API calls refused at local test origins, three Vitest workers exiting
 with code 1 while starting `protocol.test.ts`, `client.test.ts`, and
@@ -91,13 +164,12 @@ dependency or runtime cause. Main Web
 passed. The independent AI diff review recorded at
 [#5279](https://github.com/ugoite/ugoite/pull/5279#issuecomment-7201655930)
 found no other manifest/lock consistency blocker, but did not isolate a
-specific package or source cause. The current graph is byte-identical to failed
-predecessor `e028b699…`; re-running the same graph did not address the failure.
-Rust-test passed; artifact-build and therefore the full required result were
-still in progress at the operational snapshot above. Keep this head out of the
-merge queue. No source/test fix or compatibility hold has been introduced;
-track the reproducible failure and extraction warnings in
-[#5239](https://github.com/ugoite/ugoite/issues/5239).
+specific package or source cause. That candidate graph was byte-identical to
+failed predecessor `e028b699…`; re-running it did not address the failure.
+Rust-test passed; artifact-build was still in progress at that historical
+snapshot. The independent investigation was resolved by #5308 and successful
+#5279 verification above; issue [#5239](https://github.com/ugoite/ugoite/issues/5239)
+records the resolution.
 
 The earlier CLI 45.0.0 App-authored candidate [#5279](https://github.com/ugoite/ugoite/pull/5279)
 was at head `a73b9025470efcd97a45b3e2a03d3932062d993f` against main
@@ -128,20 +200,25 @@ passed with 169/169 frontend test files and 1,386/1,386 tests. `frontend/src/tes
 3.0.7, `@mswjs/interceptors` 0.45.12, Vitest 5.1.1, and jsdom 31.0.1. The
 candidate changes include `node-mock-http` 1.0.4 to 1.0.5, `@solidjs/start`
 1.3.2 to 1.5.1, `@testing-library/dom` 10.4.1 to 10.4.2, and
-`vite-plugin-solid` 2.11.12 to 2.11.17. These are candidate deltas, not an
-isolated cause. No compatibility hold, test weakening, assertion removal, or
-timeout increase has been made. Keep #5279 out of the merge queue until a
-reproducible cause is fixed and exact-head required checks pass.
+`vite-plugin-solid` 2.11.12 to 2.11.17. These were candidate deltas, not an
+isolated cause. At that historical point no source/test fix or compatibility
+hold had been made, so #5279 stayed out of the merge queue. PR #5308 and the
+successful refreshed candidate documented above later resolved that failure.
 
-The writer emitted a `Could not re-extract the packageFile after updating it`
-warning for root `deno.json` and `frontend/deno.json`. The CLI 45.0.0 diagnostic
-did not emit that exact warning, but logged a rebase after an error updating
-`frontend/deno.json`. Both runs evaluated all five manifests and the writer
-updated the shared-lock PR; this does not prove the warnings are harmless or
-that no update candidate was omitted. The warning's effect remains open in
-[#5239](https://github.com/ugoite/ugoite/issues/5239); compare extracted
-package sets before and after update using the pinned CLI before declaring it
-resolved.
+The CLI 45.1.1 full dry-run [#45987720319](https://github.com/ugoite/ugoite/actions/runs/45987720319)
+reported `Could not re-extract the packageFile after updating it` for root
+`deno.json` and `frontend/deno.json` while processing the Deno candidate. The
+later production writer [#45994750554](https://github.com/ugoite/ugoite/actions/runs/45994750554)
+was a no-op for Deno: it left no Deno update PR and the Dashboard listed all
+five manifests without a Repository Problem. The full diagnostic
+[#45999289089](https://github.com/ugoite/ugoite/actions/runs/45999289089)
+extracted all five manifests and found lookup candidates in root, frontend,
+and docsite without reproducing the warning, but its internal-check filter
+prevented branch updates. Neither run provides an after-update extraction or
+proves that the earlier warning could not omit a candidate. Issue
+[#5100](https://github.com/ugoite/ugoite/issues/5100) tracks the remaining
+before/lookup/after comparison; do not infer resolution from the no-op writer
+or this read-only lookup.
 
 Earlier candidate history: head `b4b28b110d2b361bf1291d56eaa2af937565e5af`
 failed when a generated WASM `?init` loader fetched from the frontend test
@@ -157,8 +234,8 @@ PR [#5288](https://github.com/ugoite/ugoite/pull/5288) pinned
 `frontend/deno.json` to `npm:rettime@0.11.12` with a matching lock update,
 preserving the minimum-age policy. The CLI 44.264.0 dry-run selected 0.11.13
 in its simulated update and the subsequent writer refreshed #5279 with that
-eligible update. This shows that the age window eventually releases a
-candidate; it does not resolve the extraction warning above.
+eligible update. This historical evidence shows that the age window released
+that candidate; it does not resolve the extraction warning above.
 
 ## Intentionally held updates and security exceptions
 
