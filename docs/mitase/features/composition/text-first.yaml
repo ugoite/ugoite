@@ -341,7 +341,7 @@ features:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement } }
           - id: composition-count-page-snapshot
             adapter: typescript
-            path: e2e/composition-table-metric-pagination.test.ts
+            path: e2e/composition-table-pagination-journey.test.ts
             selector: { kind: test, name: "Studio counts inline Table SQL separately from paged reads" }
             claims:
               - kind: verifies
@@ -349,7 +349,7 @@ features:
                 covers:
                   - FEAT-COMP-010#binding.service/target.authorized-query-evaluation
                   - FEAT-COMP-010#binding.frontend/target.composition-studio-count
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-metric-pagination.test.ts, test: "Studio counts inline Table SQL separately from paged reads" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-table-pagination-journey.test.ts, test: "Studio counts inline Table SQL separately from paged reads" } }
           - id: narrow-reader-table-scroll
             adapter: typescript
             path: e2e/composition-table-mobile.test.ts

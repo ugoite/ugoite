@@ -489,10 +489,15 @@ description = "Verify Composition authoring, runtime, recovery, and mobile journ
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-studio-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-studio-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-studio"
 
-[tasks."test:e2e:composition-metric"]
-description = "Run Composition graph API metric and cardinality E2E"
-env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-metric-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-metric-results" }
-run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-metric"
+[tasks."test:e2e:composition-scalar-evaluation"]
+description = "Run Composition scalar evaluation API E2E"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-scalar-evaluation-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-scalar-evaluation-results" }
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-scalar-evaluation"
+
+[tasks."test:e2e:composition-table-pagination"]
+description = "Run Composition Table pagination E2E"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-table-pagination-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-table-pagination-results" }
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-table-pagination"
 
 [tasks."test:e2e:composition-source-acl-isolation"]
 description = "Run Composition source ACL revocation and Space isolation E2E"
@@ -719,9 +724,10 @@ description = "Run Composition Studio authoring E2E against the loaded CI image"
 run = [{ task = "test:e2e:composition-studio" }]
 
 [tasks."ci:lane:e2e-owner-composition"]
-description = "Run isolated Composition Metric, source ACL, and owner recovery E2E against the loaded CI image"
+description = "Run Composition scalar evaluation, Table pagination, source ACL, and owner recovery E2E against the loaded CI image"
 run = [
-  { task = "test:e2e:composition-metric" },
+  { task = "test:e2e:composition-scalar-evaluation" },
+  { task = "test:e2e:composition-table-pagination" },
   { task = "test:e2e:composition-source-acl-isolation" },
   { task = "test:e2e:owner-recovery" },
 ]

@@ -167,7 +167,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
         - e2e/entries.test.ts
         - e2e/knowledge-journey.test.ts
-        - e2e/composition-metric-journey.test.ts
+        - e2e/composition-scalar-evaluation-journey.test.ts
         - e2e/composition-source-acl-isolation.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
@@ -283,7 +283,7 @@ inventory:
         - e2e/composition-table-mobile.test.ts
         - e2e/composition-recovery-authorization.test.ts
         - e2e/composition-scalar-state-journey.test.ts
-        - e2e/composition-table-metric-pagination.test.ts
+        - e2e/composition-table-pagination-journey.test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
