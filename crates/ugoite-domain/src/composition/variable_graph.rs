@@ -643,16 +643,30 @@ pub fn compile_variable_graph(
 fn result_descriptor_is_valid(result: &VariableGraphResultType) -> bool {
     match result {
         VariableGraphResultType::Scalar { .. } => true,
-        VariableGraphResultType::Table { columns } => {
-            if columns.is_empty() {
-                return false;
-            }
-            let mut names = BTreeSet::new();
-            columns
-                .iter()
-                .all(|column| !column.name.trim().is_empty() && names.insert(column.name.as_str()))
-        }
+        VariableGraphResultType::Table { columns } => result_columns_are_valid(columns),
     }
+}
+
+/// Validate the semantic shape of Composition table result columns.
+///
+/// SQL execution limits such as maximum column count and name length belong to
+/// the query-planning boundary; this checks only the portable descriptor rules.
+pub fn result_columns_are_valid(columns: &[VariableGraphColumn]) -> bool {
+    if columns.is_empty() {
+        return false;
+    }
+    let mut names = BTreeSet::new();
+    columns
+        .iter()
+        .all(|column| !column.name.trim().is_empty() && names.insert(column.name.as_str()))
+}
+
+/// Validate the portable syntax of a SHA-256 fingerprint encoded as lowercase hex.
+pub fn is_sha256_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Whether a Composition SQL argument name is a portable bare identifier.
@@ -664,13 +678,6 @@ pub fn is_valid_argument_name(name: &str) -> bool {
         && rest
             .iter()
             .all(|byte| matches!(*byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_'))
-}
-
-fn is_sha256_fingerprint(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn inline_sql_parameter_names(

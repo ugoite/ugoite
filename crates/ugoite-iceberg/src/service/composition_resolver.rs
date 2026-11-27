@@ -23,7 +23,6 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
 };
-use ugoite_core::sql_query::{MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS};
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, variable_graph_dependency_order,
     CompositionDiagnosticCode, CompositionDocument, VariableGraph, VariableGraphColumn,
@@ -549,7 +548,7 @@ impl UgoiteService {
                 },
             })
             .collect::<Vec<_>>();
-        if !query_result_schema_is_well_formed(&result_columns) {
+        if !ugoite_core::composition::sql_result_columns_are_well_formed(&result_columns) {
             return Ok(None);
         }
         let schema_fingerprint = query_schema_fingerprint(&result_columns)?;
@@ -1356,19 +1355,6 @@ struct PlannedSqlQueryMetadata {
     schema_fingerprint: String,
 }
 
-fn variable_graph_sql_type(variable_type: VariableGraphScalarType) -> &'static str {
-    match variable_type {
-        VariableGraphScalarType::String => "string",
-        VariableGraphScalarType::Boolean => "boolean",
-        VariableGraphScalarType::Integer => "integer",
-        VariableGraphScalarType::Float => "float",
-        VariableGraphScalarType::Decimal => "decimal",
-        VariableGraphScalarType::Date => "date",
-        VariableGraphScalarType::Timestamp => "timestamp",
-        VariableGraphScalarType::Json => "json",
-    }
-}
-
 fn query_parameter_types(
     arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
     variables: &[VariableGraphNode],
@@ -1383,32 +1369,20 @@ fn query_parameter_types(
             let node = variables
                 .get(argument.variable.as_str())
                 .ok_or_else(|| anyhow!("query argument variable is unavailable"))?;
-            let value_type = match &node.kind {
-                VariableGraphNodeKind::Constant { value_type, .. }
-                | VariableGraphNodeKind::Input { value_type, .. } => *value_type,
-                VariableGraphNodeKind::Query {
-                    returns: VariableGraphResultType::Scalar { value_type },
-                    ..
-                } => *value_type,
-                VariableGraphNodeKind::Query {
-                    returns: VariableGraphResultType::Table { .. },
-                    ..
-                } => return Err(anyhow!("table query cannot bind a scalar SQL argument")),
-            };
-            if matches!(
+            let value_type = node
+                .kind
+                .scalar_descriptor()
+                .ok_or_else(|| anyhow!("table query cannot bind a scalar SQL argument"))?;
+            let Some(sql_type) = ugoite_core::composition_query::sql_parameter_type_for_graph_type(
                 value_type.scalar_type,
-                VariableGraphScalarType::Decimal | VariableGraphScalarType::Json
-            ) {
+            ) else {
                 return Err(AppError::invalid_input(
                     ErrorCode::InvalidInput,
-                    "Composition SQL arguments do not support decimal or json values",
+                    "Composition SQL arguments require a supported scalar type",
                 )
                 .into());
-            }
-            Ok((
-                argument.name.clone(),
-                variable_graph_sql_type(value_type.scalar_type).to_owned(),
-            ))
+            };
+            Ok((argument.name.clone(), sql_type.to_owned()))
         })
         .collect()
 }
@@ -1432,20 +1406,6 @@ fn sql_parameter_null(type_name: &str) -> ScalarValue {
         }
         _ => ScalarValue::Null,
     }
-}
-
-fn query_result_schema_is_well_formed(columns: &[VariableGraphColumn]) -> bool {
-    !columns.is_empty()
-        && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
-        && columns.iter().all(|column| {
-            !column.name.trim().is_empty() && column.name.len() <= MAX_SQL_COLUMN_NAME_BYTES
-        })
-        && columns
-            .iter()
-            .map(|column| column.name.as_str())
-            .collect::<BTreeSet<_>>()
-            .len()
-            == columns.len()
 }
 
 fn query_schema_fingerprint(columns: &[VariableGraphColumn]) -> Result<String> {
@@ -1837,11 +1797,20 @@ mod graph_metadata_tests {
                 default: None,
             },
         };
-        assert_eq!(
-            query_parameter_types(&arguments, &[input(VariableGraphScalarType::Integer)])
-                .expect("integer argument is supported"),
-            BTreeMap::from([("threshold".to_owned(), "integer".to_owned())])
-        );
+        for (scalar_type, expected) in [
+            (VariableGraphScalarType::String, "string"),
+            (VariableGraphScalarType::Boolean, "boolean"),
+            (VariableGraphScalarType::Integer, "integer"),
+            (VariableGraphScalarType::Float, "float"),
+            (VariableGraphScalarType::Date, "date"),
+            (VariableGraphScalarType::Timestamp, "timestamp"),
+        ] {
+            assert_eq!(
+                query_parameter_types(&arguments, &[input(scalar_type)])
+                    .expect("supported graph argument type"),
+                BTreeMap::from([("threshold".to_owned(), expected.to_owned())])
+            );
+        }
         for scalar_type in [
             VariableGraphScalarType::Decimal,
             VariableGraphScalarType::Json,

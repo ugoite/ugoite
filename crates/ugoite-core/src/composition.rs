@@ -1088,21 +1088,20 @@ fn query_semantic_fingerprint(
 }
 
 fn schema_is_well_formed(columns: &[VariableGraphColumn], fingerprint: &str) -> bool {
-    !columns.is_empty()
+    sql_result_columns_are_well_formed(columns)
+        && ugoite_domain::composition::variable_graph::is_sha256_fingerprint(fingerprint)
+}
+
+/// Validate Composition SQL result columns against portable shape and SQL limits.
+///
+/// Portable descriptor rules are owned by Domain. This query-planning boundary
+/// adds only the engine-facing size limits shared with storage-backed planning.
+pub fn sql_result_columns_are_well_formed(columns: &[VariableGraphColumn]) -> bool {
+    ugoite_domain::composition::variable_graph::result_columns_are_valid(columns)
         && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
-        && columns.iter().all(|column| {
-            !column.name.trim().is_empty() && column.name.len() <= MAX_SQL_COLUMN_NAME_BYTES
-        })
         && columns
             .iter()
-            .map(|column| column.name.as_str())
-            .collect::<BTreeSet<_>>()
-            .len()
-            == columns.len()
-        && fingerprint.len() == 64
-        && fingerprint
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            .all(|column| column.name.len() <= MAX_SQL_COLUMN_NAME_BYTES)
 }
 
 #[cfg(test)]
@@ -1111,6 +1110,45 @@ mod tests {
     use ugoite_domain::composition::{
         CompositionComponent, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
     };
+
+    #[test]
+    fn sql_result_schema_validation_shares_portable_rules_and_keeps_engine_limits() {
+        let value_type = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let valid = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type,
+        }];
+        assert!(sql_result_columns_are_well_formed(&valid));
+        assert!(schema_is_well_formed(&valid, &"a".repeat(64)));
+        assert!(!schema_is_well_formed(&valid, &"A".repeat(64)));
+        assert!(!sql_result_columns_are_well_formed(&[]));
+
+        let duplicate = vec![
+            valid[0].clone(),
+            VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type,
+            },
+        ];
+        assert!(!sql_result_columns_are_well_formed(&duplicate));
+
+        let too_many = (0..=MAX_SQL_OUTPUT_COLUMNS)
+            .map(|index| VariableGraphColumn {
+                name: format!("column_{index}"),
+                value_type,
+            })
+            .collect::<Vec<_>>();
+        assert!(!sql_result_columns_are_well_formed(&too_many));
+
+        let too_long = [VariableGraphColumn {
+            name: "x".repeat(MAX_SQL_COLUMN_NAME_BYTES + 1),
+            value_type,
+        }];
+        assert!(!sql_result_columns_are_well_formed(&too_long));
+    }
 
     #[test]
     fn query_semantic_fingerprint_includes_scalar_or_table_return_shape() {
