@@ -1,4 +1,4 @@
-//! Shared conversion from Composition evaluation results to the portable API DTO.
+//! Shared projection of Composition service results into portable API DTOs.
 
 use super::{CompositionGraphEvaluationPlan, CompositionQueryEvaluationResponse};
 use anyhow::{anyhow, Context, Result};
@@ -535,6 +535,23 @@ mod tests {
         assert_eq!(projected.unmapped_field_values["102"], true);
         assert_eq!(projected.revision.extra_attributes["reviewed"], true);
         assert_eq!(projected.revision.extension_metadata["extension"], "kept");
+    }
+
+    #[test]
+    fn raw_revision_projection_maps_each_entry_operation() {
+        for (operation, expected) in [
+            (EntryOperation::Upsert, "upsert"),
+            (EntryOperation::Delete, "delete"),
+            (EntryOperation::Restore, "restore"),
+        ] {
+            let mut raw = raw_revision();
+            raw.revision.operation = operation;
+
+            assert_eq!(
+                composition_raw_revision_response(raw).revision.operation,
+                expected
+            );
+        }
     }
 
     #[test]
