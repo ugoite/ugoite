@@ -32,8 +32,8 @@ derived or disposable.
 
 ## Specification map
 
-- [Product requirements](requirements/index.md) and
-  [user stories](stories/index.md).
+- Current requirements are tracked in [Mitase](migration.md); see the
+  [user stories](stories/index.md) for product narratives.
 - [Features and implementation bindings](features/index.md).
 - [Policies](policies/index.md) for governance traceability.
 - [Architecture](../architecture/index.md) for boundaries, contracts, data
