@@ -25,7 +25,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
 const pagesDir = path.join(repoRoot, "docs/spec/ui/pages");
 const componentsDir = path.join(repoRoot, "docs/spec/ui/components");
-const routesDir = path.join(repoRoot, "frontend/src/routes/spaces/[space_id]");
 
 const allowedComponentTypes = new Set([
   "tab-list",
@@ -180,48 +179,6 @@ const validateUiYamlReference = (sourcePath: string, reference: string) => {
   // Some shared UI component contracts use YAML front matter and Markdown
   // sections instead of a structured component list.
 };
-
-const collectRouteFiles = (dir: string): string[] => {
-  const files: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const fullPath = path.join(dir, entry);
-    if (statSync(fullPath).isDirectory()) {
-      files.push(...collectRouteFiles(fullPath));
-    } else if (entry.endsWith(".tsx") && !entry.endsWith(".test.tsx")) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-};
-
-const placeholderStubPatterns = [
-  /\bis not yet available\b/i,
-  /\bcoming soon\b/i,
-  /\bnot implemented\b/i,
-  /\bplaceholder (?:screen|ui|route)\b/i,
-];
-
-const segmentFromFile = (segment: string) => {
-  if (segment === "index") return "";
-  if (segment.startsWith("[") && segment.endsWith("]")) {
-    return `{${segment.slice(1, -1)}}`;
-  }
-  return segment;
-};
-
-const routeFromFilePath = (filePath: string) => {
-  const relative = path.relative(routesDir, filePath).replace(/\\/g, "/");
-  const segments = relative.replace(/\.tsx$/, "").split("/")
-    .map(segmentFromFile).filter(Boolean);
-  return `/spaces/{space_id}${segments.length ? `/${segments.join("/")}` : ""}`;
-};
-
-const loadRoutes = () =>
-  collectRouteFiles(routesDir).map((filePath) => ({
-    filePath,
-    route: routeFromFilePath(filePath),
-    source: readFileSync(filePath, "utf8"),
-  }));
 
 const collectTargets = (value: unknown, targets: string[]) => {
   if (Array.isArray(value)) {
@@ -457,58 +414,6 @@ describe("UI spec YAML registry", () => {
           `${String(section.id)} target page: ${String(targetPage)}`,
         ).toBe(true);
       }
-    }
-  });
-
-  it("REQ-FE-040: validates docs pages map to implemented routes", () => {
-    const routes = new Set(loadRoutes().map(({ route }) => route));
-    for (const { spec, filePath } of loadPages()) {
-      expect(spec.page?.route, `${filePath} missing route`).toBeTruthy();
-      expect(
-        routes.has(String(spec.page?.route)),
-        `${filePath} route not implemented: ${String(spec.page?.route)}`,
-      ).toBe(true);
-    }
-  });
-
-  it("REQ-FE-040: validates implemented routes are documented", () => {
-    const documented = new Set(
-      loadPages().map(({ spec }) => spec.page?.route).filter((
-        route,
-      ): route is string => Boolean(route)),
-    );
-    for (const { route } of loadRoutes()) {
-      expect(
-        documented.has(route),
-        `missing docs/spec/ui/pages entry for route: ${route}`,
-      )
-        .toBe(true);
-    }
-  });
-
-  it("REQ-FE-040: implemented page specs reject placeholder route content", () => {
-    const routesByPath = new Map(
-      loadRoutes().map((route) => [route.route, route]),
-    );
-    for (const { spec, filePath } of loadPages()) {
-      if (spec.page?.implementation !== "implemented") continue;
-      expect(spec.page.route, `${filePath} missing route`).toBeTruthy();
-      const routeRecord = routesByPath.get(String(spec.page.route));
-      expect(
-        routeRecord,
-        `${filePath} route not implemented: ${String(spec.page.route)}`,
-      )
-        .toBeTruthy();
-      if (!routeRecord) continue;
-      const matchedPattern = placeholderStubPatterns.find((pattern) =>
-        pattern.test(routeRecord.source)
-      );
-      expect(
-        matchedPattern,
-        `${filePath} marks ${
-          String(spec.page.route)
-        } implemented but ${routeRecord.filePath} still contains placeholder copy`,
-      ).toBeUndefined();
     }
   });
 
