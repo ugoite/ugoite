@@ -187,9 +187,62 @@ describe("EntryDetailPane safety/recovery", () => {
     fireEvent.input(body, { target: { value: "# Updated again" } });
     expect(fireEvent.keyDown(body, { key: "s", metaKey: true })).toBe(false);
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
-    const secondPayload = updateMock.mock.calls[1][2] as Record<string, unknown>;
+    const secondPayload = updateMock.mock.calls[1][2] as Record<
+      string,
+      unknown
+    >;
     expect(secondPayload.parent_revision_id).toBe("rev-2");
     expect(secondPayload.fields).toEqual({ Body: "# Updated again" });
+  });
+
+  it("REQ-FE-010: keeps edits made during a save unsaved until explicitly saved", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      storedEntry({ form: "Markdown", fields: { Body: "# Original" } }),
+    );
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    let resolveFirstSave!: (result: {
+      id: string;
+      revision_id: string;
+    }) => void;
+    updateMock
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          resolveFirstSave = resolve;
+        })
+      )
+      .mockResolvedValueOnce({ id: "entry-1", revision_id: "rev-3" });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [markdownForm]}
+      />
+    ));
+
+    const body = await screen.findByLabelText("Body");
+    fireEvent.input(body, { target: { value: "# Save started" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock.mock.calls[0][2]).toMatchObject({
+      parent_revision_id: "rev-1",
+      fields: { Body: "# Save started" },
+    });
+
+    fireEvent.input(body, { target: { value: "# Edited while saving" } });
+    resolveFirstSave({ id: "entry-1", revision_id: "rev-2" });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    expect(body).toHaveValue("# Edited while saving");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+    expect(updateMock.mock.calls[1][2]).toMatchObject({
+      parent_revision_id: "rev-2",
+      fields: { Body: "# Edited while saving" },
+    });
   });
 
   it("prevents the browser save action without mutating a clean Entry", async () => {
