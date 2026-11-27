@@ -4574,10 +4574,9 @@ fn redact_oidc_provider_secret(mut value: Value) -> Value {
 fn normalized_oidc_issuer(issuer: &str) -> anyhow::Result<String> {
     let normalized = issuer.trim().trim_end_matches('/');
     let parsed = url::Url::parse(normalized).context("invalid OIDC issuer URL")?;
-    let loopback_test_issuer = oidc_loopback_test_mode()
-        && parsed.scheme() == "http"
+    let loopback_test_issuer = parsed.scheme() == "http"
         && parsed.host_str().is_some_and(|host| {
-            ugoite_identity::node_identity::is_loopback_host(host) || is_e2e_mock_host(host)
+            ugoite_identity::node_identity::allows_http_oidc_test_host(host, false)
         });
     if (!loopback_test_issuer && parsed.scheme() != "https")
         || parsed.host_str().is_none()
@@ -4595,10 +4594,9 @@ fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
     // The in-process and E2E mock issuers are intentionally plain HTTP on a
     // test-only host. Production provider configuration and all non-test
     // endpoints remain HTTPS-only.
-    if (cfg!(test) || oidc_loopback_test_mode())
-        && url.scheme() == "http"
+    if url.scheme() == "http"
         && url.host_str().is_some_and(|host| {
-            ugoite_identity::node_identity::is_loopback_host(host) || is_e2e_mock_host(host)
+            ugoite_identity::node_identity::allows_http_oidc_test_host(host, cfg!(test))
         })
     {
         return Ok(());
@@ -4607,15 +4605,6 @@ fn validate_oidc_endpoint(url: &url::Url, name: &str) -> anyhow::Result<()> {
         anyhow::bail!("OIDC {name} endpoint must use https")
     }
     Ok(())
-}
-
-fn oidc_loopback_test_mode() -> bool {
-    env::var("UGOITE_E2E_TEST_MODE").is_ok_and(|value| value == "true")
-}
-
-fn is_e2e_mock_host(host: &str) -> bool {
-    oidc_loopback_test_mode()
-        && env::var("E2E_OIDC_MOCK_HOST").is_ok_and(|value| value.trim().eq_ignore_ascii_case(host))
 }
 
 fn validate_oidc_metadata(metadata: &CoreProviderMetadata) -> anyhow::Result<()> {

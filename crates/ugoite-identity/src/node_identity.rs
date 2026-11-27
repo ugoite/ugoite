@@ -63,6 +63,15 @@ pub fn is_loopback_host(host: &str) -> bool {
             .is_ok_and(|address| address.is_loopback())
 }
 
+/// Return whether plain HTTP is permitted for this OIDC host in a test context.
+///
+/// `in_process_test` is true only for an in-process server's own test build.
+/// Other callers require the explicit E2E test-mode environment setting.
+pub fn allows_http_oidc_test_host(host: &str, in_process_test: bool) -> bool {
+    (in_process_test || oidc_loopback_test_mode())
+        && (is_loopback_host(host) || is_e2e_mock_host(host))
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeLifecycle {
@@ -6775,11 +6784,10 @@ impl NodeIdentityService {
         }
         let issuer = issuer.trim().trim_end_matches('/');
         let parsed_issuer = Url::parse(issuer).context("invalid OIDC issuer URL")?;
-        let loopback_test_issuer = (cfg!(test) || oidc_loopback_test_mode())
-            && parsed_issuer.scheme() == "http"
+        let loopback_test_issuer = parsed_issuer.scheme() == "http"
             && parsed_issuer
                 .host_str()
-                .is_some_and(|host| is_loopback_host(host) || is_e2e_mock_host(host));
+                .is_some_and(|host| allows_http_oidc_test_host(host, cfg!(test)));
         if (!loopback_test_issuer && parsed_issuer.scheme() != "https")
             || parsed_issuer.host_str().is_none()
             || !parsed_issuer.username().is_empty()
