@@ -75,11 +75,13 @@ type drift, and access denial remain distinct. Runtime never selects a first
 row or column implicitly.
 
 Each run is bound to one Composition revision, Publication, authorization
-state, input set, and argument fingerprint. Only affected dependencies are
-recomputed. Generation and snapshot checks discard stale responses. Results
-are checked against their declared descriptors before rendering, and are never
-persisted as Knowledge or materialized in a hidden table. Paging, continuation,
-cancellation, and resource limits remain server-owned.
+state, input set, and argument fingerprint. Studio may reuse unaffected
+dependencies as a runtime optimization; the evaluation contract does not
+require partial recomputation. Generation and snapshot checks discard stale
+responses. Results are checked against their declared descriptors before
+rendering, and are never persisted as Knowledge or materialized in a hidden
+table. Paging, continuation, cancellation, and resource limits remain
+server-owned.
 
 An explicitly selected query requires only inputs in its dependency closure.
 Its results, pages, and cursors publish together after validation; full
