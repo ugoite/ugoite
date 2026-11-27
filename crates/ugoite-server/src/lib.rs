@@ -55,18 +55,15 @@ use ugoite_api_client::{
     CompositionComponentBinding, CompositionComponentKind, CompositionDeferredArgument,
     CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnostic as ApiCompositionDiagnostic,
-    CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionEvaluationRequest as ApiCompositionEvaluationRequest,
+    CompositionEvaluationRequest as ApiCompositionEvaluationRequest,
     CompositionEvaluationResponse as ApiCompositionEvaluationResponse, CompositionFormBinding,
-    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionPreviewPlan, CompositionPreviewRequest,
-    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionQuery,
-    CompositionQueryResultType, CompositionRawRevision,
+    CompositionHistoryPage, CompositionLintResponse, CompositionListPage, CompositionPreviewPlan,
+    CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
+    CompositionQuery, CompositionQueryResultType, CompositionRawRevision,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultColumn, CompositionRevisionMetadata,
-    CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
-    CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
-    CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
+    CompositionResultColumn, CompositionSaveRequest as ApiCompositionSaveRequest,
+    CompositionSaveResponse, CompositionScalarCardinality, CompositionScalarDescriptor,
+    CompositionScalarType, CompositionTextTemplatePart as ApiCompositionTextTemplatePart,
     CompositionVariableConsumers as ApiCompositionVariableConsumers, CompositionVariableDefinition,
 };
 use ugoite_core::composition::{
@@ -92,16 +89,12 @@ use ugoite_iceberg::{
         AuthorizationState, Authorizer, HumanApproval, HumanApprovalIssue, ResourceKind,
         ResourceRef,
     },
-    composition::{
-        RawCompositionHistoryPage as StoredCompositionHistoryPage,
-        RawCompositionListItem as StoredCompositionListItem,
-        RawCompositionListPage as StoredCompositionListPage,
-        RawCompositionRevision as StoredCompositionRawRevision, COMPOSITION_HISTORY_MAX_PAGE_SIZE,
-        COMPOSITION_LIST_MAX_PAGE_SIZE,
-    },
+    composition::{COMPOSITION_HISTORY_MAX_PAGE_SIZE, COMPOSITION_LIST_MAX_PAGE_SIZE},
     form, saved_sql,
     service::{
-        ApplyOperation, CompositionPreviewSelection,
+        composition_diagnostic_code, composition_lint_response,
+        composition_raw_history_page_response, composition_raw_list_page_response,
+        composition_raw_revision_response, ApplyOperation, CompositionPreviewSelection,
         CompositionQueryEvaluationPage as CoreCompositionQueryEvaluationPage,
         CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
         CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget,
@@ -11238,7 +11231,7 @@ fn composition_preview_diagnostics_response(
         .into_iter()
         .map(|diagnostic| {
             Ok(ApiCompositionDiagnostic {
-                code: api_composition_diagnostic_code(diagnostic.code)?,
+                code: composition_diagnostic_code(diagnostic.code).map_err(ApiError::from_core)?,
                 variable_id: api_composition_diagnostic_variable_id(
                     diagnostic.code,
                     diagnostic.variable_id,
@@ -11365,7 +11358,9 @@ async fn lint_composition(
             }),
         )
     })?;
-    Ok(Json(composition_lint_response(&request.yaml)?))
+    Ok(Json(
+        composition_lint_response(&request.yaml).map_err(ApiError::from_core)?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -11400,41 +11395,6 @@ async fn lint_sql(
 const COMPOSITION_LINT_MAX_REQUEST_BYTES: usize =
     ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 256;
 
-fn composition_lint_response(yaml: &str) -> ApiResult<CompositionLintResponse> {
-    Ok(
-        match ugoite_domain::composition::canonicalize_composition_yaml(yaml) {
-            Ok(canonical) => CompositionLintResponse {
-                ok: true,
-                value: Some(CompositionLintValue {
-                    document: serde_json::to_value(canonical.document)
-                        .expect("Composition domain document is JSON serializable"),
-                    canonical_yaml: canonical.yaml,
-                    fingerprint: canonical.fingerprint,
-                }),
-                error: None,
-            },
-            Err(code) => CompositionLintResponse {
-                ok: false,
-                value: None,
-                error: Some(CompositionLintError {
-                    kind: "composition_diagnostic".to_string(),
-                    code: api_composition_diagnostic_code(code)?,
-                }),
-            },
-        },
-    )
-}
-
-fn api_composition_diagnostic_code(
-    code: ugoite_domain::composition::CompositionDiagnosticCode,
-) -> ApiResult<ApiCompositionDiagnosticCode> {
-    ApiCompositionDiagnosticCode::from_code(code.as_str()).ok_or_else(|| {
-        ApiError::from_core(anyhow!(
-            "Composition diagnostic is missing from the portable API contract"
-        ))
-    })
-}
-
 fn api_composition_diagnostic_variable_id(
     code: ugoite_domain::composition::CompositionDiagnosticCode,
     variable_id: Option<String>,
@@ -11448,97 +11408,6 @@ fn api_composition_diagnostic_variable_id(
 #[serde(deny_unknown_fields)]
 struct CompositionLintRequest {
     yaml: String,
-}
-
-fn composition_raw_revision_response(raw: StoredCompositionRawRevision) -> CompositionRawRevision {
-    let revision = raw.revision;
-    let entry = revision.entry;
-    CompositionRawRevision {
-        revision: CompositionRevisionMetadata {
-            form_id: revision.form_id.to_string(),
-            entry_id: revision.entry_id.to_string(),
-            revision_id: revision.revision_id.to_string(),
-            parent_revision_id: revision.parent_revision_id.map(|value| value.to_string()),
-            entry_version: revision.entry_version,
-            change_id: revision.change_id,
-            expected_version: revision.expected_version,
-            operation: match revision.operation {
-                ugoite_domain::entry::EntryOperation::Upsert => "upsert",
-                ugoite_domain::entry::EntryOperation::Delete => "delete",
-                ugoite_domain::entry::EntryOperation::Restore => "restore",
-            }
-            .to_string(),
-            committed_at_micros: revision.committed_at_micros,
-            author_id: revision.author_id,
-            form_version: revision.form_version.get(),
-            source_kind: revision.source_kind,
-            source_id: revision.source_id,
-            entry: CompositionEntryMetadata {
-                external_id: entry.external_id,
-                tags: entry.tags,
-                created_at_micros: entry.created_at_micros,
-                updated_at_micros: entry.updated_at_micros,
-                updated_by: entry.updated_by,
-                integrity: CompositionEntryIntegrity {
-                    checksum: entry.integrity.checksum,
-                    signature: entry.integrity.signature,
-                },
-                deleted: entry.deleted,
-                deleted_at_micros: entry.deleted_at_micros,
-                deleted_by: entry.deleted_by,
-                restored_from: entry.restored_from.map(|value| value.to_string()),
-            },
-            extra_attributes: revision.extra_attributes,
-            extension_metadata: revision.extension_metadata,
-        },
-        fields: raw.fields,
-        unmapped_field_values: raw
-            .unmapped_field_values
-            .into_iter()
-            .map(|(field_id, value)| (field_id.get().to_string(), value))
-            .collect(),
-    }
-}
-
-fn composition_raw_history_page_response(
-    raw: StoredCompositionHistoryPage,
-) -> CompositionHistoryPage {
-    CompositionHistoryPage {
-        entry_id: raw.entry_id.to_string(),
-        revisions: raw
-            .revisions
-            .into_iter()
-            .map(composition_raw_revision_response)
-            .collect(),
-        total: raw.total,
-        offset: raw.offset,
-        limit: raw.limit,
-        has_more: raw.has_more,
-    }
-}
-
-fn composition_raw_list_page_response(raw: StoredCompositionListPage) -> CompositionListPage {
-    CompositionListPage {
-        items: raw
-            .items
-            .into_iter()
-            .map(composition_raw_list_item_response)
-            .collect(),
-        offset: raw.offset,
-        limit: raw.limit,
-        has_more: raw.has_more,
-    }
-}
-
-fn composition_raw_list_item_response(raw: StoredCompositionListItem) -> CompositionListItem {
-    CompositionListItem {
-        composition_id: raw.entry_id,
-        revision_id: raw.revision_id.to_string(),
-        updated_at: raw.updated_at,
-        name: raw.name,
-        kind: raw.kind,
-        format_version: raw.format_version,
-    }
 }
 
 #[derive(Default, Deserialize)]
@@ -15971,7 +15840,7 @@ spec:
             DomainCode::QuerySchemaChanged,
         ];
         for domain in domain_codes {
-            let api = api_composition_diagnostic_code(domain)
+            let api = composition_diagnostic_code(domain)
                 .expect("domain diagnostic is represented by the portable API");
             let expected = match domain {
                 DomainCode::VariableUnknown => "variable_unknown",
@@ -15990,7 +15859,7 @@ spec:
             "not_authorized",
         ] {
             assert_eq!(
-                ApiCompositionDiagnosticCode::from_code(removed),
+                ugoite_api_client::CompositionDiagnosticCode::from_code(removed),
                 None,
                 "removed diagnostic {removed} must stay out of the portable API"
             );
@@ -16012,62 +15881,9 @@ spec:
             );
         }
         assert_eq!(
-            ApiCompositionDiagnosticCode::from_code("unknown_diagnostic"),
+            ugoite_api_client::CompositionDiagnosticCode::from_code("unknown_diagnostic"),
             None
         );
-        Ok(())
-    }
-
-    #[test]
-    fn composition_raw_response_maps_storage_to_the_portable_dto() -> anyhow::Result<()> {
-        use ugoite_domain::{
-            entry::{EntryMetadata, EntryOperation, EntryRevision},
-            form::FormVersion,
-            id::{EntryId, FieldId, FormId, RevisionId},
-        };
-
-        let entry_id = EntryId::from(Uuid::from_u128(34912));
-        let revision_id = RevisionId::from(Uuid::from_u128(34913));
-        let raw = StoredCompositionRawRevision {
-            revision: EntryRevision {
-                form_id: FormId::from(Uuid::from_u128(34911)),
-                entry_id,
-                revision_id,
-                parent_revision_id: None,
-                entry_version: 1,
-                change_id: "change-34913".into(),
-                expected_version: None,
-                operation: EntryOperation::Upsert,
-                committed_at_micros: 34914,
-                author_id: "author-34915".into(),
-                form_version: FormVersion::new(1)?,
-                source_kind: "user".into(),
-                source_id: None,
-                entry: EntryMetadata {
-                    external_id: "monthly-expense".into(),
-                    tags: vec!["finance".into()],
-                    ..EntryMetadata::default()
-                },
-                values: BTreeMap::new(),
-                extra_attributes: BTreeMap::new(),
-                extension_metadata: BTreeMap::new(),
-            },
-            fields: BTreeMap::from([
-                ("format_version".into(), json!(99)),
-                ("spec".into(), json!("future: payload\n")),
-            ]),
-            unmapped_field_values: BTreeMap::from([(FieldId::new(150)?, json!("orphaned-value"))]),
-        };
-
-        let response = composition_raw_revision_response(raw);
-        let value = serde_json::to_value(&response)?;
-        assert_eq!(value["revision"]["entry_id"], entry_id.to_string());
-        assert_eq!(value["revision"]["revision_id"], revision_id.to_string());
-        assert_eq!(value["revision"]["entry"]["tags"], json!(["finance"]));
-        assert_eq!(value["revision"]["operation"], "upsert");
-        assert_eq!(value["fields"]["format_version"], 99);
-        assert_eq!(value["fields"]["spec"], "future: payload\n");
-        assert_eq!(value["unmapped_field_values"]["150"], "orphaned-value");
         Ok(())
     }
 

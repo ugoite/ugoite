@@ -170,7 +170,12 @@ mod composition_resolver;
 mod composition_scalar_query;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
-pub use composition_api::composition_evaluation_response;
+pub use composition_api::{
+    composition_diagnostic_code, composition_evaluation_response,
+    composition_lint_diagnostic_response, composition_lint_response,
+    composition_raw_history_page_response, composition_raw_list_page_response,
+    composition_raw_revision_response,
+};
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub use composition_query_evaluation::{
