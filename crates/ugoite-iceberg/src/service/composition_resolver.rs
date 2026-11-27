@@ -1494,6 +1494,7 @@ fn conceal_sql_query_lookup<T>(result: Result<T>, concealed_code: ErrorCode) -> 
 #[cfg(test)]
 mod graph_metadata_tests {
     use super::*;
+    use ugoite_domain::composition::VariableGraphScalarType;
 
     fn form(id: FormId, name: &str) -> FormDefinition {
         FormDefinition {
