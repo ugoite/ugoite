@@ -1890,14 +1890,6 @@ textarea {
 :root[data-color-mode="dark"] .bottomNav a.active {
   color: var(--ink);
 }
-:root[data-color-mode="dark"] .ui-nav {
-  background: rgba(16, 17, 20, 0.92);
-}
-:root[data-color-mode="dark"] .ui-nav-link:hover,
-:root[data-color-mode="dark"] .ui-nav-link-active {
-  background: var(--panel);
-  color: var(--ink);
-}
 .publicShell {
   min-height: 100vh;
   display: grid;
@@ -1946,42 +1938,6 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 13px;
-}
-
-/* Public navigation kept intentionally quiet; auth pages hide it in Nav.tsx. */
-.ui-nav {
-  min-height: 58px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(247, 247, 244, 0.92);
-  backdrop-filter: blur(16px);
-}
-.ui-nav-list {
-  max-width: 1180px;
-  min-height: 58px;
-  margin: 0 auto;
-  padding: 0 42px;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.ui-nav-link {
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 11px;
-  display: inline-flex;
-  align-items: center;
-  color: var(--muted);
-}
-.ui-nav-link:hover, .ui-nav-link-active {
-  background: #fff;
-  color: var(--ink);
-}
-.ui-nav-session {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 @media (max-width: 900px) {
@@ -2257,11 +2213,6 @@ textarea {
   .ui-page {
     padding: 20px 14px 92px;
   }
-  .ui-nav-list {
-    padding: 0 14px;
-    overflow-x: auto;
-  }
-
   /* Responsive Quiet Motion layout refinements. Keep the mobile contract in
    * this breakpoint so component rules do not depend on a later override. */
   .globalBottomNav {
@@ -2372,9 +2323,6 @@ textarea {
   }
   .dataTable, .ui-table {
     min-width: 760px;
-  }
-  .ui-nav-session .ui-pill {
-    display: none;
   }
 }
 

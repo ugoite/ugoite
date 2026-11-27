@@ -21,7 +21,7 @@ const copy = {
   },
 } as const;
 
-type ErrorCopy = typeof copy.en;
+type ErrorCopy = typeof copy[keyof typeof copy];
 
 // AppErrorBoundary can be remounted as Solid Router swaps route trees. Keep the
 // last browser route at module scope so a remount still clears stale retry state.
