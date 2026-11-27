@@ -28,7 +28,6 @@ use ugoite_domain::composition::{
     CompositionDiagnosticCode, CompositionDocument, VariableGraph, VariableGraphColumn,
     VariableGraphFormBinding, VariableGraphNode, VariableGraphNodeKind,
     VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
-    VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
 use ugoite_domain::id::FormId;
