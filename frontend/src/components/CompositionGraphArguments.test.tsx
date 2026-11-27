@@ -176,7 +176,7 @@ describe("Composition inline SQL argument bindings", () => {
     );
   });
 
-  it("creates a unique suggested variable and binds it atomically from the SQL marker", async () => {
+  it("creates and binds a variable atomically from the SQL marker", async () => {
     const initial = makeDraft("SELECT {{limit}} AS value", false);
     initial.variables.push({
       id: "limit",
@@ -194,17 +194,17 @@ describe("Composition inline SQL argument bindings", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "Value" }));
     const name = screen.getByRole("textbox", { name: "Variable name" });
-    await waitFor(() => expect(name).toHaveValue("limit_2"));
+    fireEvent.input(name, { target: { value: "page_size" } });
     fireEvent.submit(name.closest("form")!);
 
     await waitFor(() =>
       expect(draft().variables).toContainEqual(
-        expect.objectContaining({ id: "limit_2", kind: "constant" }),
+        expect.objectContaining({ id: "page_size", kind: "constant" }),
       )
     );
     expect(draft().variables.find((node) => node.id === "rows"))
       .toMatchObject({
-        query: { arguments: [{ name: "limit", variable: "limit_2" }] },
+        query: { arguments: [{ name: "limit", variable: "page_size" }] },
       });
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "SQL" }))
@@ -233,8 +233,10 @@ describe("Composition inline SQL argument bindings", () => {
       .toMatchObject({ query: { arguments: [] } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await waitFor(() => expect(draft().variables.map((node) => node.id))
-      .toEqual(["threshold", "caption", "rows"]));
+    await waitFor(() =>
+      expect(draft().variables.map((node) => node.id))
+        .toEqual(["threshold", "caption", "rows"])
+    );
     expect(draft().components).toHaveLength(0);
     expect(draft().variables.find((node) => node.id === "rows"))
       .toMatchObject({ query: { arguments: [] } });
@@ -271,35 +273,20 @@ describe("Composition inline SQL argument bindings", () => {
       .toMatchObject({ query: { arguments: [] } });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(draft().variables.map((node) => node.id))
-      .toEqual(["rows"]));
+    await waitFor(() =>
+      expect(draft().variables.map((node) => node.id))
+        .toEqual(["rows"])
+    );
     expect(draft().variables.find((node) => node.id === "rows"))
       .toMatchObject({ query: { arguments: [] } });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Design" }))
-      .toHaveAttribute("aria-selected", "true"));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Design" }))
+        .toHaveAttribute("aria-selected", "true")
+    );
     expect(draft().variables).toEqual([]);
     expect(draft().components).toEqual([]);
-  });
-
-  it("suggests a unique name for variables created from Design", async () => {
-    const initial = createCompositionGraphDraft("Report");
-    initial.variables = [{
-      id: "input",
-      kind: "input",
-      value_type: { scalar_type: "string", nullable: false },
-      required: true,
-    }];
-    renderStudio(initial);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create Input" }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Variable name" }))
-        .toHaveValue("input_2")
-    );
   });
 
   it("edits a Design Input in Variables and commits placement only on Use", async () => {
@@ -341,9 +328,11 @@ describe("Composition inline SQL argument bindings", () => {
     expect(screen.getByRole("button", { name: "Use" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Use" }));
 
-    await waitFor(() => expect(draft().components).toContainEqual(
-      expect.objectContaining({ kind: "input", variable: "customer_id" }),
-    ));
+    await waitFor(() =>
+      expect(draft().components).toContainEqual(
+        expect.objectContaining({ kind: "input", variable: "customer_id" }),
+      )
+    );
     expect(draft().variables).toContainEqual({
       id: "customer_id",
       kind: "input",

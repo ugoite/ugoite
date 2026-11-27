@@ -159,7 +159,6 @@ features:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.duplicate-variable-name-is-rejected }
-              - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
               - { kind: satisfies, criterion: REQ-COMP-010#criterion.table-text-input-components }
           - id: inline-sql-variable-workspace
             adapter: typescript
@@ -171,7 +170,6 @@ features:
               - { kind: satisfies, criterion: REQ-FE-083#criterion.sql-arguments-bind-locally }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.editor-work-is-scope-bound }
               - { kind: satisfies, criterion: REQ-FE-083#criterion.input-creation-places-once }
-              - { kind: satisfies, criterion: REQ-FE-083#criterion.variable-name-is-suggested }
           - id: reader-renderer
             adapter: typescript
             path: frontend/src/components/CompositionGraphRenderer.tsx
@@ -384,29 +382,12 @@ features:
           - id: create-variable-from-sql-marker
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: "creates a unique suggested variable and binds it atomically from the SQL marker" }
+            selector: { kind: test, name: "creates and binds a variable atomically from the SQL marker" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-083#criterion.sql-arguments-bind-locally
                 covers: [FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a unique suggested variable and binds it atomically from the SQL marker" } }
-              - kind: verifies
-                criterion: REQ-FE-083#criterion.variable-name-is-suggested
-                covers:
-                  - FEAT-COMP-010#binding.frontend/target.graph-studio
-                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates a unique suggested variable and binds it atomically from the SQL marker" } }
-          - id: variable-name-suggestion
-            adapter: typescript
-            path: frontend/src/components/CompositionGraphArguments.test.tsx
-            selector: { kind: test, name: "suggests a unique name for variables created from Design" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-083#criterion.variable-name-is-suggested
-                covers:
-                  - FEAT-COMP-010#binding.frontend/target.graph-studio
-                  - FEAT-COMP-010#binding.frontend/target.inline-sql-variable-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "suggests a unique name for variables created from Design" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "creates and binds a variable atomically from the SQL marker" } }
           - id: form-backed-table-creation-return
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts

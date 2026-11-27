@@ -71,13 +71,6 @@ requirements:
           the Composition draft and keeps Add unavailable until the name is
           unique.
         governed_by: [POL-UI-002#rule.governance]
-      - id: variable-name-is-suggested
-        kind: behavior
-        statement: >-
-          Variable creation starts with the next unique suggested name for its
-          kind or SQL marker. The suggestion remains editable and duplicate
-          names remain rejected.
-        governed_by: [POL-UI-002#rule.governance]
       - id: table-picker-focus-restoration
         kind: behavior
         statement: >-
