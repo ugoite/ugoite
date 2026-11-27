@@ -132,7 +132,7 @@ export default function CompositionRevisionRoute() {
     return restoreKey;
   };
 
-  const [revision] = createResource(
+  const [revision, { refetch: refetchRevision }] = createResource(
     routeKey,
     async (key) => {
       const [spaceId, compositionId, revisionId] = JSON.parse(key) as [
@@ -595,19 +595,20 @@ export default function CompositionRevisionRoute() {
         page ? [page.variable_id] : requestedQueries,
       );
       if (page) {
-        const pageResult = responseToShow.query_results[page.variable_id];
+        const pageVariableId = page.variable_id;
+        const pageResult = responseToShow.query_results[pageVariableId];
         if (pageResult) {
           setTablePages((current) => {
-            const prior = current[page.variable_id];
+            const prior = current[pageVariableId];
             const pages = prior
               ? prior.pages.slice(0, prior.index + 1)
-              : previous?.query_results[page.variable_id]
-              ? [previous.query_results[page.variable_id]]
+              : previous?.query_results[pageVariableId]
+              ? [previous.query_results[pageVariableId]]
               : [];
             pages.push(pageResult);
             return {
               ...current,
-              [page.variable_id]: { pages, index: pages.length - 1 },
+              [pageVariableId]: { pages, index: pages.length - 1 },
             };
           });
         }
@@ -843,7 +844,7 @@ export default function CompositionRevisionRoute() {
       setInputValues({});
       setUnsetInputs([]);
       setInputStates({});
-      setBlockedQueryIds(new Set());
+      setBlockedQueryIds(new Set<string>());
       setTablePages({});
       parseEpoch++;
       parseGenerations.clear();
@@ -863,7 +864,7 @@ export default function CompositionRevisionRoute() {
     setInputValues({});
     setUnsetInputs([]);
     setInputStates({});
-    setBlockedQueryIds(new Set());
+    setBlockedQueryIds(new Set<string>());
     setAccessSnapshotBlocked(true);
     setTablePages({});
     parseEpoch++;
@@ -1019,7 +1020,7 @@ export default function CompositionRevisionRoute() {
           <button
             class="ui-button ui-button-secondary"
             type="button"
-            onClick={() => void revision.refetch()}
+            onClick={() => void refetchRevision()}
           >
             {t("composition.retry")}
           </button>
