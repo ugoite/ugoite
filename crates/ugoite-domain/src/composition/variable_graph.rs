@@ -1851,6 +1851,13 @@ mod tests {
     }
 
     #[test]
+    fn sha256_fingerprints_use_lowercase_hex() {
+        assert!(is_sha256_fingerprint(&"a".repeat(64)));
+        assert!(!is_sha256_fingerprint(&"A".repeat(64)));
+        assert!(!is_sha256_fingerprint(&"a".repeat(63)));
+    }
+
+    #[test]
     fn scalar_results_distinguish_cardinality_null_and_valid_values() {
         let expected = VariableGraphResultType::Scalar {
             value_type: scalar(VariableGraphScalarType::Integer, false),

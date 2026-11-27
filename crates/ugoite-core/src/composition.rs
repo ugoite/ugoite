@@ -1112,45 +1112,6 @@ mod tests {
     };
 
     #[test]
-    fn sql_result_schema_validation_shares_portable_rules_and_keeps_engine_limits() {
-        let value_type = VariableGraphScalarDescriptor {
-            scalar_type: VariableGraphScalarType::Integer,
-            nullable: false,
-        };
-        let valid = vec![VariableGraphColumn {
-            name: "value".to_owned(),
-            value_type,
-        }];
-        assert!(sql_result_columns_are_well_formed(&valid));
-        assert!(schema_is_well_formed(&valid, &"a".repeat(64)));
-        assert!(!schema_is_well_formed(&valid, &"A".repeat(64)));
-        assert!(!sql_result_columns_are_well_formed(&[]));
-
-        let duplicate = vec![
-            valid[0].clone(),
-            VariableGraphColumn {
-                name: "value".to_owned(),
-                value_type,
-            },
-        ];
-        assert!(!sql_result_columns_are_well_formed(&duplicate));
-
-        let too_many = (0..=MAX_SQL_OUTPUT_COLUMNS)
-            .map(|index| VariableGraphColumn {
-                name: format!("column_{index}"),
-                value_type,
-            })
-            .collect::<Vec<_>>();
-        assert!(!sql_result_columns_are_well_formed(&too_many));
-
-        let too_long = [VariableGraphColumn {
-            name: "x".repeat(MAX_SQL_COLUMN_NAME_BYTES + 1),
-            value_type,
-        }];
-        assert!(!sql_result_columns_are_well_formed(&too_long));
-    }
-
-    #[test]
     fn query_semantic_fingerprint_includes_scalar_or_table_return_shape() {
         let definition = VariableGraphQueryDefinition::InlineSql {
             sql: "SELECT 1 AS value".to_owned(),

@@ -2347,6 +2347,51 @@ mod tests {
     }
 
     #[test]
+    fn sql_result_columns_keep_portable_rules_and_engine_limits() {
+        let value_type = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let valid = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type,
+        }];
+        assert!(crate::composition::sql_result_columns_are_well_formed(
+            &valid
+        ));
+        assert!(!crate::composition::sql_result_columns_are_well_formed(&[]));
+
+        let duplicate = vec![
+            valid[0].clone(),
+            VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type,
+            },
+        ];
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &duplicate
+        ));
+
+        let too_many = (0..=crate::sql_query::MAX_SQL_OUTPUT_COLUMNS)
+            .map(|index| VariableGraphColumn {
+                name: format!("column_{index}"),
+                value_type,
+            })
+            .collect::<Vec<_>>();
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &too_many
+        ));
+
+        let too_long = [VariableGraphColumn {
+            name: "x".repeat(crate::sql_query::MAX_SQL_COLUMN_NAME_BYTES + 1),
+            value_type,
+        }];
+        assert!(!crate::composition::sql_result_columns_are_well_formed(
+            &too_long
+        ));
+    }
+
+    #[test]
     fn sql_parameter_type_mapping_is_shared_and_explicit() {
         for (scalar_type, expected) in [
             (VariableGraphScalarType::String, Some("string")),
