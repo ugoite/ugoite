@@ -110,15 +110,15 @@ requirements:
         facet: verification
         responsibility: Verify save completion and draft preservation through exact Entry detail tests.
         targets:
-          - id: structured-draft-navigation
+          - id: in-flight-save-draft
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx
-            selector: { kind: test, name: "confirms unsaved-work navigation through the shared dialog, never window.confirm" }
+            selector: { kind: test, name: "REQ-FE-010: keeps edits made during a save unsaved until explicitly saved" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-010#criterion.preserve-draft
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "confirms unsaved-work navigation through the shared dialog, never window.confirm" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-FE-010: keeps edits made during a save unsaved until explicitly saved" } }
   - id: REQ-FE-011
     title: Editor Content Sync on Entry Switch and Explicit Refresh
     description: The editor loads server content when the selected Entry changes or the user explicitly refreshes, while preserving the current draft during unrelated resource updates and save completion.
