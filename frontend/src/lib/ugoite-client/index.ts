@@ -54,6 +54,7 @@ export {
   protocolFetch,
   type ProtocolFetchOptions,
   protocolFetchResponse,
+  renameCompositionVariable,
   renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   type SqlDocument,

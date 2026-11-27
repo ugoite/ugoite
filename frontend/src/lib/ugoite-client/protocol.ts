@@ -5,6 +5,7 @@ import {
   decodeCompositionDocumentIntegers,
   decodeCompositionEvaluationIntegers,
   decodeCompositionPreviewIntegerDefaults,
+  decodeVariableGraphIntegerValues,
   encodeCompositionDocumentIntegers,
   encodeMarkedIntegerVariableValues,
   encodeVariableGraphIntegers,
@@ -158,6 +159,18 @@ const encodeTypedIntegerCommand = (
   if (command.action === "domain.compile_variable_graph.v1") {
     return { ...command, value: encodeVariableGraphIntegers(command.value) };
   }
+  if (
+    command.action === "domain.rename_composition_variable" &&
+    isRecord(command.value)
+  ) {
+    const encoded = encodeVariableGraphIntegers({
+      variables: command.value.variables,
+    }) as { variables: unknown[] };
+    return {
+      ...command,
+      value: { ...command.value, variables: encoded.variables },
+    };
+  }
   if (command.action === "prepare" && isRecord(command.body)) {
     const body = command.body;
     if (isRecord(body.variables)) {
@@ -179,6 +192,12 @@ const decodeTypedIntegerResponse = (
     const document = (value as { document?: unknown } | null | undefined)
       ?.document;
     decodeCompositionDocumentIntegers(document, source);
+    return;
+  }
+  if (command.action === "domain.rename_composition_variable") {
+    if (isRecord(value)) {
+      decodeVariableGraphIntegerValues(value.variables, source);
+    }
     return;
   }
   if (command.action === "domain.parse_variable_graph_input") {
@@ -279,6 +298,38 @@ export type CompositionDocumentCanonicalization = {
 export type CompositionTextTemplateSegment =
   | { kind: "literal"; text: string }
   | { kind: "variable"; variable: string };
+
+/** Rename a variable and every graph, component, and Text-template reference. */
+export const renameCompositionVariable = async <
+  TNode extends VariableGraphNode,
+  TComponent,
+>(
+  variables: TNode[],
+  components: TComponent[],
+  from: string,
+  to: string,
+): Promise<{ variables: TNode[]; components: TComponent[] }> => {
+  const result = await invokeProtocol<{
+    variables: VariableGraphNode[];
+    components: unknown[];
+  }>({
+    action: "domain.rename_composition_variable",
+    value: { variables, components, from, to },
+  });
+  return {
+    // The Domain model omits empty optional vectors while serializing; restore
+    // the editor's always-present arguments list at this protocol boundary.
+    variables: result.variables.map((node) =>
+      node.kind === "query"
+        ? {
+          ...node,
+          query: { ...node.query, arguments: node.query.arguments ?? [] },
+        } as TNode
+        : node as TNode
+    ),
+    components: result.components as TComponent[],
+  };
+};
 
 export type VariableGraphScalarType =
   | "string"

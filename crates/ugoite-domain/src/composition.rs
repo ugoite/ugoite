@@ -450,6 +450,101 @@ impl CompositionComponent {
     }
 }
 
+/// Failure to rename a Composition variable without breaking its references.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CompositionVariableRenameError {
+    EmptyTarget,
+    DuplicateTarget,
+    MissingSource,
+    InvalidTextTemplate,
+}
+
+impl CompositionVariableRenameError {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyTarget => "composition_variable_rename_empty_target",
+            Self::DuplicateTarget => "composition_variable_rename_duplicate_target",
+            Self::MissingSource => "composition_variable_rename_missing_source",
+            Self::InvalidTextTemplate => "composition_variable_rename_invalid_text_template",
+        }
+    }
+}
+
+/// Rename a graph identity and all explicit references in an editable draft.
+///
+/// This operation deliberately does not compile or canonicalize the graph:
+/// rename is also available while a Composition is incomplete. Text templates
+/// are parsed by the same Domain grammar used by validation and only rewritten
+/// when they refer to the renamed variable.
+pub fn rename_composition_variable(
+    mut graph: VariableGraph,
+    mut components: Vec<CompositionComponent>,
+    from: &str,
+    to: &str,
+) -> Result<(VariableGraph, Vec<CompositionComponent>), CompositionVariableRenameError> {
+    let target = to.trim();
+    if target.is_empty() {
+        return Err(CompositionVariableRenameError::EmptyTarget);
+    }
+    if !graph.variables.iter().any(|node| node.id == from) {
+        return Err(CompositionVariableRenameError::MissingSource);
+    }
+    if target != from && graph.variables.iter().any(|node| node.id == target) {
+        return Err(CompositionVariableRenameError::DuplicateTarget);
+    }
+
+    for node in &mut graph.variables {
+        if node.id == from {
+            node.id = target.to_owned();
+        }
+        if let VariableGraphNodeKind::Query { query, .. } = &mut node.kind {
+            for argument in &mut query.arguments {
+                if argument.variable == from {
+                    argument.variable = target.to_owned();
+                }
+            }
+        }
+    }
+
+    for component in &mut components {
+        match component {
+            CompositionComponent::Input { variable, .. }
+            | CompositionComponent::Table { variable, .. }
+                if variable == from =>
+            {
+                *variable = target.to_owned();
+            }
+            CompositionComponent::Text { content, .. } => {
+                let parts = parse_composition_text_template(content)
+                    .map_err(|_| CompositionVariableRenameError::InvalidTextTemplate)?;
+                if !parts.iter().any(|part| {
+                    matches!(part, CompositionTextTemplatePart::Variable { variable } if variable == from)
+                }) {
+                    continue;
+                }
+
+                let mut rewritten = String::new();
+                for part in parts {
+                    match part {
+                        CompositionTextTemplatePart::Literal { text } => {
+                            rewritten.push_str(&text.replace("{{", r"\{{"));
+                        }
+                        CompositionTextTemplatePart::Variable { variable } => {
+                            rewritten.push_str("{{");
+                            rewritten.push_str(if variable == from { target } else { &variable });
+                            rewritten.push_str("}}");
+                        }
+                    }
+                }
+                *content = rewritten;
+            }
+            CompositionComponent::Input { .. } | CompositionComponent::Table { .. } => {}
+        }
+    }
+
+    Ok((graph, components))
+}
+
 /// Fixed typography roles for text components. Markdown, HTML, CSS, and
 /// arbitrary fonts, sizes, colors, or event handlers are not part of v1.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -536,7 +631,8 @@ impl CompositionDiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
+        parse_composition_yaml, rename_composition_variable, CompositionComponent,
+        CompositionDiagnosticCode, CompositionVariableRenameError, VariableGraph,
         VariableGraphNodeKind,
     };
 
@@ -687,6 +783,95 @@ mod tests {
         assert_eq!(
             super::canonicalize_composition(&document),
             Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn variable_rename_updates_graph_component_and_text_references() {
+        let document = parse_composition_yaml(GRAPH).unwrap();
+        let mut components = document.spec.components.clone();
+        let CompositionComponent::Text { content, .. } = &mut components[2] else {
+            panic!("fixture component should be Text");
+        };
+        *content = r"Date: {{month_start}} / {{month_start}}; literal \{{month_start}}".to_owned();
+
+        let (graph, components) = rename_composition_variable(
+            VariableGraph {
+                variables: document.spec.variables.clone(),
+            },
+            components,
+            "month_start",
+            "period_start",
+        )
+        .unwrap();
+
+        let renamed = graph
+            .variables
+            .iter()
+            .find(|node| node.id == "period_start")
+            .unwrap();
+        assert!(!graph.variables.iter().any(|node| node.id == "month_start"));
+        assert!(graph.variables.iter().any(|node| {
+            matches!(&node.kind, VariableGraphNodeKind::Query { query, .. }
+                if query.arguments.iter().any(|argument| argument.variable == "period_start"))
+        }));
+        assert!(matches!(
+            &components[0],
+            CompositionComponent::Input { variable, .. } if variable == "period_start"
+        ));
+        assert!(matches!(
+            &components[2],
+            CompositionComponent::Text { content, .. }
+                if content == r"Date: {{period_start}} / {{period_start}}; literal \{{month_start}}"
+        ));
+        assert_eq!(components[2].variable_ids().unwrap(), ["period_start"]);
+        assert_eq!(renamed.id, "period_start");
+    }
+
+    #[test]
+    fn variable_rename_rejects_invalid_targets_and_malformed_text() {
+        let document = parse_composition_yaml(GRAPH).unwrap();
+        let make_input = || {
+            (
+                VariableGraph {
+                    variables: document.spec.variables.clone(),
+                },
+                document.spec.components.clone(),
+            )
+        };
+
+        for (from, to, expected) in [
+            (
+                "month_total",
+                "  ",
+                CompositionVariableRenameError::EmptyTarget,
+            ),
+            (
+                "month_total",
+                "month_start",
+                CompositionVariableRenameError::DuplicateTarget,
+            ),
+            (
+                "missing",
+                "monthly_total",
+                CompositionVariableRenameError::MissingSource,
+            ),
+        ] {
+            let (graph, components) = make_input();
+            assert_eq!(
+                rename_composition_variable(graph, components, from, to),
+                Err(expected)
+            );
+        }
+
+        let (graph, mut components) = make_input();
+        let CompositionComponent::Text { content, .. } = &mut components[2] else {
+            panic!("fixture component should be Text");
+        };
+        *content = "unclosed {{template".to_owned();
+        assert_eq!(
+            rename_composition_variable(graph, components, "month_total", "monthly_total"),
+            Err(CompositionVariableRenameError::InvalidTextTemplate)
         );
     }
 }

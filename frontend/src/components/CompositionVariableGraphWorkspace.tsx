@@ -23,7 +23,6 @@ import {
   type CompositionSqlArgumentType,
   compositionVariableKindIcon,
   type CompositionVariableNode,
-  renameCompositionVariable,
 } from "~/lib/composition-variable-binding";
 import { type SqlSchema } from "~/lib/sql";
 import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
@@ -32,8 +31,8 @@ import { normalizeSqlDocument } from "~/lib/sql";
 import { SqlFormSourceControl } from "~/components/SqlFormSourceControl";
 import { t } from "~/lib/i18n";
 import {
-  parseCompositionTextTemplate,
   parseVariableGraphInput,
+  renameCompositionVariable,
 } from "~/lib/ugoite-client";
 import {
   replaceSqlFormBindingGuard,
@@ -352,27 +351,16 @@ export function CompositionVariableGraphWorkspace(
   const rename = (node: CompositionVariableNode, raw: string) => {
     const newId = raw.trim();
     const sourceDraft = props.draft;
-    const next = renameCompositionVariable(sourceDraft, node.id, newId);
-    if (!next) return;
     const generation = (renameGenerations.get(node.id) ?? 0) + 1;
     renameGenerations.set(node.id, generation);
     setInvalidRenames((current) => new Set(current).add(node.id));
     props.onEditValidityChange?.(node.id, false);
-    const rewritten = Promise.all(
-      sourceDraft.components.map(async (component) => {
-        if (component.kind !== "text") return component;
-        const { segments } = await parseCompositionTextTemplate(
-          component.content,
-        );
-        const content = segments.map((segment) =>
-          segment.kind === "literal"
-            ? segment.text.replaceAll("{{", "\\{{")
-            : `{{${segment.variable === node.id ? newId : segment.variable}}}`
-        ).join("");
-        return { ...component, content };
-      }),
-    );
-    void rewritten.then((components) => {
+    void renameCompositionVariable(
+      sourceDraft.variables,
+      sourceDraft.components,
+      node.id,
+      newId,
+    ).then(({ variables, components }) => {
       if (
         renameGenerations.get(node.id) !== generation ||
         props.draft !== sourceDraft
@@ -381,11 +369,7 @@ export function CompositionVariableGraphWorkspace(
         entry.id === node.id
       );
       if (!current) return;
-      const renamed = {
-        ...next,
-        components,
-      };
-      const newId = raw.trim();
+      const renamed = { ...sourceDraft, variables, components };
       const hasRaw = Object.hasOwn(rawValues(), node.id);
       const rawValue = rawValues()[node.id];
       const wasPendingOrInvalid = pendingOrInvalidLiterals().has(node.id);
@@ -430,7 +414,10 @@ export function CompositionVariableGraphWorkspace(
         wasPendingOrInvalid && hasRaw ? false : true,
       );
     }).catch(() => {
-      if (renameGenerations.get(node.id) !== generation) return;
+      if (
+        renameGenerations.get(node.id) !== generation ||
+        props.draft !== sourceDraft
+      ) return;
       setInvalidRenames((current) => new Set(current).add(node.id));
       props.onEditValidityChange?.(node.id, false);
     });

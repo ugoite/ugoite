@@ -17,6 +17,8 @@ const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize =
     ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 4096;
 const MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES: usize =
     MAX_COMPOSITION_SAVE_REQUEST_BYTES + 1024;
+const MAX_COMPOSITION_RENAME_PROTOCOL_REQUEST_BYTES: usize =
+    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + MAX_PROTOCOL_REQUEST_BYTES;
 // JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
 // escape. Allow that worst case plus a small action envelope for parsing.
 const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
@@ -88,6 +90,13 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
     }
 }
 
+fn composition_request_limit(action: &str) -> Option<usize> {
+    match action {
+        "domain.rename_composition_variable" => Some(MAX_COMPOSITION_RENAME_PROTOCOL_REQUEST_BYTES),
+        _ => None,
+    }
+}
+
 fn is_composition_save_prepare(request: &serde_json::Value) -> bool {
     request.get("action").and_then(serde_json::Value::as_str) == Some("prepare")
         && request.get("operation").and_then(serde_json::Value::as_str) == Some("composition.save")
@@ -118,6 +127,14 @@ struct KonaseEffectRequest {
     declared_effect: Option<ugoite_konase::CapabilityEffect>,
 }
 
+#[derive(serde::Deserialize)]
+struct CompositionVariableRenameRequest {
+    variables: Vec<ugoite_domain::composition::VariableGraphNode>,
+    components: Vec<ugoite_domain::composition::CompositionComponent>,
+    from: String,
+    to: String,
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
         // Bound JSON decoding before inspecting the action. Only documented
@@ -125,12 +142,16 @@ pub fn invoke_json(input: &str) -> String {
         // the ordinary protocol request cap.
         let max_special_request_bytes = MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES
             .max(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
-            .max(MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES);
+            .max(MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES)
+            .max(MAX_COMPOSITION_RENAME_PROTOCOL_REQUEST_BYTES);
         if input.len() <= max_special_request_bytes {
             if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
                 if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
                     if sql_document_request_limit(action).is_some_and(|limit| input.len() <= limit)
                     {
+                        return invoke_domain(request);
+                    }
+                    if composition_request_limit(action).is_some_and(|limit| input.len() <= limit) {
                         return invoke_domain(request);
                     }
                 }
@@ -422,6 +443,58 @@ fn invoke_domain(request: serde_json::Value) -> String {
                 "value": { "segments": segments },
             })
             .to_string(),
+            Err(error) => serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": error.as_str()},
+            })
+            .to_string(),
+        };
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.rename_composition_variable")
+    {
+        let Some(payload) = request.get("value").cloned() else {
+            return serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "code": "composition_variable_rename_request_required"},
+            })
+            .to_string();
+        };
+        let input = match serde_json::from_value::<CompositionVariableRenameRequest>(payload) {
+            Ok(input) => input,
+            Err(_) => {
+                return serde_json::json!({
+                    "ok": false,
+                    "error": {"kind": "domain_validation", "code": "composition_variable_rename_request_invalid"},
+                })
+                .to_string();
+            }
+        };
+        return match ugoite_domain::composition::rename_composition_variable(
+            ugoite_domain::composition::VariableGraph {
+                variables: input.variables,
+            },
+            input.components,
+            &input.from,
+            &input.to,
+        ) {
+            Ok((graph, components)) => {
+                let envelope = serde_json::json!({
+                    "ok": true,
+                    "value": {"variables": graph.variables, "components": components},
+                });
+                if ensure_json_size(&envelope, MAX_COMPOSITION_RENAME_PROTOCOL_REQUEST_BYTES)
+                    .is_err()
+                {
+                    return serde_json::json!({
+                        "ok": false,
+                        "error": {"kind": "domain_validation", "code": "composition_variable_rename_result_too_large"},
+                    })
+                    .to_string();
+                }
+                envelope.to_string()
+            }
             Err(error) => serde_json::json!({
                 "ok": false,
                 "error": {"kind": "domain_validation", "code": error.as_str()},
@@ -2275,6 +2348,47 @@ mod tests {
                 serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
             assert_eq!(response, expected, "template: {template:?}");
         }
+    }
+
+    #[test]
+    fn composition_variable_rename_action_matches_the_native_domain_edit() {
+        let document =
+            ugoite_domain::composition::canonicalize_composition_yaml(SQL_FIRST_COMPOSITION)
+                .expect("valid fixture")
+                .document;
+        let mut components = document.spec.components.clone();
+        let ugoite_domain::composition::CompositionComponent::Text { content, .. } =
+            &mut components[2]
+        else {
+            panic!("fixture component should be Text");
+        };
+        *content = r"{{month_start}} / {{month_total}} / \{{month_start}}".to_owned();
+        let expected = ugoite_domain::composition::rename_composition_variable(
+            ugoite_domain::composition::VariableGraph {
+                variables: document.spec.variables.clone(),
+            },
+            components.clone(),
+            "month_start",
+            "period_start",
+        )
+        .expect("rename succeeds");
+
+        let request = serde_json::json!({
+            "action": "domain.rename_composition_variable",
+            "value": {
+                "variables": document.spec.variables,
+                "components": components,
+                "from": "month_start",
+                "to": "period_start",
+            },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"],
+            serde_json::json!({"variables": expected.0.variables, "components": expected.1})
+        );
     }
 
     #[test]

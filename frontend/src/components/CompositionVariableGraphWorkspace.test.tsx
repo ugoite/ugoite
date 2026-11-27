@@ -19,9 +19,9 @@ import * as sqlModule from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 
-const { parseInputMock, parseTemplateMock } = vi.hoisted(() => ({
+const { parseInputMock, renameVariableMock } = vi.hoisted(() => ({
   parseInputMock: vi.fn(),
-  parseTemplateMock: vi.fn(),
+  renameVariableMock: vi.fn(),
 }));
 
 const { buildSqlSchema } = sqlModule;
@@ -85,8 +85,8 @@ vi.mock("~/lib/ugoite-client", () => ({
     diagnostics: [],
   }),
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
-  parseCompositionTextTemplate: (...args: unknown[]) =>
-    parseTemplateMock(...args),
+  renameCompositionVariable: (...args: unknown[]) =>
+    renameVariableMock(...args),
 }));
 
 vi.mock("./SqlQueryEditor", () => ({
@@ -112,26 +112,6 @@ vi.mock("./SqlQueryEditor", () => ({
     />
   ),
 }));
-
-const parseTemplate = (template: string) => {
-  const segments: Array<
-    { kind: "literal"; text: string } | { kind: "variable"; variable: string }
-  > = [];
-  const marker = /\{\{([^{}]+)\}\}/gu;
-  let cursor = 0;
-  for (const match of template.matchAll(marker)) {
-    const index = match.index ?? 0;
-    if (index > cursor) {
-      segments.push({ kind: "literal", text: template.slice(cursor, index) });
-    }
-    segments.push({ kind: "variable", variable: match[1] });
-    cursor = index + match[0].length;
-  }
-  if (cursor < template.length || segments.length === 0) {
-    segments.push({ kind: "literal", text: template.slice(cursor) });
-  }
-  return { segments };
-};
 
 describe("CompositionVariableGraphWorkspace", () => {
   it("retains an i64 default as exact decimal text while editing", async () => {
@@ -352,11 +332,8 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
   });
 
-  it("commits a variable rename and rewrites Rust-parsed Text references", async () => {
+  it("commits a variable rename returned by the Rust Domain operation", async () => {
     setLocale("en");
-    parseTemplateMock.mockImplementation(async (template: string) =>
-      parseTemplate(template)
-    );
     const [draft, setDraft] = createSignal<CompositionGraphDraft>(
       createCompositionGraphDraft("Report"),
     );
@@ -401,6 +378,20 @@ describe("CompositionVariableGraphWorkspace", () => {
         }],
       },
     });
+    renameVariableMock.mockResolvedValueOnce({
+      variables: [{
+        id: "period_start",
+        kind: "input",
+        value_type: { scalar_type: "date", nullable: false },
+        required: true,
+      }],
+      components: [{
+        id: "text_1",
+        kind: "text",
+        content: "Start: {{period_start}}",
+        style: "body",
+      }],
+    });
     fireEvent.input(screen.getByRole("textbox", { name: "Variable name" }), {
       target: { value: "period_start" },
     });
@@ -417,11 +408,17 @@ describe("CompositionVariableGraphWorkspace", () => {
       .toBeVisible();
   });
 
-  it("discards a stale asynchronous Text reference rewrite", async () => {
+  it("discards a stale asynchronous Domain rename response", async () => {
     setLocale("en");
-    let resolveFirst!: (value: unknown) => void;
-    let resolveSecond!: (value: unknown) => void;
-    parseTemplateMock.mockReset()
+    let resolveFirst!: (value: {
+      variables: CompositionVariableNode[];
+      components: CompositionGraphDraft["components"];
+    }) => void;
+    let resolveSecond!: (value: {
+      variables: CompositionVariableNode[];
+      components: CompositionGraphDraft["components"];
+    }) => void;
+    renameVariableMock.mockReset()
       .mockReturnValueOnce(new Promise((resolve) => resolveFirst = resolve))
       .mockReturnValueOnce(new Promise((resolve) => resolveSecond = resolve));
     const initial: CompositionGraphDraft = {
@@ -461,17 +458,25 @@ describe("CompositionVariableGraphWorkspace", () => {
     const name = screen.getByRole("textbox", { name: "Variable name" });
     fireEvent.input(name, { target: { value: "first_date" } });
     fireEvent.input(name, { target: { value: "latest_date" } });
-    expect(parseTemplateMock).toHaveBeenCalledTimes(2);
+    expect(renameVariableMock).toHaveBeenCalledTimes(2);
 
-    const parsedDateTemplate = {
-      segments: [
-        { kind: "literal", text: "Date: " },
-        { kind: "variable", variable: "date_value" },
-      ],
-    };
-    resolveSecond(parsedDateTemplate);
+    const renamed = (to: string) => ({
+      variables: [{
+        id: to,
+        kind: "input" as const,
+        value_type: { scalar_type: "date" as const, nullable: false },
+        required: true,
+      }],
+      components: [{
+        id: "text_1",
+        kind: "text" as const,
+        content: `Date: {{${to}}}`,
+        style: "body" as const,
+      }],
+    });
+    resolveSecond(renamed("latest_date"));
     await waitFor(() => expect(draft().variables[0]?.id).toBe("latest_date"));
-    resolveFirst(parsedDateTemplate);
+    resolveFirst(renamed("first_date"));
     await Promise.resolve();
 
     expect(draft().components[0]).toMatchObject({

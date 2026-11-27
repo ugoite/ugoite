@@ -359,39 +359,3 @@ export const setCompositionComponentVariable = (
     }),
   };
 };
-
-/** Rename graph identity and every explicit query/input/table reference. */
-export const renameCompositionVariable = (
-  draft: CompositionGraphDraft,
-  from: string,
-  to: string,
-): CompositionGraphDraft | undefined => {
-  const next = to.trim();
-  if (
-    !next || (next !== from && draft.variables.some((node) => node.id === next))
-  ) return undefined;
-  if (!draft.variables.some((node) => node.id === from)) return undefined;
-  return {
-    ...draft,
-    variables: draft.variables.map((node) => {
-      const renamed = node.id === from ? { ...node, id: next } : node;
-      if (renamed.kind !== "query") return renamed;
-      return {
-        ...renamed,
-        query: {
-          ...renamed.query,
-          arguments: renamed.query.arguments.map((argument) =>
-            argument.variable === from
-              ? { ...argument, variable: next }
-              : argument
-          ),
-        },
-      };
-    }),
-    components: draft.components.map((component) =>
-      "variable" in component && component.variable === from
-        ? { ...component, variable: next }
-        : component
-    ),
-  };
-};

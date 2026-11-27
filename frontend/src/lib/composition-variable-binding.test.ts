@@ -8,7 +8,6 @@ import {
   compositionGraphDraftFromDocument,
   createCompositionGraphDraft,
   removeCompositionGraphComponent,
-  renameCompositionVariable,
   setCompositionComponentVariable,
   type CompositionGraphDraft,
   type CompositionVariableNode,
@@ -235,44 +234,4 @@ describe("Composition graph authoring model", () => {
       .toEqual([]);
   });
 
-  it("renames graph IDs in SQL bindings and placed references", () => {
-    const draft: CompositionGraphDraft = {
-      ...createCompositionGraphDraft("Report"),
-      variables: [
-        {
-          id: "day",
-          kind: "input",
-          value_type: { scalar_type: "date", nullable: false },
-          required: true,
-        },
-        {
-          ...total,
-          query: {
-            kind: "inline_sql",
-            sql: "SELECT COUNT(*) WHERE day = {{day}}",
-            arguments: [{ name: "day", variable: "day" }],
-          },
-        },
-      ],
-      components: [{ id: "input_1", kind: "input", variable: "day" }],
-      layout: {
-        kind: "flow",
-        rows: [{
-          id: "main",
-          items: [{ kind: "component", component: "input_1" }],
-        }],
-      },
-    };
-
-    const renamed = renameCompositionVariable(draft, "day", "report_day");
-
-    expect(renamed?.variables[0].id).toBe("report_day");
-    expect(renamed?.variables[1].kind === "query" &&
-      renamed.variables[1].query.arguments[0].variable).toBe("report_day");
-    expect(renamed?.components[0]).toEqual({
-      id: "input_1",
-      kind: "input",
-      variable: "report_day",
-    });
-  });
 });

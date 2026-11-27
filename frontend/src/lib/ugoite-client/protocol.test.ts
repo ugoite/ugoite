@@ -17,6 +17,7 @@ import {
   prepareVariableGraphInputParser,
   protocolFetch,
   protocolFetchResponse,
+  renameCompositionVariable,
   renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   type SqlDocumentEditErrorCode,
@@ -663,6 +664,62 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
       kind: "integer",
       value: 9223372036854776000,
     });
+  });
+
+  it("preserves typed i64 values through a Composition variable rename", async () => {
+    const graph: VariableGraph = {
+      variables: [
+        {
+          id: "count",
+          kind: "input",
+          value_type: { scalar_type: "integer", nullable: false },
+          required: false,
+          default: { kind: "integer", value: "9223372036854775807" },
+        },
+        {
+          id: "minimum",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: "-9223372036854775808" },
+        },
+        {
+          id: "payload",
+          kind: "constant",
+          value_type: { scalar_type: "json", nullable: false },
+          value: { kind: "json", value: { integer: 42 } },
+        },
+      ],
+    };
+
+    const result = await renameCompositionVariable(
+      graph.variables,
+      [{
+        id: "label",
+        kind: "text",
+        content: "Count: {{count}}",
+        style: "body",
+      }],
+      "count",
+      "total",
+    );
+
+    expect(result.variables).toEqual([
+      {
+        ...graph.variables[0],
+        id: "total",
+        default: { kind: "integer", value: "9223372036854775807" },
+      },
+      graph.variables[1],
+      graph.variables[2],
+    ]);
+    expect(result.components).toEqual([
+      {
+        id: "label",
+        kind: "text",
+        content: "Count: {{total}}",
+        style: "body",
+      },
+    ]);
   });
 
   it("rejects out-of-range integer tokens in Composition preview defaults", async () => {
