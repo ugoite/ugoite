@@ -51,12 +51,27 @@ alert-level security-path handling remains unverified in
 [#4997](https://github.com/ugoite/ugoite/issues/4997). No alert details are
 recorded here.
 
+Read-only full diagnostic
+[#45999289089](https://github.com/ugoite/ugoite/actions/runs/45999289089)
+then succeeded with CLI 45.1.1 on main `2933dac64a09155ac0b834ef0f61f8300c556714`.
+App identity and alerts-API access passed. It extracted all five Deno manifests
+and listed Deno update candidates in root, frontend, and docsite; it did not
+list an eligible candidate for e2e or tools. This log did not reproduce the
+root/frontend re-extraction warning. Renovate skipped updating the Deno branch
+because its internal-check filter was not met, so the run did not perform a
+post-update re-extraction or verify an updated `deno.lock` candidate set.
+The diagnostic is read-only and disables `vulnerabilityAlerts`; it is not
+evidence of security-fix PR generation.
+
 The root/frontend re-extraction warnings appeared in full dry-run
-[#45987720319](https://github.com/ugoite/ugoite/actions/runs/45987720319).
-The later writer was a no-op for Deno, so its clean Dashboard does not prove
-the warnings harmless or replace a before/lookup/after candidate-set
-comparison. Track that residual evidence gap in
-[#5100](https://github.com/ugoite/ugoite/issues/5100). External App removal,
+[#45987720319](https://github.com/ugoite/ugoite/actions/runs/45987720319),
+but did not recur in the later full diagnostic #45999289089. The latter's
+candidate lookup and reason for skipping branch updates are recorded above; it
+did not perform an after-update extraction. The earlier production writer was
+a no-op for Deno, so neither run proves the historical warnings harmless or
+replaces a before/lookup/after candidate-set comparison. Track this residual
+evidence gap in [#5100](https://github.com/ugoite/ugoite/issues/5100). External App
+removal,
 Dependency graph/alerts settings, and Dependabot security-update PR disablement
 remain administrator-reported; API 403 responses are not evidence of those
 settings. Single-writer observations are recorded in
@@ -192,11 +207,15 @@ reported `Could not re-extract the packageFile after updating it` for root
 `deno.json` and `frontend/deno.json` while processing the Deno candidate. The
 later production writer [#45994750554](https://github.com/ugoite/ugoite/actions/runs/45994750554)
 was a no-op for Deno: it left no Deno update PR and the Dashboard listed all
-five manifests without a Repository Problem. That no-op does not prove the
-re-extraction warnings harmless or establish that no candidate was omitted.
-Issue [#5100](https://github.com/ugoite/ugoite/issues/5100) tracks a complete
-before/lookup/after candidate-set comparison; do not infer resolution from the
-clean no-op Dashboard state.
+five manifests without a Repository Problem. The full diagnostic
+[#45999289089](https://github.com/ugoite/ugoite/actions/runs/45999289089)
+extracted all five manifests and found lookup candidates in root, frontend,
+and docsite without reproducing the warning, but its internal-check filter
+prevented branch updates. Neither run provides an after-update extraction or
+proves that the earlier warning could not omit a candidate. Issue
+[#5100](https://github.com/ugoite/ugoite/issues/5100) tracks the remaining
+before/lookup/after comparison; do not infer resolution from the no-op writer
+or this read-only lookup.
 
 Earlier candidate history: head `b4b28b110d2b361bf1291d56eaa2af937565e5af`
 failed when a generated WASM `?init` loader fetched from the frontend test
