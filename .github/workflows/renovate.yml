@@ -87,10 +87,28 @@ jobs:
           GH_TOKEN: ${{ inputs.diagnostic && steps.diagnostic-token.outputs.token || steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          gh api --method GET \
-            'repos/ugoite/ugoite/dependabot/alerts?per_page=1' \
-            --silent >/dev/null
-          echo "Dependabot alerts API: accessible"
+          alert_counts="$(
+            gh api --paginate \
+              'repos/ugoite/ugoite/dependabot/alerts?state=open&per_page=100' \
+              --jq '{
+                open: length,
+                with_first_patched_version: ([
+                  .[] | select(.security_vulnerability.first_patched_version.identifier != null)
+                ] | length)
+              }' \
+              | jq -s '{
+                open: (map(.open) | add // 0),
+                with_first_patched_version: (map(.with_first_patched_version) | add // 0)
+              }'
+          )"
+          open_count="$(jq -r '.open' <<<"${alert_counts}")"
+          patched_count="$(jq -r '.with_first_patched_version' <<<"${alert_counts}")"
+          echo "Dependabot alerts API: accessible; open=${open_count}; with_first_patched_version=${patched_count}"
+          {
+            echo "### Dependabot alert inventory"
+            echo "- Open alerts: ${open_count}"
+            echo "- Alerts with a first patched version: ${patched_count}"
+          } >>"${GITHUB_STEP_SUMMARY}"
 
       - name: Write diagnostic-only Renovate config
         if: ${{ inputs.diagnostic }}
