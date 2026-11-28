@@ -17,6 +17,7 @@ import {
   prepareVariableGraphInputParser,
   protocolFetch,
   protocolFetchResponse,
+  renameCompositionVariable,
   renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   type SqlDocumentEditErrorCode,
@@ -663,6 +664,106 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
       kind: "integer",
       value: 9223372036854776000,
     });
+  });
+
+  it("preserves typed i64 values through a Composition variable rename", async () => {
+    const graph: VariableGraph = {
+      variables: [
+        {
+          id: "count",
+          kind: "input",
+          value_type: { scalar_type: "integer", nullable: false },
+          required: false,
+          default: { kind: "integer", value: "9223372036854775807" },
+        },
+        {
+          id: "minimum",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: "-9223372036854775808" },
+        },
+        {
+          id: "payload",
+          kind: "constant",
+          value_type: { scalar_type: "json", nullable: false },
+          value: { kind: "json", value: { integer: 42 } },
+        },
+        {
+          id: "total",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT $amount",
+            arguments: [{ name: "amount", variable: "count" }],
+          },
+        },
+        {
+          id: "literal_query",
+          kind: "query",
+          returns: {
+            kind: "scalar",
+            value_type: { scalar_type: "integer", nullable: false },
+          },
+          query: { kind: "inline_sql", sql: "SELECT 1" },
+        },
+      ],
+    };
+
+    const result = await renameCompositionVariable(
+      graph.variables,
+      [{
+        id: "label",
+        kind: "text",
+        content: "Count: {{count}}",
+        style: "body",
+      }],
+      "count",
+      "renamed_count",
+    );
+
+    expect(result.variables).toEqual([
+      {
+        ...graph.variables[0],
+        id: "renamed_count",
+        default: { kind: "integer", value: "9223372036854775807" },
+      },
+      graph.variables[1],
+      graph.variables[2],
+      {
+        id: "total",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $amount",
+          arguments: [{ name: "amount", variable: "renamed_count" }],
+        },
+      },
+      {
+        id: "literal_query",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+      },
+    ]);
+    expect(result.components).toEqual([
+      {
+        id: "label",
+        kind: "text",
+        content: "Count: {{renamed_count}}",
+        style: "body",
+      },
+    ]);
   });
 
   it("rejects out-of-range integer tokens in Composition preview defaults", async () => {

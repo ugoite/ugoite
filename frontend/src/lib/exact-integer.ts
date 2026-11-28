@@ -200,7 +200,16 @@ export const decodeCompositionDocumentIntegers = (
     !record(document) || !record(document.spec) ||
     !Array.isArray(document.spec.variables)
   ) return;
-  for (const node of document.spec.variables) {
+  decodeVariableGraphIntegerValues(document.spec.variables, source);
+};
+
+/** Decode typed integer literals returned by a partial Variable Graph edit. */
+export const decodeVariableGraphIntegerValues = (
+  variables: unknown,
+  source: IntegerSourceLookup,
+): void => {
+  if (!Array.isArray(variables)) return;
+  for (const node of variables) {
     if (!record(node)) continue;
     if (node.kind === "constant") decodeLiteral(node.value, source);
     else if (node.kind === "input") decodeLiteral(node.default, source);
