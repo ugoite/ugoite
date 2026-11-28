@@ -17,7 +17,6 @@ use ugoite_iceberg::form;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_core::sql_query::SqlQueryRequest;
 use ugoite_iceberg::service::UgoiteService;
-use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
 use uuid::Uuid;
 
