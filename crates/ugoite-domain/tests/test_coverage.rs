@@ -48,15 +48,17 @@ fn test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and
     for name in columns {
         let name = name.as_str().expect("metadata column name");
         assert!(is_reserved_metadata_column(name));
-        assert!(is_reserved_metadata_column(&format!(" {} ", name.to_uppercase())));
+        assert!(is_reserved_metadata_column(&format!(
+            " {} ",
+            name.to_uppercase()
+        )));
     }
     assert!(!is_reserved_metadata_column("issue777_custom_column"));
 }
 
 #[test]
 /// REQ-FORM-006
-fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_fixed()
-{
+fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_fixed() {
     let registry: serde_json::Value =
         serde_json::from_str(include_str!("../src/metadata.json")).expect("metadata registry");
     let forms = registry["forms"].as_array().expect("metadata forms");
@@ -67,7 +69,10 @@ fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensiti
     for name in forms {
         let name = name.as_str().expect("metadata form name");
         assert!(is_reserved_metadata_form(name));
-        assert!(is_reserved_metadata_form(&format!(" {} ", name.to_uppercase())));
+        assert!(is_reserved_metadata_form(&format!(
+            " {} ",
+            name.to_uppercase()
+        )));
     }
     assert!(!is_reserved_metadata_form("issue777_custom_form"));
 }
