@@ -1,21 +1,7 @@
-export const RESERVED_METADATA_COLUMNS = [
-  "id",
-  "entry_id",
-  "form",
-  "tags",
-  "created_at",
-  "updated_at",
-  "revision_id",
-  "parent_revision_id",
-  "deleted",
-  "deleted_at",
-  "author",
-  "updated_by",
-  "deleted_by",
-  "integrity",
-  "space_id",
-  "word_count",
-] as const;
+import metadataRegistry from "../../../crates/ugoite-domain/src/metadata.json";
+
+export const RESERVED_METADATA_COLUMNS: readonly string[] =
+  metadataRegistry.columns;
 
 const RESERVED_METADATA_SET = new Set(
   RESERVED_METADATA_COLUMNS.map((name) => name.toLowerCase()),
