@@ -35,41 +35,55 @@ jobs:
       - name: mise outdated --bump (read-only, confirmation only)
         id: mise-outdated
         continue-on-error: true
+        env:
+          REVIEW_TMP: ${{ runner.temp }}/dependency-review
         run: |
+          mkdir -p "$REVIEW_TMP"
           set -o pipefail
-          mise outdated --bump 2>&1 | tee mise-outdated.txt
+          mise outdated --bump 2>&1 | tee "$REVIEW_TMP/mise-outdated.txt"
 
       - name: deno outdated --recursive (read-only)
         id: deno-outdated
         continue-on-error: true
+        env:
+          REVIEW_TMP: ${{ runner.temp }}/dependency-review
         run: |
+          mkdir -p "$REVIEW_TMP"
           set -o pipefail
-          deno outdated --recursive 2>&1 | tee deno-outdated.txt
+          deno outdated --recursive 2>&1 | tee "$REVIEW_TMP/deno-outdated.txt"
 
       - name: cargo audit --json (if available, read-only; Cargo.lock)
         id: cargo-audit
         continue-on-error: true
+        env:
+          REVIEW_TMP: ${{ runner.temp }}/dependency-review
         run: |
+          mkdir -p "$REVIEW_TMP"
           set -o pipefail
           if command -v cargo-audit >/dev/null 2>&1; then
-            cargo audit --json 2>&1 | tee cargo-audit.txt
+            cargo audit --json 2>&1 | tee "$REVIEW_TMP/cargo-audit.txt"
           else
-            echo "cargo-audit is not installed; skipping (no install attempted)." | tee cargo-audit.txt
+            echo "cargo-audit is not installed; skipping (no install attempted)." | tee "$REVIEW_TMP/cargo-audit.txt"
           fi
 
       - name: deno audit (if supported, read-only)
         id: deno-audit
         continue-on-error: true
+        env:
+          REVIEW_TMP: ${{ runner.temp }}/dependency-review
         run: |
+          mkdir -p "$REVIEW_TMP"
           set -o pipefail
           if deno audit --help >/dev/null 2>&1; then
-            deno audit 2>&1 | tee deno-audit.txt
+            deno audit 2>&1 | tee "$REVIEW_TMP/deno-audit.txt"
           else
-            echo "deno audit is not supported by this Deno release; skipping." | tee deno-audit.txt
+            echo "deno audit is not supported by this Deno release; skipping." | tee "$REVIEW_TMP/deno-audit.txt"
           fi
 
       - name: Publish review summary
         if: always()
+        env:
+          REVIEW_TMP: ${{ runner.temp }}/dependency-review
         run: |
           {
             echo "## Monthly dependency review (read-only)"
@@ -81,28 +95,28 @@ jobs:
             echo "<details><summary><code>mise outdated --bump</code> (${{ steps.mise-outdated.outcome }})</summary>"
             echo ""
             echo '```'
-            cat mise-outdated.txt 2>/dev/null || echo "(no output)"
+            cat "$REVIEW_TMP/mise-outdated.txt" 2>/dev/null || echo "(no output)"
             echo '```'
             echo "</details>"
             echo ""
             echo "<details><summary><code>deno outdated --recursive</code> (${{ steps.deno-outdated.outcome }})</summary>"
             echo ""
             echo '```'
-            cat deno-outdated.txt 2>/dev/null || echo "(no output)"
+            cat "$REVIEW_TMP/deno-outdated.txt" 2>/dev/null || echo "(no output)"
             echo '```'
             echo "</details>"
             echo ""
             echo "<details><summary><code>cargo audit --json</code> (${{ steps.cargo-audit.outcome }})</summary>"
             echo ""
             echo '```'
-            cat cargo-audit.txt 2>/dev/null || echo "(no output)"
+            cat "$REVIEW_TMP/cargo-audit.txt" 2>/dev/null || echo "(no output)"
             echo '```'
             echo "</details>"
             echo ""
             echo "<details><summary><code>deno audit</code> (${{ steps.deno-audit.outcome }})</summary>"
             echo ""
             echo '```'
-            cat deno-audit.txt 2>/dev/null || echo "(no output)"
+            cat "$REVIEW_TMP/deno-audit.txt" 2>/dev/null || echo "(no output)"
             echo '```'
             echo "</details>"
           } >>"${GITHUB_STEP_SUMMARY}"

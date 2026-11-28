@@ -1,13 +1,14 @@
 # Contributing
 
-Ugoite is a Rust-centered, filesystem-first project. Keep behavior in the smallest reusable layer and keep adapters thin.
+Ugoite is a Rust-centered, filesystem-first project. Keep behavior in the
+smallest reusable layer and keep adapters thin.
 
 ## Toolchain
 
 The pinned tools are declared in `mise.toml`:
 
-- Rust 1.95.0
-- Deno 2.8.3
+- Rust from [`rust-toolchain.toml`](rust-toolchain.toml)
+- Deno from [`mise.toml`](mise.toml)
 - cargo-nextest 0.9.143
 - `wasm32-unknown-unknown`
 
@@ -25,18 +26,21 @@ mise run check
 mise run test
 ```
 
-Run `mise run e2e:smoke` for a representative browser/container path and `mise run e2e` for the full suite.
-For CLI-only changes, `mise run test:smoke` gives a faster package-focused loop before the full workspace tests.
-`mise run test:rust` is the canonical Rust test interface: unit and integration tests run with cargo-nextest, while Rust doctests run separately through Cargo.
+Run `mise run e2e:smoke` for a representative browser/container path and
+`mise run e2e` for the full suite. For CLI-only changes, `mise run test:smoke`
+gives a faster package-focused loop before the full workspace tests.
+`mise run test:rust` is the canonical Rust test interface: unit and integration
+tests run with cargo-nextest, while Rust doctests run separately through Cargo.
 
-`mise run test` is the authoritative non-E2E suite and remains the CI
-authority (hosted lanes compose it via `ci:lane:*`; they never invoke the
-low-memory variant directly). On memory-constrained hosts, `mise run
-test:low-memory` runs the same suites sequentially with the same
-assertions/coverage/type/no-skip policy as `test`: `MISE_JOBS=1`,
-`CARGO_BUILD_JOBS=1`, `cargo -j1`, and Vitest single worker with no file
-parallelism for frontend and docsite. Prefer normal `mise run test` when
-memory allows; use `test:low-memory` only as a local fallback.
+`mise run test` is the authoritative non-E2E suite and remains the CI authority
+(hosted lanes compose it via `ci:lane:*`; they never invoke the low-memory
+variant directly). On memory-constrained hosts, `mise run
+test:low-memory` runs
+the same suites sequentially with the same assertions/coverage/type/no-skip
+policy as `test`: `MISE_JOBS=1`, `CARGO_BUILD_JOBS=1`, `cargo -j1`, and Vitest
+single worker with no file parallelism for frontend and docsite. Prefer normal
+`mise run test` when memory allows; use `test:low-memory` only as a local
+fallback.
 
 ## Responsibility boundaries
 
@@ -44,10 +48,13 @@ memory allows; use `test:low-memory` only as a local fallback.
 2. Put filesystem/object-storage mechanics in `ugoite-storage`.
 3. Put application behavior in `ugoite-core`.
 4. Keep `ugoite-server`, `ugoite-cli`, and `ugoite-wasm` as adapters.
-5. Put remote operation names, methods, paths, bodies, auth intent, and decoding in `ugoite-api-client`; it must not perform network I/O.
-6. Frontend `*-api.ts` modules call the portable protocol rather than constructing endpoint semantics directly.
+5. Put remote operation names, methods, paths, bodies, auth intent, and decoding
+   in `ugoite-api-client`; it must not perform network I/O.
+6. Frontend `*-api.ts` modules call the portable protocol rather than
+   constructing endpoint semantics directly.
 
-The browser is currently server-backed. Do not describe browser-local persistence or synchronization as implemented until code and tests exist.
+The browser is currently server-backed. Do not describe browser-local
+persistence or synchronization as implemented until code and tests exist.
 
 ## API changes
 
@@ -63,28 +70,36 @@ When a REST route changes:
 
 The server-provided `crates/ugoite-server/src/openapi.json`, served at
 `/openapi.json`, is authoritative. Never hand-edit generated frontend metadata;
-regenerate it with `cargo run -p xtask --no-default-features -- openapi-generate`.
+regenerate it with
+`cargo run -p xtask --no-default-features -- openapi-generate`.
 
 ## Requirements and tests
 
-Requirement IDs use `REQ-<CATEGORY>-<NNN>`. Tests should include the relevant ID in the test name or nearby source so traceability can be generated from the repository. A missing trace is documented as `untraced`, not masked with a deleted path.
+Requirement IDs use `REQ-<CATEGORY>-<NNN>`. Tests should include the relevant ID
+in the test name or nearby source so traceability can be generated from the
+repository. A missing trace is documented as `untraced`, not masked with a
+deleted path.
 
-New or reworked specifications must keep `mitase:quality-gate` green: read
-any new `MITASE-QUALITY-*` finding, resolve the duplication or split the
+New or reworked specifications must keep `mitase:quality-gate` green: read any
+new `MITASE-QUALITY-*` finding, resolve the duplication or split the
 responsibility, or record the design reason in
-`tools/mitase_quality_baseline.json` through a reviewed commit. Never silence
-a warning mechanically — do not move a local acceptance condition into an
-abstract Policy, bulk-reword statements, or delete evidence just to clear
-the gate. Resolved baseline entries are pruned so regressions resurface.
+`tools/mitase_quality_baseline.json` through a reviewed commit. Never silence a
+warning mechanically — do not move a local acceptance condition into an abstract
+Policy, bulk-reword statements, or delete evidence just to clear the gate.
+Resolved baseline entries are pruned so regressions resurface.
 
 ## Pull requests
 
-Describe the behavior change, link an issue, list focused validation, and call out changes to storage compatibility, authentication, OpenAPI, or browser/server boundaries. `mise run ci` is the quality lane; `mise run ci:artifacts` is the artifact/E2E lane; `mise run ci:merge` reproduces the complete required merge gate locally.
+Describe the behavior change, link an issue, list focused validation, and call
+out changes to storage compatibility, authentication, OpenAPI, or browser/server
+boundaries. `mise run ci` is the quality lane; `mise run ci:artifacts` is the
+artifact/E2E lane; `mise run ci:merge` reproduces the complete required merge
+gate locally.
 
 ## Release flow
 
-`version.txt` is the canonical prepared version. `mise run version:sync`
-updates its Cargo, npm, Helm, and lockfile projections; `mise run version:check`
+`version.txt` is the canonical prepared version. `mise run version:sync` updates
+its Cargo, npm, Helm, and lockfile projections; `mise run version:check`
 verifies them. `mise run release:prepare compatible` advances a pre-1.0 patch,
 while `mise run release:prepare breaking` advances the pre-1.0 compatibility
 epoch. These commands never create tags, releases, or registry artifacts.
@@ -92,6 +107,6 @@ epoch. These commands never create tags, releases, or registry artifacts.
 After the release PR merges, `release-candidate.yml` builds and verifies the
 exact main SHA and stores a candidate manifest plus artifacts. Promotion takes
 that manifest and candidate ID through `mise run release:promote`; it publishes
-the exact verified bytes without rebuilding or repackaging, and is safe to
-rerun when immutable publication content matches. Ordinary pushes to `main`
-do not run release automation.
+the exact verified bytes without rebuilding or repackaging, and is safe to rerun
+when immutable publication content matches. Ordinary pushes to `main` do not run
+release automation.
