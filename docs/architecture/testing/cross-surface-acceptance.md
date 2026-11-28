@@ -25,9 +25,9 @@ Entry edit -> Search -> History -> Restore. Its key postconditions are:
 - restore appends history without shortening it.
 
 The owning criteria and exact verification selectors are in
-[`Journey Mitase`](../../mitase/requirements/journey.yaml). Business rules for
-validation, error classification, concurrency, and history belong to the shared
-Rust boundary. Surface tests verify their transport and interaction boundaries.
+`docs/mitase/requirements/journey.yaml`. Business rules for validation, error
+classification, concurrency, and history belong to the shared Rust boundary.
+Surface tests verify their transport and interaction boundaries.
 
 ## Capability projection
 
