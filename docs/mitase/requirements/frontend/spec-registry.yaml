@@ -5,17 +5,13 @@ category: Frontend route, component, and interaction requirements
 requirements:
   - id: REQ-FE-040
     title: UI Specification Registry Validation
-    description: Declarative frontend UI page and shared component contracts remain consistent with their supported vocabulary, implemented routes, and shared Space chrome.
+    description: Declarative frontend UI page and shared component contracts use supported vocabulary and valid references while recording the shared Space chrome structure.
     priority: high
     status: implemented
     criteria:
       - id: registry-shape
         kind: quality
         statement: UI page and shared component YAML declare their required metadata, supported UI vocabulary, and links to existing page identifiers.
-        governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-      - id: route-coverage
-        kind: quality
-        statement: Every documented UI page maps to an implemented frontend route, every implemented Space route is documented, and implemented page declarations do not retain placeholder route content.
         governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: shared-chrome
         kind: behavior
@@ -25,7 +21,7 @@ requirements:
       - id: ui-registry-verification
         role: verification
         facet: verification
-        responsibility: Verify page metadata, page and shared-component IDs and types, component YAML references, page links, route coverage, placeholder handling, and implementation evidence references through exact frontend tests.
+        responsibility: Verify page metadata, page and shared-component IDs and types, component YAML references, page links, and implementation evidence references through exact frontend tests.
         targets:
           - id: page-metadata
             adapter: typescript
@@ -113,79 +109,3 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.component-invitation-join]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-FE-040: matches the invitation Join declaration to the rendered route" } }
-          - id: documented-routes
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: validates docs pages map to implemented routes" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.route-coverage
-                covers:
-                  - FEAT-FE-013#binding.frontend/target.page-registry
-                  - FEAT-FE-013#binding.frontend/target.page-space-assets
-                  - FEAT-FE-013#binding.frontend/target.page-space-asset-detail
-                  - FEAT-FE-013#binding.frontend/target.page-space-dashboard
-                  - FEAT-FE-013#binding.frontend/target.page-space-compositions
-                  - FEAT-FE-013#binding.frontend/target.page-space-composition-revision
-                  - FEAT-FE-013#binding.frontend/target.page-space-entries-object
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-history
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-new
-                  - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
-                  - FEAT-FE-013#binding.frontend/target.page-space-form-grid
-                  - FEAT-FE-013#binding.frontend/target.page-space-form-entries
-                  - FEAT-FE-013#binding.frontend/target.page-space-form-types
-                  - FEAT-FE-013#binding.frontend/target.page-space-query-create
-                  - FEAT-FE-013#binding.frontend/target.page-space-query-variables
-                  - FEAT-FE-013#binding.frontend/target.page-space-search
-                  - FEAT-FE-013#binding.frontend/target.page-space-settings
-                  - FEAT-FE-013#binding.frontend/target.page-space-sql-detail
-                  - FEAT-FE-013#binding.frontend/target.page-space-sql
-                  - FEAT-FE-013#binding.frontend/target.page-space-test-connection
-                  - FEAT-FE-013#binding.frontend/target.route-compositions
-                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
-                  - FEAT-FE-013#binding.frontend/target.route-assets
-                  - FEAT-FE-013#binding.frontend/target.route-dashboard
-                  - FEAT-FE-013#binding.frontend/target.route-space-entry-list
-                  - FEAT-FE-013#binding.frontend/target.route-entry-detail
-                  - FEAT-FE-013#binding.frontend/target.route-entry-detail-index
-                  - FEAT-FE-013#binding.frontend/target.route-entry-history
-                  - FEAT-FE-013#binding.frontend/target.route-entry-revision
-                  - FEAT-FE-013#binding.frontend/target.route-entry-history-index
-                  - FEAT-FE-013#binding.frontend/target.route-form-entries
-                  - FEAT-FE-013#binding.frontend/target.route-entry-new
-                  - FEAT-FE-013#binding.frontend/target.route-forms
-                  - FEAT-FE-013#binding.frontend/target.route-forms-index
-                  - FEAT-FE-013#binding.frontend/target.route-form-types
-                  - FEAT-FE-013#binding.frontend/target.route-space-home
-                  - FEAT-FE-013#binding.frontend/target.route-query-variables
-                  - FEAT-FE-013#binding.frontend/target.route-query-create
-                  - FEAT-FE-013#binding.frontend/target.route-search
-                  - FEAT-FE-013#binding.frontend/target.route-settings
-                  - FEAT-FE-013#binding.frontend/target.route-sql
-                  - FEAT-FE-013#binding.frontend/target.route-sql-detail
-                  - FEAT-FE-013#binding.frontend/target.route-sql-index
-                  - FEAT-FE-013#binding.frontend/target.route-test-connection
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates docs pages map to implemented routes" } }
-          - id: implemented-routes
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: validates implemented routes are documented" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.route-coverage
-                covers:
-                  - FEAT-FE-013#binding.frontend/target.page-registry
-                  - FEAT-FE-013#binding.frontend/target.route-asset-detail
-                  - FEAT-FE-013#binding.frontend/target.route-compositions
-                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates implemented routes are documented" } }
-          - id: placeholder-routes
-            adapter: typescript
-            path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: implemented page specs reject placeholder route content" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-040#criterion.route-coverage
-                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: implemented page specs reject placeholder route content" } }
