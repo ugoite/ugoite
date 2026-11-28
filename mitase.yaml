@@ -167,7 +167,6 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
         - e2e/entries.test.ts
         - e2e/knowledge-journey.test.ts
-        - e2e/composition-scalar-evaluation-journey.test.ts
         - e2e/composition-source-acl-isolation.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
