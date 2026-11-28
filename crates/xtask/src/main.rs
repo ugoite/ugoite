@@ -1161,6 +1161,4 @@ pub fn read_subsystem_schema_version(metadata: &serde_json::Value) -> Option<u64
             .iter()
             .any(|violation| violation.contains("v9.9.9.md")));
     }
-
-
 }
