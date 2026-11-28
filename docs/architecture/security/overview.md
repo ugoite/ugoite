@@ -3,9 +3,9 @@ title: Security architecture
 ---
 
 Dependency audit exceptions and their removal criteria are recorded in
-[dependency audit exceptions](dependency-audit.md). In particular, the locked
-graph still contains the unresolved upstream `rsa 0.9.10` advisory; it is not
-treated as silently clean.
+[dependency audit exceptions](dependency-audit.md). The locked graph still has
+an unresolved RustSec RSA advisory; its disposition and revisit condition are
+recorded there rather than duplicated as a version claim here.
 
 Authentication and authorization follow
 [the canonical operator guide](../../operate/identity-access.md). The v0.1
@@ -16,8 +16,8 @@ normative security contract includes:
 - Browser cookies contain only an opaque server-side session identifier. Idle
   timeout is 24 hours and absolute timeout is 30 days.
 - Account Self-Recovery is supported for accounts that explicitly enroll a
-  recovery-only TOTP. The exact Account ID, one valid offline Recovery Code,
-  and valid TOTP authorize a short-lived Passkey replacement challenge; finish
+  recovery-only TOTP. The exact Account ID, one valid offline Recovery Code, and
+  valid TOTP authorize a short-lived Passkey replacement challenge; finish
   advances credential generation, replaces Passkeys, rotates Recovery Codes,
   invalidates pre-recovery authority, creates a new session, and emits a
   secret-free Node audit event. Neither factor works alone.
@@ -36,11 +36,12 @@ The following additional boundaries and controls apply to v0.1:
 - Invitation-gated OIDC authorization-code + PKCE login and account linking are
   supported. Issuer and subject identify an external account; email or profile
   claims do not link accounts or update account data. The current boundary is
-  specified in [REQ-SEC-016](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/security/oidc.yaml).
+  specified in
+  [REQ-SEC-016](https://github.com/ugoite/ugoite/blob/main/docs/mitase/requirements/security/oidc.yaml).
 - TOTP remains a recovery-only factor and is not a normal login method. Recovery
   Code plaintext is never persistent and is only returned after successful
-  credential replacement. Start does not consume a code; failed attempts use
-  the existing five-attempt, 15-minute temporary lock.
+  credential replacement. Start does not consume a code; failed attempts use the
+  existing five-attempt, 15-minute temporary lock.
 - Owner-approved Space access recovery is supported separately from account
   self-recovery: only an active human Space Owner with a recent Passkey can
   issue a 15-minute token for an active human principal in that Space. The
@@ -73,13 +74,14 @@ The following additional boundaries and controls apply to v0.1:
   before joins, counts, and aggregates.
 - The last Space owner and last account Passkey cannot be removed.
 - Agents cannot manage members, owners, or agents. An active human with the
-  current permission can issue a single-use human approval for the exact `entry.delete`, `sql.delete`,
-  `asset.delete`, or `access.put` intent. The approval is bound to the action,
-  canonical resource, actor credential, lifecycle epochs, and a 1–300 second
-  expiry; the server stores only its SHA-256 hash and consumes it with a
-  compare-and-swap. Replay, mismatch, or expiry fails closed and the lifecycle
-  is recorded in the append-only Space audit chain. Member, owner, agent, and
-  Space-management operations remain Passkey-only.
+  current permission can issue a single-use human approval for the exact
+  `entry.delete`, `sql.delete`, `asset.delete`, or `access.put` intent. The
+  approval is bound to the action, canonical resource, actor credential,
+  lifecycle epochs, and a 1–300 second expiry; the server stores only its
+  SHA-256 hash and consumes it with a compare-and-swap. Replay, mismatch, or
+  expiry fails closed and the lifecycle is recorded in the append-only Space
+  audit chain. Member, owner, agent, and Space-management operations remain
+  Passkey-only.
 - Fixed passwords, shared credentials, preconfigured bearer credentials,
   development bypasses, default credentials, and long-lived universal tokens do
   not exist.
@@ -94,13 +96,13 @@ CORS is off by default. Setting `UGOITE_CORS_ALLOWED_ORIGINS` enables
 credentialed browser access only for the exact origins in its comma-separated
 allowlist. Preflight responses advertise the server's explicit method and
 request-header allowlists, including the MCP protocol headers for `/mcp`;
-wildcard origins, methods, and request headers are not used with credentials.
-An origin outside the allowlist does not receive
-`Access-Control-Allow-Origin`, so it is not granted browser CORS access.
-Credentialed GET reads are intentional under this allowlist; they use the same
-authenticated identity and Space ACL checks as same-origin reads. This does not
-make cross-origin writes safe by default: cookie-authenticated unsafe methods
-remain subject to the separate Origin/CSRF guard.
+wildcard origins, methods, and request headers are not used with credentials. An
+origin outside the allowlist does not receive `Access-Control-Allow-Origin`, so
+it is not granted browser CORS access. Credentialed GET reads are intentional
+under this allowlist; they use the same authenticated identity and Space ACL
+checks as same-origin reads. This does not make cross-origin writes safe by
+default: cookie-authenticated unsafe methods remain subject to the separate
+Origin/CSRF guard.
 
 CORS response permission is independent of CSRF protection. Cookie-authenticated
 unsafe requests still require the canonical `UGOITE_PUBLIC_ORIGIN`, even when a
@@ -114,9 +116,9 @@ responses, and middleware-generated responses:
 
 - `Content-Security-Policy` restricts scripts and connections to the same
   origin, disallows framing and plugins, permits the static browser's
-  same-origin WebAssembly and external manifest boot script, and permits
-  `blob:` previews for user-selected assets through the image, frame, and media
-  source policies. The script policy has no `unsafe-inline`; the limited CSS
+  same-origin WebAssembly and external manifest boot script, and permits `blob:`
+  previews for user-selected assets through the image, frame, and media source
+  policies. The script policy has no `unsafe-inline`; the limited CSS
   inline-style exception supports the existing interactive layout.
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
@@ -142,16 +144,16 @@ The default Node response scope uses `response_hmac/default.json` below the
 configured Space operator root. A valid `/spaces/{space_id}/...` request uses
 the corresponding `spaces/{space_id}/hmac.json`; the URI segment is
 percent-decoded exactly once before domain validation. The stateless `/mcp`
-facade is a separate semantic JSON-RPC surface and is not response-signed by
-the REST HMAC layer. The default key is Node-local and is not part of a Space
+facade is a separate semantic JSON-RPC surface and is not response-signed by the
+REST HMAC layer. The default key is Node-local and is not part of a Space
 export. Key material is intentionally not distributed by an HTTP endpoint;
 operators and offline verifiers provision or read it through their storage
 boundary.
 
 The shared API marker signs only bounded (at most 8 MiB), materialized,
 infallible JSON/string/bytes/empty responses, including authentication and
-middleware-generated responses within that API layer. SSE, streaming or
-fallible bodies, trailer-bearing responses, static-file responses, and
-responses explicitly marked unsigned omit both HMAC headers. A signing or key
-storage failure also leaves the original response unsigned and does not expose
-secret material.
+middleware-generated responses within that API layer. SSE, streaming or fallible
+bodies, trailer-bearing responses, static-file responses, and responses
+explicitly marked unsigned omit both HMAC headers. A signing or key storage
+failure also leaves the original response unsigned and does not expose secret
+material.

@@ -12,7 +12,10 @@ authorize unrelated refactoring or a full repository test run.
 
 1. Read `AGENTS.md`, `docs/architecture/testing/ci-cd.md`, and the relevant
    workflow.
-2. Identify the exact run, job, first failing step, and commit.
+2. Identify the exact run, job, first failing step, and commit. For a dependency
+   candidate, verify the PR head and use
+   `docs/develop/dependency-maintenance.md` for the owning manifests, lockfiles,
+   and required candidate checks.
 3. Re-run the smallest failed command or endpoint locally.
 4. Compare the local command with the workflow environment and inputs.
 5. If it hangs, capture process state, stack/sample, open files/locks, sockets,

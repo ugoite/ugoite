@@ -20,7 +20,11 @@ under `docsite/`.
 Before writing a new page, check whether OpenAPI, Clap help, Mitase, the
 capability report, or an existing repository check already answers the question.
 Link to that authority instead of copying endpoints, flags, schemas, or
-requirement graphs into prose.
+requirement graphs into prose. Do not copy routine PR, CI, dependency-dashboard,
+latest-SHA, or run-status updates into documentation. Keep execution results on
+the relevant PR or Actions run and unresolved work in its existing issue.
+Preserve durable contract rationale and long-term evidence only where GitHub
+records alone do not meet a real retention need.
 
 ## Link before duplicating
 
