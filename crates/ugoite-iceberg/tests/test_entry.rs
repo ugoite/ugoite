@@ -2,6 +2,9 @@ mod common;
 use common::legacy_entry as entry;
 use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
+use ugoite_core::entry_query::{
+    EntryFieldRef, EntryPage, EntryPageRequest, EntryProjection, EntryQuery, EntryQueryScope,
+};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::ChangeCommand;
@@ -10,10 +13,10 @@ use ugoite_domain::id::{FieldId, FormId};
 use ugoite_iceberg::asset;
 use ugoite_iceberg::form;
 use ugoite_iceberg::iceberg_store;
-use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::publication_context;
 use ugoite_iceberg::space;
+use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
@@ -25,6 +28,44 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
     });
     form::upsert_form(op, ws_path, &form_def).await?;
     Ok(())
+}
+
+async fn query_form_entries(
+    op: &opendal::Operator,
+    space_id: &str,
+    form_name: &str,
+    field_names: &[&str],
+    text: Option<&str>,
+) -> anyhow::Result<EntryPage> {
+    let service = UgoiteService::from_operator(op.clone(), "/tmp");
+    let form = service.get_form(space_id, form_name).await?;
+    let form_id = serde_json::from_value(form["id"].clone())?;
+    let fields = field_names
+        .iter()
+        .map(|field| {
+            let reference = form
+                .pointer(&format!("/fields/{field}/query_capability/field"))
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Form field {field} is not projectable"))?;
+            Ok(serde_json::from_value::<EntryFieldRef>(reference)?)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    service
+        .query_entry_page(
+            space_id,
+            EntryPageRequest {
+                query: EntryQuery {
+                    scope: EntryQueryScope::Form { form_id },
+                    text: text.map(str::to_owned),
+                    filters: Vec::new(),
+                    sort: Vec::new(),
+                },
+                projection: EntryProjection::Fields { fields },
+                limit: 1_000,
+                after: None,
+            },
+        )
+        .await
 }
 
 #[tokio::test]
@@ -136,22 +177,24 @@ async fn row_reference_values_must_target_current_entries_in_the_declared_form(
         &integrity,
     )
     .await?;
-    let reviewer_matches = index::query_index(
+    let matching_tasks = query_form_entries(
         &op,
-        ws_path,
-        &serde_json::json!({"Reviewers": "project-1"}).to_string(),
+        "typed-reference-entry",
+        "Task",
+        &["Parent", "Reviewers"],
+        Some("project-1"),
     )
     .await?;
-    assert_eq!(reviewer_matches.len(), 1);
-    assert_eq!(reviewer_matches[0]["id"], "task-1");
-    let parent_matches = index::query_index(
-        &op,
-        ws_path,
-        &serde_json::json!({"Parent": "project-1"}).to_string(),
-    )
-    .await?;
-    assert_eq!(parent_matches.len(), 1);
-    assert_eq!(parent_matches[0]["id"], "task-1");
+    assert_eq!(matching_tasks.rows.len(), 1);
+    assert_eq!(matching_tasks.rows[0].id, "task-1");
+    assert_eq!(
+        matching_tasks.rows[0].properties.as_ref().unwrap()["Parent"],
+        "project-1"
+    );
+    assert_eq!(
+        matching_tasks.rows[0].properties.as_ref().unwrap()["Reviewers"],
+        serde_json::json!(["project-1"])
+    );
     let error = entry::create_entry(
         &op,
         ws_path,
@@ -1294,9 +1337,9 @@ async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<(
 
     let content = entry::get_entry_content(&op, ws_path, "time-entry-1").await?;
     assert!(content.markdown.contains("## time\n22:02"));
-    let results = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["properties"]["time"], "22:02:00");
+    let results = query_form_entries(&op, "time-entry", "Entry", &["time"], None).await?;
+    assert_eq!(results.rows.len(), 1);
+    assert_eq!(results.rows[0].properties.as_ref().unwrap()["time"], "22:02:00");
     Ok(())
 }
 
@@ -1330,10 +1373,21 @@ async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> 
     )
     .await?;
 
-    let results = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["id"], "entry-before-time");
-    assert_eq!(results[0]["properties"]["Body"], "Existing row");
+    let results = query_form_entries(
+        &op,
+        "evolved-time-entry",
+        "Entry",
+        &["Body", "time"],
+        None,
+    )
+    .await?;
+    assert_eq!(results.rows.len(), 1);
+    assert_eq!(results.rows[0].id, "entry-before-time");
+    assert_eq!(
+        results.rows[0].properties.as_ref().unwrap()["Body"],
+        "Existing row"
+    );
+    assert!(results.rows[0].properties.as_ref().unwrap()["time"].is_null());
     Ok(())
 }
 
@@ -1371,13 +1425,16 @@ async fn renaming_existing_field_is_rejected_before_v1() -> anyhow::Result<()> {
     assert_eq!(rename_error.code(), ErrorCode::FormFieldRemovalNotSupported);
     assert!(rename_error.message().contains("Body"));
 
-    let all = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
-    assert_eq!(all[0]["properties"]["Body"], "Existing value");
+    let all = query_form_entries(&op, "renamed-entry-field", "Entry", &["Body"], None).await?;
+    assert_eq!(
+        all.rows[0].properties.as_ref().unwrap()["Body"],
+        "Existing value"
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn typed_uuid_binary_and_list_queries_use_physical_arrow_types() -> anyhow::Result<()> {
+async fn typed_uuid_binary_and_list_values_project_through_entry_query() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "typed-query-values", "/tmp").await?;
     let ws_path = "spaces/typed-query-values";
@@ -1404,31 +1461,32 @@ async fn typed_uuid_binary_and_list_queries_use_physical_arrow_types() -> anyhow
     )
     .await?;
 
-    let rows = index::query_index(&op, ws_path, r#"{"form":"Typed"}"#).await?;
-    assert_eq!(rows.len(), 1);
+    let rows = query_form_entries(
+        &op,
+        "typed-query-values",
+        "Typed",
+        &["Uid", "Blob", "Labels"],
+        None,
+    )
+    .await?;
+    assert_eq!(rows.rows.len(), 1);
     assert_eq!(
-        rows[0]["properties"]["Uid"],
+        rows.rows[0].properties.as_ref().unwrap()["Uid"],
         "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"
     );
-    assert_eq!(rows[0]["properties"]["Blob"], "base64:ZGF0YQ==");
-
-    for query in [
-        serde_json::json!({"form": "Typed", "Uid": "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"}),
-        serde_json::json!({"form": "Typed", "Blob": "base64:ZGF0YQ=="}),
-        serde_json::json!({"form": "Typed", "Labels": {"$contains": "Alpha"}}),
-    ] {
-        assert_eq!(
-            index::query_index(&op, ws_path, &query.to_string())
-                .await?
-                .len(),
-            1
-        );
-    }
+    assert_eq!(
+        rows.rows[0].properties.as_ref().unwrap()["Blob"],
+        "base64:ZGF0YQ=="
+    );
+    assert_eq!(
+        rows.rows[0].properties.as_ref().unwrap()["Labels"],
+        serde_json::json!(["Alpha", "Beta"])
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains(
+async fn markdown_typed_lists_round_trip_through_entry_query(
 ) -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "markdown-typed-lists", "/tmp").await?;
@@ -1510,18 +1568,47 @@ async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains
     )
     .await?;
 
-    let rows = index::query_index(&op, ws_path, r#"{"form":"TypedLists"}"#).await?;
-    assert_eq!(rows.len(), 1);
-    let properties = &rows[0]["properties"];
+    let list_fields = [
+        "Integers",
+        "Longs",
+        "Floats",
+        "Doubles",
+        "Booleans",
+        "Dates",
+        "Times",
+        "Timestamps",
+        "TimestampTzs",
+        "TimestampNss",
+        "TimestampTzNss",
+        "Uuids",
+        "Binaries",
+        "Projects",
+        "Attachments",
+    ];
+    let rows = query_form_entries(
+        &op,
+        "markdown-typed-lists",
+        "TypedLists",
+        &list_fields,
+        None,
+    )
+    .await?;
+    assert_eq!(rows.rows.len(), 1);
+    let properties = rows.rows[0].properties.as_ref().unwrap();
     assert_eq!(properties["Integers"], serde_json::json!([1, 2, null]));
     assert_eq!(
         properties["Longs"],
         serde_json::json!([3000000000_i64, 4000000000_i64])
     );
     assert_eq!(properties["Floats"], serde_json::json!([1.25, 2.5]));
+    assert_eq!(properties["Doubles"], serde_json::json!([3.5, 4.75]));
     assert_eq!(properties["Booleans"], serde_json::json!([true, false]));
     assert_eq!(properties["Dates"], serde_json::json!(["2024-01-02"]));
     assert_eq!(properties["Times"], serde_json::json!(["03:04:05.123456"]));
+    assert_eq!(
+        properties["Timestamps"],
+        serde_json::json!(["2024-01-02T03:04:05.123456"])
+    );
     assert_eq!(
         properties["TimestampTzs"],
         serde_json::json!(["2024-01-01T18:04:05.123456+00:00"])
@@ -1529,6 +1616,10 @@ async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains
     assert_eq!(
         properties["TimestampTzNss"],
         serde_json::json!(["2024-01-01T18:04:05.123456789Z"])
+    );
+    assert_eq!(
+        properties["TimestampNss"],
+        serde_json::json!(["2024-01-02T03:04:05.123456789"])
     );
     assert_eq!(
         properties["Uuids"],
@@ -1544,32 +1635,6 @@ async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains
         reference.asset_id.to_string()
     );
 
-    for query in [
-        serde_json::json!({"form": "TypedLists", "Integers": {"$contains": 2}}),
-        serde_json::json!({"form": "TypedLists", "Longs": {"$contains": 3000000000_i64}}),
-        serde_json::json!({"form": "TypedLists", "Floats": {"$contains": 1.25}}),
-        serde_json::json!({"form": "TypedLists", "Doubles": {"$contains": 3.5}}),
-        serde_json::json!({"form": "TypedLists", "Booleans": {"$contains": true}}),
-        serde_json::json!({"form": "TypedLists", "Dates": {"$contains": "2024-01-02"}}),
-        serde_json::json!({"form": "TypedLists", "Times": {"$contains": "03:04:05.123456"}}),
-        serde_json::json!({"form": "TypedLists", "Timestamps": {"$contains": "2024-01-02T03:04:05.123456"}}),
-        serde_json::json!({"form": "TypedLists", "TimestampTzs": {"$contains": "2024-01-01T18:04:05.123456+00:00"}}),
-        serde_json::json!({"form": "TypedLists", "TimestampNss": {"$contains": "2024-01-02T03:04:05.123456789"}}),
-        serde_json::json!({"form": "TypedLists", "TimestampTzNss": {"$contains": "2024-01-01T18:04:05.123456789Z"}}),
-        serde_json::json!({"form": "TypedLists", "Uuids": {"$contains": "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"}}),
-        serde_json::json!({"form": "TypedLists", "Binaries": {"$contains": "base64:ZGF0YQ=="}}),
-        serde_json::json!({"form": "TypedLists", "Projects": {"$contains": "project-1"}}),
-        serde_json::json!({"form": "TypedLists", "Attachments": {"$contains": {"asset_id": reference.asset_id.to_string()}}}),
-    ] {
-        assert_eq!(
-            index::query_index(&op, ws_path, &query.to_string())
-                .await?
-                .len(),
-            1,
-            "typed-list predicate must use the canonical item type: {query}"
-        );
-    }
-
     let revision_id = entry::get_entry_content(&op, ws_path, "typed-list-entry")
         .await?
         .revision_id;
@@ -1584,9 +1649,16 @@ async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains
         &FakeIntegrityProvider,
     )
     .await?;
-    let updated_rows = index::query_index(&op, ws_path, r#"{"form":"TypedLists"}"#).await?;
+    let updated_rows = query_form_entries(
+        &op,
+        "markdown-typed-lists",
+        "TypedLists",
+        &list_fields,
+        None,
+    )
+    .await?;
     assert_eq!(
-        updated_rows[0]["properties"]["Integers"],
+        updated_rows.rows[0].properties.as_ref().unwrap()["Integers"],
         serde_json::json!([1, 3, null])
     );
     Ok(())

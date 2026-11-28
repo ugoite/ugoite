@@ -213,14 +213,14 @@ requirements:
                 covers: [FEAT-SRCH-001#binding.frontend/target.search-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "keeps search history in Saved and routes direct reruns to stateless results" } }
   - id: REQ-SRCH-006
-    title: Structured query operation
-    description: Users and operators can submit a structured query for a Space and receive the matching results through the supported Ugoite interfaces.
+    title: EntryQuery operation
+    description: Users and operators can submit a typed EntryQuery for a Space and receive projected current Entries through the supported Ugoite interfaces.
     priority: high
     status: implemented
     criteria:
       - id: query-operation
         kind: behavior
-        statement: The structured query operation accepts its documented request shape and returns a result set for the selected Space.
+        statement: The EntryQuery operation accepts its typed request and returns current matching Entries in the requested projection for the selected Space.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: projected-form-system-fields
         kind: behavior
@@ -230,10 +230,6 @@ requirements:
         kind: behavior
         statement: The EntryQuery CLI table renders each selected Form property and system field from its own semantic source, even when their names overlap.
         governed_by: [POL-012#rule.governance, POL-014#rule.governance]
-      - id: core-query-execution
-        kind: behavior
-        statement: The core query path executes structured filters and SQL payloads against Form relations, including self-joins.
-        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance]
     bindings:
       - id: entry-query-verification
         role: verification
@@ -266,50 +262,6 @@ requirements:
                 criterion: REQ-SRCH-006#criterion.cli-projection-values
                 covers: [FEAT-SRCH-001#binding.cli-entry-query/target.entry-query-display]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::entry_query::entry_query_projection_tests::projected_property_and_system_timestamp_keep_distinct_cli_values } }
-      - id: query-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the canonical core query entry point through exact structured-query, SQL-filter, and SQL-self-join integration cases.
-        targets:
-          - id: structured-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_index.rs
-            selector: { kind: test, name: test_index_req_idx_003_query_index }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.query-operation
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_003_query_index } }
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.core-query-execution
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_003_query_index } }
-          - id: sql-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_index.rs
-            selector: { kind: test, name: test_index_req_idx_008_query_sql }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.query-operation
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_008_query_sql } }
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.core-query-execution
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_008_query_sql } }
-          - id: join-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_index.rs
-            selector: { kind: test, name: test_index_req_idx_009_query_sql_joins }
-            claims:
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.query-operation
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_009_query_sql_joins } }
-              - kind: verifies
-                criterion: REQ-SRCH-006#criterion.core-query-execution
-                covers: [FEAT-SRCH-001#binding.core/target.query-index]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_index, test: test_index_req_idx_009_query_sql_joins } }
   - id: REQ-SRCH-007
     title: Derived relation maintenance
     description: The index operator surface rebuilds the current AssetText DerivedRelation from authoritative Entry references, while derived parsing and word-count helpers remain separate concerns.
