@@ -8,9 +8,9 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
         #[cfg(feature = "space-tools")]
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-generate|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check|seed|verify-seed>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|operation-registry-generate|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-product-boundaries-check|seed|verify-seed>");
         #[cfg(not(feature = "space-tools"))]
-        println!("usage: cargo run -p xtask --no-default-features -- <openapi-generate|openapi-check|operation-registry-generate|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-current-stack-check>");
+        println!("usage: cargo run -p xtask --no-default-features -- <openapi-generate|openapi-check|operation-registry-generate|operation-registry-check|architecture-check|space-compat-check|release-authority-check|docs-product-boundaries-check>");
         return Ok(());
     };
     match command.as_str() {
@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         "architecture-check" => architecture_check(),
         "space-compat-check" => space_compat_check(),
         "release-authority-check" => release_authority_check(),
-        "docs-current-stack-check" => docs_current_stack_check(),
+        "docs-product-boundaries-check" => docs_product_boundaries_check(),
         #[cfg(feature = "space-tools")]
         "seed" => space::seed(args.collect()),
         #[cfg(feature = "space-tools")]
@@ -427,13 +427,13 @@ fn architecture_check() -> Result<()> {
     Ok(())
 }
 
-fn docs_current_stack_check() -> Result<()> {
+fn docs_product_boundaries_check() -> Result<()> {
     let mut violations = Vec::new();
     for root in [
         "README.md",
         "docs/spec/index.md",
         "docs/architecture/contracts/overview.md",
-        "docs/architecture/contracts/stack.md",
+        "docs/develop/repository-map.md",
         "docs/architecture/testing/ci-cd.md",
         "docs/architecture/testing/strategy.md",
         "docs/get-started",

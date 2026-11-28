@@ -18,11 +18,6 @@ policies:
         facet: design-reference
         responsibility: Preserve the deployment references that define the minimal-node boundary. The CI gate contract is bound once under FEAT-OPS-001, not here.
         targets:
-          - id: architecture-stack
-            adapter: declared
-            path: docs/architecture/contracts/stack.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
           - id: architecture-future-proofing
             adapter: declared
             path: docs/architecture/contracts/future-proofing.md
@@ -43,11 +38,6 @@ policies:
         facet: design-reference
         responsibility: Preserve the CLI, operator-surface, and testing-strategy references for this policy. The CI gate contract is bound once under FEAT-OPS-001, not here.
         targets:
-          - id: architecture-stack
-            adapter: declared
-            path: docs/architecture/contracts/stack.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
           - id: api-surfaces
             adapter: declared
             path: docs/architecture/api/operator-surfaces.md

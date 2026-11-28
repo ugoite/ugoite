@@ -14,38 +14,20 @@ defines the Current and Stable documentation boundary.
 
 ## Current
 
-This documentation build describes the v0.2 product line on the v0.1 authority
-boundary for operator-owned Spaces:
+This documentation build describes the current implementation on the v0.1
+authority boundary for operator-owned Spaces:
 
 This is a product-level overview, not an exhaustive feature inventory. Use the
 [current release scope](../architecture/release/release-scope.md) for the full
 Current-versus-Stable boundary and the versioned release notes for published
 capabilities.
 
-- CLI core mode directly opens a local workspace and is the minimal local-first
-  path.
-- The Rust server exposes authenticated REST, the small authenticated MCP
-  semantic facade, and static browser hosting.
-- The browser is server-backed and requires the Rust server. Form-first
-  navigation centers work on Forms and their Entries. Entry authoring and reads
-  use structured fields, and search and filtering share the canonical
-  EntryQuery contract across Browser, local CLI, and remote API. Saved SQL has a
-  Browser and CLI lifecycle with stateless query execution.
-- CLI Context selects a connection and Space consistently; mutation output
-  provides durable Receipts. Shared Rust behavior keeps local and remote
-  operations aligned.
-- Passkey/WebAuthn
-  login, opaque sessions, owner-approved Space access recovery, Remote CLI
-  device credentials, recovery-code plus recovery-only TOTP Account
-  Self-Recovery, Space membership and ACL enforcement, authenticated MCP access,
-  authorized audit reads, and invitation-gated OIDC authentication and account
-  linking are supported within the v0.1 boundary.
-- Revisions and publication history are append-only; current state is derived
-  and recovery never depends on a hidden database.
-
-Administrator recovery, agent and service-account principals, generic OAuth
-client compatibility, and audit CRUD remain outside the supported v0.1 contract.
-TOTP is recovery-only and is not a normal login method.
+The implementation includes local Rust CLI operations, a Rust server with a
+server-backed browser, the small authenticated MCP facade, and Text-first
+Composition authoring and runtime. Composition remains unreleased; the stable
+v0.2.1 boundary and the current main implementation are distinguished in the
+[release scope](../architecture/release/release-scope.md). The user-owned Space
+remains the Knowledge authority and revisions remain append-only.
 
 ## Next
 

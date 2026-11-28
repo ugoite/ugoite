@@ -465,7 +465,6 @@ features:
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
                   - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
                   - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
-                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
                   - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
                 runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
               - kind: verifies
@@ -485,7 +484,6 @@ features:
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
                   - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
                   - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
-                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
                   - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
                 runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
   - id: FEAT-UX-008

@@ -23,9 +23,11 @@ result tables, including their use in Composition revisions, is in
 The shared SQL editing, parameter, preview, and result contract is in
 `components/sql-workspace.yaml`. Composition Studio's visual hierarchy and
 labels are described in `components/composition-studio.yaml`; current
-interaction behavior is defined by its linked Mitase requirements. Device and
-screen-reader validation is recorded separately and is not implied by these
-files.
+interaction behavior is defined by its linked Mitase requirements. These files
+do not imply manual screen-reader validation. The
+[compact-control browser evidence](compact-controls-evidence.md) records its
+11 tested surfaces, the 320px effective-width proxy, and the remaining manual
+screen-reader gap.
 
 The current browser is server-backed and authenticated. Shared navigation and
 the Browser Konase panel reference are described in

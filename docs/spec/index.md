@@ -5,8 +5,6 @@ sidebar:
   order: 1
 ---
 
-**Updated:** 2026-09-27
-
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
 disappear**, and **Knowledge can become tools**. User-owned Space directories
@@ -14,26 +12,16 @@ are authoritative; deployment and storage operators may host them without
 becoming Knowledge authority. Indexes, query sessions, and runtime state are
 derived or disposable.
 
-## Current boundary
-
-- Local CLI core mode directly opens Spaces.
-- The Rust server exposes REST, the small MCP v1 semantic facade, and static
-  browser hosting.
-- The browser is server-backed.
-- v0.1 supports mandatory authentication, Passkey/WebAuthn login, opaque
-  sessions, owner-approved recovery, recovery-only TOTP Self-Recovery, Remote
-  CLI device auth, membership and ACL enforcement, authenticated MCP access,
-  authorized audit reads, and invitation-gated OIDC.
-- Browser-local persistence and optional sync are planned. Administrator
-  recovery, agent principals, generic OAuth compatibility, audit CRUD, and
-  remote CLI asset upload remain future or limited. TOTP is recovery-only.
-- View and Application Definitions, renderers, and Knowledge-to-tools runtime
-  behavior are future scope.
+The current implementation and stable release boundaries are documented in
+[release scope](../architecture/release/release-scope.md), which points to the
+versioned notes for published capabilities.
 
 ## Specification map
 
-- Current requirements are tracked in [Mitase](migration.md); see the
-  [user stories](stories/index.md) for product narratives.
+- Product requirements and verification relationships are canonical in
+  [Mitase](https://github.com/ugoite/ugoite/tree/main/docs/mitase). UI page and
+  component contracts remain under [UI specifications](ui/index.md). The
+  [user stories](stories/index.md) provide product narratives.
 - [Features and implementation bindings](features/index.md).
 - [Policies](policies/index.md) for governance traceability.
 - [Architecture](../architecture/index.md) for boundaries, contracts, data
@@ -45,6 +33,8 @@ derived or disposable.
 The specification is organized by the question it answers. Behavior changes ship
 with implementation and verification evidence; incomplete evidence stays an
 explicit gap rather than a rewritten requirement.
+
+Earlier registries and migration decisions remain in Git history.
 
 ## Sources of truth
 

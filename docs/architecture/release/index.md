@@ -18,8 +18,6 @@ a product or support claim is safe to make.
   and unsupported artifact targets.
 - [Release planner ref recovery](release-planner-recovery.md) defines the
   compare-before-delete procedure for an orphaned planner branch ref.
-- [v0.1 Foundation release](v0.1.md) records the frozen Knowledge boundary and
-  supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
 - [v0.2.1 stable release note](../../version/releases/v0.2.1.md) records the

@@ -87,8 +87,7 @@ confirmation boundaries; it does not perform those operations itself. The
 initial WASM actions are a JSON adapter for this state machine, not a browser
 local persistence implementation.
 
-Composition has a separate accepted target contract for v0.2.2: a saved
-definition is Space-owned Knowledge while browser page and query state remains
-transient Work. Its restricted YAML v1 semantics are owned by Rust domain types
-and shared by native and WASM callers. See the
-[Composition contract](composition.md) and [architecture decisions](decisions.md#adr-016--composition-is-space-owned-knowledge).
+Composition saves one Space-owned definition while browser page and query
+state remains transient Work. Rust Domain and Core own its semantics for native
+and WASM callers. See the [Composition contract](composition.md) and
+[ADR-027](adr-027-text-first-composition.md).
