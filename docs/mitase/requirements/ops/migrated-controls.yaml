@@ -249,9 +249,9 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-036#criterion.migrated-contract
-          - id: source-3
+          - id: specification-map
             adapter: declared
-            path: docs/spec/migration.md
+            path: docs/spec/index.md
             selector: { kind: file }
             claims:
               - kind: evidences

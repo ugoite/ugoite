@@ -313,7 +313,7 @@ run = [
   "cargo run -p xtask --no-default-features -- architecture-check",
   "cargo run -p xtask --no-default-features -- space-compat-check",
   "cargo run -p xtask --no-default-features -- release-authority-check",
-  "cargo run -p xtask --no-default-features -- docs-current-stack-check",
+  "cargo run -p xtask --no-default-features -- docs-product-boundaries-check",
   { task = "mitase:check" },
   { task = "mitase:quality-gate" },
 ]

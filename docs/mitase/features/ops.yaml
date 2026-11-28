@@ -240,9 +240,9 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-013#criterion.required-status-contract
-          - id: stack-contract
+          - id: repository-map
             adapter: declared
-            path: docs/architecture/contracts/stack.md
+            path: docs/develop/repository-map.md
             selector: { kind: file }
             claims:
               - kind: evidences

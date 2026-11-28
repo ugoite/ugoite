@@ -337,7 +337,7 @@ inventory:
         - docs/develop/index.md
         - docs/get-started/quickstart.mdx
         - docs/operate/index.md
-        - docs/spec/migration.md
+        - docs/develop/repository-map.md
         - docs/use/assets.mdx
         - docs/use/entries.mdx
         - docs/use/forms.mdx
@@ -404,11 +404,9 @@ inventory:
         - docsite/src/content.config.ts
         - docsite/src/docs-ssot.mjs
         - docsite/src/satteri-doc-links.mjs
-        - docs/architecture/release/v0.1.md
         - docs/architecture/release/v0.1-knowledge-compatibility.md
         - docs/architecture/contracts/overview.md
         - docs/architecture/contracts/decisions.md
-        - docs/architecture/contracts/stack.md
         - docs/architecture/contracts/future-proofing.md
         - docs/architecture/contracts/frontend-backend-interface.md
         - docs/architecture/contracts/space-catalog.md

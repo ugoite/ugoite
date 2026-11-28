@@ -30,7 +30,7 @@ thin.
 - `ugoite-server`: REST, MCP, authentication, and static-hosting adapter. The
   server implementation in `crates/ugoite-server` and the generated contract at
   `/openapi.json` are the REST source of truth.
-- `ugoite-cli`: local and remote command adapter. Full option detail lives in
+- `ugoite-cli`: Rust local and remote command adapter. Full option detail lives in
   `ugoite <command> --help`, not in duplicated prose.
 - `ugoite-wasm`: JSON and C ABI over the portable Rust crates. It owns no
   persistence, transport, or model runtime.
@@ -44,9 +44,10 @@ thin.
   `docs/` tree. Product prose is authored once under `docs/`.
 - `e2e`, `tools`, `shared`, `charts`: validation, packaging, shared contracts,
   and deployment shapes driven by root `mise.toml` tasks.
-- `docs/architecture`, `docs/spec`, `docs/mitase`, `docs/version`:
-  implementation docs, executable specification, canonical Mitase graph, and
-  version authority. See [Working with Specifications](../spec/index.md).
+- `docs/architecture`, `docs/spec`, `docs/mitase`, `docs/version/releases`:
+  implementation docs, specification entry points, canonical Mitase graph, and
+  published release notes. `version.txt` owns the prepared product version.
+  See [Working with Specifications](../spec/index.md).
 
 When a REST route changes, update the router and handler, update
 `ugoite-api-client` when the operation is portable, update adapter and frontend

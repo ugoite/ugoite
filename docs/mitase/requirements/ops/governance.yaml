@@ -19,9 +19,9 @@ requirements:
         facet: language-classification
         responsibility: Connect the architecture documentation, Rust workspace membership, and Rust build/release automation that establish the CLI language classification.
         targets:
-          - id: stack-contract
+          - id: repository-map
             adapter: declared
-            path: docs/architecture/contracts/stack.md
+            path: docs/develop/repository-map.md
             selector: { kind: file }
             claims:
               - kind: evidences
