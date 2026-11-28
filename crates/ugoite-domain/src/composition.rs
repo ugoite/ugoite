@@ -631,12 +631,36 @@ impl CompositionDiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_composition_yaml, rename_composition_variable, CompositionComponent,
-        CompositionDiagnosticCode, CompositionVariableRenameError, VariableGraph,
-        VariableGraphNodeKind,
+        is_valid_composition_variable_timestamp, parse_composition_yaml,
+        rename_composition_variable, CompositionComponent, CompositionDiagnosticCode,
+        CompositionVariableRenameError, VariableGraph, VariableGraphNodeKind,
     };
 
     const GRAPH: &str = include_str!("../tests/fixtures/composition/sql-first.ugcomp.yaml");
+
+    #[test]
+    fn timestamp_validator_covers_fraction_and_offset_boundaries() {
+        for value in [
+            "2026-11-24T12:00:00Z",
+            "2026-11-24T12:00:00.123456789+23:59",
+        ] {
+            assert!(
+                is_valid_composition_variable_timestamp(value),
+                "expected valid timestamp: {value}"
+            );
+        }
+
+        for value in [
+            "2026-11-24T12:00:00.1234567890Z",
+            "2026-11-24T12:00:00+24:00",
+            "2026-11-24T12:00:00-00:00",
+        ] {
+            assert!(
+                !is_valid_composition_variable_timestamp(value),
+                "expected invalid timestamp: {value}"
+            );
+        }
+    }
 
     #[test]
     fn variable_graph_fixture_has_deterministic_component_order() {

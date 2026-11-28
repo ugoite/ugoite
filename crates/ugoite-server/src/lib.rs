@@ -13573,6 +13573,38 @@ mod authentication_regression_tests {
     use ugoite_identity::node_identity::{token_hash, RecoveryAuditOutboxRecord};
     use ugoite_storage::SpaceUri;
 
+    #[test]
+    fn composition_scalar_wire_tags_match_domain_conversion() -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            VariableGraphScalarDescriptor, VariableGraphScalarType as DomainScalar,
+        };
+
+        let cases = [
+            (DomainScalar::String, "string"),
+            (DomainScalar::Boolean, "boolean"),
+            (DomainScalar::Integer, "integer"),
+            (DomainScalar::Float, "float"),
+            (DomainScalar::Decimal, "decimal"),
+            (DomainScalar::Date, "date"),
+            (DomainScalar::Timestamp, "timestamp"),
+            (DomainScalar::Json, "json"),
+        ];
+
+        for (domain_type, wire_tag) in cases {
+            let descriptor = api_composition_scalar_descriptor(VariableGraphScalarDescriptor {
+                scalar_type: domain_type,
+                nullable: true,
+            });
+            assert_eq!(
+                serde_json::to_value(descriptor)?,
+                json!({"scalar_type": wire_tag, "nullable": true}),
+                "unexpected wire tag for {domain_type:?}"
+            );
+        }
+
+        Ok(())
+    }
+
     fn passkey_identity(account_id: Uuid) -> RequestIdentityContext {
         RequestIdentityContext {
             request_identity: RequestIdentity {
