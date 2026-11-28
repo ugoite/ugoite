@@ -9,14 +9,14 @@ claimed as supported.
 
 ## Decision
 
-**S1 is the selected target.** A shared Space may be written by multiple server
-processes only when authorization changes and every protected content
-publication participate in one backend-enforced, per-Space linearization point.
-The current implementation does not meet this contract. Issue
-[#3315](https://github.com/ugoite/ugoite/issues/3315) remains a release blocker
-until implementation and the two-process backend acceptance evidence are
-complete. No workaround or configuration flag makes the current shared
-authorization path supported.
+**S1 is implemented for the topologies admitted below.** A shared Space may be
+written by multiple server processes only when authorization changes and every
+protected content publication participate in one backend-enforced, per-Space
+linearization point. OpenDAL S3 endpoints are admitted only after the exact
+configured-backend CAS probe passes and the required independent-process
+acceptance lane succeeds. Other shared OpenDAL schemes remain read-only and
+reject protected writes before publication. No generic capability claim or
+configuration flag bypasses this support boundary.
 
 The linearization point is a single mutable Space coordinator Head updated with
 an exact backend compare-and-swap. The Head binds the immutable current
@@ -45,12 +45,12 @@ bypass the coordinator by calling a lower-level protected write API.
 
 ## Supported backend matrix
 
-| Topology                                                          | Read                                      | Protected write                                                                 | Evidence                                          |
-| ----------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Local filesystem, one writer process                              | Supported                                 | Supported through process and OS file serialization                             | Existing local storage and recovery tests         |
-| OpenDAL S3 backend, multiple server processes                     | Supported                                 | Admitted after exact configured-backend CAS probe                               | Required Silo 2026-08-04 S3 acceptance lane       |
-| Other shared OpenDAL backend, multiple server processes           | Supported where exact reads are available | Rejected before the first content publication with `StorageMutationUnavailable` | No independent-process backend evidence yet       |
-| Shared backend without exact, strongly consistent coordinator CAS | Supported where exact reads are available | Rejected before the first content publication with `StorageMutationUnavailable` | Capability probe and fail-closed tests            |
+| Topology                                                          | Read                                      | Protected write                                                                 | Evidence                                    |
+| ----------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------- |
+| Local filesystem, one writer process                              | Supported                                 | Supported through process and OS file serialization                             | Existing local storage and recovery tests   |
+| OpenDAL S3 backend, multiple server processes                     | Supported                                 | Admitted after exact configured-backend CAS probe                               | Required Silo 2026-08-04 S3 acceptance lane |
+| Other shared OpenDAL backend, multiple server processes           | Supported where exact reads are available | Rejected before the first content publication with `StorageMutationUnavailable` | No independent-process backend evidence yet |
+| Shared backend without exact, strongly consistent coordinator CAS | Supported where exact reads are available | Rejected before the first content publication with `StorageMutationUnavailable` | Capability probe and fail-closed tests      |
 
 The S1 runtime admits the OpenDAL S3 backend family as one supported backend
 class; other OpenDAL schemes remain read-only even when their generic capability
@@ -58,11 +58,10 @@ bits and single-object probes pass. Each configured S3 endpoint must pass the
 exact behavioral probe before mutation. The required independent-process CI
 acceptance for this backend class uses the pinned Silo 2026-08-04 configuration
 (the community-maintained MinIO fork) and the same OpenDAL S3 adapter. This
-evidence relies on that adapter's common S3 conditional-write semantics plus
-the exact per-endpoint probe; it does not claim independent-process coverage
-for another OpenDAL service adapter. A
-generic capability bit, single-object probe alone, or in-memory test is not
-sufficient to admit another backend class.
+evidence relies on that adapter's common S3 conditional-write semantics plus the
+exact per-endpoint probe; it does not claim independent-process coverage for
+another OpenDAL service adapter. A generic capability bit, single-object probe
+alone, or in-memory test is not sufficient to admit another backend class.
 
 The protected publication scope includes all AuthorizationState changes
 (including membership revocation, policy, lifecycle, and human approval
@@ -143,9 +142,9 @@ publication ordered after a committed revocation using the earlier authorization
 snapshot. Revert must be all-target atomic; Run undo may retain already
 committed inverse Changes and must report the remaining work.
 
-The required independent-process test runs against each backend class claimed
-in the supported matrix. Same-process memory tests are supplemental. Until the
-S3 acceptance passes on the same candidate SHA as the implementation, shared
+The required independent-process test runs against each backend class claimed in
+the supported matrix. Same-process memory tests are supplemental. Until the S3
+acceptance passes on the same candidate SHA as the implementation, shared
 multi-process mutation remains unsupported and blocks release. Adding another
 backend class requires an independent-process lane and a matrix entry before
 runtime admission is widened.
