@@ -164,7 +164,7 @@ dependencies; browser setup is not skipped based on a prior run's timing.
 The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
 query/count, or SQL export implementation and acceptance paths. Merge groups
 and main pushes run it unconditionally. Fixture data and acceptance bounds are
-owned by [`tools/cp1_fixture_spec.ts`](../../../tools/cp1_fixture_spec.ts).
+owned by `tools/cp1_fixture_spec.ts`.
 Request interception exercises cancellation and retry, and SQL export verifies
 bounded paging, completion, and rollback when a byte cap rejects a later row.
 
