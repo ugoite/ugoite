@@ -154,10 +154,10 @@ The states are workflow boundaries, not a second release database. A failed run
 is resumed with the same candidate; versioned artifacts are never deleted or
 overwritten. The versioned manual release note is published only after
 `distribution-verified`, and mutable aliases are updated only after that
-publication succeeds. Historical alpha and beta changelog YAML remains
-documentation history only; the active publish contract is stable-only. Broad
-browser E2E remains a PR, nightly, or explicit release-impact check rather than
-a publish or post-publish gate.
+publication succeeds. Alpha and beta are not active publication channels; stable
+releases use the versioned manual note described above. Broad browser E2E
+remains a PR, nightly, or explicit release-impact check rather than a publish or
+post-publish gate.
 
 Git SHA identifies source; artifact digest identifies bytes; candidate-manifest
 digest identifies a verified candidate; SemVer identifies the published

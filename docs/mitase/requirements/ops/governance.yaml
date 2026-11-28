@@ -3,32 +3,6 @@ kind: requirements
 namespace: ops
 category: Operations, development, and quality-gate requirements
 requirements:
-  - id: REQ-OPS-004
-    title: Version Milestone Definitions
-    description: Version and milestone status is represented under docs/version and distinguishes implemented, in-progress, and planned work.
-    priority: medium
-    status: implemented
-    criteria:
-      - id: milestone-status
-        kind: quality
-        statement: Version documents expose valid milestone and phase statuses whose aggregate status agrees with their child work and whose source paths resolve.
-        governed_by: [POL-008#rule.governance]
-    bindings:
-      - id: milestone-status-verification
-        role: verification
-        facet: docsite-test
-        responsibility: Verify the version status and source-integrity contract through the exact repository test; this does not promote planned milestones to implemented behavior.
-        targets:
-          - id: milestone-status-test
-            adapter: typescript
-            path: tools/spec_integrity_test.ts
-            selector: { kind: test, name: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' }
-            claims:
-              - kind: verifies
-                criterion: REQ-OPS-004#criterion.milestone-status
-                covers: [FEAT-OPS-001#binding.versions/target.version-v01, FEAT-OPS-001#binding.versions/target.version-v02]
-                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' } }
-
   - id: REQ-OPS-014
     title: CLI Language Classification Consistency
     description: Documentation and automation must classify the CLI as Rust.

@@ -18,10 +18,6 @@ a product or support claim is safe to make.
   and unsupported artifact targets.
 - [Release planner ref recovery](release-planner-recovery.md) defines the
   compare-before-delete procedure for an orphaned planner branch ref.
-- [Versioning overview](versioning.md) explains the current v0.1 and v0.2
-  release streams.
-- [v0.3 preflight](v0.3-preflight.md) maps current authority, surfaces, and
-  verification evidence without claiming that static source discovery ran tests.
 - [v0.1 Foundation release](v0.1.md) records the frozen Knowledge boundary and
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
@@ -34,5 +30,5 @@ a product or support claim is safe to make.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
   preserves the fixed-SHA security acceptance evidence for membership
   revocation and access-token refresh between export pages.
-- [Release notes and historical channel records](changelog.md) define the stable
-  manual-note contract and label beta/alpha metadata as historical.
+- [Release notes and historical channel records](changelog.md) point to the
+  versioned stable notes and explain that beta/alpha are not active channels.

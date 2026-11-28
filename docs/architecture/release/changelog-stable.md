@@ -14,6 +14,3 @@ validator also accepts an H1 for source-only notes outside the docsite.
 After distribution verification, the publish workflow reads the file from the
 candidate's exact source revision and applies those bytes as the GitHub Release
 body. Mutable aliases wait for that publication to succeed.
-
-Historical channel metadata (not an active publication source):
-[`../../version/changelog/stable.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/version/changelog/stable.yaml).

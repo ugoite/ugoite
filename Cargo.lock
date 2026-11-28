@@ -7783,9 +7783,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "opendal",
- "serde",
  "serde_json",
- "serde_yaml",
  "tokio",
  "ugoite-api-client",
  "ugoite-core",
