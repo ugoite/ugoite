@@ -164,8 +164,8 @@ policies:
             path: docs/architecture/product/success-metrics.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-013#rule.governance }]
-          - id: stories-experimental
+          - id: stories-collaboration
             adapter: declared
-            path: docs/spec/stories/experimental.yaml
+            path: docs/spec/stories/collaboration.yaml
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-013#rule.governance }]

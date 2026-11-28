@@ -1,0 +1,25 @@
+version: "0.1"
+updated: 2026-11
+category: Collaboration User Stories
+stories:
+  - id: STORY-010
+    title: Authenticated Space Collaboration
+    type: Collaboration
+    as_a: team lead
+    i_want: to share a space with my team
+    so_that: we can collaborate on shared knowledge.
+    acceptance_criteria:
+      - Owners can invite people and manage Space membership and roles
+      - Space roles and explicit resource grants control access
+      - The server-backed browser uses Passkey authentication
+      - Supported recovery and authorization changes are attributable in audit history
+    requirements:
+      - REQ-SEC-004
+      - REQ-SEC-006
+      - REQ-SEC-007
+    milestone: v0.1 authenticated collaboration
+    status: implemented
+    implementation_notes: Passkey login, invitations, membership lifecycle, resource authorization, and read-only audit history are supported. Administrator recovery, Agent Principals, and serverless shared Spaces are outside this story.
+    available_api:
+      - 'rest: Passkey, invitation, membership, role, resource ACL, and audit operations'
+      - 'oidc: invitation-gated account linking'

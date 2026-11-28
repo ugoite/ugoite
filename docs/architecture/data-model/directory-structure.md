@@ -21,6 +21,8 @@ spaces/
       catalog/
         head.json
         publications/
+      authorization/
+        snapshots/{revision}-{checksum}.json
       derived/
         relations/{relation_id}/
           head.json
@@ -91,11 +93,14 @@ portable settings compatibility. The browser-backed entry flow does not use it
 as its current Form-selection authority; it selects the Form explicitly through
 the entry route.
 
-Portable membership, principal, policy, human-approval, approval-audit-outbox,
-and authorization-audit state is stored in
-`spaces/{space_id}/security/principals.json`. Membership-shaped keys in
-`settings.json` are legacy markers and are rejected rather than upgraded. UI
-locale and selected-Space preferences are user-scoped and belong in
+For a persisted Space, portable membership, principal, policy, human-approval,
+and approval-audit-outbox state is stored as immutable
+`_ugoite/authorization/snapshots/{revision}-{checksum}.json` objects. The
+Catalog Head identifies the current snapshot by revision, location, and
+checksum. A pre-existing `security/principals.json` is a legacy read fallback
+when no snapshot is published. Membership-shaped keys in `settings.json` are
+legacy markers and are rejected rather than upgraded. UI locale and
+selected-Space preferences are user-scoped and belong in
 `users/{sha256(user_id)}/preferences.json`, not Space settings.
 
 ## Lazy paths
@@ -106,6 +111,7 @@ locale and selected-Space preferences are user-scoped and belong in
 | Node response signing | `response_hmac/default.json`                                          | Node-default response-signing key material; not part of a Space export |
 | Asset upload          | `spaces/{space_id}/assets/{asset_id}`                                 | binary object; the key is derived from the stable asset ID             |
 | Derived rebuild       | `spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json` | current build coordinate; non-authoritative and replaceable            |
+| Authorization update | `spaces/{space_id}/_ugoite/authorization/snapshots/{revision}-{checksum}.json` | immutable state selected by the Catalog Head                         |
 | Preference update     | `users/{sha256(user_id)}/preferences.json`                            | portable user UI preferences                                           |
 
 ## Catalog and Iceberg-managed Form storage

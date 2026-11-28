@@ -34,6 +34,7 @@ Knowledge-to-tools application rendering, not Text-first Composition.
 - canonical EntryQuery search and filtering across Browser, local CLI, and
   remote API;
 - CLI Context selection and durable mutation Receipt output;
+- authenticated remote CLI Asset upload and deletion;
 - single non-root container image and Helm chart;
 - MCP v1 search/save/delete facade with lazy Entry, history, schema, and Form
   resources;
@@ -42,14 +43,12 @@ Knowledge-to-tools application rendering, not Text-first Composition.
 
 ## Limited or unavailable
 
-- S3-compatible and other non-local OpenDAL operators are available for
-  authoritative Space mutations only after a runtime probe verifies exact reads,
-  create-if-absent, stale-read rejection, stale-write rejection, and a single
-  concurrent Head-CAS winner. Unsupported, unavailable, or unverified operators
-  remain read-only. Ordinary authorization mutations use exact
-  `AuthorizationState` CAS; server timestamps are independent and are used only
-  for maintenance age comparisons, without a distributed lease or fencing
-  protocol;
+- Shared S3-compatible Space writes are supported for the OpenDAL S3 backend
+  class covered by the independent-process acceptance lane, and only at
+  configured endpoints that pass the exact backend CAS probe. Other shared
+  OpenDAL backends remain read-only. Local filesystem writes use the existing
+  single-process and OS file-serialization path. Authorization state and
+  protected content share one Catalog Head publication boundary;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
 - read-only, authorization-checked Node and Space audit-event listing is
@@ -66,9 +65,9 @@ Knowledge-to-tools application rendering, not Text-first Composition.
   recovery-TOTP Account Self-Recovery, Remote CLI device authentication,
   invitation-gated OIDC authentication/account linking, authenticated MCP
   access, and authorized audit reads are supported v0.1 capabilities;
-- administrator recovery, managed service accounts, audit CRUD, and remote CLI
-  asset upload are not supported v0.1 capabilities. TOTP is recovery-only and is
-  not a normal login method;
+- administrator recovery, managed service accounts, and audit CRUD are not
+  supported capabilities. TOTP is recovery-only and is not a normal login
+  method;
 - the operator-dispatched candidate and promotion workflows publish only a
   candidate verified by the release smoke policy. Promotion is buildless;
   pre-publish verification records a separate receipt, while the published

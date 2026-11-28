@@ -1,5 +1,5 @@
 version: '0.1'
-updated: 2026-06
+updated: 2026-11
 category: Advanced User Stories
 stories:
 - id: STORY-006
@@ -18,30 +18,14 @@ stories:
   requirements:
   - REQ-ENTRY-008
   status: planned
-  implementation_notes: Asset upload exists, but recording/transcription and MCP entry read/update coverage are
-    not shipped.
-  planned_apis:
-  - MCP entry-detail resource
-  - MCP entry update tool
-  - transcription integration
+  implementation_notes: The current MCP surface can read Entry resources and save Entry updates. Voice capture,
+    transcription, and the recording-to-structured-Entry flow are not shipped.
+  planned_capabilities:
+  - voice capture, transcription, and structured Entry workflow
   available_api:
   - 'rest: POST /spaces/{space_id}/assets'
   - 'rest: PUT /spaces/{space_id}/entries/{entry_id}'
-- id: STORY-007
-  title: Computational Workbooks
-  type: Live Code
-  as_a: data-driven user
-  i_want: to embed JavaScript code blocks in my entries that execute and render results
-  so_that: I can create live reports or analyze my own knowledge base within the app.
-  acceptance_criteria:
-  - Markdown code blocks tagged `javascript` can be executed
-  - Code execution is handled by explicit tooling (future)
-  - Output (text, tables, charts) is rendered interactively below the code block
-  requirements: []
-  status: planned
-  implementation_notes: No code-block execution endpoint or sandbox is shipped.
-  planned_apis:
-  - rest: POST /spaces/{space_id}/entries/{entry_id}/blocks/{block_id}/execute
+  - 'mcp: ugoite://entry/{id} resource and ugoite.save update tool'
 - id: STORY-008
   title: Agentic Refactoring
   type: BYOAI
@@ -49,18 +33,17 @@ stories:
   i_want: to ask my AI agent to "clean up this folder"
   so_that: I can leverage external intelligence to organize my knowledge base on demand.
   acceptance_criteria:
-  - App exposes MCP resources for entry discovery and updates
+  - MCP exposes Entry search, Entry and Form resources, and the existing save tool
   - User asks Agent: Find duplicates in Project X and merge them.
-  - Agent executes the logic and presents the result for confirmation
+  - Agent proposes changes and the user reviews them before they are applied
   requirements: []
   status: planned
-  implementation_notes: The current MCP v1 surface is an authenticated semantic facade with search/save/delete tools and
-    lazy Entry/Form resources; broader orchestration and confirmation workflows remain future work.
-  planned_apis:
-  - MCP entry-detail resources
-  - MCP mutation tools with confirmation
+  implementation_notes: The authenticated MCP v1 surface already provides search/save/delete tools and lazy Entry,
+    history, schema, and Form resources. Agent orchestration and a user confirmation workflow remain future work.
+  planned_capabilities:
+  - Agent orchestration and user-reviewed confirmation workflow
   available_api:
-  - 'mcp: POST /mcp (MCP v1 semantic facade)'
+  - 'mcp: ugoite.search, ugoite.save, ugoite.delete, and lazy Entry/history/schema/Form resources'
 - id: STORY-009
   title: Data Grid
   type: Form
