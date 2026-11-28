@@ -2891,10 +2891,8 @@ pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     if sql.trim().is_empty() {
         return Err(AppError::invalid_input(ErrorCode::InvalidInput, "sql is required").into());
     }
-    let lint = ugoite_domain::sql_lint::lint_sql(
-        sql,
-        ugoite_domain::sql_lint::SqlLintProfile::Standard,
-    );
+    let lint =
+        ugoite_domain::sql_lint::lint_sql(sql, ugoite_domain::sql_lint::SqlLintProfile::Standard);
     if !lint.is_valid() {
         let detail = lint
             .diagnostics

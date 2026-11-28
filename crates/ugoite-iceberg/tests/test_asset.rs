@@ -7,6 +7,7 @@ use datafusion::prelude::SessionContext;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::EntryScope;
+use ugoite_core::sql_query::SqlQueryRequest;
 use ugoite_domain::identity::{
     AccessPolicy, Action, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -15,7 +16,6 @@ use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::derived_relation;
 use ugoite_iceberg::form;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_core::sql_query::SqlQueryRequest;
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
 use uuid::Uuid;
@@ -242,7 +242,10 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         )
         .await?;
     assert_eq!(references.rows.len(), 1);
-    assert_eq!(references.rows[0]["attachment"]["asset_id"], reference.asset_id);
+    assert_eq!(
+        references.rows[0]["attachment"]["asset_id"],
+        reference.asset_id
+    );
     assert_eq!(
         references.rows[0]["attachments"][0]["asset_id"],
         reference.asset_id

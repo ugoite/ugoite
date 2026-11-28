@@ -15,8 +15,8 @@ use ugoite_iceberg::form;
 use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::publication_context;
-use ugoite_iceberg::space;
 use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::space;
 use uuid::Uuid;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
@@ -1339,7 +1339,10 @@ async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<(
     assert!(content.markdown.contains("## time\n22:02"));
     let results = query_form_entries(&op, "time-entry", "Entry", &["time"], None).await?;
     assert_eq!(results.rows.len(), 1);
-    assert_eq!(results.rows[0].properties.as_ref().unwrap()["time"], "22:02:00");
+    assert_eq!(
+        results.rows[0].properties.as_ref().unwrap()["time"],
+        "22:02:00"
+    );
     Ok(())
 }
 
@@ -1373,14 +1376,8 @@ async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> 
     )
     .await?;
 
-    let results = query_form_entries(
-        &op,
-        "evolved-time-entry",
-        "Entry",
-        &["Body", "time"],
-        None,
-    )
-    .await?;
+    let results =
+        query_form_entries(&op, "evolved-time-entry", "Entry", &["Body", "time"], None).await?;
     assert_eq!(results.rows.len(), 1);
     assert_eq!(results.rows[0].id, "entry-before-time");
     assert_eq!(
@@ -1486,8 +1483,7 @@ async fn typed_uuid_binary_and_list_values_project_through_entry_query() -> anyh
 }
 
 #[tokio::test]
-async fn markdown_typed_lists_round_trip_through_entry_query(
-) -> anyhow::Result<()> {
+async fn markdown_typed_lists_round_trip_through_entry_query() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "markdown-typed-lists", "/tmp").await?;
     let ws_path = "spaces/markdown-typed-lists";
