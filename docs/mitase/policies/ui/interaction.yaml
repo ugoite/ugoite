@@ -19,7 +19,7 @@ policies:
         responsibility: 'Evidence the single-semantic-owner principle itself: each surface gives each piece of information one visible owner. The entry workspace component below is the recorded exemplar carrying the single context heading. Single-context verification for the join, setup, Space dashboard, and Spaces index surfaces lives under REQ-UX-NAV-001#criterion.no-duplicate-context; equivalent semantic-ownership evidence for the remaining surfaces remains an explicit evidence gap and must not be inferred from this exemplar.'
         targets:
           - id: entry-detail-surface
-            adapter: declared
+            adapter: typescript
             path: frontend/src/components/EntryDetailPane.tsx
             selector: { kind: file }
             claims:
@@ -48,11 +48,11 @@ policies:
       - id: card-evidence
         role: evidence
         facet: presentation
-        responsibility: Record the entry list surface where card usage is constrained to selectable records.
+        responsibility: Record the current Entry browsing surface whose result rows are selectable records rather than decorative cards.
         targets:
-          - id: entry-list-surface
-            adapter: declared
-            path: frontend/src/components/EntryList.tsx
+          - id: entry-browser-surface
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.tsx
             selector: { kind: file }
             claims:
               - kind: evidences
@@ -100,23 +100,30 @@ policies:
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-004#rule.governance }]
   - id: POL-UI-006
-    title: Full-Row Selection Without Boxed Chevron
-    summary: Selectable rows activate across the full row and do not add a boxed chevron affordance.
-    description: Row selection is triggered by activating the row itself; rows do not carry a separate boxed chevron button that duplicates the row activation intent.
+    title: Full-Row Primary Action and Distinct Secondary Controls
+    summary: Rows keep one full-row primary action; separate controls have distinct effects.
+    description: A selectable or navigable row has one primary action across the row. A separate trailing action may perform a distinct operation, such as opening a selected Entry, and must not appear as a boxed duplicate of the row action.
     rules:
       - id: governance
         level: must
-        statement: Selectable rows activate across the full row and do not add a separate boxed chevron control duplicating the row activation.
+        statement: A selectable or navigable row exposes one primary action across the row; a separate trailing control is allowed only when it performs a distinct action and does not duplicate the row action in a boxed chevron.
         governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.no-decoration]
     bindings:
       - id: row-selection-evidence
         role: evidence
         facet: interaction
-        responsibility: Record the entry list surface where full-row activation applies.
+        responsibility: Record shipped row surfaces that keep one full-row primary action and distinct secondary controls.
         targets:
-          - id: entry-list-surface
-            adapter: declared
-            path: frontend/src/components/EntryList.tsx
+          - id: shared-row-list
+            adapter: typescript
+            path: frontend/src/components/RowList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-006#rule.governance
+          - id: entry-result-table
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.tsx
             selector: { kind: file }
             claims:
               - kind: evidences
@@ -176,11 +183,11 @@ policies:
       - id: state-evidence
         role: evidence
         facet: presentation
-        responsibility: Record the list panel surface that renders explicit async states.
+        responsibility: Record the Entry browser surface that renders explicit asynchronous result states.
         targets:
-          - id: list-panel-surface
-            adapter: declared
-            path: frontend/src/components/ListPanel.tsx
+          - id: entry-browser-surface
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.tsx
             selector: { kind: file }
             claims:
               - kind: evidences

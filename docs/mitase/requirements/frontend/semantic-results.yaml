@@ -87,6 +87,10 @@ requirements:
                 criterion: REQ-FE-068#criterion.semantic-row-ownership
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
           - id: entry-shared-trailing-action
             adapter: typescript
             path: frontend/src/components/EntryBrowser.test.tsx
@@ -95,6 +99,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "navigates only from the shared trailing chevron action" } }
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "navigates only from the shared trailing chevron action" } }
           - id: entry-browser-paging
             adapter: typescript

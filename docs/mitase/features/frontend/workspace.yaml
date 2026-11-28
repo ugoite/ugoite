@@ -90,32 +90,8 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep Entry browsing and selection behavior connected to the shipped frontend list components and route.
+        responsibility: Keep Entry browsing, row selection, display labels, and Form-scoped routing connected to the shipped EntryBrowser surfaces.
         targets:
-          - id: entry-list
-            adapter: typescript
-            path: frontend/src/components/EntryList.tsx
-            selector: { kind: symbol, name: EntryList }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-004#criterion.display
-              - kind: satisfies
-                criterion: REQ-FE-004#criterion.identifier-not-label
-              - kind: satisfies
-                criterion: REQ-FE-008#criterion.selection
-          - id: list-panel
-            adapter: typescript
-            path: frontend/src/components/ListPanel.tsx
-            selector: { kind: symbol, name: ListPanel }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-004#criterion.display
-              - kind: satisfies
-                criterion: REQ-FE-004#criterion.identifier-not-label
-              - kind: satisfies
-                criterion: REQ-FE-008#criterion.selection
-              - kind: satisfies
-                criterion: REQ-FE-044#criterion.dictionary-localization
           - id: entry-display-label-helper
             adapter: typescript
             path: frontend/src/lib/entry-label.ts
@@ -151,6 +127,14 @@ features:
             path: frontend/src/components/EntryBrowser.tsx
             selector: { kind: symbol, name: EntryBrowser }
             claims:
+              - kind: satisfies
+                criterion: REQ-FE-004#criterion.display
+              - kind: satisfies
+                criterion: REQ-FE-004#criterion.identifier-not-label
+              - kind: satisfies
+                criterion: REQ-FE-008#criterion.selection
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.table-selection-open-action
               - kind: satisfies

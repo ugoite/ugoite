@@ -4,65 +4,38 @@ namespace: frontend
 category: Frontend route, component, and interaction requirements
 requirements:
   - id: REQ-FE-004
-    title: Entry List Display
-    description: The frontend displays the Entry list with titles and available properties, including explicit loading and empty states.
+    title: Entry Browser Display
+    description: The frontend displays current Entry results with human-readable content and available projected fields, including explicit loading and empty states.
     priority: high
     status: implemented
     criteria:
       - id: display
         kind: behavior
-        statement: The frontend renders current Entry records as titled cards and exposes their available Form and property values without failing on missing properties.
+        statement: The frontend renders current Entry results and available Form-projected values without failing when a projected value is absent.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: identifier-not-label
         kind: behavior
-        statement: Entry cards do not render the stable Entry identifier as visible text when an Entry lacks a human-authored title or name.
+        statement: Entry results do not render the stable Entry identifier as visible text when an Entry lacks a human-authored title or name.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
-      - id: entry-list-display-verification
+      - id: entry-browser-display-verification
         role: verification
         facet: verification
-        responsibility: Verify Entry card rendering, property display, missing-property handling, and the plain Entries route through exact frontend tests.
+        responsibility: Verify Form-scoped projected result fields and neutral labels; the shared async-state requirement binds the browser's empty and error cases.
         targets:
-          - id: entry-list-properties
+          - id: projected-fields
             adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should display extracted properties in entry cards" }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "renders form-scoped projected fields as explicit columns in projection order" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-004#criterion.display
-                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should display extracted properties in entry cards" } }
-          - id: entry-list-missing-properties
-            adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should handle entries with null or undefined properties gracefully" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-004#criterion.display
-                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should handle entries with null or undefined properties gracefully" } }
-          - id: list-panel-entries
-            adapter: typescript
-            path: frontend/src/components/ListPanel.test.tsx
-            selector: { kind: test, name: "should render entries list" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-004#criterion.display
-                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "renders form-scoped projected fields as explicit columns in projection order" } }
               - kind: verifies
                 criterion: REQ-FE-004#criterion.identifier-not-label
-                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
-          - id: entry-list-identifier-not-label
-            adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should render generic Entry labels without exposing IDs in controlled mode" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-004#criterion.identifier-not-label
-                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should render generic Entry labels without exposing IDs in controlled mode" } }
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "renders form-scoped projected fields as explicit columns in projection order" } }
           - id: form-entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
@@ -73,48 +46,15 @@ requirements:
                 covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "selects a row to open its Entry" } }
   - id: REQ-FE-008
-    title: Entry Selection and Highlight
-    description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
+    title: Entry Selection and Open Action
+    description: The frontend highlights a selected Entry and keeps selection separate from opening its detail view.
     priority: high
     status: implemented
     criteria:
       - id: selection
         kind: behavior
-        statement: The frontend marks the selected Entry, invokes the selection callback for a clicked Entry, and routes the selected Entry to its detail view.
+        statement: The frontend marks a selected Entry when its row is selected and opens the Entry detail view only through the row's trailing open action.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
-    bindings:
-      - id: entry-selection-verification
-        role: verification
-        facet: verification
-        responsibility: Verify Entry selection callbacks, selected-card highlighting, and the list panel selection callback through exact frontend tests.
-        targets:
-          - id: entry-list-highlight
-            adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should highlight selected entry" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-008#criterion.selection
-                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should highlight selected entry" } }
-          - id: list-panel-highlight
-            adapter: typescript
-            path: frontend/src/components/ListPanel.test.tsx
-            selector: { kind: test, name: "should highlight selected entry" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-008#criterion.selection
-                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should highlight selected entry" } }
-          - id: list-panel-select
-            adapter: typescript
-            path: frontend/src/components/ListPanel.test.tsx
-            selector: { kind: test, name: "should call onSelectEntry when a entry is clicked" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-008#criterion.selection
-                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should call onSelectEntry when a entry is clicked" } }
   - id: REQ-FE-033
     title: Entry Detail Navigation
     description: Selecting or opening an Entry reaches the detail view and correctly handles encoded Entry identifiers.

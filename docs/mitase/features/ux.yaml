@@ -55,7 +55,7 @@ features:
       - id: entry-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the current Entry detail and list surfaces connected, with Form-defined values remaining ordinary fields rather than Entry identities.
+        responsibility: Keep the Entry detail surface and canonical EntryBrowser connected, with Form-defined values remaining ordinary fields rather than Entry identities.
         targets:
           - id: entry-detail-surface
             adapter: typescript
@@ -66,10 +66,10 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards
               - kind: satisfies
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
-          - id: entry-list-surface
+          - id: entry-browser-surface
             adapter: typescript
-            path: frontend/src/components/EntryList.tsx
-            selector: { kind: file }
+            path: frontend/src/components/EntryBrowser.tsx
+            selector: { kind: symbol, name: EntryBrowser }
             claims:
               - kind: satisfies
                 criterion: REQ-UX-ENTRY-001#criterion.no-decorative-cards

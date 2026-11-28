@@ -21,9 +21,6 @@ use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::{EntryId, RevisionId};
 use uuid::Uuid;
 
-/// Bounded page size for query variables returning a table.
-pub const DEFAULT_COMPOSITION_QUERY_PAGE_LIMIT: usize = 100;
-
 /// One stable diagnostic from graph input or query planning.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,15 +51,6 @@ impl CompositionDiagnostic {
 pub struct VariableGraphBindings {
     pub values: BTreeMap<String, VariableGraphLiteral>,
     pub diagnostics: Vec<CompositionDiagnostic>,
-}
-
-/// Bind typed constants and input values. Query variables are never accepted
-/// from the caller; they enter the graph only through validated SQL results.
-pub fn bind_variables(
-    variables: &[VariableGraphNode],
-    supplied: &BTreeMap<String, Value>,
-) -> VariableGraphBindings {
-    bind_variables_with_unset(variables, supplied, &[])
 }
 
 /// Bind typed values while allowing an Input to be explicitly unset, even if
@@ -416,12 +404,6 @@ struct ResolvePartsOptions<'a> {
     allow_draft_descriptors: bool,
     allow_unset_inputs: bool,
     selected_query_ids: Option<&'a BTreeSet<String>>,
-}
-
-pub fn resolve_composition(
-    input: ResolveInput<'_>,
-) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
-    resolve_composition_with_unset(input, &[])
 }
 
 pub fn resolve_composition_with_unset(

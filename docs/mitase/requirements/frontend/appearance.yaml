@@ -50,15 +50,15 @@ requirements:
                 criterion: REQ-FE-044#criterion.portable-locale
                 covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/preferences-store.test.ts, test: "REQ-FE-044: initializes locale from portable preferences and refreshes local fallback" } }
-          - id: localized-list
+          - id: localized-entry-browser
             adapter: typescript
-            path: frontend/src/components/ListPanel.test.tsx
-            selector: { kind: test, name: "REQ-FE-044: localizes entry list controls and empty state in Japanese" }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes EntryBrowser controls and empty state in Japanese" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-044#criterion.dictionary-localization
-                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "REQ-FE-044: localizes entry list controls and empty state in Japanese" } }
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "REQ-FE-044: localizes EntryBrowser controls and empty state in Japanese" } }
           - id: localized-search
             adapter: typescript
             path: frontend/src/components/SearchBar.test.tsx

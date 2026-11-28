@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "~/lib/i18n";
 import { EntryBrowser } from "./EntryBrowser";
 import {
   createEntryQueryController,
@@ -23,7 +24,10 @@ const headerLabels = (): string[] =>
   screen.getAllByRole("columnheader").map((header) => header.textContent ?? "");
 
 describe("EntryBrowser", () => {
-  beforeEach(() => queryMock.mockReset());
+  beforeEach(() => {
+    queryMock.mockReset();
+    setLocale("en");
+  });
 
   it("connects toolbar actions to canonical projection, text, and sort state", async () => {
     queryMock.mockResolvedValue({
@@ -395,6 +399,36 @@ describe("EntryBrowser", () => {
     expect(screen.getByText("No entries match this query."))
       .toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("REQ-FE-044: localizes EntryBrowser controls and empty state in Japanese", async () => {
+    setLocale("ja");
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+      />
+    ));
+
+    expect(screen.getByRole("button", { name: "列" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "絞り込み" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "並べ替え" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("条件に一致するエントリーはありません。"))
+      .toBeInTheDocument();
   });
 
   it("updates Form labels when metadata arrives without reloading the page", async () => {

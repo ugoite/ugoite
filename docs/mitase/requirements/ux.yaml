@@ -328,26 +328,34 @@ requirements:
       - id: entry-async-state-verification
         role: verification
         facet: verification
-        responsibility: Exact cases cover Entry list loading and empty states plus Entry detail load failure and retry. No Entry list error case or bound detail loading presentation test is available, so those states remain unverified.
+        responsibility: Exact cases cover EntryBrowser empty and error states plus Entry detail load failure and retry. No EntryBrowser loading case or bound detail loading presentation test is available, so loading remains unverified.
         targets:
-          - id: entry-list-empty
+          - id: entry-browser-empty
             adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should render empty state when no entries exist" }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "shows the empty state without a table" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
-                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-list-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should render empty state when no entries exist" } }
-          - id: entry-list-loading
+                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-browser-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "shows the empty state without a table" } }
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "shows the empty state without a table" } }
+          - id: entry-browser-error-retry
             adapter: typescript
-            path: frontend/src/components/EntryList.test.tsx
-            selector: { kind: test, name: "should show loading state" }
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "shows an error with retry and no table" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-ENTRY-001#criterion.explicit-async-states
-                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-list-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should show loading state" } }
+                covers: [FEAT-UX-002#binding.entry-baseline/target.entry-browser-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "shows an error with retry and no table" } }
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "shows an error with retry and no table" } }
           - id: entry-detail-load-error-retry
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx
