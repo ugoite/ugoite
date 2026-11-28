@@ -1,0 +1,26 @@
+{
+  "columns": [
+    "id",
+    "entry_id",
+    "form",
+    "tags",
+    "created_at",
+    "updated_at",
+    "revision_id",
+    "parent_revision_id",
+    "deleted",
+    "deleted_at",
+    "author",
+    "updated_by",
+    "deleted_by",
+    "integrity",
+    "space_id",
+    "word_count"
+  ],
+  "forms": [
+    "SQL",
+    "User",
+    "UserGroup",
+    "_ugoite_compositions"
+  ]
+}

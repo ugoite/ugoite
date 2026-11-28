@@ -1,10 +1,7 @@
 use ugoite_domain::integrity::{
     checksum_hex, FakeIntegrityProvider, HmacIntegrityProvider, IntegrityProvider,
 };
-use ugoite_domain::metadata::{
-    is_reserved_metadata_column, is_reserved_metadata_form, metadata_columns, metadata_forms,
-    register_metadata_columns, register_metadata_forms,
-};
+use ugoite_domain::metadata::{is_reserved_metadata_column, is_reserved_metadata_form};
 use ugoite_domain::space::storage_type_and_root;
 use ugoite_domain::text::compute_word_count;
 
@@ -37,43 +34,47 @@ fn test_integrity_req_int_001_hmac_provider_matches_known_digest() {
 
 #[test]
 /// REQ-FORM-005
-fn test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and_extendable() {
-    let columns = metadata_columns();
+fn test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and_fixed() {
+    let registry: serde_json::Value =
+        serde_json::from_str(include_str!("../src/metadata.json")).expect("metadata registry");
+    let columns = registry["columns"].as_array().expect("metadata columns");
     // Title-less Entry (REQ-ENTRY-011): `title` is a normal user-definable
     // Form field, not a reserved metadata column.
-    assert!(!columns.contains("title"));
-    assert!(columns.contains("space_id"));
+    assert!(!columns.iter().any(|name| name == "title"));
+    assert!(columns.iter().any(|name| name == "space_id"));
     assert!(!is_reserved_metadata_column("Title"));
     assert!(is_reserved_metadata_column("SPACE_ID"));
+    assert!(is_reserved_metadata_column(" space_id "));
+    for name in columns {
+        let name = name.as_str().expect("metadata column name");
+        assert!(is_reserved_metadata_column(name));
+        assert!(is_reserved_metadata_column(&format!(
+            " {} ",
+            name.to_uppercase()
+        )));
+    }
     assert!(!is_reserved_metadata_column("issue777_custom_column"));
-
-    register_metadata_columns(vec![
-        "issue777_custom_column".to_string(),
-        "Issue777CaseSensitive".to_string(),
-    ]);
-
-    let registered = metadata_columns();
-    assert!(registered.contains("issue777_custom_column"));
-    assert!(registered.contains("Issue777CaseSensitive"));
-    assert!(is_reserved_metadata_column("ISSUE777_CUSTOM_COLUMN"));
-    assert!(is_reserved_metadata_column("issue777casesensitive"));
 }
 
 #[test]
 /// REQ-FORM-006
-fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_extendable()
-{
-    let forms = metadata_forms();
-    assert!(forms.contains("sql"));
+fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_fixed() {
+    let registry: serde_json::Value =
+        serde_json::from_str(include_str!("../src/metadata.json")).expect("metadata registry");
+    let forms = registry["forms"].as_array().expect("metadata forms");
+    assert!(forms.iter().any(|name| name == "SQL"));
     assert!(is_reserved_metadata_form("SQL"));
     assert!(!is_reserved_metadata_form("assets"));
+    assert!(is_reserved_metadata_form(" sql "));
+    for name in forms {
+        let name = name.as_str().expect("metadata form name");
+        assert!(is_reserved_metadata_form(name));
+        assert!(is_reserved_metadata_form(&format!(
+            " {} ",
+            name.to_uppercase()
+        )));
+    }
     assert!(!is_reserved_metadata_form("issue777_custom_form"));
-
-    register_metadata_forms(vec!["  issue777_custom_form  ".to_string()]);
-
-    let registered = metadata_forms();
-    assert!(registered.contains("issue777_custom_form"));
-    assert!(is_reserved_metadata_form("ISSUE777_CUSTOM_FORM"));
 }
 
 #[test]
