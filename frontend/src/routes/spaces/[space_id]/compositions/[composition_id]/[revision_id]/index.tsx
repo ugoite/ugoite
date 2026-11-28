@@ -77,7 +77,6 @@ const compositionEvaluationErrorMessage = (
 
 interface AccessLease {
   routeKey: string;
-  resumeEpoch: number;
   evaluationId: string;
   entryId: string;
   revisionId: string;
@@ -133,7 +132,7 @@ export default function CompositionRevisionRoute() {
     return restoreKey;
   };
 
-  const [revision] = createResource(
+  const [revision, { refetch: refetchRevision }] = createResource(
     routeKey,
     async (key) => {
       const [spaceId, compositionId, revisionId] = JSON.parse(key) as [
@@ -193,7 +192,6 @@ export default function CompositionRevisionRoute() {
   let accessExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   let accessCheckPending: AccessLease | undefined;
   let accessCheckPendingGeneration = 0;
-  let accessCheckPendingResumeEpoch: number | undefined;
   let accessResumeEpoch = 0;
   let lastResumeEvaluationEpoch: number | undefined;
   const accessSuspensions = new Set<"blur" | "hidden" | "offline">();
@@ -230,10 +228,11 @@ export default function CompositionRevisionRoute() {
   const clearVisibleResults = () => {
     evaluationGeneration++;
     accessCheckGeneration++;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = undefined;
     accessCheckPending = undefined;
     accessCheckAbort?.abort();
     accessCheckAbort = undefined;
-    accessCheckPendingResumeEpoch = undefined;
     accessLease = undefined;
     clearAccessTimer();
     setTablePages({});
@@ -251,13 +250,13 @@ export default function CompositionRevisionRoute() {
 
   const scheduleAccessCheck = (lease: AccessLease) => {
     clearAccessTimer();
-    // Check before the 30-second server lease expires. If a timer is delayed,
-    // the renderer still gates cached results at expiresAt.
+    // Check before the server-issued lease expires. If a timer is delayed, the
+    // expiry timer still removes the visible result at expiresAt.
     const delay = Math.max(
       0,
       Math.min(25_000, lease.expiresAt - Date.now() - 5_000),
     );
-    accessTimer = setTimeout(() => void recheckAccess(lease, false), delay);
+    accessTimer = setTimeout(() => void recheckAccess(lease), delay);
     accessExpiryTimer = setTimeout(() => {
       if (accessLease === lease) {
         clearVisibleResults();
@@ -269,14 +268,9 @@ export default function CompositionRevisionRoute() {
     }, Math.max(0, lease.expiresAt - Date.now()));
   };
 
-  const recheckAccess = async (
-    expected: AccessLease,
-    gateImmediately: boolean,
-    forceFresh = false,
-  ) => {
+  const recheckAccess = async (expected: AccessLease) => {
     if (
       expected.routeKey !== routeKey() ||
-      expected.resumeEpoch !== accessResumeEpoch ||
       accessIsSuspended()
     ) {
       return;
@@ -292,36 +286,11 @@ export default function CompositionRevisionRoute() {
     ) return;
     const startedAt = Date.now();
     const checkResumeEpoch = accessResumeEpoch;
-    if (gateImmediately || startedAt >= expected.expiresAt) {
-      setAccessSnapshotBlocked(true);
-    }
-    if (forceFresh && accessCheckPending === expected) {
-      // Every observed same-Space authority mutation must establish its own
-      // post-signal check. A prior gate-immediate response may predate the
-      // latest mutation, even when it began in this same visible epoch.
-      accessCheckGeneration++;
-      accessCheckPending = undefined;
-      accessCheckAbort?.abort();
-      accessCheckAbort = undefined;
-      accessCheckPendingResumeEpoch = undefined;
-    } else if (gateImmediately && accessCheckPending === expected) {
-      if (accessCheckPendingResumeEpoch === accessResumeEpoch) return;
-      // A response started before the page returned may already be stale.
-      // Invalidate it and require a request whose authority check starts now.
-      accessCheckGeneration++;
-      accessCheckPending = undefined;
-      accessCheckAbort?.abort();
-      accessCheckAbort = undefined;
-      accessCheckPendingResumeEpoch = undefined;
-    } else if (accessCheckPending === expected) {
-      return;
-    }
+    if (startedAt >= expected.expiresAt) setAccessSnapshotBlocked(true);
+    if (accessCheckPending === expected) return;
     accessCheckPending = expected;
     const checkGeneration = ++accessCheckGeneration;
     accessCheckPendingGeneration = checkGeneration;
-    accessCheckPendingResumeEpoch = gateImmediately
-      ? accessResumeEpoch
-      : undefined;
     const controller = new AbortController();
     accessCheckAbort = controller;
     try {
@@ -355,7 +324,6 @@ export default function CompositionRevisionRoute() {
       // cannot extend the server-issued lease.
       const renewed = {
         ...expected,
-        resumeEpoch: checkResumeEpoch,
         expiresAt: startedAt + snapshot.valid_for_ms,
       };
       accessLease = renewed;
@@ -366,9 +334,6 @@ export default function CompositionRevisionRoute() {
       }
       setAccessSnapshotBlocked(false);
       scheduleAccessCheck(renewed);
-      // A suspend can invalidate an input evaluation while the prior leased
-      // response remains gated. Once authority is freshly confirmed, rerun
-      // only when the inputs differ from that response's evaluated snapshot.
       if (changedInputs(lastEvaluatedInputs, currentInputSnapshot()).size > 0) {
         void evaluate();
       }
@@ -391,38 +356,22 @@ export default function CompositionRevisionRoute() {
       ) {
         accessCheckPending = undefined;
         accessCheckPendingGeneration = 0;
-        accessCheckPendingResumeEpoch = undefined;
         if (accessCheckAbort === controller) accessCheckAbort = undefined;
       }
     }
   };
 
   const onAccessResume = () => {
-    if (!accessIsSuspended() && accessLease) {
-      const lease = accessLease;
-      if (lease.routeKey !== routeKey()) return;
-      setAccessSnapshotBlocked(true);
-      const current = evaluation();
-      if (
-        current.status === "loading" ||
-        current.evaluationId !== lease.evaluationId
-      ) {
-        // A focus event can arrive without a matching blur. Drop any work
-        // newer than the visible lease (including paging with its same ID)
-        // before checking that lease again.
-        evaluationGeneration++;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = undefined;
-        activeEvaluationId = lease.evaluationId;
-        setEvaluation({
-          status: "ready",
-          evaluationId: lease.evaluationId,
-          response: current.response,
-        });
-      }
-      void recheckAccess(accessLease, true);
-    } else if (
-      !accessIsSuspended() && accessSnapshotBlocked() &&
+    if (accessIsSuspended()) return;
+    if (accessLease) {
+      if (lastResumeEvaluationEpoch === accessResumeEpoch) return;
+      // Focus can arrive without a matching blur. Treat it as a fresh-work
+      // boundary so pending pages and retained values are never revived.
+      accessResumeEpoch++;
+      clearVisibleResults();
+    }
+    if (
+      accessSnapshotBlocked() &&
       (evaluation().status === "error" || evaluation().status === "idle" ||
         (evaluation().status === "loading" && !activeEvaluationId)) &&
       lastResumeEvaluationEpoch !== accessResumeEpoch
@@ -437,32 +386,7 @@ export default function CompositionRevisionRoute() {
     accessSuspensions.add(reason);
     if (wasSuspended) return;
     accessResumeEpoch++;
-    setAccessSnapshotBlocked(true);
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = undefined;
-    // Any evaluation that crosses a suspend is stale, even when it started
-    // before the first lease existed. Keep a prior leased response only behind
-    // the gate; the resumed authority check must authorize it again.
-    evaluationGeneration++;
-    if (accessLease) {
-      accessLease = { ...accessLease, resumeEpoch: accessResumeEpoch };
-      const current = evaluation();
-      setEvaluation({
-        status: "ready",
-        evaluationId: accessLease.evaluationId,
-        response: current.response,
-      });
-    } else {
-      clearVisibleResults();
-    }
-    if (accessTimer) clearTimeout(accessTimer);
-    accessTimer = undefined;
-    accessCheckGeneration++;
-    accessCheckPending = undefined;
-    accessCheckPendingGeneration = 0;
-    accessCheckPendingResumeEpoch = undefined;
-    accessCheckAbort?.abort();
-    accessCheckAbort = undefined;
+    clearVisibleResults();
   };
 
   const onAccessResumeReason = (reason: "blur" | "hidden" | "offline") => {
@@ -472,14 +396,8 @@ export default function CompositionRevisionRoute() {
 
   const onCompositionAccessChange = (changedSpaceId: string) => {
     if (changedSpaceId !== params.space_id) return;
-    const lease = accessLease;
-    if (!lease) {
-      clearVisibleResults();
-      if (!accessIsSuspended()) void evaluate();
-      return;
-    }
-    setAccessSnapshotBlocked(true);
-    if (!accessIsSuspended()) void recheckAccess(lease, true, true);
+    clearVisibleResults();
+    if (!accessIsSuspended()) void evaluate();
   };
 
   onCleanup(subscribeToCompositionAccessChanges(onCompositionAccessChange));
@@ -536,9 +454,8 @@ export default function CompositionRevisionRoute() {
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
     if (!currentRevision()) return;
-    // Parsing or debounce continuations may finish after resume. While a prior
-    // lease is gated for its required authority check, they cannot start an
-    // evaluation that could race that check and reopen the result surface.
+    // Parsing or debounce continuations may finish while the page is
+    // suspended, but they cannot start an evaluation until it resumes.
     if (accessIsSuspended() || (accessLease && accessSnapshotBlocked())) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = undefined;
@@ -657,8 +574,8 @@ export default function CompositionRevisionRoute() {
           ).map((node) => node.id)
           : undefined;
         setTablePages({});
-        // Keep the prior leased response available for a focus-time authority
-        // check, but hide it while the new authority snapshot is evaluated.
+        // Keep the prior response behind the access gate while the new
+        // authority snapshot is evaluated; it cannot be rendered as current.
         setAccessSnapshotBlocked(true);
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
@@ -678,19 +595,20 @@ export default function CompositionRevisionRoute() {
         page ? [page.variable_id] : requestedQueries,
       );
       if (page) {
-        const pageResult = responseToShow.query_results[page.variable_id];
+        const pageVariableId = page.variable_id;
+        const pageResult = responseToShow.query_results[pageVariableId];
         if (pageResult) {
           setTablePages((current) => {
-            const prior = current[page.variable_id];
+            const prior = current[pageVariableId];
             const pages = prior
               ? prior.pages.slice(0, prior.index + 1)
-              : previous?.query_results[page.variable_id]
-              ? [previous.query_results[page.variable_id]]
+              : previous?.query_results[pageVariableId]
+              ? [previous.query_results[pageVariableId]]
               : [];
             pages.push(pageResult);
             return {
               ...current,
-              [page.variable_id]: { pages, index: pages.length - 1 },
+              [pageVariableId]: { pages, index: pages.length - 1 },
             };
           });
         }
@@ -739,7 +657,6 @@ export default function CompositionRevisionRoute() {
       ) {
         const lease: AccessLease = {
           routeKey: routeScope,
-          resumeEpoch: evaluationResumeEpoch,
           evaluationId,
           entryId: revisionRef.entry_id,
           revisionId: revisionRef.revision_id,
@@ -786,7 +703,6 @@ export default function CompositionRevisionRoute() {
       accessCheckPending = undefined;
       accessCheckAbort?.abort();
       accessCheckAbort = undefined;
-      accessCheckPendingResumeEpoch = undefined;
       clearAccessTimer();
       setAccessSnapshotBlocked(true);
       lastEvaluatedInputs = undefined;
@@ -918,7 +834,6 @@ export default function CompositionRevisionRoute() {
       accessCheckPending = undefined;
       accessCheckAbort?.abort();
       accessCheckAbort = undefined;
-      accessCheckPendingResumeEpoch = undefined;
       clearAccessTimer();
       setAccessSnapshotBlocked(true);
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -929,7 +844,7 @@ export default function CompositionRevisionRoute() {
       setInputValues({});
       setUnsetInputs([]);
       setInputStates({});
-      setBlockedQueryIds(new Set());
+      setBlockedQueryIds(new Set<string>());
       setTablePages({});
       parseEpoch++;
       parseGenerations.clear();
@@ -949,7 +864,7 @@ export default function CompositionRevisionRoute() {
     setInputValues({});
     setUnsetInputs([]);
     setInputStates({});
-    setBlockedQueryIds(new Set());
+    setBlockedQueryIds(new Set<string>());
     setAccessSnapshotBlocked(true);
     setTablePages({});
     parseEpoch++;
@@ -965,7 +880,6 @@ export default function CompositionRevisionRoute() {
     accessCheckPending = undefined;
     accessCheckAbort?.abort();
     accessCheckAbort = undefined;
-    accessCheckPendingResumeEpoch = undefined;
     clearAccessTimer();
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
@@ -1106,7 +1020,7 @@ export default function CompositionRevisionRoute() {
           <button
             class="ui-button ui-button-secondary"
             type="button"
-            onClick={() => void revision.refetch()}
+            onClick={() => void refetchRevision()}
           >
             {t("composition.retry")}
           </button>
