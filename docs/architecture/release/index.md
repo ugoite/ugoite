@@ -1,6 +1,6 @@
 ---
 title: "Release architecture"
-description: The current v0.1 capability boundary and the remaining consolidation work.
+description: Release boundaries and procedures for preserving artifact identity and compatibility.
 sidebar:
   label: "Release"
   order: 4
@@ -22,11 +22,6 @@ a product or support claim is safe to make.
   semantic recoverability and authority invariants.
 - [v0.2.1 stable release note](../../version/releases/v0.2.1.md) records the
   published release and its compatibility boundary.
-- [v0.2.1 operation-audit baseline](v0.2.1-operation-audit-baseline.md) records
-  six independently reproduced findings and separates baseline observations from
-  fix acceptance evidence.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
   preserves the fixed-SHA security acceptance evidence for membership
   revocation and access-token refresh between export pages.
-- [Release notes and historical channel records](changelog.md) point to the
-  versioned stable notes and explain that beta/alpha are not active channels.

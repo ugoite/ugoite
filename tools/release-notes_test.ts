@@ -90,23 +90,19 @@ Deno.test("REQ-OPS-026: the candidate and publish workflows use exact manual not
   assertEquals(publish.includes("publish-release-notes"), true);
 });
 
-Deno.test("REQ-OPS-026: release documentation does not describe channel rendering as active", async () => {
-  const changelog = await Deno.readTextFile(
-    "docs/architecture/release/changelog.md",
+Deno.test("REQ-OPS-026: release contract identifies the stable note and inactive channels", async () => {
+  const contract = await Deno.readTextFile(
+    "docs/architecture/release/release-contract.md",
   );
-  const stable = await Deno.readTextFile(
-    "docs/architecture/release/changelog-stable.md",
-  );
-  assertEquals(changelog.includes("rendered into a marked section"), false);
-  assertEquals(changelog.includes("manual note"), true);
-  assertEquals(stable.includes("docs/version/releases/v<version>.md"), true);
+  assertEquals(contract.includes("docs/version/releases/v<version>.md"), true);
   assertEquals(
-    /Alpha and beta are not active\s+release channels/.test(changelog),
+    /Alpha and beta are not active publication channels/.test(contract),
     true,
   );
-  assertEquals(stable.includes("Historical channel metadata"), false);
+  assertEquals(contract.includes("UGOITE-CHANNEL-NOTES"), false);
+  assertEquals(contract.includes("Historical channel metadata"), false);
   assertEquals(
-    stable.includes("is rendered into the GitHub Release body"),
+    contract.includes("is rendered into the GitHub Release body"),
     false,
   );
 });

@@ -31,15 +31,11 @@ documented CLI behavior, configuration and environment variables, REST and
 OpenAPI, deployment and Helm interfaces, and supported upgrade paths. Supported
 surfaces are release contracts; experimental/preview surfaces are explicitly
 excluded from that guarantee; internal APIs and private storage layout are not
-product compatibility surfaces. This v1-before-release repository does not add
-readers or migrations unless a later feature explicitly requires them.
+product compatibility surfaces. Do not add readers or migrations unless a
+supported compatibility contract requires them.
 
 Stable `v<version>` Git tags are the published-version ledger. Historical
-alpha/beta tags are not used to calculate the next stable version. The first
-stable release promotes the already prepared `0.1.0` without another prepare
-operation; GitHub Release `v0.1.0` is the published stable ledger entry. The
-published `0.1.1` release line is a compatible patch and keeps the Space
-compatibility identity at `0.1`; it does not require migration or re-encoding.
+alpha/beta tags are not used to calculate the next stable version.
 
 Release platform support is tiered. The current Tier 1 set is the four CLI
 targets (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
