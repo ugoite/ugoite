@@ -1341,7 +1341,7 @@ async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<(
     assert_eq!(results.rows.len(), 1);
     assert_eq!(
         results.rows[0].properties.as_ref().unwrap()["time"],
-        "22:02:00"
+        "22:02:00.000000"
     );
     Ok(())
 }
