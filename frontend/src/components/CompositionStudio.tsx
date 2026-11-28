@@ -790,7 +790,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     attempt: PendingCompositionSaveAttempt,
     isRetry: boolean,
   ) => {
-    stagePendingCompositionSaveAttempt(attempt, undefined);
+    stagePendingCompositionSaveAttempt(attempt);
     try {
       const saved = await compositionApi.save(
         attempt.spaceId,
@@ -804,10 +804,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
           : undefined,
       );
       if (!isCurrentSaveIdentity(attempt)) {
-        clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "completed");
         return;
       }
-      clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
+      clearPendingCompositionSaveAttempt(attempt, "completed");
       pendingSave = undefined;
       setSaveRetryAvailable(false);
       navigate(spaceCompositionRevisionPath(
@@ -825,14 +825,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
         : undefined;
       const retryWasDenied = isRetry && (status === 401 || status === 403);
       if (outcome === "rejected" && !retryWasDenied) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "rejected");
         if (isCurrentSaveIdentity(attempt)) {
           pendingSave = undefined;
           setSaveRetryAvailable(false);
           setSaveError(compositionSaveErrorMessage(error));
         }
       } else {
-        markPendingCompositionSaveAttemptUncertain(attempt, undefined);
+        markPendingCompositionSaveAttemptUncertain(attempt);
         if (isCurrentSaveIdentity(attempt)) {
           pendingSave = attempt;
           setSaveRetryAvailable(true);
@@ -904,7 +904,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         principalEpoch() !== ownerEpoch || principalId() !== owner ||
         !currentSaveInvocation(invocationId)
       ) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "rejected");
         return;
       }
       if (!checked.ok || !checked.plan) {
@@ -944,7 +944,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         principalId() !== owner ||
         !currentSaveInvocation(invocationId)
       ) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "rejected");
         return;
       }
       const latestOwner = await getPrincipalGeneration();
@@ -955,7 +955,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         principalId() !== owner ||
         !currentSaveInvocation(invocationId)
       ) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "rejected");
         return;
       }
       attempt = { ...attempt, yaml: canonical.canonical_yaml };
@@ -972,7 +972,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const stillOwnsCurrentPreflight = generation === saveGeneration() &&
         currentSaveInvocation(invocationId) !== undefined;
       if (attempt) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        clearPendingCompositionSaveAttempt(attempt, "rejected");
         if (stillOwnsCurrentPreflight && isCurrentSaveIdentity(attempt)) {
           pendingSave = undefined;
           setSaveRetryAvailable(false);

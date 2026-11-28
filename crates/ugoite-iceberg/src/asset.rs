@@ -317,16 +317,6 @@ fn is_asset_reference(value: &Value) -> bool {
         && value.get("sha256").and_then(Value::as_str).is_some()
 }
 
-pub async fn current_asset_reference_exists(
-    op: &Operator,
-    ws_path: &str,
-    asset_id: &str,
-    relation_scopes: &BTreeMap<String, EntryScope>,
-) -> Result<bool> {
-    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
-    current_asset_reference_exists_in_workspace(&workspace, asset_id, relation_scopes).await
-}
-
 /// Evaluates Asset references against one exact workspace/catalog view and one
 /// closed DataFusion context. The caller supplies the already-derived
 /// relation scopes; absent Forms are not registered as empty discoverable

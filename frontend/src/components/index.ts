@@ -5,7 +5,6 @@ export { ConfirmDestructiveAction } from "./ConfirmDestructiveAction";
 export { IconButton } from "./IconButton";
 export { IconLink } from "./IconLink";
 export { UiIcon } from "./UiIcon";
-export { EntryList } from "./EntryList";
 export { EntryBrowser } from "./EntryBrowser";
 export { LocalBusyIndicator } from "./LocalBusyIndicator";
 export { CanvasPlaceholder } from "./CanvasPlaceholder";

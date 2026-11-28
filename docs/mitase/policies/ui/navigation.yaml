@@ -64,7 +64,7 @@ policies:
             claims:
               - kind: evidences
                 anchor: POL-UI-005#rule.governance
-          - id: form-entry-list-surface
+          - id: form-entry-browser-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"
             selector: { kind: file }
