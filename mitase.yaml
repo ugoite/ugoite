@@ -428,7 +428,7 @@ inventory:
         - docs/architecture/security/dependency-audit.md
         - docs/spec/stories/core.yaml
         - docs/spec/stories/advanced.yaml
-        - docs/spec/stories/experimental.yaml
+        - docs/spec/stories/collaboration.yaml
         - docs/spec/ui/index.md
         - docs/spec/ui/pages/space-assets.yaml
         - docs/spec/ui/pages/space-asset-detail.yaml

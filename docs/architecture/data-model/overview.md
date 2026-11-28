@@ -33,6 +33,7 @@ spaces/{space_id}/
   meta.json
   settings.json
   _ugoite/catalog/        # Head plus immutable publication records
+  _ugoite/authorization/   # immutable authorization snapshots referenced by Head
   _ugoite/derived/        # lazy, replaceable relation Heads and builds
   forms/                  # Iceberg-owned table locations
   assets/
@@ -58,10 +59,13 @@ into the runtime Space view. `settings.json` is created with `default_form: Entr
 `default_form` is a required Space 0.1 storage/bootstrap field retained for
 portable settings compatibility; it is not the browser's current Form-selection
 authority. The browser-backed entry flow uses its explicit Form route instead.
-Portable
-membership, principal, policy, and authorization-audit state is stored in
-`security/principals.json`. Legacy membership-shaped settings are unsupported,
-and public Space patching cannot modify membership-managed keys.
+For a persisted Space, the Catalog Head references the current immutable
+authorization snapshot under
+`_ugoite/authorization/snapshots/{revision}-{checksum}.json`. The former
+`security/principals.json` file is read only when a current Head has no snapshot;
+new writes for persisted Spaces advance the Head and publish a new snapshot.
+Legacy membership-shaped settings are unsupported, and public Space patching
+cannot modify membership-managed keys.
 
 The Space UID is the immutable remote identity. The slug is human-readable,
 mutable metadata, and a local Space path is the Core-mode filesystem or

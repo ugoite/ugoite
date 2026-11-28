@@ -2,7 +2,7 @@
 title: 'User stories'
 ---
 
-Stories describe user-visible intent and link to requirement IDs. They are not proof of implementation.
+Stories describe scoped user intent and link to requirement IDs. They are not proof of implementation or a separate API inventory. Current, Planned, and North Star direction belongs in the product target; speculative endpoints and uncommitted milestones do not belong here.
 
 When changing a story:
 

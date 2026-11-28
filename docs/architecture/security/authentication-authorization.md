@@ -137,8 +137,13 @@ accepted.
 Each Space directory is addressed by its immutable UUIDv7 Space UID. `slug` and
 `name` are mutable metadata; a local Space path is only the Core-mode locator.
 Portable authorization is stored in
-`spaces/<space-id>/security/principals.json`; Node account bindings remain in
-the Node control store. At least one active human owner is mandatory.
+immutable snapshots at
+`spaces/<space-id>/_ugoite/authorization/snapshots/{revision}-{checksum}.json`,
+selected by the Space Catalog Head. A pre-existing
+`security/principals.json` is read only when the Head has no authorization
+snapshot. Node account bindings remain in the Node control store, and
+authorization audit events are stored separately under
+`spaces/<space-id>/audit/`. At least one active human owner is mandatory.
 
 Entry, Asset, Form, Saved SQL, search, link candidates, history, SQL queries,
 counts, joins, aggregates, and MCP use the same core authorizer. Policies

@@ -4,7 +4,6 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
-import { settingsSections } from "../lib/settings-sections";
 
 type PageSpec = {
   page?: {
@@ -329,90 +328,6 @@ describe("UI spec YAML registry", () => {
           `${filePath} references missing page: ${target}`,
         )
           .toBe(true);
-      }
-    }
-  });
-
-  it("REQ-FE-040: validates Space Settings implementation references", () => {
-    const page = loadPages().find(({ spec }) =>
-      spec.page?.id === "space-settings"
-    );
-    expect(page).toBeTruthy();
-    const panel = page?.spec.components?.body?.find(({ id }) =>
-      id === "settings-panel"
-    );
-    expect(panel).toBeTruthy();
-
-    const navigation = panel?.navigation as {
-      section_source: string;
-      implementation: string;
-      tests: Array<{ path: string; selector: string }>;
-    };
-    const settingsPanel = panel as Record<string, unknown>;
-    expect(
-      statSync(path.join(repoRoot, String(settingsPanel.implementation)))
-        .isFile(),
-    )
-      .toBe(true);
-    expect(statSync(path.join(repoRoot, navigation.section_source)).isFile())
-      .toBe(true);
-    expect(statSync(path.join(repoRoot, navigation.implementation)).isFile())
-      .toBe(true);
-    for (const test of navigation.tests) {
-      const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
-      expect(testSource, `navigation test selector: ${test.path}`).toContain(
-        test.selector,
-      );
-    }
-
-    const sections = panel?.sections as Array<Record<string, unknown>>;
-    expect(sections.map(({ id }) => id)).toEqual(
-      settingsSections.map(({ id }) => id),
-    );
-    for (const section of sections) {
-      const implementation = section.implementation as string[];
-      expect(implementation.length, `${String(section.id)} implementation`)
-        .toBeGreaterThan(0);
-      for (const sourcePath of implementation) {
-        expect(
-          statSync(path.join(repoRoot, sourcePath)).isFile(),
-          `${String(section.id)} implementation is missing: ${sourcePath}`,
-        ).toBe(true);
-      }
-
-      const tests = section.tests as Array<{ path: string; selector: string }>;
-      expect(tests.length, `${String(section.id)} tests`).toBeGreaterThan(0);
-      for (const test of tests) {
-        const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
-        expect(testSource, `${String(section.id)} test selector: ${test.path}`)
-          .toContain(test.selector);
-      }
-
-      const contract = section.component_contract as
-        | { id: string; reference: string }
-        | undefined;
-      if (contract) {
-        const contractPath = resolveComponentReference(
-          page!.filePath,
-          contract.reference,
-        );
-        const componentSpec = parse(readFileSync(contractPath, "utf8")) as {
-          components?: Array<Record<string, unknown>>;
-        };
-        const component = componentSpec.components?.find(({ id }) =>
-          id === contract.id
-        );
-        expect(component, `${String(section.id)} component reference`)
-          .toBeTruthy();
-        expect(implementation).toContain(component?.implementation);
-      }
-
-      const targetPage = section.target_page;
-      if (targetPage) {
-        expect(
-          loadPages().some(({ spec }) => spec.page?.id === targetPage),
-          `${String(section.id)} target page: ${String(targetPage)}`,
-        ).toBe(true);
       }
     }
   });

@@ -1,5 +1,5 @@
 version: 3
-updated: 2026-08-26
+updated: 2026-11-28
 roots:
 - path: _ugoite/space-bindings
   kind: directory
@@ -25,7 +25,7 @@ space_layout:
   bootstrap:
     operation: create_space
     notes:
-    - Space metadata carries space_version: "0.1" as the durable compatibility identity; this layout inventory version is repository-local and is not a Space Version.
+    - 'Space metadata carries space_version: "0.1" as the durable compatibility identity; this layout inventory version is repository-local and is not a Space Version.'
     entries:
     - path: spaces/{space_id}
       kind: directory
@@ -57,6 +57,15 @@ space_layout:
       kind: directory
       notes:
       - Lazy, non-authoritative DerivedRelation roots; absence is recoverable.
+    - path: spaces/{space_id}/_ugoite/authorization/snapshots
+      kind: directory
+      notes:
+      - Immutable authorization states selected by the Catalog Head.
+    - path_glob: spaces/{space_id}/_ugoite/authorization/snapshots/{revision}-{checksum}.json
+      kind: file
+      schema: authorization_snapshot
+      notes:
+      - Current only when referenced by the Catalog Head.
     post_bootstrap:
     - logical_resource: Entry Form
       notes:

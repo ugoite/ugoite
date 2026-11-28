@@ -1,5 +1,5 @@
 version: '0.4'
-updated: 2026-08-13
+updated: 2026-11-28
 schemas:
   derived_relation_head:
     description: Relation-local visibility coordinate for the current immutable Iceberg build. It is not Catalog or PublicationRef authority.
@@ -102,9 +102,9 @@ schemas:
           type: string
           format: date-time
   space_settings:
-    description: Current Space settings. Portable membership and authorization
-      state is stored in security/principals.json; legacy membership-shaped keys
-      are unsupported.
+    description: Current Space settings. Membership and authorization state is
+      published through the Catalog Head; legacy membership-shaped keys are
+      unsupported.
     path: spaces/{id}/settings.json
     schema:
       type: object
@@ -224,6 +224,14 @@ schemas:
           items: {type: string}
         generation: {type: integer, minimum: 0}
         form_registry_generation: {type: integer, minimum: 0}
+        authorization_snapshot:
+          type: [object, 'null']
+          description: Optional reference to the current immutable authorization snapshot.
+          required: [revision, location, checksum]
+          properties:
+            revision: {type: integer, minimum: 0}
+            location: {type: string}
+            checksum: {type: string}
         tables:
           type: object
           additionalProperties:
@@ -246,6 +254,26 @@ schemas:
         publication_location: {type: [string, 'null']}
         publication_command_id: {type: [string, 'null']}
         checksum: {type: string}
+  authorization_snapshot:
+    description: Immutable AuthorizationState selected only by the Catalog Head reference.
+    path: spaces/{id}/_ugoite/authorization/snapshots/{revision}-{checksum}.json
+    schema:
+      type: object
+      required: [schema_version, space_uid, revision]
+      properties:
+        schema_version: {type: integer}
+        space_uid: {type: string, format: uuid}
+        revision: {type: integer, minimum: 1}
+        principals: {type: object}
+        memberships: {type: object}
+        policies: {type: object}
+        policy_history: {type: object}
+        agents: {type: object}
+        agent_grants: {type: object}
+        principal_lifecycle_epochs: {type: object}
+        recovery_fences: {type: object}
+        human_approvals: {type: object}
+        human_approval_audit_outbox: {type: object}
   iceberg_catalog_publication:
     description: Immutable Head-publication evidence linked from the current Catalog Head.
     path: spaces/{id}/_ugoite/catalog/publications/{generation}-{encoded_command_id}.json
