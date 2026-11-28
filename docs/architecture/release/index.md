@@ -16,8 +16,6 @@ a product or support claim is safe to make.
   candidate verification, and buildless promotion.
 - [Release platform support](platform-support.md) defines the Tier 1, Tier 2,
   and unsupported artifact targets.
-- [Release rearchitecture status](release-rearchitecture.md) records the
-  Rust/Deno consolidation and remaining future work.
 - [Release planner ref recovery](release-planner-recovery.md) defines the
   compare-before-delete procedure for an orphaned planner branch ref.
 - [Versioning overview](versioning.md) explains the current v0.1 and v0.2
@@ -28,19 +26,13 @@ a product or support claim is safe to make.
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
-- [v0.2.1 read-surface acceptance evidence](v0.2.1-read-acceptance.md) indexes
-  query and SQL export evidence and records its own limits.
-- [v0.2.1 product journey and evidence index](v0.2.1-product-journeys.md)
-  defines user-visible outcomes and marks evidence that remains unverified.
 - [v0.2.1 stable release note](../../version/releases/v0.2.1.md) records the
   published release and its compatibility boundary.
 - [v0.2.1 operation-audit baseline](v0.2.1-operation-audit-baseline.md) records
   six independently reproduced findings and separates baseline observations from
   fix acceptance evidence.
-- [QRY-02 query lifecycle observations](query-surfaces-comparison-2026-09.md)
-  records browser request cancellation and paging observations.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
-  records the live membership-revocation gate separately from unverified
-  credential-expiry coverage.
+  preserves the fixed-SHA security acceptance evidence for membership
+  revocation and access-token refresh between export pages.
 - [Release notes and historical channel records](changelog.md) define the stable
   manual-note contract and label beta/alpha metadata as historical.

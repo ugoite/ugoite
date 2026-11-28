@@ -60,23 +60,11 @@ Delete the root and its `.node-secret` sidecar when finished. The report
 distinguishes the first process from later processes; it does not control the
 operating system's file cache.
 
-The committed [pre-checkpoint profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
-the [checkpoint profile](../architecture/release/measurements/startup-profile-candidate-1aa25564.json), and the [checkpoint rerun tied to the final test commit](../architecture/release/measurements/startup-profile-candidate-f69f2aed.json)
-record the same 6,000 + 4,000 Entry fixture on macOS arm64. The first process
-backfilled 10,000 audit targets in 103.8 s. Two subsequent process-cold starts
-verified the persisted Node-local checkpoints and became ready in 3.92 s and
-3.94 s. Their audit-chain verification phases totaled about 235–237 ms,
-compared with 472–473 ms in the pre-checkpoint profile. A rerun on
-the final test commit measured 7.23 s and 8.07 s for those later starts, with
-audit-chain verification steady around 0.25–0.36 s. The runner does not control
-the OS page cache, and audit recovery plus marker reconciliation account for
-most of the variance, so these are not disk-cold timings and the measured
-3.9–8.1 s range is evidence only. There is no absolute startup-time gate: do not
-present any warm-start figure as a product contract. A future startup target,
-if any, requires a documented controlled-load protocol with same-fixture
-comparison data first. Initial backfill
-remains dominated by marker reconciliation and commit; do not describe it as a
-checkpoint-backed startup.
+The report separates the first process from later processes; it does not
+control the operating system's file cache. Startup measurements are diagnostic,
+not a product threshold. Compare the same fixture and source when investigating
+a user-facing startup regression; do not copy routine run results into this
+guide.
 
 ## Development authentication
 

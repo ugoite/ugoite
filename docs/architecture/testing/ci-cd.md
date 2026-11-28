@@ -103,36 +103,13 @@ Hosted Playwright lanes install Chromium, which is used by their selected test
 sets; local setup continues to install Chromium and WebKit for the broader E2E
 suite.
 
-The owner-composition lane combines three sequential root tasks while keeping
-their original Playwright invocations and service fixtures separate: the Metric
-journey and table pagination, source ACL isolation, then owner recovery. The ACL
-suite deliberately revokes a session, so its browser state must not carry into
-the other suites. A single Playwright invocation failed this way on run
-44833409661: the ACL cases passed, then pagination and owner recovery received
-401 responses. Separate invocations preserve the exact HTTP saved-revision,
-scalar-cardinality, pagination, source authorization, and recovery checks while
-sharing one hosted artifact consumer and verified runtime image load.
-
-Run 44689906445 measured 82 seconds of owner recovery E2E, 257 seconds for the
-Metric and source-ACL lane, 567 seconds for Studio E2E, and 684 seconds for
-artifact build. Those measurements exclude per-task service startup and do not
-predict the combined lane's total runtime; track the hosted job duration after
-this change and revisit if it moves the merge critical path.
-
-The split-E2E pilot decision (#3307) kept independent smoke/mobile, Composition
-Studio, and portable E2E consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
-workflow-to-gate times of 28–46 minutes with the consumers starting within
-about two minutes of artifact availability and finishing in 2–8 minutes, while
-the then-single `ci-cp1-acceptance` lane held the critical path at 27–42
-minutes; after the CP1 fixtures/query/export trio landed, merge-group run
-37278654095 gated in under 19 minutes with the parallel consumers finishing
-within about eight minutes of artifact availability. Those timings supported
-combining the smaller owner and Metric artifact consumers, but not sharing a
-Playwright process or backend fixture: the ACL tests intentionally revoke
-sessions. Keep the three suites in separate invocations and track the combined
-job's hosted duration, while the remaining heavy consumers stay independent.
-Rust test sharding stays out of scope until runtime, compile/link, cache, and
-shard-comparison data show a clear improvement.
+The owner-composition lane keeps the Metric/table-pagination, source ACL, and
+owner-recovery suites in separate Playwright invocations. ACL tests deliberately
+revoke a session, so browser state must not carry into the other suites. The
+separate invocations preserve their HTTP, scalar-cardinality, pagination,
+authorization, and recovery checks while sharing one hosted artifact consumer
+and verified runtime image load. Rust test sharding remains out of scope until
+runtime, compile/link, cache, and shard-comparison data show a clear improvement.
 
 Pull requests also run a separate `ci-pr-context-report` job. It checks out
 the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
@@ -179,30 +156,21 @@ upload the verified artifact set using the logical names
 when the originating run is a successful push to this repository's `main`.
 
 Every browser lane pins `ubuntu-24.04` and the Playwright browser/runtime
-versions in `e2e/deno.json` plus `deno.lock`, and times its OS-dependency
-install step (`browser-deps`) into the lane summary so future setup regressions
-are diagnosable (#3438). The 26m42s OS-package install seen in one owner run
-was an archive-mirror outlier against typical sub-minute installs (33–44 s
-across the three E2E jobs in merge-group run 37278654095); OS dependencies
-are not skipped because ephemeral runners need them, and a prebuilt runner
-image remains a follow-up only if timed setup data shows the install
-dominating the gate again.
+versions in `e2e/deno.json` plus `deno.lock`. The OS-dependency install step
+(`browser-deps`) is timed into the lane summary so setup regressions are
+diagnosable (#3438). Hosted ephemeral runners install their required OS
+dependencies; browser setup is not skipped based on a prior run's timing.
 
 The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
 query/count, or SQL export implementation and acceptance paths. Merge groups
-and main pushes run it unconditionally. The first query Space has 404
-renewable-ops Entries, of which 101 are tickets. This crosses the Browser's
-100-row SQL page limit by one. The second Space has 12 Entries for
-isolation, authorization and count checks, with at least one Entry per
-scenario Form. Request interception exercises cancellation and retry. The
-export fixture has five Entries. It compares page sizes four and five and
-checks rollback when a byte cap allows the first page and rejects the last row.
+and main pushes run it unconditionally. Fixture data and acceptance bounds are
+owned by [`tools/cp1_fixture_spec.ts`](../../../tools/cp1_fixture_spec.ts).
+Request interception exercises cancellation and retry, and SQL export verifies
+bounded paging, completion, and rollback when a byte cap rejects a later row.
 
 Standalone `measure:query-surfaces` and `measure:sql-export` use the same
-seeder and consumers with larger measurement fixtures. The query measurement
-takes five timing samples per surface and Space. The required acceptance lane
-visits each surface once and uses the smaller fixtures. Performance
-measurements have no merge or release threshold (#3324).
+seeder and consumers with measurement fixtures. Performance measurements have
+no merge or release threshold (#3324).
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies
 the canonical frontend and Rust release outputs into the image instead of
@@ -265,11 +233,8 @@ by the published `v0.1.0` GitHub Release. Later pre-1.0 releases use
 `release:prepare compatible|breaking`, which compares the prepared version with
 the latest stable tag before updating projections. A compatible change advances
 the patch; a breaking change advances the minor. Preparation never creates a
-tag, release, or registry artifact. The current published stable release is
-`0.2.0`; its scope is recorded in
-[`v0.2.0 release note`](https://github.com/ugoite/ugoite/blob/main/docs/version/releases/v0.2.0.md). Candidate
-creation and promotion remain separate operator-controlled workflows for
-future releases. Stable publication requires a non-empty,
+tag, release, or registry artifact. Candidate creation and promotion remain
+separate operator-controlled workflows. Stable publication requires a non-empty,
 versioned manual note at `docs/version/releases/v<version>.md`; the note is
 validated at candidate preflight and read from the exact candidate source when
 published.
