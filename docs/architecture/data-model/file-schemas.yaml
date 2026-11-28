@@ -229,7 +229,7 @@ schemas:
           description: Optional reference to the current immutable authorization snapshot.
           required: [revision, location, checksum]
           properties:
-            revision: {type: integer, minimum: 0}
+            revision: {type: integer, minimum: 1}
             location: {type: string}
             checksum: {type: string}
         tables:

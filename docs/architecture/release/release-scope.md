@@ -43,11 +43,12 @@ Knowledge-to-tools application rendering, not Text-first Composition.
 
 ## Limited or unavailable
 
-- Shared S3-compatible Space writes are supported only for endpoints that pass
-  the exact configured-backend CAS probe and the independent-process acceptance
-  lane. Other shared OpenDAL backends remain read-only. Local filesystem writes
-  use the existing single-process and OS file-serialization path. Authorization
-  state and protected content share one Catalog Head publication boundary;
+- Shared S3-compatible Space writes are supported for the OpenDAL S3 backend
+  class covered by the independent-process acceptance lane, and only at
+  configured endpoints that pass the exact backend CAS probe. Other shared
+  OpenDAL backends remain read-only. Local filesystem writes use the existing
+  single-process and OS file-serialization path. Authorization state and
+  protected content share one Catalog Head publication boundary;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
 - read-only, authorization-checked Node and Space audit-event listing is
