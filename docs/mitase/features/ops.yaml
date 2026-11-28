@@ -5,13 +5,13 @@ category: Operations documentation, automation, and quality gates
 features:
   - id: FEAT-OPS-001
     title: Repository operations and quality gates
-    summary: Connect local-run guidance, release container evidence, governance integrity, version milestones, root quality gates, CLI surfaces, and docsite gates to generic repository artifacts and exact verification evidence.
+    summary: Connect local-run guidance, release container evidence, root quality gates, CLI surfaces, and docsite gates to generic repository artifacts and exact verification evidence.
     status: implemented
     bindings:
       - id: documentation
         role: documentation
         facet: documentation
-        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, and version declarations connected as repository documentation artifacts. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
+        responsibility: Keep the operator guides and testing contracts connected as repository documentation artifacts. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
         targets:
           - id: operations-guide
             adapter: declared
@@ -40,13 +40,6 @@ features:
                 anchor: REQ-OPS-006#criterion.root-rust-gate
               - kind: documents
                 anchor: REQ-OPS-007#criterion.docsite-gate
-          - id: preflight-authority-record
-            adapter: markdown
-            path: docs/architecture/release/v0.3-preflight.md
-            selector: { kind: heading, value: "Authority map and design gate" }
-            claims:
-              - kind: documents
-                anchor: REQ-OPS-025#criterion.product-ux-authority
           - id: testing-strategy
             adapter: declared
             path: docs/architecture/testing/strategy.md
@@ -58,39 +51,6 @@ features:
                 anchor: REQ-OPS-006#criterion.root-rust-gate
               - kind: documents
                 anchor: REQ-OPS-007#criterion.docsite-gate
-          - id: version-v01
-            adapter: declared
-            path: docs/version/v0.1.yaml
-            selector: { kind: file }
-            claims:
-              - kind: documents
-                anchor: REQ-OPS-004#criterion.milestone-status
-          - id: version-v02
-            adapter: declared
-            path: docs/version/v0.2.yaml
-            selector: { kind: file }
-            claims:
-              - kind: documents
-                anchor: REQ-OPS-004#criterion.milestone-status
-      - id: versions
-        role: implementation
-        facet: documentation
-        responsibility: Keep the current version declaration artifacts as exact implementation targets for milestone status integrity. Planned milestones remain planned and are not promoted by this binding.
-        targets:
-          - id: version-v01
-            adapter: declared
-            path: docs/version/v0.1.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-004#criterion.milestone-status
-          - id: version-v02
-            adapter: declared
-            path: docs/version/v0.2.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-004#criterion.milestone-status
       - id: automation
         role: implementation
         facet: quality-gates
@@ -565,34 +525,6 @@ features:
             path: tools/release-notes.ts
             selector: { kind: file }
 
-      - id: release-authority
-        role: implementation
-        facet: release-authority
-        responsibility: Keep the Product UX sole v0.2 authority milestone, the roadmap claims, and the drift gate connected as exact implementation targets. The v0.2 tracker file itself stays owned by the milestone-status integrity requirement; this binding does not create a second authority over it. Planned outcomes remain planned and are not promoted by this binding.
-        targets:
-          - id: product-ux-milestone
-            adapter: declared
-            path: docs/version/v0.2/product-ux.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-025#criterion.product-ux-authority
-          - id: roadmap-claims
-            adapter: declared
-            path: docs/version/unknown/roadmap.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
-          - id: authority-gate
-            adapter: rust
-            path: crates/xtask/src/main.rs
-            selector: { kind: symbol, name: release_authority_check }
-            claims:
-              - kind: satisfies
-                criterion: REQ-OPS-025#criterion.product-ux-authority
-              - kind: satisfies
-                criterion: REQ-OPS-025#criterion.release-authority-drift-gate
       - id: spa-shell-delivery
         role: implementation
         facet: static-web-delivery

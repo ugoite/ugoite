@@ -100,7 +100,11 @@ Deno.test("REQ-OPS-026: release documentation does not describe channel renderin
   assertEquals(changelog.includes("rendered into a marked section"), false);
   assertEquals(changelog.includes("manual note"), true);
   assertEquals(stable.includes("docs/version/releases/v<version>.md"), true);
-  assertEquals(stable.includes("Historical channel metadata"), true);
+  assertEquals(
+    /Alpha and beta are not active\s+release channels/.test(changelog),
+    true,
+  );
+  assertEquals(stable.includes("Historical channel metadata"), false);
   assertEquals(
     stable.includes("is rendered into the GitHub Release body"),
     false,

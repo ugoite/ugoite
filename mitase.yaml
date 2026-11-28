@@ -303,7 +303,6 @@ inventory:
       roots:
         - docs/use/search.mdx
         - docs/get-started/quickstart.mdx
-        - docs/architecture/release/v0.3-preflight.md
         - docs/architecture/testing/ci-cd.md
         - docs/architecture/contracts/maintenance-budget.md
     declared:
@@ -407,10 +406,6 @@ inventory:
         - docsite/src/satteri-doc-links.mjs
         - docs/architecture/release/v0.1.md
         - docs/architecture/release/v0.1-knowledge-compatibility.md
-        - docs/version/v0.1.yaml
-        - docs/version/v0.2.yaml
-        - docs/version/v0.2/product-ux.yaml
-        - docs/version/unknown/roadmap.yaml
         - docs/architecture/contracts/overview.md
         - docs/architecture/contracts/decisions.md
         - docs/architecture/contracts/stack.md

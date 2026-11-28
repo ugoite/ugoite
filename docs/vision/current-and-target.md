@@ -49,17 +49,13 @@ TOTP is recovery-only and is not a normal login method.
 
 ## Next
 
-Product UX acceptance criteria remain unverified where the repository does not
-provide direct evidence. Completion, discoverability, cross-surface
-consistency, validation clarity, recovery, testing, and documentation
-follow-ups remain independently tracked in the
-[v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml).
+The cross-surface acceptance gate follow-up remains tracked in
+[#2563](https://github.com/ugoite/ugoite/issues/2563).
 
 The v0.3 direction is **Authority → Experience → Work**: map what existing
 Space-owned Knowledge can do and where each behavior is specified, implemented,
-and verified before designing owned Experiences. The [v0.3 preflight](../architecture/release/v0.3-preflight.md)
-records that evidence and its gaps. It does not move Application Definitions,
-renderers, or execution behavior into Current.
+and verified before designing owned Experiences. It does not move Application
+Definitions, renderers, or execution behavior into Current.
 
 ## North Star
 

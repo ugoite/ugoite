@@ -17,10 +17,9 @@ if (import.meta.main) {
 /**
  * Return the repository-relative path for one stable release note.
  *
- * Release notes are authored Markdown, not a rendered projection of channel
- * YAML. Keeping this path calculation in one validator makes candidate and
- * publish workflows agree on the exact source file without introducing a
- * second release-note authority.
+ * Stable release notes are authored Markdown. Keeping this path calculation
+ * in one validator makes candidate and publish workflows agree on the exact
+ * source file without introducing a second release-note authority.
  */
 export function releaseNotePath(
   version: string,

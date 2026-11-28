@@ -11,8 +11,8 @@ packaging, support, and product claims stay aligned with the implementation.
   written against. It is never a release claim.
 - "Stable" describes only a published release. A published release is identified
   by its immutable release tag and manifest, and described by its versioned
-  release note under `docs/version/releases/`. Drafts, journey indexes,
-  trackers, and roadmaps never define stable behavior.
+  release note under `docs/version/releases/`. Drafts and journey indexes never
+  define stable behavior.
 
 The boundary below is the one this documentation build describes. Stable claims
 resolve to the versioned release note, not to this page.
